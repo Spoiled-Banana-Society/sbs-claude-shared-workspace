@@ -56,7 +56,7 @@ export function FirstPurchaseFlowCard({
       ? { state: 'done', label: 'Spun the wheel' }
       : { state: 'pending', label: 'Has not spun the wheel yet' },
     returning
-      ? { state: 'na', label: 'Returning player — first purchase available immediately' }
+      ? { state: 'na', label: 'Returning player — not eligible for the first-purchase promo (new players only)' }
       : ps.firstPurchasePromoUnlocked
         ? { state: 'done', label: 'First-purchase unlocked (free drafts finished)' }
         : { state: 'pending', label: 'First-purchase locked — finishes free drafts to unlock' },

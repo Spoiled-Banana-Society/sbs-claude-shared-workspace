@@ -64,15 +64,16 @@ export function FirstPurchasePromoModal() {
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-banana/15 text-3xl">
           🍌
         </div>
-        <h2 className="text-xl font-bold tracking-tight text-white">First Purchase Free Spins</h2>
+        <h2 className="text-xl font-bold tracking-tight text-white">Win up to $1,000 in Drafts</h2>
         <p className="mt-3 text-sm leading-relaxed text-white/70">
-          Nice run on your free drafts! Here&apos;s a one-time welcome gift: on your
+          Nice run on your free drafts! One-time welcome gift: on your
           <span className="font-semibold text-banana"> first purchase</span>, every
-          <span className="font-semibold text-white"> 4 draft passes = 1 free spin</span>.
-          Buy&nbsp;8 for 2 spins, 12 for 3 — no limit.
+          <span className="font-semibold text-white"> Draft Pass = 2 Free Spins</span>.
+          Buy&nbsp;1 → <span className="font-semibold text-white">$50 in Drafts guaranteed</span> —
+          and a shot at $1,000.
         </p>
         <p className="mt-3 text-xs leading-relaxed text-white/45">
-          It only counts your first purchase, so grab them all in one go to stack the most spins.
+          Buy 2 → 4 Spins ($100 guaranteed) · Buy 4 → 8 Spins ($200 guaranteed). First purchase only.
         </p>
         <button
           onClick={() => {

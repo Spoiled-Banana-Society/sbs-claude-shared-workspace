@@ -40,6 +40,7 @@ import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { isReturningWalletSync } from '@/lib/returningUsers';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -1304,15 +1305,20 @@ async function _incrementMintPromosInTx(
     tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
   }
 
-  // First-purchase bonus: every 2 passes on the user's FIRST paid purchase =
-  // 1 spin (FIRST_PURCHASE_PASSES_PER_SPIN; was 4 until 2026-07-06). One-time
-  // — the durable `firstPurchaseBonusGranted` flag gates it (so
-  // retries can't double-grant). Runs in the SAME tx as the mint promo above,
-  // so a single purchase advances both atomically (interconnection).
+  // First-purchase bonus: every pass on the user's FIRST paid purchase =
+  // 2 spins (FIRST_PURCHASE_SPINS_PER_PASS; was every-2-passes = 1 spin until
+  // 2026-07-10, every-4 until 07-06). NEW PLAYERS ONLY (Boris 2026-07-10):
+  // returning players from previous seasons (past-player snapshot / manual
+  // allowlist / web2 identity match) earn nothing and don't consume the bonus
+  // — to grant a specific returning user, use an admin spin grant. One-time —
+  // the durable `firstPurchaseBonusGranted` flag gates it (so retries can't
+  // double-grant). Runs in the SAME tx as the mint promo above, so a single
+  // purchase advances both atomically (interconnection).
   let firstPurchaseSpinsEarned = 0;
   if (opts.handleFirstPurchase && userSnap) {
-    const userData = userSnap.data() as User | undefined;
-    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity);
+    const userData = userSnap.data() as (User & { returningVia?: string }) | undefined;
+    const isReturning = isReturningWalletSync(userRef.id) || !!userData?.returningVia;
+    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
     if (grant.consume) {
       tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
       if (grant.spins > 0) {

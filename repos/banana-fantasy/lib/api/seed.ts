@@ -319,22 +319,22 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    title: 'First Purchase → FREE SPINS',
-    description: 'Every 2 passes on your first buy = 1 spin',
+    title: 'First Purchase → WIN UP TO $1K IN DRAFTS',
+    description: 'Buy 1 pass = 2 Free Spins — $50 in Drafts guaranteed',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
-    // NEW ribbon since 2026-07-06: the promo upgraded from every-4-passes to
-    // every-2-passes when the July 4th Buy-2 promo ended, so it's genuinely
-    // new again. isNew is display-only (self-ping removed). promoFilter also
-    // force-sets isNew for 'first-purchase' so every existing user sees it too.
+    // NEW ribbon since 2026-07-06 (upgraded again 2026-07-10: NEW PLAYERS
+    // ONLY, every pass = 2 spins, $1K framing). isNew is display-only
+    // (self-ping removed). promoFilter also force-sets isNew for
+    // 'first-purchase' so every eligible user sees it.
     isNew: true,
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'First Purchase → FREE SPINS',
+      title: 'Win up to $1,000 in Drafts',
       explanation:
-        '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+        '• New players: your FIRST purchase earns 2 Free Banana Spins for every Draft Pass you buy.\n• Buy 1 → 2 Spins — $50 in Drafts guaranteed, win up to $1,000.\n• Buy 2 → 4 Spins — $100 in Drafts guaranteed, win up to $2,000.\n• Buy 4 → 8 Spins — $200 in Drafts guaranteed, win up to $4,000.\n• No cap — every pass = 2 more Spins.\n• One-time offer: your first purchase only. Claim your Spins right here after you buy.',
     },
   },
   {

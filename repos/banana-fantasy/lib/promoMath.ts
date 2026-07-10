@@ -4,16 +4,17 @@
 // unit-testable without a live Firestore (mirrors lib/exposureUtils.ts,
 // lib/slowDraftClock.ts). db-firestore imports these and does the I/O.
 
-/** First-purchase bonus: this many paid passes earns one wheel spin. */
-export const FIRST_PURCHASE_PASSES_PER_SPIN = 2;
+/** First-purchase bonus (new players only): every pass earns this many spins. */
+export const FIRST_PURCHASE_SPINS_PER_PASS = 2;
 
 /**
  * Wheel spins earned from a first paid purchase of `quantity` passes.
- * 2 → 1, 4 → 2, 6 → 3 … floored, NO cap. Non-positive / invalid → 0.
+ * 1 → 2, 2 → 4, 4 → 8 … NO cap (was every-2-passes = 1 spin until
+ * 2026-07-10). Non-positive / invalid → 0.
  */
 export function firstPurchaseSpins(quantity: number): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
-  return Math.floor(quantity / FIRST_PURCHASE_PASSES_PER_SPIN);
+  return Math.floor(quantity) * FIRST_PURCHASE_SPINS_PER_PASS;
 }
 
 export interface FirstPurchaseGrant {
@@ -24,40 +25,44 @@ export interface FirstPurchaseGrant {
 }
 
 /**
- * Decide the first-purchase outcome. The bonus is ONE-TIME: the first paid
- * purchase defines it, regardless of size. A tiny first buy (qty < 2) still
- * consumes the bonus with 0 spins — you must buy it all in one transaction.
- * A subsequent purchase grants nothing and must not re-consume.
+ * Decide the first-purchase outcome. NEW PLAYERS ONLY (Boris 2026-07-10):
+ * a returning player from a previous season earns nothing AND does not
+ * consume the bonus — so a specific returning user can still be granted it
+ * later without extra state repair. For new players the bonus is ONE-TIME:
+ * the first paid purchase defines it (every pass in that transaction = 2
+ * spins), and a subsequent purchase grants nothing and must not re-consume.
  */
 export function computeFirstPurchaseGrant(
   alreadyGranted: boolean,
   quantity: number,
+  isReturning = false,
 ): FirstPurchaseGrant {
-  if (alreadyGranted) return { consume: false, spins: 0 };
-  return { consume: true, spins: firstPurchaseSpins(quantity) };
+  if (isReturning || alreadyGranted) return { consume: false, spins: 0 };
+  const spins = firstPurchaseSpins(quantity);
+  return { consume: spins > 0, spins };
 }
 
 export interface FirstPurchaseUpsell {
-  /** Spins this quantity earns right now (floor(qty / 2)). */
+  /** Spins this quantity earns right now (qty × 2). */
   spinsThisPurchase: number;
-  /** How many MORE passes to reach the next spin (1..2). */
+  /** How many MORE passes to reach the next spins (always 1 — every pass pays). */
   passesToNextSpin: number;
-  /** Total quantity at which the next spin lands (qty + passesToNextSpin). */
+  /** Total quantity at which the next spins land (qty + 1). */
   nextSpinTotal: number;
 }
 
 /**
- * Drives the first-purchase mint-time nudge ("buy X more for a total of N to
- * earn a spin"). Pure so the message math is unit-tested. At a multiple of 2
- * the user just earned a spin and the next is a full 2 away.
+ * Drives the first-purchase mint-time nudge ("1 more pass = 2 more spins").
+ * Pure so the message math is unit-tested. Every pass pays, so the next
+ * spins are always exactly one pass away.
  */
 export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
   const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
-  const spinsThisPurchase = Math.floor(q / FIRST_PURCHASE_PASSES_PER_SPIN);
-  const remainder = q % FIRST_PURCHASE_PASSES_PER_SPIN;
-  const passesToNextSpin =
-    remainder === 0 ? FIRST_PURCHASE_PASSES_PER_SPIN : FIRST_PURCHASE_PASSES_PER_SPIN - remainder;
-  return { spinsThisPurchase, passesToNextSpin, nextSpinTotal: q + passesToNextSpin };
+  return {
+    spinsThisPurchase: q * FIRST_PURCHASE_SPINS_PER_PASS,
+    passesToNextSpin: 1,
+    nextSpinTotal: q + 1,
+  };
 }
 
 /**

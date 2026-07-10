@@ -37,10 +37,30 @@ describe('all-time past-players → returning treatment', () => {
     expect(isReturningWalletSync(null)).toBe(false);
   });
 
-  it('past player: new-user promo HIDDEN, first-purchase shown', () => {
+  it('past player: new-user promo HIDDEN and first-purchase HIDDEN too (new players only, 2026-07-10)', () => {
     const isBB3Holder = isReturningWalletSync(SAMPLE_PAST_WALLET);
     const types = filterAndSortVisiblePromos(promos, { isBB3Holder, flagsKnown: true }).map((p) => p.type);
     expect(types).not.toContain('new-user');
+    expect(types).not.toContain('first-purchase');
+  });
+
+  it('past player with unclaimed first-purchase spins: card still shown (claim never stranded)', () => {
+    const claimablePromos = [
+      { id: 'fp', type: 'first-purchase', claimable: true, claimCount: 2 },
+    ] as unknown as Promo[];
+    const types = filterAndSortVisiblePromos(claimablePromos, {
+      isBB3Holder: true,
+      flagsKnown: true,
+    }).map((p) => p.type);
+    expect(types).toContain('first-purchase');
+  });
+
+  it('new user after unlock: first-purchase SHOWN', () => {
+    const types = filterAndSortVisiblePromos(promos, {
+      isBB3Holder: false,
+      flagsKnown: true,
+      firstPurchasePromoUnlocked: true,
+    }).map((p) => p.type);
     expect(types).toContain('first-purchase');
   });
 

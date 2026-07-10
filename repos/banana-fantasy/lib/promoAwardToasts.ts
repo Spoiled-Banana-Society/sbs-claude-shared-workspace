@@ -52,8 +52,8 @@ export function surfacePurchasePromoAwards(
     toast(
       show,
       firstPurchase === 1
-        ? 'First purchase — free spin earned!'
-        : `First purchase — ${firstPurchase} free spins earned!`,
+        ? 'First purchase — Free Spin earned!'
+        : `First purchase — ${firstPurchase} Free Spins earned!`,
       '/promos',
     );
   }
