@@ -5,9 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
-import { optimism } from 'viem/chains';
-import { USDC_OPTIMISM } from '@/lib/onchain/cctp';
+import { useFiatOnramp, useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
 import { runNyOptimismBridge } from '@/lib/nyBuyFlow';
 import { Modal } from '../ui/Modal';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
@@ -71,6 +69,10 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
+  // NY on-ramp funding. The legacy fundWallet() can't encode USDC-on-Optimism
+  // (it silently falls back to native ETH); useFiatOnramp's explicit
+  // destination {asset,chain} does. Used ONLY on the NY branch.
+  const { fund: fundFiatOnramp } = useFiatOnramp();
   // Used to authenticate the session-beacon call (MoonPay path) so admin
   // sees opened-popup attempts even when the user closes Privy's flow
   // mid-purchase.
@@ -570,26 +572,51 @@ export function BuyPassesModal({
       }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
       const isNy = !!nyStatus?.ny;
       clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount, ny: isNy });
-      const result = await fundWallet({
-        address: walletAddress,
-        options: {
-          chain: isNy ? optimism : BASE_SEPOLIA,
-          amount: fundingAmount,
-          // Base: the 'USDC' shortcut resolves fine. Optimism: Privy's 'USDC'
-          // shortcut does NOT map (it falls back to native ETH), so name the
-          // exact USDC-on-Optimism token address to force MoonPay's USDC_OPTIMISM.
-          asset: isNy ? { erc20: USDC_OPTIMISM } : 'USDC',
-          defaultFundingMethod: 'card',
-          card: {
-            preferredProvider: 'moonpay',
+      if (isNy) {
+        // NY buyers can't get USDC-on-Base via MoonPay, so buy USDC on OPTIMISM
+        // (CAIP-2 eip155:10) via the fiat-onramp API — the ONLY Privy path that
+        // correctly encodes USDC-on-Optimism (legacy fundWallet falls back to
+        // native ETH). USDC lands on Optimism; the bridge pre-step below moves it
+        // to the buyer's own Base wallet, then the normal Base wait + mint run.
+        // useFiatOnramp charges a FIAT amount, and MoonPay's fee (~18% on a small
+        // buy) comes OUT of it — so $25 delivers only ~20.5 USDC. Gross the fiat up
+        // so the buyer RECEIVES at least the pass cost in USDC (the Base flow hits
+        // the same fee, just added on top → ~$29.59 for 25 USDC). Flat $5.5 covers
+        // MoonPay's ~$4 minimum fee; the 3% covers the percentage on larger orders.
+        const nyFiatAmount = String(Math.ceil(Number(fundingAmount) * 1.03 + 5.5));
+        try {
+          const fr = await fundFiatOnramp({
+            source: { assets: ['usd'], defaultAsset: 'usd' },
+            destination: { asset: 'usdc', chain: 'eip155:10', address: walletAddress },
+            environment: 'production',
+            defaultAmount: nyFiatAmount,
+          });
+          clientLog('payment', 'funding_result', { wallet: walletAddress, status: fr.status });
+        } catch {
+          // User closed the onramp before paying — nothing charged, reset quietly.
+          clientLog('payment', 'funding_cancelled', { wallet: walletAddress, ny: true });
+          setFlowStep('idle');
+          return;
+        }
+      } else {
+        const result = await fundWallet({
+          address: walletAddress,
+          options: {
+            chain: BASE_SEPOLIA,
+            amount: fundingAmount,
+            asset: 'USDC',
+            defaultFundingMethod: 'card',
+            card: {
+              preferredProvider: 'moonpay',
+            },
           },
-        },
-      });
-      clientLog('payment', 'funding_result', { wallet: walletAddress, status: result.status });
+        });
+        clientLog('payment', 'funding_result', { wallet: walletAddress, status: result.status });
 
-      if (result.status === 'cancelled') {
-        setFlowStep('idle');
-        return;
+        if (result.status === 'cancelled') {
+          setFlowStep('idle');
+          return;
+        }
       }
 
       // Payment is COMMITTED — the user has paid and USDC is inbound. From here
