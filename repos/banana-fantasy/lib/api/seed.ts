@@ -320,7 +320,7 @@ const seedPromos: Promo[] = [
     id: '11',
     type: 'first-purchase',
     title: 'First Purchase → WIN UP TO $1K IN DRAFTS',
-    description: 'GTD $50 in Drafts (2 Free Spins)',
+    description: 'Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -335,7 +335,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Win up to $1,000 in Drafts',
       explanation:
-        '• New players: your FIRST purchase earns 2 Free Banana Spins for every Draft Pass you buy.\n• Buy 1 → 2 Spins — $50 in Drafts guaranteed, win up to $1,000.\n• Buy 2 → 4 Spins — $100 in Drafts guaranteed, win up to $2,000.\n• Buy 4 → 8 Spins — $200 in Drafts guaranteed, win up to $4,000.\n• No cap — every pass = 2 more Spins.\n• One-time offer: your first purchase only. Claim your Spins right here after you buy.',
+        '• Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts.\n• Buy 1 → 2 Free Spins — $50 in Drafts guaranteed, win up to $1,000.\n• Buy 2 → 4 Free Spins — $100 in Drafts guaranteed, win up to $2,000.\n• Buy 4 → 8 Free Spins — $200 in Drafts guaranteed, win up to $4,000.\n• No cap — every pass adds more.\n• One-time offer: your first purchase only. Claim your Spins right here after you buy.',
     },
   },
   {

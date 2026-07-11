@@ -117,7 +117,7 @@ export function eventNotificationContent(
       return {
         type: 'promo',
         title: 'Win up to $1,000 in Drafts',
-        message: 'Buy 1 Draft Pass → 2 Free Spins. $50 in Drafts guaranteed. Every pass = 2 more Spins.',
+        message: 'Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',
