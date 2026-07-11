@@ -335,7 +335,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Win up to $1,000 in Drafts',
       explanation:
-        '• Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts.\n• Buy 1 → 2 Free Spins — $50 in Drafts guaranteed, win up to $1,000.\n• Buy 2 → 4 Free Spins — $100 in Drafts guaranteed, win up to $2,000.\n• Buy 4 → 8 Free Spins — $200 in Drafts guaranteed, win up to $4,000.\n• No cap — every pass adds more.\n• One-time offer: your first purchase only. Claim your Spins right here after you buy.',
+        '• Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts.\n• Buy 1 → 2 Free Drafts guaranteed — win up to $1,000.\n• Buy 2 → 4 Free Drafts guaranteed — win up to $2,000.\n• Buy 4 → 8 Free Drafts guaranteed — win up to $4,000.\n• No cap — every pass adds 2 more.\n• One-time offer: your first purchase only.\n• After you buy, your Free Spins land right here — claim them and spin to collect your Drafts.',
     },
   },
   {
