@@ -67,6 +67,11 @@ export async function getOptimismUsdcNonce(owner: Address): Promise<bigint> {
   return (await opClient().readContract({ address: USDC_OPTIMISM, abi: USDC_READ_ABI, functionName: 'nonces', args: [owner] })) as bigint;
 }
 
+/** Read the owner's current USDC balance on Optimism (6-dec units). */
+export async function getOptimismUsdcBalance(owner: Address): Promise<bigint> {
+  return (await opClient().readContract({ address: USDC_OPTIMISM, abi: USDC_READ_ABI, functionName: 'balanceOf', args: [owner] })) as bigint;
+}
+
 /** Poll the owner's USDC balance on Optimism until it reaches `minAmount` (the
  *  card purchase settling), or timeout. Mirrors Base `waitForUsdcArrival`. */
 export async function waitForUsdcOnOptimism(

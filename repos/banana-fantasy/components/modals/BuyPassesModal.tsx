@@ -583,9 +583,12 @@ export function BuyPassesModal({
         // buyers hit the SAME fee, just added on top (25 USDC → ~$29.59), so adding
         // it here makes the displayed total match Base. MoonPay's fee on small buys
         // is ~flat $4.6 (its ~$4 minimum dominates); on large buys ~4.5%. So:
-        //   1 pass  → 25 + 4.6  ≈ $29.60  (matches Base's ~$29.59)
-        //   4 passes→ 100 + 4.6 ≈ $104.60
-        const nyFiatAmount = (Number(fundingAmount) + Math.max(4.6, Number(fundingAmount) * 0.045)).toFixed(2);
+        //   1 pass  → 25 + 4.9  ≈ $29.90  (right next to Base's ~$29.59)
+        //   4 passes→ 100 + 4.9 ≈ $104.90
+        // The slight headroom (buyer nets ~25.3, not exactly 25) guarantees the
+        // amount clears the pass price after the tiny CCTP bridge fee even if
+        // MoonPay's fee wobbles; the few cents of surplus land usable on Base.
+        const nyFiatAmount = (Number(fundingAmount) + Math.max(4.9, Number(fundingAmount) * 0.045)).toFixed(2);
         try {
           const fr = await fundFiatOnramp({
             source: { assets: ['usd'], defaultAsset: 'usd' },
@@ -635,7 +638,7 @@ export function BuyPassesModal({
         await runNyOptimismBridge({
           user: walletAddress as Address,
           quantity,
-          permitValue: usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6),
+          passCost: usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6),
           signTypedData: signTypedData as unknown as Parameters<typeof runNyOptimismBridge>[0]['signTypedData'],
           wallets: wallets as unknown as Parameters<typeof runNyOptimismBridge>[0]['wallets'],
           getAccessToken,

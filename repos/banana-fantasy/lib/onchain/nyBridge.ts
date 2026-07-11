@@ -189,27 +189,39 @@ const USDC_PERMIT_ABI = [
   ], outputs: [{ type: 'bool' }] },
 ] as const;
 
-export interface SweepResult { ok: boolean; txHash?: Hex; error?: string }
+export interface SweepResult { ok: boolean; txHash?: Hex; sweptValue?: bigint; error?: string }
 
 /**
- * Sweep `value` USDC from the NY buyer's Optimism wallet into the relayer, using
- * the same gasless-permit mechanism the normal Base mint uses (the buyer signs
- * an EIP-2612 permit; the relayer submits permit + transferFrom, paying OP gas).
+ * Sweep the NY buyer's USDC from Optimism into the relayer, using the same
+ * gasless-permit mechanism the normal Base mint uses (the buyer signs an EIP-2612
+ * permit; the relayer submits permit + transferFrom, paying OP gas).
+ *
+ * `permitValue` is what the buyer's signature authorizes (their whole balance at
+ * sign time). We sweep the buyer's ACTUAL on-chain balance capped at `permitValue`
+ * — so we bridge everything they have (never a hair less than the pass price after
+ * the CCTP fee), but can never pull more than they signed for. Returns the amount
+ * actually swept so the caller bridges exactly that.
+ *
  * `signature` '0x' means the allowance was already set on-chain (smart-account
  * approve path), so we skip the permit. Recoverable by design: if transferFrom
  * fails the USDC simply stays in the buyer's own wallet.
  */
 export async function sweepUsdcFromUserOnOptimism(opts: {
-  user: Address; value: bigint; deadline: bigint; signature: Hex;
+  user: Address; permitValue: bigint; deadline: bigint; signature: Hex;
 }): Promise<SweepResult> {
   const relayer = getAdminWalletAddress();
   if (!relayer) return { ok: false, error: 'relayer wallet not configured' };
   try {
     const { publicClient: opPub, walletClient: opWallet } = opClients();
 
+    // Sweep the buyer's actual balance, capped at what the permit authorizes.
+    const balance = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'balanceOf', args: [opts.user] })) as bigint;
+    const sweepValue = balance < opts.permitValue ? balance : opts.permitValue;
+    if (sweepValue <= 0n) return { ok: false, error: 'no USDC to sweep on Optimism' };
+
     // 1. Submit the permit (unless the allowance is already in place via approve).
     const existing = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'allowance', args: [opts.user, relayer] })) as bigint;
-    if (existing < opts.value) {
+    if (existing < sweepValue) {
       if (!opts.signature || opts.signature === '0x') {
         return { ok: false, error: 'no permit signature and insufficient allowance' };
       }
@@ -220,7 +232,7 @@ export async function sweepUsdcFromUserOnOptimism(opts: {
       if (v < 27) v += 27;
       const permitHash = await opWallet.sendTransaction({
         to: USDC_OPTIMISM,
-        data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'permit', args: [opts.user, relayer, opts.value, opts.deadline, v, r, s] }),
+        data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'permit', args: [opts.user, relayer, opts.permitValue, opts.deadline, v, r, s] }),
         maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
       });
       await opPub.waitForTransactionReceipt({ hash: permitHash, timeout: RECEIPT_TIMEOUT_MS });
@@ -229,12 +241,12 @@ export async function sweepUsdcFromUserOnOptimism(opts: {
     // 2. Pull the USDC into the relayer.
     const pullHash = await opWallet.sendTransaction({
       to: USDC_OPTIMISM,
-      data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'transferFrom', args: [opts.user, relayer, opts.value] }),
+      data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'transferFrom', args: [opts.user, relayer, sweepValue] }),
       maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
     });
     await opPub.waitForTransactionReceipt({ hash: pullHash, timeout: RECEIPT_TIMEOUT_MS });
-    logger.info('nyBridge.swept', { user: opts.user, value: opts.value.toString(), pullHash });
-    return { ok: true, txHash: pullHash };
+    logger.info('nyBridge.swept', { user: opts.user, sweptValue: sweepValue.toString(), pullHash });
+    return { ok: true, txHash: pullHash, sweptValue: sweepValue };
   } catch (err) {
     logger.error('nyBridge.sweep_failed', { user: opts.user, err: err instanceof Error ? err.message : String(err) });
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

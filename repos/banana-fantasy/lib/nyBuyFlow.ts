@@ -2,6 +2,7 @@ import type { Address, Hex } from 'viem';
 import {
   waitForUsdcOnOptimism,
   getOptimismUsdcNonce,
+  getOptimismUsdcBalance,
   buildOptimismUsdcPermitTypedData,
 } from '@/lib/onchain/nyOptimismClient';
 import { CHAIN_ID_OPTIMISM } from '@/lib/onchain/cctp';
@@ -22,8 +23,11 @@ import { CHAIN_ID_OPTIMISM } from '@/lib/onchain/cctp';
 export interface NyBridgeDeps {
   user: Address;
   quantity: number;
-  /** The USDC amount (6-dec) the permit authorizes — the pass cost. */
-  permitValue: bigint;
+  /** The pass cost (6-dec USDC) — the MINIMUM that must land on Optimism before
+   *  we sweep. We then sweep the buyer's WHOLE balance (not just this), so the
+   *  CCTP bridge fee can't leave them a hair under the pass price on Base, and any
+   *  prior leftover rides along too. */
+  passCost: bigint;
   /** Privy embedded silent signer (from useSignTypedData). */
   signTypedData: (typedData: unknown, opts?: { uiOptions?: { showWalletUIs?: boolean }; address?: string }) => Promise<{ signature: string }>;
   /** Connected wallets (from useWallets) — to pick the signing path. */
@@ -36,15 +40,22 @@ export interface NyBridgeDeps {
 const PERMIT_DEADLINE_SECONDS = 10 * 60;
 
 export async function runNyOptimismBridge(deps: NyBridgeDeps): Promise<void> {
-  const { user, quantity, permitValue, signTypedData, wallets, getAccessToken, isCancelled, onStatus } = deps;
+  const { user, quantity, passCost, signTypedData, wallets, getAccessToken, isCancelled, onStatus } = deps;
 
-  // 1. Wait for the card purchase to settle USDC on Optimism.
+  // 1. Wait for AT LEAST the pass cost to settle on Optimism.
   onStatus?.('waiting-optimism');
-  const arrived = await waitForUsdcOnOptimism(user, permitValue, { isCancelled });
+  const arrived = await waitForUsdcOnOptimism(user, passCost, { isCancelled });
   if (isCancelled?.()) throw new Error('cancelled');
   if (!arrived) throw new Error('USDC not yet received. Please try again in a few minutes.');
 
-  // 2. Fetch the relayer (spender) + build the OP permit.
+  // 2. Read the buyer's ACTUAL Optimism balance — we sweep + bridge ALL of it, so
+  //    the CCTP fee can't leave them a hair under the pass price on Base, and any
+  //    leftover from a prior attempt rides along. The permit authorizes this exact
+  //    amount (spender = relayer), so we can never pull more than they signed for.
+  const sweepValue = await getOptimismUsdcBalance(user);
+  if (sweepValue < passCost) throw new Error('USDC not yet received. Please try again in a few minutes.');
+
+  // 3. Fetch the relayer (spender) + build the OP permit for the full balance.
   onStatus?.('signing');
   const relayerRes = await fetch('/api/purchases/admin-wallet').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const relayer = relayerRes?.address as Address | undefined;
@@ -52,7 +63,7 @@ export async function runNyOptimismBridge(deps: NyBridgeDeps): Promise<void> {
 
   const nonce = await getOptimismUsdcNonce(user);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_SECONDS);
-  const typedData = buildOptimismUsdcPermitTypedData({ owner: user, spender: relayer, value: permitValue, nonce, deadline });
+  const typedData = buildOptimismUsdcPermitTypedData({ owner: user, spender: relayer, value: sweepValue, nonce, deadline });
 
   // 3. Sign — embedded silent, external via provider (switch it to Optimism).
   const wallet = wallets.find((w) => w.address?.toLowerCase() === user.toLowerCase()) ?? wallets[0];
@@ -75,7 +86,7 @@ export async function runNyOptimismBridge(deps: NyBridgeDeps): Promise<void> {
   const res = await fetch('/api/purchases/ny-bridge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ quantity, deadline: Number(deadline), signature }),
+    body: JSON.stringify({ quantity, permitValue: sweepValue.toString(), deadline: Number(deadline), signature }),
   });
   const data = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string; paymentSucceeded?: boolean };
   if (!res.ok || !data.success) {

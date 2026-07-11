@@ -52,42 +52,54 @@ export async function POST(req: Request) {
     };
     if (!isNyBuyer(nySource)) return jsonError('Not a NY buyer', 403);
 
-    // Inputs. `signature` is the OP-domain USDC permit (spender = relayer).
+    // Inputs. `signature` is the OP-domain USDC permit (spender = relayer);
+    // `permitValue` is what it authorizes = the buyer's whole OP balance at sign
+    // time. We sweep their actual balance capped at that, and bridge ALL of it.
     const body = await parseBody(req);
     const quantity = Number(body.quantity);
     const deadline = BigInt(Number(body.deadline) || 0);
+    const permitValue = BigInt((typeof body.permitValue === 'string' ? body.permitValue : '0') || 0);
     const signature = (typeof body.signature === 'string' ? body.signature : '0x') as Hex;
     if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 100) {
       return jsonError('Invalid quantity', 400);
     }
 
-    // Server computes the amount from the on-chain price × qty — the client can't
-    // under/over-state it (the OP permit the user signed is for this same value).
+    // The pass cost (on-chain price × qty) is the FLOOR the swept amount must clear
+    // so the buyer's Base wallet can cover the mint after the tiny CCTP bridge fee.
     const basePub = createPublicClient({ chain: base, transport: http(BASE_MAINNET_RPC_URL) });
     const price = (await basePub.readContract({ address: BBB4_CONTRACT_ADDRESS, abi: BBB4_ABI, functionName: 'TOKEN_PRICE_USDC' })) as bigint;
-    const value = price * BigInt(quantity);
+    const passCost = price * BigInt(quantity);
+    if (permitValue < passCost) return jsonError('Permit below pass cost', 400);
 
-    // 1. Sweep the buyer's OP USDC into the relayer.
-    const sweep = await sweepUsdcFromUserOnOptimism({ user, value, deadline, signature });
-    if (!sweep.ok) {
-      logger.warn('ny-bridge.sweep_failed', { user, value: value.toString(), err: sweep.error });
+    // 1. Sweep the buyer's OP USDC into the relayer (their whole balance ≤ permit).
+    const sweep = await sweepUsdcFromUserOnOptimism({ user, permitValue, deadline, signature });
+    if (!sweep.ok || sweep.sweptValue == null) {
+      logger.warn('ny-bridge.sweep_failed', { user, permitValue: permitValue.toString(), err: sweep.error });
       // Nothing moved (or it's still in the buyer's wallet) — safe to just retry.
       return jsonError(`Could not collect payment on Optimism: ${sweep.error ?? 'unknown'}`, 402);
     }
+    const swept = sweep.sweptValue;
+    if (swept < passCost) {
+      // Swept less than the pass costs — can't cover the mint. The USDC is safe in
+      // our relayer; bridge it back to the buyer so it's not stuck on OP.
+      logger.error('ny-bridge.swept_below_cost', { user, swept: swept.toString(), passCost: passCost.toString() });
+      await bridgeRelayerUsdcOpToBase(swept, user);
+      return jsonError('Payment received but a bit short — your USDC is on its way to your wallet; please try the purchase again.', 402, { paymentSucceeded: true });
+    }
 
-    // 2. Bridge relayer USDC → buyer's OWN Base wallet.
-    const bridge = await bridgeRelayerUsdcOpToBase(value, user);
+    // 2. Bridge ALL of the swept USDC → buyer's OWN Base wallet.
+    const bridge = await bridgeRelayerUsdcOpToBase(swept, user);
     if (!bridge.ok) {
       // Payment collected but not yet on Base — the USDC is safe in our relayer,
       // recoverable (retry the bridge / manual). Tell the client it's pending so
       // it shows a reassuring "processing" state, never a scary failure.
-      logger.error('ny-bridge.bridge_failed_after_sweep', { user, value: value.toString(), sweepTx: sweep.txHash, err: bridge.error });
+      logger.error('ny-bridge.bridge_failed_after_sweep', { user, swept: swept.toString(), sweepTx: sweep.txHash, err: bridge.error });
       return jsonError('Payment received — finalizing. Your draft pass is on its way; you will not be charged again.', 500, { paymentSucceeded: true });
     }
 
-    logger.info('ny-bridge.ok', { user, quantity, value: value.toString(), sweepTx: sweep.txHash, burnTx: bridge.burnTxHash, mintTx: bridge.mintTxHash });
+    logger.info('ny-bridge.ok', { user, quantity, swept: swept.toString(), passCost: passCost.toString(), sweepTx: sweep.txHash, burnTx: bridge.burnTxHash, mintTx: bridge.mintTxHash });
     // USDC is now on the buyer's Base wallet → client runs the existing mint().
-    return json({ success: true, onBase: true, value: value.toString(), txHashes: { sweep: sweep.txHash, bridgeBurn: bridge.burnTxHash, bridgeMint: bridge.mintTxHash } });
+    return json({ success: true, onBase: true, value: swept.toString(), txHashes: { sweep: sweep.txHash, bridgeBurn: bridge.burnTxHash, bridgeMint: bridge.mintTxHash } });
   } catch (err) {
     logger.error('ny-bridge.unhandled', { err: err instanceof Error ? err.message : String(err) });
     return jsonError('Internal Server Error', 500);
