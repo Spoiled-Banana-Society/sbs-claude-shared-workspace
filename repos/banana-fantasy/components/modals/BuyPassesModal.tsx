@@ -560,7 +560,13 @@ export function BuyPassesModal({
       // we fund on Optimism and bridge to Base (the isNy pre-step below). Decided
       // server-side; returns ny:false unless the buyer is NY AND the flag is on,
       // so this is a no-op for everyone else (they stay on the exact Base flow).
-      const nyStatus = await fetch('/api/user/ny-status').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      // Must send the Bearer token — the route resolves the buyer server-side via
+      // getPrivyUser (Authorization header only, no cookie fallback), so an
+      // unauthenticated fetch always returns ny:false and the NY branch never fires.
+      const nyToken = await getAccessToken();
+      const nyStatus = await fetch('/api/user/ny-status', {
+        headers: nyToken ? { Authorization: `Bearer ${nyToken}` } : {},
+      }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
       const isNy = !!nyStatus?.ny;
       clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount, ny: isNy });
       const result = await fundWallet({
