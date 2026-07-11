@@ -143,7 +143,6 @@ function DraftRoomContent() {
     playCountdownTick,
     playWinSound,
     playYourTurnSound,
-    playNewPickSound,
     resumeAudio,
     primeAudio,
     cleanup: cleanupAudio,
@@ -1554,16 +1553,6 @@ function DraftRoomContent() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, isMuted, phase, engine.draftStatus, engine.isUserTurn, engine.currentPickNumber]);
-
-  useEffect(() => {
-    if (!isLiveMode || isMuted || phase !== 'drafting') return;
-    if (!engine.mostRecentPick) return;
-    // Only play sound for YOUR picks, not everyone else's
-    if (engine.mostRecentPick.ownerName.toLowerCase() === walletParam.toLowerCase()) {
-      playNewPickSound();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.mostRecentPick?.pickNumber]);
 
   const rankingsRefreshBucket = engine.mostRecentPick
     ? Math.floor(engine.mostRecentPick.pickNumber / 5)
