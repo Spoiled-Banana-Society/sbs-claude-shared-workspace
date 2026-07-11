@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
 import { useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
 import { optimism } from 'viem/chains';
+import { USDC_OPTIMISM } from '@/lib/onchain/cctp';
 import { runNyOptimismBridge } from '@/lib/nyBuyFlow';
 import { Modal } from '../ui/Modal';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
@@ -574,7 +575,10 @@ export function BuyPassesModal({
         options: {
           chain: isNy ? optimism : BASE_SEPOLIA,
           amount: fundingAmount,
-          asset: 'USDC',
+          // Base: the 'USDC' shortcut resolves fine. Optimism: Privy's 'USDC'
+          // shortcut does NOT map (it falls back to native ETH), so name the
+          // exact USDC-on-Optimism token address to force MoonPay's USDC_OPTIMISM.
+          asset: isNy ? { erc20: USDC_OPTIMISM } : 'USDC',
           defaultFundingMethod: 'card',
           card: {
             preferredProvider: 'moonpay',
