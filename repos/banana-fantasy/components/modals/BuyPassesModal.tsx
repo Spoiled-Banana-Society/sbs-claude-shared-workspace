@@ -578,12 +578,14 @@ export function BuyPassesModal({
         // correctly encodes USDC-on-Optimism (legacy fundWallet falls back to
         // native ETH). USDC lands on Optimism; the bridge pre-step below moves it
         // to the buyer's own Base wallet, then the normal Base wait + mint run.
-        // useFiatOnramp charges a FIAT amount, and MoonPay's fee (~18% on a small
-        // buy) comes OUT of it — so $25 delivers only ~20.5 USDC. Gross the fiat up
-        // so the buyer RECEIVES at least the pass cost in USDC (the Base flow hits
-        // the same fee, just added on top → ~$29.59 for 25 USDC). Flat $5.5 covers
-        // MoonPay's ~$4 minimum fee; the 3% covers the percentage on larger orders.
-        const nyFiatAmount = String(Math.ceil(Number(fundingAmount) * 1.03 + 5.5));
+        // useFiatOnramp charges a FIAT amount and MoonPay's fee comes OUT of it, so
+        // we gross the fiat up so the buyer RECEIVES the pass cost in USDC. Base
+        // buyers hit the SAME fee, just added on top (25 USDC → ~$29.59), so adding
+        // it here makes the displayed total match Base. MoonPay's fee on small buys
+        // is ~flat $4.6 (its ~$4 minimum dominates); on large buys ~4.5%. So:
+        //   1 pass  → 25 + 4.6  ≈ $29.60  (matches Base's ~$29.59)
+        //   4 passes→ 100 + 4.6 ≈ $104.60
+        const nyFiatAmount = (Number(fundingAmount) + Math.max(4.6, Number(fundingAmount) * 0.045)).toFixed(2);
         try {
           const fr = await fundFiatOnramp({
             source: { assets: ['usd'], defaultAsset: 'usd' },
