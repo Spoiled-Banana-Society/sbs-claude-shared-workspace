@@ -373,6 +373,11 @@ export function DraftPlayerList({
                 >
                   <span
                     style={{
+                      // block + own line-height: inline text here baseline-aligns
+                      // against the div's 16px strut, which reads as extra space
+                      // above the label ("uneven vertical spacing" report 7/11)
+                      display: 'block',
+                      lineHeight: 1,
                       fontSize: 10,
                       fontWeight: 700,
                       letterSpacing: '0.14em',
