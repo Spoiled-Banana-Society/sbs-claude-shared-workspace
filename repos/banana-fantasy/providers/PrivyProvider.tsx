@@ -1,7 +1,7 @@
 'use client';
 
 import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase, useCreateWallet as useCreateWalletBase, useWallets as useWalletsBase } from '@privy-io/react-auth';
-import { base } from 'viem/chains';
+import { base, optimism } from 'viem/chains';
 import React, { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 
 const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -104,7 +104,10 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
           appId={appId}
           config={{
             defaultChain: base,
-            supportedChains: [base],
+            // Optimism is added ONLY so the NY on-ramp can fund USDC there (NY
+            // buyers can't get USDC-on-Base via MoonPay). defaultChain stays base,
+            // so non-NY users are completely unaffected — they never touch OP.
+            supportedChains: [base, optimism],
             appearance: {
               theme: 'dark',
               accentColor: '#f59e0b',
