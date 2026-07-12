@@ -1038,3 +1038,20 @@ Support checklist for future "auto-draft ignored my queue" reports: 1) `userPosi
 UX follow-up idea (unbuilt): badge queued players that exceed the user's own limits so settings conflicts are visible.
 
 — Richard's Claude
+
+## 2026-07-12 — House bots REBUILT + re-enabled (your 7/3 revert honored — the bug is fixed at the root)
+
+You reverted the bot system on 7/3 after 2026-fast-draft-56 froze (dup seat) — right call, and I found exactly why it happened: the old `AddBotsToLeague` reimplemented the join inline with NO duplicate-owner check and a non-atomic pass stamp. Same bot, two seats, frozen draft.
+
+Richard asked for it back. What shipped today (Go rev **00176-v2g**, live + traffic verified):
+
+1. **`models/leagues.go`** — extracted the seat transaction (`seatTokenInLeagueTx`) and post-join bookkeeping (`finalizeSeatedJoin`) out of `AddCardToLeague` verbatim (sentinel errors instead of the "try the next leagueId" string; walk-forward behavior byte-equivalent — real joins unchanged). New `AddCardToSpecificLeague(token, leagueId)` = the same transaction pinned to one league: dup-owner rejection, atomic seat+pass claim, JP/HOF block, league-full rejection, fill trigger + rollback, speed derived from the league doc (falls back to the id), never creates leagues.
+2. **`staging/staging.go`** — `AddBotsToLeague` now just finds the bot's free pass and calls `AddCardToSpecificLeague`. And it's **no longer open**: requires `x-bot-secret` == `BOT_ADMIN_SECRET` (fail closed; env var now set on the Cloud Run service, same value as the Vercel one you created). Anonymous POST → 401 (verified live).
+3. **Frontend** (deployed, commit on sbs-frontend-v2 `baed34e6`): bots are now REUSABLE across different drafts — one pass per draft, engine rejects a second seat in the same draft. `+ Bot` reuses a pool bot (mints it a fresh pass if it's out), `+ New` makes a fresh wallet; picking/minting logic all server-side in `/api/admin/bots/fill` (409-retry dance gone); `mint` gains `toWallet` top-up; shared core in `lib/botMint.ts`.
+4. **`onBotTurn` redeployed** (you'd deleted it) + `system_config/botBrain.enabled=true` (your disable note kept in the doc for history).
+
+**What I need from you (mechanical but important):** pull `repos/sbs-drafts-api-deploy/` from this workspace into your `~/sbs-drafts-api-deploy` before your next Go deploy — otherwise your next deploy silently reverts 00176 (reintroducing the dup-seat join AND re-opening the unauthenticated endpoint). The workspace copy is synced to the deployed 00176 source exactly (I based it on the actual 00175 build zip from Cloud Build, so your 7/3 roundId hardening and Richard's queue fixes are all in). Note your workspace copy had drifted — it was missing the deployed last-second-queue recompute in `draft-actions.go`; fixed in this sync.
+
+**Still open, flagged to Richard and he's accepted the risk for now:** no prize exclusion (a bot CAN top standings; a bot-filled draft CAN land a VRF Jackpot/HOF slot), bot picks feed the ADP recompute, and he's declined a private test draft — first live use will be watched in real time instead. The `botWallets` registry you wiped also left ~a few 7/3 bot wallets orphaned on-chain (unknown addresses, each holding a free pass); if you kept an export, drop it in the workspace.
+
+— Richard's Claude

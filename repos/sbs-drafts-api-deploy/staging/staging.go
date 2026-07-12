@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,6 +122,18 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 
 	if len(req.Wallets) < 1 || len(req.Wallets) > 10 {
 		http.Error(w, fmt.Sprintf("Expected 1-10 wallets, got %d", len(req.Wallets)), http.StatusBadRequest)
+		return
+	}
+
+	// HARDENING (2026-07-03): roundId is REQUIRED. The legacy nil-roundId
+	// counter path let a zombie caller (the since-deleted onQueueUpdate
+	// Cloud Function) mint a fresh league on every queue write — 4 orphan
+	// JP/HOF lobbies + a queue/marker split-brain. Every legitimate caller
+	// (lib/specialDraft.ts ensureSpecialDraftSeat) has passed roundId since
+	// 2026-06-28, so nil here can only be a stale/unknown client: reject
+	// loudly instead of silently spawning a duplicate league.
+	if req.RoundId == nil {
+		http.Error(w, "roundId is required (legacy no-roundId creation removed 2026-07-03 — it produced duplicate special-draft leagues)", http.StatusBadRequest)
 		return
 	}
 
@@ -757,15 +770,27 @@ type AddBotsToLeagueRequest struct {
 	OwnerIds []string `json:"ownerIds"`
 }
 
-// AddBotsToLeague joins pre-created house "bot" wallets — each already holding a
-// minted FREE draft pass — to a SPECIFIC league. It reuses the EXACT join +
-// fill-trigger from FillBots' leagueId branch, but sources the bots from the
-// provided pool instead of minting throwaway paid bots inline. This is what lets
-// a bot's real on-chain free pass reveal into a real team after the draft.
+// AddBotsToLeague joins house "bot" wallets — each holding a minted FREE draft
+// pass — to a SPECIFIC league.
 //
-// Purely additive + staging-only: it never touches an existing endpoint, only
-// the one target league passed in, and only bots that hold an unused free pass.
+// REBUILT 2026-07-12 after the 7/3 incident: the original version reimplemented
+// the join inline WITHOUT the duplicate-owner check or the atomic pass claim,
+// which let one bot take two seats in 2026-fast-draft-56 and froze the draft.
+// It now delegates to models.AddCardToSpecificLeague, which runs the SAME seat
+// transaction + fill trigger as every real player join: duplicate-owner
+// rejection (a bot can join any number of DIFFERENT drafts, never the same one
+// twice), atomic seat+pass commit, special-draft block, league-full rejection,
+// speed derived from the league itself, and the same RTDB/fill bookkeeping.
+//
+// Auth: requires header `x-bot-secret` == env BOT_ADMIN_SECRET. Fails closed —
+// this endpoint mutates real league membership and must not sit open.
 func (sr *StagingResources) AddBotsToLeague(w http.ResponseWriter, r *http.Request) {
+	secret := os.Getenv("BOT_ADMIN_SECRET")
+	if secret == "" || r.Header.Get("x-bot-secret") != secret {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req AddBotsToLeagueRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -779,11 +804,11 @@ func (sr *StagingResources) AddBotsToLeague(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "ownerIds is required", http.StatusBadRequest)
 		return
 	}
-	speed := req.Speed
-	if speed == "" {
-		speed = "fast"
-	}
+	// req.Speed is accepted for backward compatibility but IGNORED — the join
+	// derives fast/slow from the league doc so a mislabeled admin click can
+	// never create a draft state with the wrong clock.
 
+	joined := 0
 	results := make([]map[string]interface{}, 0)
 	for _, ownerId := range req.OwnerIds {
 		// Locate this bot's available FREE pass (one not already in a league).
@@ -805,64 +830,29 @@ func (sr *StagingResources) AddBotsToLeague(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
-		// Join transaction — identical to FillBots' leagueId branch.
-		leagueRef := utils.Db.Client.Collection("drafts").Doc(req.LeagueId)
-		txErr := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
-			doc, err := tx.Get(leagueRef)
-			if err != nil {
-				return err
-			}
-			var league models.League
-			if err := doc.DataTo(&league); err != nil {
-				return err
-			}
-			if league.NumPlayers >= 10 {
-				return fmt.Errorf("league is full")
-			}
-			league.CurrentUsers = append(league.CurrentUsers, models.LeagueUser{
-				OwnerId: ownerId,
-				TokenId: token.CardId,
-			})
-			league.NumPlayers++
-			return tx.Set(leagueRef, &league)
-		})
-		if txErr != nil {
-			results = append(results, map[string]interface{}{"ownerId": ownerId, "error": fmt.Sprintf("join failed: %s", txErr.Error())})
+		// The real join, pinned to this league. All rejections (already in
+		// this draft, league full, special draft, pass already used) come
+		// back as clear per-bot errors instead of corrupting the league.
+		league, err := models.AddCardToSpecificLeague(token, req.LeagueId)
+		if err != nil {
+			results = append(results, map[string]interface{}{"ownerId": ownerId, "error": err.Error()})
 			continue
 		}
 
-		// Move the token valid -> used, stamped to this league.
-		token.LeagueId = req.LeagueId
-		token.DraftType = speed
-		if err := token.UpdateInUseDraftTokenInDatabase(req.LeagueId); err != nil {
-			fmt.Printf("[add-bots-to-league] token in-use update failed for %s: %s\n", ownerId, err.Error())
-		}
-
-		// Fill-trigger — identical to FillBots.
-		var checkLeague models.League
-		utils.Db.ReadDocument("drafts", req.LeagueId, &checkLeague)
-		if checkLeague.NumPlayers == 10 {
-			fmt.Printf("[add-bots-to-league] League %s reached 10 players, creating draft state\n", req.LeagueId)
-			if err := models.CreateLeagueDraftStateUponFilling(req.LeagueId, speed); err != nil {
-				fmt.Printf("[add-bots-to-league] ERROR creating draft state for %s: %s\n", req.LeagueId, err.Error())
-			}
-		} else {
-			ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", req.LeagueId))
-			ref.Set(context.TODO(), map[string]interface{}{"numPlayers": checkLeague.NumPlayers})
-		}
-
-		fmt.Printf("[add-bots-to-league] bot %s joined league %s with token %s\n", ownerId, req.LeagueId, token.CardId)
+		fmt.Printf("[add-bots-to-league] bot %s joined league %s with token %s (%d/10)\n", ownerId, req.LeagueId, token.CardId, league.NumPlayers)
+		joined++
 		results = append(results, map[string]interface{}{
-			"ownerId":  ownerId,
-			"tokenId":  token.CardId,
-			"leagueId": req.LeagueId,
-			"joined":   true,
+			"ownerId":    ownerId,
+			"tokenId":    token.CardId,
+			"leagueId":   req.LeagueId,
+			"numPlayers": league.NumPlayers,
+			"joined":     true,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"botsAdded": len(results),
+		"botsAdded": joined,
 		"results":   results,
 	})
 }

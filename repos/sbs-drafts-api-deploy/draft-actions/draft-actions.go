@@ -224,6 +224,17 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 		}
 		realTimeDraftInfo = latest
 
+		// Re-decide the pick off FRESH state. calculatedPick (above) was computed
+		// when the Cloud Task fired — ~2s before PickEndTime (scheduleAutoDraftTask:
+		// scheduleTime = pickEndTime - 2) — so a player QUEUED in the final ~2s was
+		// ignored and the user got the default/ADP pick instead. We already re-fetched
+		// post-wait for the double-count guard above; recompute here so a last-second
+		// queue change is honored. CalculateAutoPickForUser is read-only; on any error
+		// we keep the original calculatedPick (unchanged behavior).
+		if freshPick, ferr := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo); ferr == nil && freshPick != nil && freshPick.PlayerId != "" {
+			calculatedPick = freshPick
+		}
+
 		// LAYER B: per-pick idempotency key. Re-fetch the sort doc so we see any
 		// increment a sibling run already persisted, then count this miss only
 		// ONCE per pick number. Even if two runs wake at the same instant and both

@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -427,73 +428,111 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(l.LeagueId)
 		fmt.Println(leagueRef)
-		err = utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
-			doc, err := tx.Get(leagueRef) // tx.Get, NOT ref.Get!
-			if err != nil {
-				return err
-			}
-
-			var league League
-			err = doc.DataTo(&league)
-			if err != nil {
-				return err
-			}
-			fmt.Println("league inside of tx: ", league)
-
-			// Belt-and-suspenders: a regular join must never land in a wheel-won
-			// special (JP/HOF). Roll to the next slot — the loop continues on this
-			// error string (Richard, 2026-06-18).
-			if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
-				return fmt.Errorf("try the next leagueId")
-			}
-			if league.NumPlayers == 10 {
-				fmt.Printf("%s is now locked so we are returning an error string to trigger the for loop to continue\r", league.LeagueId)
-				return fmt.Errorf("try the next leagueId")
-			}
-			isValid := true
-			for j := 0; j < len(league.CurrentUsers); j++ {
-				if league.CurrentUsers[j].OwnerId == token.OwnerId {
-					isValid = false
-				}
-			}
-			if !isValid {
-				fmt.Printf("%s is already in %s so we are continuing", token.OwnerId, league.LeagueId)
-				return fmt.Errorf("try the next leagueId")
-			}
-
-			// Atomic pass-claim: confirm the pass is still in the owner's
-			// spendable pool, then seat the user AND consume the pass in the
-			// SAME commit. If a concurrent join already took it, this read is
-			// NotFound -> abort with a DISTINCT error ("pass already used", not
-			// "try the next leagueId") so the join stops instead of re-trying
-			// another league with a pass that's already gone. (All reads in a
-			// Firestore tx must precede all writes — this read is still before
-			// the tx.Set/tx.Delete below, so the ordering is valid.)
-			if _, terr := tx.Get(validTokenRef); terr != nil {
-				if strings.Contains(terr.Error(), "code = NotFound") {
-					return fmt.Errorf("pass already used")
-				}
-				return terr
-			}
-
-			league.CurrentUsers = append(league.CurrentUsers, LeagueUser{OwnerId: token.OwnerId, TokenId: token.CardId})
-			league.NumPlayers++
-			l = league
-			if err := tx.Set(leagueRef, &league); err != nil {
-				return err
-			}
-			return tx.Delete(validTokenRef)
-		})
+		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token)
 		if err != nil {
-			if err.Error() != "try the next leagueId" {
-				return -1, err
+			// Same walk-forward behavior as always: a special, full, or
+			// already-joined league advances to the next league number.
+			// Anything else — including a pass consumed by a concurrent
+			// join — aborts, so we never retry another league with a pass
+			// that's already gone.
+			if errors.Is(err, errLeagueSpecial) || errors.Is(err, errLeagueFull) || errors.Is(err, errAlreadyInLeague) {
+				currentDraftNum++
+				continue
 			}
-		} else {
-			break
+			return -1, err
 		}
-		currentDraftNum++
+		l = seated
+		break
 	}
 
+	if err := finalizeSeatedJoin(token, l, draftId, draftType); err != nil {
+		return -1, err
+	}
+
+	return currentDraftNum, nil
+}
+
+// Sentinel errors from seatTokenInLeagueTx. AddCardToLeague treats the first
+// three as "advance to the next league number" (the walk-forward join);
+// AddCardToSpecificLeague (house bots, pinned to one league) surfaces them to
+// the caller as-is. errPassAlreadyUsed always aborts in both — the pass is
+// gone, and retrying would double-spend.
+var (
+	errLeagueSpecial   = errors.New("this is a special draft — seats are reserved for the wheel winner")
+	errLeagueFull      = errors.New("league is full")
+	errAlreadyInLeague = errors.New("this owner is already in this league")
+	errPassAlreadyUsed = errors.New("pass already used")
+)
+
+// seatTokenInLeagueTx atomically seats token.OwnerId in the league at
+// leagueRef and consumes the pass at validTokenRef. The special-draft block,
+// the 10-seat cap, the duplicate-owner check, and the pass claim all commit or
+// fail together — extracted verbatim from AddCardToLeague (2026-07-12) so the
+// house-bot pinned join runs EXACTLY the code every real join runs. Returns
+// the post-join league on success.
+func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken) (League, error) {
+	var l League
+	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(leagueRef) // tx.Get, NOT ref.Get!
+		if err != nil {
+			return err
+		}
+
+		var league League
+		err = doc.DataTo(&league)
+		if err != nil {
+			return err
+		}
+		fmt.Println("league inside of tx: ", league)
+
+		// Belt-and-suspenders: a regular join must never land in a wheel-won
+		// special (JP/HOF) — and neither may a house bot (Richard, 2026-06-18).
+		if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+			return errLeagueSpecial
+		}
+		if league.NumPlayers == 10 {
+			fmt.Printf("%s is now locked\r", league.LeagueId)
+			return errLeagueFull
+		}
+		for j := 0; j < len(league.CurrentUsers); j++ {
+			if league.CurrentUsers[j].OwnerId == token.OwnerId {
+				fmt.Printf("%s is already in %s", token.OwnerId, league.LeagueId)
+				return errAlreadyInLeague
+			}
+		}
+
+		// Atomic pass-claim: confirm the pass is still in the owner's
+		// spendable pool, then seat the user AND consume the pass in the
+		// SAME commit. If a concurrent join already took it, this read is
+		// NotFound -> abort with a DISTINCT error ("pass already used", not
+		// a walk-forward sentinel) so the join stops instead of re-trying
+		// another league with a pass that's already gone. (All reads in a
+		// Firestore tx must precede all writes — this read is still before
+		// the tx.Set/tx.Delete below, so the ordering is valid.)
+		if _, terr := tx.Get(validTokenRef); terr != nil {
+			if strings.Contains(terr.Error(), "code = NotFound") {
+				return errPassAlreadyUsed
+			}
+			return terr
+		}
+
+		league.CurrentUsers = append(league.CurrentUsers, LeagueUser{OwnerId: token.OwnerId, TokenId: token.CardId})
+		league.NumPlayers++
+		l = league
+		if err := tx.Set(leagueRef, &league); err != nil {
+			return err
+		}
+		return tx.Delete(validTokenRef)
+	})
+	return l, err
+}
+
+// finalizeSeatedJoin runs the post-transaction bookkeeping for a token that
+// seatTokenInLeagueTx just seated: token stamping, RTDB count pings, and the
+// fill trigger. Extracted verbatim from AddCardToLeague (2026-07-12) and
+// shared with AddCardToSpecificLeague so bot fills and real fills start drafts
+// through one code path. l must be the post-join league returned by the tx.
+func finalizeSeatedJoin(token *DraftToken, l League, draftId string, draftType string) error {
 	token.LeagueId = l.LeagueId
 	token.DraftType = draftType
 	token.LeagueDisplayName = l.DisplayName
@@ -517,7 +556,7 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 	// metadata). If this best-effort write fails, the pass is still correctly
 	// consumed + seated, so it can never be re-used; the copies reconcile.
 	if err := token.updateInUseDraftTokenInDatabase(draftId); err != nil {
-		return -1, err
+		return err
 	}
 
 	if l.NumPlayers == 10 {
@@ -551,7 +590,7 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 			fmt.Println("error creating draft state upon league filling: ", err)
 			RemoveUserFromDraftWithRTBUpdate(token.CardId, token.OwnerId, l.LeagueId, false)
 			fmt.Printf("Removed user from draft after it failed to complete the draft state for %v with error: %v", token, err)
-			return -1, err
+			return err
 		}
 	}
 
@@ -561,7 +600,49 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 	// added (incremented inside the transaction above).
 	token.NumPlayers = l.NumPlayers
 
-	return currentDraftNum, nil
+	return nil
+}
+
+// AddCardToSpecificLeague seats token in EXACTLY the league the caller names —
+// the house-bot admin fill (2026-07-12 rebuild of the endpoint that froze
+// 2026-fast-draft-56 on 7/3). It runs the SAME seat transaction and the SAME
+// post-join bookkeeping as AddCardToLeague — duplicate-owner rejection, atomic
+// pass claim, special-draft block, fill trigger — with the walk-forward loop
+// removed: it never creates a league and never rolls to a different one. Draft
+// speed comes from the league itself, never from the caller, so a mislabeled
+// admin click can't create a draft state with the wrong clock. A bot joining
+// several DIFFERENT drafts is the multi-pass-human case and just works; a
+// second join into the SAME draft returns errAlreadyInLeague.
+func AddCardToSpecificLeague(token *DraftToken, leagueId string) (*League, error) {
+	var l League
+	if err := utils.Db.ReadDocument("drafts", leagueId, &l); err != nil {
+		return nil, fmt.Errorf("league not found: %s", leagueId)
+	}
+
+	draftType := strings.ToLower(l.DraftType)
+	if draftType != "fast" && draftType != "slow" {
+		// Legacy league docs may lack DraftType until fill — the id embeds it.
+		switch {
+		case strings.Contains(leagueId, "-fast-"):
+			draftType = "fast"
+		case strings.Contains(leagueId, "-slow-"):
+			draftType = "slow"
+		default:
+			return nil, fmt.Errorf("cannot determine draft speed for %s — refusing to join", leagueId)
+		}
+	}
+
+	leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
+	validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId)
+
+	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := finalizeSeatedJoin(token, seated, leagueId, draftType); err != nil {
+		return nil, err
+	}
+	return &seated, nil
 }
 
 func RemoveUserFromDraftWithRTBUpdate(tokenId, ownerId, draftId string, withRTBUpdate bool) (bool, error) {
