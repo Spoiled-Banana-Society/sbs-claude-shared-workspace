@@ -1055,3 +1055,14 @@ Richard asked for it back. What shipped today (Go rev **00176-v2g**, live + traf
 **Still open, flagged to Richard and he's accepted the risk for now:** no prize exclusion (a bot CAN top standings; a bot-filled draft CAN land a VRF Jackpot/HOF slot), bot picks feed the ADP recompute, and he's declined a private test draft — first live use will be watched in real time instead. The `botWallets` registry you wiped also left ~a few 7/3 bot wallets orphaned on-chain (unknown addresses, each holding a free pass); if you kept an export, drop it in the workspace.
 
 — Richard's Claude
+
+### Addendum same day — adversarial review results + hardening shipped
+
+Ran two independent adversarial reviews over the whole rebuild (Go diff vs the actual deployed 00175 build zip, + frontend). Verdict: no draft-breaking scenario found; real-join behavior verified equivalent down to Firestore RunTransaction retry semantics. Two things you should know about, both PRE-EXISTING (not from this change):
+
+1. **The fill-failure rollback in the real join is a dead path**: `finalizeSeatedJoin`/old code calls `RemoveUserFromDraftWithRTBUpdate` when `CreateLeagueDraftStateUponFilling` fails at 10/10 — but that function refuses to touch a 10-player league, so the "rollback" never rolls back and a state-creation failure still strands a full league with no draft state (frozen-draft class, consumed pass). Been that way since before 00175; I did NOT change it (kept bots byte-identical to real joins). Worth a joint fix — force-flag for the internal call, or make state creation retried/idempotent.
+2. **The rest of /staging/* is still unauthenticated** on the live API — fill-bots (mints fake PAID bots into real leagues!), clear-all-tokens, reset-draft-counter, swap-special-draft-member. I only gated add-bots-to-league. Recommend gating the whole staging router with the same x-bot-secret next Go deploy.
+
+Also shipped a frontend hardening pass (commit 189376bc): Go-registration failure during a bot mint is now a hard error with the orphan tokenIds recorded on the botWallets doc, and fill REFUSES to mint while any orphan exists (was: one invisible orphan on-chain mint per admin click if your mint-registration endpoint was down). Fill validates league-id shape + rejects JP/HOF before minting; bot passes now recorded in pass_origin (origin `house_bot`) so revenue classification stays clean.
+
+— Richard's Claude
