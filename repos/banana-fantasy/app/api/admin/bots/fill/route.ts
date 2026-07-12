@@ -42,6 +42,10 @@ const GO_API = (
 const MAX_FILL = 10;
 
 export async function POST(req: NextRequest) {
+  // Declared outside the try so every failure exit — including a thrown mint —
+  // can disclose which on-chain passes this call created. On-chain mints must
+  // never be invisible.
+  const minted: string[] = [];
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
@@ -51,6 +55,11 @@ export async function POST(req: NextRequest) {
     const body = await parseBody(req);
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId.trim() : '';
     if (!leagueId) return jsonError('leagueId is required', 400);
+    // Shape check BEFORE any mint: a typo'd id (or a non-league doc like
+    // draftTracker) must never cost an on-chain pass.
+    if (!/^\d{4}-(fast|slow)-draft-\d+$/.test(leagueId)) {
+      return jsonError(`"${leagueId}" is not a regular draft id (yyyy-fast/slow-draft-N) — bots only join regular drafts`, 400);
+    }
     const mode = body.mode === 'new' ? 'new' : 'existing';
     const count = body.count === undefined ? 1 : typeof body.count === 'number' ? body.count : Number(body.count);
     if (!Number.isInteger(count) || count <= 0) return jsonError('count must be a positive integer', 400);
@@ -67,7 +76,15 @@ export async function POST(req: NextRequest) {
       currentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
       NumPlayers?: number;
       numPlayers?: number;
+      Level?: string;
+      level?: string;
     };
+    // Specials are engine-blocked (errLeagueSpecial) — reject here too so the
+    // rejection is free instead of costing a minted pass first.
+    const level = league.Level ?? league.level ?? '';
+    if (level === 'Jackpot' || level === 'Hall of Fame') {
+      return jsonError(`${leagueId} is a special ${level} draft — bots are not allowed in specials`, 403);
+    }
     const seated = new Set(
       (league.CurrentUsers ?? league.currentUsers ?? [])
         .map((u) => String(u.OwnerId ?? u.ownerId ?? '').toLowerCase())
@@ -76,13 +93,21 @@ export async function POST(req: NextRequest) {
     const openSeats = 10 - (league.NumPlayers ?? league.numPlayers ?? seated.size);
     if (openSeats <= 0) return jsonError('Draft is already full', 409);
 
+    // Circuit breaker: if ANY bot holds a minted-but-unregistered pass, the Go
+    // registration path is (or was) broken. Minting more would create one new
+    // orphan pass per click — refuse until it's resolved.
+    const registry = await db.collection(BOT_COLLECTION).where('isBot', '==', true).get();
+    const orphaned = registry.docs.filter((d) => (d.data().unregisteredTokenIds ?? []).length > 0);
+    if (orphaned.length > 0) {
+      const detail = orphaned.map((d) => `${d.id.slice(0, 10)}… tokens ${(d.data().unregisteredTokenIds ?? []).join(',')}`).join('; ');
+      return jsonError(`Minting is blocked: earlier bot passes minted on-chain but never registered with the engine (${detail}). Fix registration first.`, 503);
+    }
+
     // Assemble the joiners per mode.
     const picks: string[] = [];
-    const minted: string[] = [];
     const wanted = Math.min(count, openSeats);
 
     if (mode === 'existing') {
-      const registry = await db.collection(BOT_COLLECTION).where('isBot', '==', true).get();
       const available = registry.docs.map((d) => d.id).filter((addr) => !seated.has(addr));
 
       // 1) Pool bots already holding an unused free pass.
@@ -119,24 +144,24 @@ export async function POST(req: NextRequest) {
     });
     const goBody = await res.json().catch(() => ({}));
     if (!res.ok) {
-      logger.warn('bots.fill.go_failed', { leagueId, status: res.status, body: JSON.stringify(goBody).slice(0, 200) });
-      return jsonError(`Go add-bots-to-league ${res.status}`, 502);
+      logger.warn('bots.fill.go_failed', { leagueId, status: res.status, minted, body: JSON.stringify(goBody).slice(0, 200) });
+      return jsonError(`Go add-bots-to-league ${res.status}`, 502, { minted });
     }
 
-    const results: Array<{ ownerId: string; joined?: boolean; error?: string }> = Array.isArray(goBody.results)
+    const results: Array<{ ownerId?: string; joined?: boolean; error?: string }> = Array.isArray(goBody.results)
       ? goBody.results
       : [];
     const joined = results.filter((r) => r.joined).length;
-    const errors = results.filter((r) => r.error).map((r) => `${r.ownerId.slice(0, 8)}…: ${r.error}`);
+    const errors = results.filter((r) => r.error).map((r) => `${String(r.ownerId ?? '?').slice(0, 8)}…: ${r.error}`);
     logger.info('bots.fill.done', { leagueId, mode, requested: count, joined, minted: minted.length, errors });
 
     if (joined === 0) {
-      return jsonError(`No bot joined — ${errors.join('; ') || 'engine returned no results'}`, 502);
+      return jsonError(`No bot joined — ${errors.join('; ') || 'engine returned no results'}`, 502, { minted });
     }
     return json({ success: true, leagueId, mode, joined, minted, requested: count, results }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('bots.fill.unhandled', { route: '/api/admin/bots/fill', err });
-    return jsonError((err as Error).message || 'Internal Server Error', 500);
+    logger.error('bots.fill.unhandled', { route: '/api/admin/bots/fill', err, minted });
+    return jsonError((err as Error).message || 'Internal Server Error', 500, { minted });
   }
 }

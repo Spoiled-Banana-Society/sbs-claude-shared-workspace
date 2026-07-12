@@ -3,7 +3,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 const COLLECTION = 'pass_origin';
 
-export type PassOrigin = 'spin_reward' | 'admin_grant';
+export type PassOrigin = 'spin_reward' | 'admin_grant' | 'house_bot';
 
 // A wheel-won Jackpot/HOF pass is KNOWN to be that level at mint time (the wheel
 // guaranteed it), unlike a normal pass whose level is only revealed when its

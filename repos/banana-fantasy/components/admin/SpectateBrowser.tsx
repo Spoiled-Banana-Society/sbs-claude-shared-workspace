@@ -148,10 +148,13 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   // never take two seats in one draft. The 5s poll below picks up the new
   // member on its own.
   const getAdminHeaders = useAdminAuthHeaders();
-  const [addingBotId, setAddingBotId] = useState<string | null>(null);
+  // Per-draft in-flight set (NOT a single id): clicking + Bot on two different
+  // drafts must not re-enable the first draft's buttons while its request is
+  // still running — a re-enabled button invites a duplicate concurrent fill.
+  const [addingBots, setAddingBots] = useState<ReadonlySet<string>>(new Set());
   const [botNote, setBotNote] = useState<string | null>(null);
   const addBot = async (d: ActiveDraft, mode: 'existing' | 'new' = 'existing') => {
-    setAddingBotId(d.draftId);
+    setAddingBots((prev) => new Set(prev).add(d.draftId));
     setBotNote(null);
     try {
       const headers = { ...(await getAdminHeaders()), 'Content-Type': 'application/json' };
@@ -167,7 +170,11 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     } catch (e) {
       setBotNote(`Bot add failed for ${d.displayName || d.draftId}: ${(e as Error).message}`);
     } finally {
-      setAddingBotId(null);
+      setAddingBots((prev) => {
+        const next = new Set(prev);
+        next.delete(d.draftId);
+        return next;
+      });
     }
   };
 
@@ -456,15 +463,15 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                         <>
                           <button
                             onClick={() => addBot(d, 'existing')}
-                            disabled={addingBotId === d.draftId}
+                            disabled={addingBots.has(d.draftId)}
                             title="Join an existing pool bot (gets a fresh pass if it's out — bots are reusable across different drafts)"
                             className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/40 bg-banana/10 text-banana text-xs font-semibold hover:bg-banana/20 transition disabled:opacity-50"
                           >
-                            {addingBotId === d.draftId ? 'Adding…' : '+ Bot'}
+                            {addingBots.has(d.draftId) ? 'Adding…' : '+ Bot'}
                           </button>
                           <button
                             onClick={() => addBot(d, 'new')}
-                            disabled={addingBotId === d.draftId}
+                            disabled={addingBots.has(d.draftId)}
                             title="Create a brand-new bot wallet and join it to this draft"
                             className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/25 text-banana/80 text-xs font-semibold hover:bg-banana/10 transition disabled:opacity-50"
                           >

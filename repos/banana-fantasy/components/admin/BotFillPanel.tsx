@@ -72,10 +72,10 @@ export function BotFillPanel() {
       fetch('/api/admin/bots/fill', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leagueId: leagueId.trim(), count: fillCount, speed }),
+        body: JSON.stringify({ leagueId: leagueId.trim(), count: fillCount }),
       }),
     );
-    if (body) setMsg(`Added ${body.go?.botsAdded ?? body.attempted} bot(s) to ${body.leagueId}.`);
+    if (body) setMsg(`Added ${body.joined ?? 0} bot(s) to ${body.leagueId}.`);
   };
 
   const list = async () => {

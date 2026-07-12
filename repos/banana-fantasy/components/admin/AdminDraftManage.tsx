@@ -59,7 +59,9 @@ export function AdminDraftManage({ enabled }: Props) {
   }>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
-  const [addingBotId, setAddingBotId] = useState<string | null>(null);
+  // Per-draft in-flight set — a click on draft B must not re-enable draft A's
+  // button while A's fill request is still running.
+  const [addingBots, setAddingBots] = useState<ReadonlySet<string>>(new Set());
 
   const { data, isLoading, isError, error, refetch, isFetching } = useAdminDraftsManage(
     enabled,
@@ -76,7 +78,7 @@ export function AdminDraftManage({ enabled }: Props) {
   // never take two seats in one draft. Speed is derived server-side from the
   // league itself.
   const handleAddBot = async (row: ManageDraftRow) => {
-    setAddingBotId(row.id);
+    setAddingBots((prev) => new Set(prev).add(row.id));
     setResultMessage(null);
     clientLog('admin.drafts.manage', 'addbot.start', { slotId: row.id });
     try {
@@ -96,7 +98,11 @@ export function AdminDraftManage({ enabled }: Props) {
       clientLog('admin.drafts.manage', 'addbot.error', { slotId: row.id, error: msg });
       setResultMessage(`Failed to add bot to ${row.id}: ${msg}`);
     } finally {
-      setAddingBotId(null);
+      setAddingBots((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
     }
   };
 
@@ -333,11 +339,11 @@ export function AdminDraftManage({ enabled }: Props) {
                       {row.health === 'filling' && row.numPlayers < row.maxPlayers && (
                         <button
                           onClick={() => handleAddBot(row)}
-                          disabled={addingBotId === row.id}
+                          disabled={addingBots.has(row.id)}
                           title="Join one house bot to this draft (mints one if the pool is empty)"
                           className="px-2 py-1 text-xs bg-banana/15 border border-banana/30 text-banana rounded hover:bg-banana/25 disabled:opacity-50"
                         >
-                          {addingBotId === row.id ? 'Adding…' : '+1 Bot'}
+                          {addingBots.has(row.id) ? 'Adding…' : '+1 Bot'}
                         </button>
                       )}
                       <button
