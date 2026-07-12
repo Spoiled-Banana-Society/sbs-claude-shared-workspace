@@ -3,13 +3,12 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 import { NextRequest } from 'next/server';
-import { ethers } from 'ethers';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
-import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { isAdminMintConfigured } from '@/lib/onchain/adminMint';
+import { mintBotPass, BOT_COLLECTION } from '@/lib/botMint';
 import { logger } from '@/lib/logger';
 
 /**
@@ -34,8 +33,13 @@ import { logger } from '@/lib/logger';
  *
  * Capped per call to stay inside the function budget — call again to grow the
  * pool toward the target size.
+ *
+ * 2026-07-12: bots are now REUSABLE across drafts (one pass per draft, never
+ * two seats in the same draft — the engine's join transaction enforces that).
+ * Pass `toWallet` to top up an EXISTING registered bot with a fresh pass
+ * instead of creating a new wallet. The mint core is shared with
+ * /api/admin/bots/fill via lib/botMint.ts.
  */
-const BOT_COLLECTION = 'botWallets';
 const MAX_PER_CALL = 10;
 
 export async function POST(req: NextRequest) {
@@ -49,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await parseBody(req);
-    const count = typeof body.count === 'number' ? body.count : Number(body.count);
+    const count = body.count === undefined ? 1 : typeof body.count === 'number' ? body.count : Number(body.count);
     if (!Number.isInteger(count) || count <= 0) {
       return jsonError('count must be a positive integer', 400);
     }
@@ -58,6 +62,16 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getAdminFirestore();
+
+    // Top-up mode: mint `count` fresh passes to one EXISTING pool bot.
+    const toWallet = typeof body.toWallet === 'string' ? body.toWallet.trim().toLowerCase() : '';
+    if (toWallet) {
+      const botDoc = await db.collection(BOT_COLLECTION).doc(toWallet).get();
+      if (!botDoc.exists || botDoc.data()?.isBot !== true) {
+        return jsonError(`${toWallet} is not a registered house bot — omit toWallet to create a new one`, 404);
+      }
+    }
+
     const created: Array<{ address: string; tokenIds: string[]; txHash: string }> = [];
     const failed: Array<{ address: string; error: string }> = [];
 
@@ -65,30 +79,11 @@ export async function POST(req: NextRequest) {
     // nonce lag makes back-to-back parallel mints collide. The admin write path
     // has retry, but serializing is the clean way to keep nonces ordered.
     for (let i = 0; i < count; i++) {
-      const address = ethers.Wallet.createRandom().address.toLowerCase();
       try {
-        const { txHash, tokenIds } = await reserveTokensToWallet({ to: address, count: 1 });
-        const idStrs = tokenIds.map((t) => String(t));
-        try {
-          await registerMintedTokens(address, tokenIds, 'free');
-        } catch (e) {
-          logger.warn('bots.mint.register_failed', { address, err: (e as Error).message });
-        }
-        await db.collection(BOT_COLLECTION).doc(address).set(
-          {
-            isBot: true,
-            address,
-            tokenIds: idStrs,
-            passType: 'free',
-            mintTxHash: txHash,
-            createdAt: Date.now(),
-          },
-          { merge: true },
-        );
-        created.push({ address, tokenIds: idStrs, txHash });
+        created.push(await mintBotPass(db, toWallet || undefined));
       } catch (e) {
-        failed.push({ address, error: (e as Error).message });
-        logger.warn('bots.mint.failed', { address, err: (e as Error).message });
+        failed.push({ address: toWallet || '(new wallet)', error: (e as Error).message });
+        logger.warn('bots.mint.failed', { address: toWallet || '(new wallet)', err: (e as Error).message });
       }
     }
 

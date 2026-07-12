@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// May mint on-chain passes (sequential txs) before joining — give it room.
+export const maxDuration = 300;
 
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
@@ -7,21 +8,32 @@ import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { countSpendableTokens } from '@/lib/passLedger';
+import { mintBotPass, BOT_COLLECTION } from '@/lib/botMint';
 import { logger } from '@/lib/logger';
 
 /**
  * POST /api/admin/bots/fill  — admin-gated ops tool (admin login or x-bot-secret).
  *
- * Tops up a SPECIFIC league with N house bots. Picks N pool bots that hold an
- * unused free pass, then calls the Go `/staging/add-bots-to-league` endpoint to
- * join them to that exact league (reuses the tested join + fill-trigger; never
- * creates a new draft, never touches any other league). Bots then sit idle and
- * the existing miss-2 auto-draft completes their rosters.
+ * Tops up a SPECIFIC league with N house bots. REBUILT 2026-07-12 after the
+ * 7/3 dup-seat freeze (2026-fast-draft-56):
  *
- * Body: { leagueId, count, speed? }  — count is "add this many" (top-up to 9,
- * to 10, whatever you ask). Bounded by how many pool bots still have a free pass.
+ *  - The Go join now runs the SAME transaction as a real player join
+ *    (duplicate-owner rejection + atomic seat+pass claim + special-draft
+ *    block + speed derived from the league). A bot can join any number of
+ *    DIFFERENT drafts — never the same draft twice — so this route also
+ *    filters out bots already seated in the target league instead of
+ *    burning attempts on engine rejections.
+ *  - `mode` picks WHO joins (Richard, 2026-07-12):
+ *      'existing' (default): reuse a pool bot not already in this draft.
+ *        Prefers one holding an unused pass; otherwise mints a fresh pass to
+ *        a retired pool bot; only creates a new wallet if the whole registry
+ *        is already seated in this draft (or empty).
+ *      'new': always create a brand-new bot wallet.
+ *    No more client-side 409 mint-retry dance — this route mints as needed.
+ *  - The Go endpoint requires `x-bot-secret` (no longer an open route).
+ *
+ * Body: { leagueId, count?, mode? }
  */
-const BOT_COLLECTION = 'botWallets';
 const GO_API = (
   process.env.STAGING_DRAFTS_API_URL ||
   process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
@@ -33,39 +45,77 @@ export async function POST(req: NextRequest) {
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
+    const goSecret = process.env.BOT_ADMIN_SECRET;
+    if (!goSecret) return jsonError('BOT_ADMIN_SECRET is not configured — the Go bot endpoint requires it', 503);
 
     const body = await parseBody(req);
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId.trim() : '';
     if (!leagueId) return jsonError('leagueId is required', 400);
-    const speed = body.speed === 'slow' ? 'slow' : 'fast';
-    const count = typeof body.count === 'number' ? body.count : Number(body.count);
+    const mode = body.mode === 'new' ? 'new' : 'existing';
+    const count = body.count === undefined ? 1 : typeof body.count === 'number' ? body.count : Number(body.count);
     if (!Number.isInteger(count) || count <= 0) return jsonError('count must be a positive integer', 400);
     if (count > MAX_FILL) return jsonError(`capped at ${MAX_FILL} bots per call`, 400);
 
     const db = getAdminFirestore();
-    // Pick `count` bots that still hold an available free pass (real spendable
-    // inventory, not just a flag — same source the engine consumes at join).
-    const snap = await db.collection(BOT_COLLECTION).where('isBot', '==', true).get();
-    const eligible: string[] = [];
-    for (const doc of snap.docs) {
-      if (eligible.length >= count) break;
-      const addr = doc.id;
-      try {
-        const inv = await countSpendableTokens(addr);
-        if (inv.free > 0) eligible.push(addr);
-      } catch {
-        /* skip a bot whose inventory read fails */
+
+    // Who is already seated in this draft? (Never send a bot at a league it's
+    // in — the engine would reject it anyway; this just avoids wasted mints.)
+    const leagueSnap = await db.collection('drafts').doc(leagueId).get();
+    if (!leagueSnap.exists) return jsonError(`Draft not found: ${leagueId}`, 404);
+    const league = leagueSnap.data() as {
+      CurrentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
+      currentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
+      NumPlayers?: number;
+      numPlayers?: number;
+    };
+    const seated = new Set(
+      (league.CurrentUsers ?? league.currentUsers ?? [])
+        .map((u) => String(u.OwnerId ?? u.ownerId ?? '').toLowerCase())
+        .filter(Boolean),
+    );
+    const openSeats = 10 - (league.NumPlayers ?? league.numPlayers ?? seated.size);
+    if (openSeats <= 0) return jsonError('Draft is already full', 409);
+
+    // Assemble the joiners per mode.
+    const picks: string[] = [];
+    const minted: string[] = [];
+    const wanted = Math.min(count, openSeats);
+
+    if (mode === 'existing') {
+      const registry = await db.collection(BOT_COLLECTION).where('isBot', '==', true).get();
+      const available = registry.docs.map((d) => d.id).filter((addr) => !seated.has(addr));
+
+      // 1) Pool bots already holding an unused free pass.
+      for (const addr of available) {
+        if (picks.length >= wanted) break;
+        try {
+          const inv = await countSpendableTokens(addr);
+          if (inv.free > 0) picks.push(addr);
+        } catch {
+          /* skip a bot whose inventory read fails */
+        }
+      }
+      // 2) Retired pool bots — mint them a fresh pass (reusable bots).
+      for (const addr of available) {
+        if (picks.length >= wanted) break;
+        if (picks.includes(addr)) continue;
+        const m = await mintBotPass(db, addr);
+        minted.push(m.address);
+        picks.push(m.address);
       }
     }
-    if (eligible.length === 0) {
-      return jsonError('No bots with an available free pass — mint more first (POST /api/admin/bots/mint)', 409);
+    // 3) Brand-new wallets — always in 'new' mode, fallback in 'existing'.
+    while (picks.length < wanted) {
+      const m = await mintBotPass(db);
+      minted.push(m.address);
+      picks.push(m.address);
     }
 
-    // Join them to the target league via the Go engine (tested join + fill-trigger).
+    // The engine-side join — same transaction as a real player's join.
     const res = await fetch(`${GO_API}/staging/add-bots-to-league`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leagueId, speed, ownerIds: eligible }),
+      headers: { 'Content-Type': 'application/json', 'x-bot-secret': goSecret },
+      body: JSON.stringify({ leagueId, ownerIds: picks }),
     });
     const goBody = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -73,7 +123,17 @@ export async function POST(req: NextRequest) {
       return jsonError(`Go add-bots-to-league ${res.status}`, 502);
     }
 
-    return json({ success: true, leagueId, speed, requested: count, attempted: eligible.length, go: goBody }, 200);
+    const results: Array<{ ownerId: string; joined?: boolean; error?: string }> = Array.isArray(goBody.results)
+      ? goBody.results
+      : [];
+    const joined = results.filter((r) => r.joined).length;
+    const errors = results.filter((r) => r.error).map((r) => `${r.ownerId.slice(0, 8)}…: ${r.error}`);
+    logger.info('bots.fill.done', { leagueId, mode, requested: count, joined, minted: minted.length, errors });
+
+    if (joined === 0) {
+      return jsonError(`No bot joined — ${errors.join('; ') || 'engine returned no results'}`, 502);
+    }
+    return json({ success: true, leagueId, mode, joined, minted, requested: count, results }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('bots.fill.unhandled', { route: '/api/admin/bots/fill', err });

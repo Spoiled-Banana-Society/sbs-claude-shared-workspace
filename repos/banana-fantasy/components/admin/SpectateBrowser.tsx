@@ -140,37 +140,30 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const [filter, setFilter] = useState<'all' | 'fast' | 'slow' | 'jackpot' | 'hof'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // One-click "+ Bot" on a filling draft. Joins one house bot (server mints a
-  // fresh one behind the scenes when the pool is empty — the 409 retry). The
-  // 5s poll below picks up the new member on its own.
+  // One-click bot join on a filling draft. mode 'existing' reuses a pool bot
+  // (the server mints it a fresh pass if it's out — bots are reusable across
+  // different drafts); mode 'new' always creates a brand-new bot wallet. All
+  // picking/minting logic lives server-side in /api/admin/bots/fill, and the
+  // engine join is the same transaction as a real player's join, so a bot can
+  // never take two seats in one draft. The 5s poll below picks up the new
+  // member on its own.
   const getAdminHeaders = useAdminAuthHeaders();
   const [addingBotId, setAddingBotId] = useState<string | null>(null);
   const [botNote, setBotNote] = useState<string | null>(null);
-  const addBot = async (d: ActiveDraft) => {
+  const addBot = async (d: ActiveDraft, mode: 'existing' | 'new' = 'existing') => {
     setAddingBotId(d.draftId);
     setBotNote(null);
     try {
       const headers = { ...(await getAdminHeaders()), 'Content-Type': 'application/json' };
-      const fill = () =>
-        fetch('/api/admin/bots/fill', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ leagueId: d.draftId, count: 1, speed: d.speed }),
-        });
-      let res = await fill();
-      if (res.status === 409) {
-        const mintRes = await fetch('/api/admin/bots/mint', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ count: 1 }),
-        });
-        const mintBody = await mintRes.json().catch(() => ({}));
-        if (!mintRes.ok || !mintBody.poolAdded) throw new Error(mintBody?.error || `bot mint failed (${mintRes.status})`);
-        res = await fill();
-      }
+      const res = await fetch('/api/admin/bots/fill', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ leagueId: d.draftId, count: 1, mode }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
-      setBotNote(`Bot added to ${d.displayName || d.draftId}.`);
+      const mintedNote = body.minted?.length ? ' (minted a fresh pass)' : '';
+      setBotNote(`Bot added to ${d.displayName || d.draftId}${mintedNote}.`);
     } catch (e) {
       setBotNote(`Bot add failed for ${d.displayName || d.draftId}: ${(e as Error).message}`);
     } finally {
@@ -462,12 +455,20 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       {d.filling ? (
                         <>
                           <button
-                            onClick={() => addBot(d)}
+                            onClick={() => addBot(d, 'existing')}
                             disabled={addingBotId === d.draftId}
-                            title="Join one house bot to this draft"
+                            title="Join an existing pool bot (gets a fresh pass if it's out — bots are reusable across different drafts)"
                             className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/40 bg-banana/10 text-banana text-xs font-semibold hover:bg-banana/20 transition disabled:opacity-50"
                           >
                             {addingBotId === d.draftId ? 'Adding…' : '+ Bot'}
+                          </button>
+                          <button
+                            onClick={() => addBot(d, 'new')}
+                            disabled={addingBotId === d.draftId}
+                            title="Create a brand-new bot wallet and join it to this draft"
+                            className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/25 text-banana/80 text-xs font-semibold hover:bg-banana/10 transition disabled:opacity-50"
+                          >
+                            + New
                           </button>
                           <button
                             onClick={() => removeBot(d)}

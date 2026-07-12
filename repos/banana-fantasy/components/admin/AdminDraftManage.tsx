@@ -68,37 +68,24 @@ export function AdminDraftManage({ enabled }: Props) {
   const deleteMutation = useDeleteDraftWithRefund();
   const getHeaders = useAdminAuthHeaders();
 
-  // One-click "+1 Bot" on a filling draft. Joins one house bot from the pool
-  // (POST /api/admin/bots/fill); if the pool has no bot with an unused pass
-  // (409), mints a fresh one on the spot (real on-chain free pass, ~seconds)
-  // and retries the join once. Speed comes from the slot id (…-fast-… / …-slow-…).
+  // One-click "+1 Bot" on a filling draft (POST /api/admin/bots/fill). The
+  // server picks an existing pool bot not already in this draft — minting it
+  // a fresh pass if it's out (bots are reusable across different drafts) —
+  // and only creates a new wallet when the whole pool is unavailable. The
+  // engine join is the same transaction as a real player's join, so a bot can
+  // never take two seats in one draft. Speed is derived server-side from the
+  // league itself.
   const handleAddBot = async (row: ManageDraftRow) => {
     setAddingBotId(row.id);
     setResultMessage(null);
-    const speed = row.id.includes('slow') ? 'slow' : 'fast';
-    clientLog('admin.drafts.manage', 'addbot.start', { slotId: row.id, speed });
+    clientLog('admin.drafts.manage', 'addbot.start', { slotId: row.id });
     try {
       const headers = { ...(await getHeaders()), 'Content-Type': 'application/json' };
-      const fill = () =>
-        fetch('/api/admin/bots/fill', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ leagueId: row.id, count: 1, speed }),
-        });
-      let res = await fill();
-      if (res.status === 409) {
-        // Pool dry — mint one bot, then retry the join.
-        const mintRes = await fetch('/api/admin/bots/mint', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ count: 1 }),
-        });
-        const mintBody = await mintRes.json().catch(() => ({}));
-        if (!mintRes.ok || !mintBody.poolAdded) {
-          throw new Error(mintBody?.error || `mint failed (HTTP ${mintRes.status})`);
-        }
-        res = await fill();
-      }
+      const res = await fetch('/api/admin/bots/fill', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ leagueId: row.id, count: 1, mode: 'existing' }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
       clientLog('admin.drafts.manage', 'addbot.done', { slotId: row.id });
