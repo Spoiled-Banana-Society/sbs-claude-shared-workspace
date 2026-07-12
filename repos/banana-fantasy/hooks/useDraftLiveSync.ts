@@ -277,6 +277,24 @@ export function useDraftLiveSync({
         position: pickPayload.position,
       }).then(() => {
         logger.debug('[REST] Pick submitted:', pickPayload.playerId);
+        // The Go pick route treats every submitted pick as MANUAL and clears
+        // the server AutoDraft flag + missed counter. For an airplane
+        // auto-pick that's wrong — the user still wants auto on — and it
+        // left the server unable to pick for them offline (the next turn
+        // burned the full slow-draft clock). Re-arm the flag immediately;
+        // pure idempotent prefs write, and the page-level post-pick sync is
+        // the safety net if this one call fails.
+        if (isAuto) {
+          draftApi.patchDraftPreferences(draftId, walletParam, true).catch((e) => {
+            reportClientError({
+              source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+              message: e instanceof Error ? e.message : String(e),
+              route: 'draft-room.handleLiveDraft',
+              actor: walletParam,
+              context: { draftId, stage: 're-arm-after-airplane-pick' },
+            });
+          });
+        }
       }).catch((err) => {
         const msg = err?.message || '';
         const match = msg.match(/already picked (\S+)/);
@@ -306,6 +324,10 @@ export function useDraftLiveSync({
                     displayName: retryPayload.displayName,
                     team: retryPayload.team,
                     position: retryPayload.position,
+                  }).then(() => {
+                    // Same re-arm as the primary airplane submit: the Go pick
+                    // route clears the server AutoDraft flag on every pick.
+                    draftApi.patchDraftPreferences(draftId, walletParam, true).catch(() => { /* post-pick sync is the safety net */ });
                   }).catch(e => {
                     console.error('[Airplane] Retry failed:', e);
                     // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.

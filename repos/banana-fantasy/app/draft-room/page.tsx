@@ -1264,6 +1264,45 @@ function DraftRoomContent() {
 
         engine.setConsecutiveTimeouts(desiredCounter);
 
+        // RECONCILE UP: client airplane is ON but the server flag is OFF —
+        // the server is the only thing that can pick while this device is
+        // offline, so push the flag up. Two ways this divergence happens:
+        //   1. Legacy client-only toggles (pre-2026-07-11 the ✈️ button
+        //      outside the drafting phase never PATCHed) restored from
+        //      localStorage on mount.
+        //   2. The Go pick route clears AutoDraft on EVERY submitted pick,
+        //      including our own airplane auto-picks, so the flag dies the
+        //      moment an airplane pick lands (also re-PATCHed at the submit
+        //      site in useDraftLiveSync; this is the safety net).
+        // PATCH true is a pure idempotent prefs write server-side (no pick
+        // processing, no task scheduling, counter untouched) and nothing
+        // here feeds back into this effect's deps — no render-loop risk.
+        if (desiredAirplane && !prefs.autoDraft) {
+          draftApi.patchDraftPreferences(draftId, walletParam, true)
+            .then(() => {
+              reportClientEvent({
+                source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+                message: '[Airplane] server flag reconciled UP (client ON, server OFF)',
+                route: 'draft-room.post-pick-sync-effect',
+                actor: walletParam,
+                context: {
+                  event: 'reconcile_up_patched',
+                  draftId,
+                  pickNum: engine.currentPickNumber,
+                },
+              }, { skipThrottle: true });
+            })
+            .catch((e) => {
+              reportClientError({
+                source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+                message: e instanceof Error ? e.message : String(e),
+                route: 'draft-room.post-pick-sync-effect',
+                actor: walletParam,
+                context: { draftId, stage: 'reconcile-up' },
+              });
+            });
+        }
+
         if (autoDraft !== desiredAirplane) {
           logger.info('[Airplane] setAirplaneMode — source=post-pick-prefs-sync', {
             draftId,
@@ -2579,16 +2618,21 @@ function DraftRoomContent() {
         </button>
       </div>
       {(() => {
-        const isOn = (isLiveMode && phase === 'drafting') ? autoDraft : engine.airplaneMode;
-        const handler = (isLiveMode && phase === 'drafting') ? handleToggleAutoDraft : handleToggleAirplane;
+        // LIVE: always the server-backed toggle, in EVERY phase. The old
+        // phase === 'drafting' split meant a toggle on the fill/spin screen
+        // only wrote localStorage — the server flag stayed false, so with the
+        // tab closed nothing picked until the full slow-draft clock expired
+        // (root cause of "auto never picks until I log in", 2026-07-11).
+        const isOn = isLiveMode ? autoDraft : engine.airplaneMode;
+        const handler = isLiveMode ? handleToggleAutoDraft : handleToggleAirplane;
         return (
           <button
             onClick={handler}
-            disabled={isLiveMode && phase === 'drafting' && autoDraftLoading}
+            disabled={isLiveMode && autoDraftLoading}
             title={isOn ? 'Auto-draft ON — click to disable' : 'Auto-draft OFF — click to enable'}
             className={`cursor-pointer text-[12px] flex items-center justify-center border px-1 font-primary transition-all ${
               isOn ? 'border-emerald-500 text-emerald-400' : 'border-gray-500 text-white/60'
-            } ${isLiveMode && phase === 'drafting' && autoDraftLoading ? 'opacity-50 cursor-wait' : ''}`}
+            } ${isLiveMode && autoDraftLoading ? 'opacity-50 cursor-wait' : ''}`}
           >
             ✈️ {isOn ? 'ON' : 'OFF'}
           </button>
