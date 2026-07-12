@@ -1,6 +1,5 @@
 import { createPublicClient, http, type Address } from 'viem';
-import { optimism } from 'viem/chains';
-import { USDC_OPTIMISM, CHAIN_ID_OPTIMISM, OPTIMISM_RPC_URL } from '@/lib/onchain/cctp';
+import { getNySource } from '@/lib/onchain/cctp';
 
 /**
  * Client-side Optimism USDC helpers for the NY on-ramp branch — the OP mirrors
@@ -21,20 +20,23 @@ const USDC_READ_ABI = [
 ] as const;
 
 function opClient() {
-  return createPublicClient({ chain: optimism, transport: http(OPTIMISM_RPC_URL) });
+  const src = getNySource();
+  return createPublicClient({ chain: src.viemChain, transport: http(src.rpcUrl) });
 }
 
-/** EIP-712 typed data for a USDC permit on OPTIMISM. Pass to eth_signTypedData_v4 /
- *  Privy signTypedData. Same shape as the Base permit, OP domain. */
+/** EIP-712 typed data for a USDC permit on the active NY SOURCE chain (Optimism
+ *  or Arbitrum). Pass to eth_signTypedData_v4 / Privy signTypedData. Same shape as
+ *  the Base permit; only chainId + verifyingContract differ by source chain. */
 export function buildOptimismUsdcPermitTypedData(params: {
   owner: Address; spender: Address; value: bigint; nonce: bigint; deadline: bigint;
 }) {
+  const src = getNySource();
   return {
     domain: {
       name: USDC_EIP712_NAME,
       version: USDC_EIP712_VERSION,
-      chainId: CHAIN_ID_OPTIMISM,
-      verifyingContract: USDC_OPTIMISM,
+      chainId: src.chainId,
+      verifyingContract: src.usdc,
     },
     primaryType: 'Permit' as const,
     types: {
@@ -64,12 +66,12 @@ export function buildOptimismUsdcPermitTypedData(params: {
 
 /** Read the owner's current USDC permit nonce on Optimism. */
 export async function getOptimismUsdcNonce(owner: Address): Promise<bigint> {
-  return (await opClient().readContract({ address: USDC_OPTIMISM, abi: USDC_READ_ABI, functionName: 'nonces', args: [owner] })) as bigint;
+  return (await opClient().readContract({ address: getNySource().usdc, abi: USDC_READ_ABI, functionName: 'nonces', args: [owner] })) as bigint;
 }
 
 /** Read the owner's current USDC balance on Optimism (6-dec units). */
 export async function getOptimismUsdcBalance(owner: Address): Promise<bigint> {
-  return (await opClient().readContract({ address: USDC_OPTIMISM, abi: USDC_READ_ABI, functionName: 'balanceOf', args: [owner] })) as bigint;
+  return (await opClient().readContract({ address: getNySource().usdc, abi: USDC_READ_ABI, functionName: 'balanceOf', args: [owner] })) as bigint;
 }
 
 /** Poll the owner's USDC balance on Optimism until it reaches `minAmount` (the
@@ -85,7 +87,7 @@ export async function waitForUsdcOnOptimism(
   while (Date.now() - start < timeoutMs) {
     if (opts.isCancelled?.()) return false;
     try {
-      const bal = (await client.readContract({ address: USDC_OPTIMISM, abi: USDC_READ_ABI, functionName: 'balanceOf', args: [address] })) as bigint;
+      const bal = (await client.readContract({ address: getNySource().usdc, abi: USDC_READ_ABI, functionName: 'balanceOf', args: [address] })) as bigint;
       if (bal >= minAmount) return true;
     } catch (e) {
       opts.onError?.(e);

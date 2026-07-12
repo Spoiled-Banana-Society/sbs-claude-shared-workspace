@@ -5,7 +5,7 @@ import {
   getOptimismUsdcBalance,
   buildOptimismUsdcPermitTypedData,
 } from '@/lib/onchain/nyOptimismClient';
-import { CHAIN_ID_OPTIMISM } from '@/lib/onchain/cctp';
+import { getNySource } from '@/lib/onchain/cctp';
 
 /**
  * The NY on-ramp client dance, run AFTER MoonPay has delivered the buyer's USDC
@@ -85,7 +85,7 @@ export async function runNyMint(deps: NyBridgeDeps): Promise<NyMintResult> {
     const provider = wallet?.getEthereumProvider ? await wallet.getEthereumProvider() : undefined;
     if (!provider) throw new Error('Wallet not connected — please reconnect and try again.');
     try {
-      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${CHAIN_ID_OPTIMISM.toString(16)}` }] });
+      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${getNySource().chainId.toString(16)}` }] });
     } catch { /* already on OP or user handles it */ }
     signature = (await provider.request({ method: 'eth_signTypedData_v4', params: [user, JSON.stringify(typedData)] })) as Hex;
   }

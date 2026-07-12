@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
 import { useFiatOnramp, useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
 import { runNyMint } from '@/lib/nyBuyFlow';
+import { getNySource } from '@/lib/onchain/cctp';
 import { Modal } from '../ui/Modal';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { useAuth } from '@/hooks/useAuth';
@@ -592,7 +593,7 @@ export function BuyPassesModal({
         try {
           const fr = await fundFiatOnramp({
             source: { assets: ['usd'], defaultAsset: 'usd' },
-            destination: { asset: 'usdc', chain: 'eip155:10', address: walletAddress },
+            destination: { asset: 'usdc', chain: getNySource().caip2, address: walletAddress },
             environment: 'production',
             defaultAmount: nyFiatAmount,
           });

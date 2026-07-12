@@ -8,17 +8,15 @@ import {
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { optimism, base } from 'viem/chains';
+import { base } from 'viem/chains';
 import { getAdminPrivateKeyHex, getAdminWalletAddress } from '@/lib/onchain/adminMint';
 import {
   CCTP_TOKEN_MESSENGER_V2,
   CCTP_MESSAGE_TRANSMITTER_V2,
   CCTP_DOMAIN_BASE,
-  USDC_OPTIMISM,
-  OPTIMISM_RPC_URL,
   BASE_MAINNET_RPC_URL,
   CIRCLE_IRIS_API,
-  CCTP_DOMAIN_OPTIMISM,
+  getNySource,
   addressToBytes32,
 } from '@/lib/onchain/cctp';
 import { logger } from '@/lib/logger';
@@ -90,8 +88,9 @@ function relayerAccount() {
 
 function opClients() {
   const account = relayerAccount();
-  const publicClient = createPublicClient({ chain: optimism, transport: http(OPTIMISM_RPC_URL) });
-  const walletClient = createWalletClient({ account, chain: optimism, transport: http(OPTIMISM_RPC_URL) });
+  const src = getNySource();
+  const publicClient = createPublicClient({ chain: src.viemChain, transport: http(src.rpcUrl) });
+  const walletClient = createWalletClient({ account, chain: src.viemChain, transport: http(src.rpcUrl) });
   return { account, publicClient, walletClient };
 }
 
@@ -116,7 +115,7 @@ export async function getRelayerOptimismUsdcBalance(): Promise<bigint> {
   const relayer = getAdminWalletAddress();
   if (!relayer) return 0n;
   const { publicClient: opPub } = opClients();
-  return (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer] })) as bigint;
+  return (await opPub.readContract({ address: getNySource().usdc, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer] })) as bigint;
 }
 
 /**
@@ -140,14 +139,14 @@ export async function bridgeRelayerUsdcOpToBase(amount: bigint, mintRecipient?: 
     const { publicClient: opPub, walletClient: opWallet } = opClients();
 
     // 0. Sanity: relayer actually holds the USDC on Optimism.
-    const bal = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer] })) as bigint;
+    const bal = (await opPub.readContract({ address: getNySource().usdc, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer] })) as bigint;
     if (bal < amount) return { ok: false, error: `relayer OP USDC ${bal} < ${amount}` };
 
     // 1. Approve TokenMessengerV2 to pull the USDC for the burn (only if needed).
-    const allowance = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'allowance', args: [relayer, CCTP_TOKEN_MESSENGER_V2] })) as bigint;
+    const allowance = (await opPub.readContract({ address: getNySource().usdc, abi: ERC20_ABI, functionName: 'allowance', args: [relayer, CCTP_TOKEN_MESSENGER_V2] })) as bigint;
     if (allowance < amount) {
       const approveHash = await opWallet.sendTransaction({
-        to: USDC_OPTIMISM,
+        to: getNySource().usdc,
         data: encodeFunctionData({ abi: ERC20_ABI, functionName: 'approve', args: [CCTP_TOKEN_MESSENGER_V2, amount * 100n] }),
         maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
       });
@@ -161,7 +160,7 @@ export async function bridgeRelayerUsdcOpToBase(amount: bigint, mintRecipient?: 
       to: CCTP_TOKEN_MESSENGER_V2,
       data: encodeFunctionData({
         abi: CCTP_TOKEN_MESSENGER_V2_ABI, functionName: 'depositForBurn',
-        args: [amount, CCTP_DOMAIN_BASE, addressToBytes32(recipient), USDC_OPTIMISM, addressToBytes32('0x0000000000000000000000000000000000000000'), maxFee, FAST_FINALITY_THRESHOLD],
+        args: [amount, CCTP_DOMAIN_BASE, addressToBytes32(recipient), getNySource().usdc, addressToBytes32('0x0000000000000000000000000000000000000000'), maxFee, FAST_FINALITY_THRESHOLD],
       }),
       maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
     });
@@ -169,7 +168,7 @@ export async function bridgeRelayerUsdcOpToBase(amount: bigint, mintRecipient?: 
     logger.info('nyBridge.burned', { burnHash, amount: amount.toString() });
 
     // 3. Poll Circle attestation for this burn tx.
-    const att = await pollAttestation(CCTP_DOMAIN_OPTIMISM, burnHash);
+    const att = await pollAttestation(getNySource().cctpDomain, burnHash);
     if (!att) return { ok: false, burnTxHash: burnHash, error: 'attestation timed out (funds safe on OP, retryable)' };
 
     // 4. receiveMessage on Base → mints USDC to the relayer on Base.
@@ -225,12 +224,12 @@ export async function sweepUsdcFromUserOnOptimism(opts: {
     const { publicClient: opPub, walletClient: opWallet } = opClients();
 
     // Sweep the buyer's actual balance, capped at what the permit authorizes.
-    const balance = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'balanceOf', args: [opts.user] })) as bigint;
+    const balance = (await opPub.readContract({ address: getNySource().usdc, abi: ERC20_ABI, functionName: 'balanceOf', args: [opts.user] })) as bigint;
     const sweepValue = balance < opts.permitValue ? balance : opts.permitValue;
     if (sweepValue <= 0n) return { ok: false, error: 'no USDC to sweep on Optimism' };
 
     // 1. Submit the permit (unless the allowance is already in place via approve).
-    const existing = (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'allowance', args: [opts.user, relayer] })) as bigint;
+    const existing = (await opPub.readContract({ address: getNySource().usdc, abi: ERC20_ABI, functionName: 'allowance', args: [opts.user, relayer] })) as bigint;
     if (existing < sweepValue) {
       if (!opts.signature || opts.signature === '0x') {
         return { ok: false, error: 'no permit signature and insufficient allowance' };
@@ -241,7 +240,7 @@ export async function sweepUsdcFromUserOnOptimism(opts: {
       let v = parseInt(sig.slice(128, 130), 16);
       if (v < 27) v += 27;
       const permitHash = await opWallet.sendTransaction({
-        to: USDC_OPTIMISM,
+        to: getNySource().usdc,
         data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'permit', args: [opts.user, relayer, opts.permitValue, opts.deadline, v, r, s] }),
         maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
       });
@@ -250,7 +249,7 @@ export async function sweepUsdcFromUserOnOptimism(opts: {
 
     // 2. Pull the USDC into the relayer.
     const pullHash = await opWallet.sendTransaction({
-      to: USDC_OPTIMISM,
+      to: getNySource().usdc,
       data: encodeFunctionData({ abi: USDC_PERMIT_ABI, functionName: 'transferFrom', args: [opts.user, relayer, sweepValue] }),
       maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: PRIORITY_FEE,
     });
