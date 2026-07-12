@@ -5,6 +5,7 @@ import { getPrivyUser } from '@/lib/auth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isNyBuyer, isNyOnrampEnabled, resolveUsState } from '@/lib/usState';
 import { getRequestGeo } from '@/lib/geoLocation';
+import { getNySourceChainKey } from '@/lib/onchain/cctp';
 import { logger } from '@/lib/logger';
 
 /**
@@ -33,10 +34,10 @@ export async function GET(req: Request) {
       const u = await getPrivyUser(req);
       wallet = u.walletAddress?.toLowerCase() ?? null;
     } catch {
-      return json({ ny: false, isNy: false, enabled: isNyOnrampEnabled() });
+      return json({ ny: false, isNy: false, enabled: isNyOnrampEnabled(), sourceChain: getNySourceChainKey() });
     }
     if (!wallet || !isFirestoreConfigured()) {
-      return json({ ny: false, isNy: false, enabled: isNyOnrampEnabled() });
+      return json({ ny: false, isNy: false, enabled: isNyOnrampEnabled(), sourceChain: getNySourceChainKey() });
     }
 
     const db = getAdminFirestore();
@@ -54,10 +55,10 @@ export async function GET(req: Request) {
 
     const isNy = isNyBuyer(source);
     const enabled = isNyOnrampEnabled();
-    return json({ ny: isNy && enabled, isNy, enabled, state: resolveUsState(source) });
+    return json({ ny: isNy && enabled, isNy, enabled, state: resolveUsState(source), sourceChain: getNySourceChainKey() });
   } catch (err) {
     logger.warn('ny-status.failed', { err });
     // Never break a buy — default to the normal Base flow.
-    return json({ ny: false, isNy: false, enabled: false });
+    return json({ ny: false, isNy: false, enabled: false, sourceChain: getNySourceChainKey() });
   }
 }
