@@ -49,10 +49,6 @@
     {
       "path": "/api/crons/founder-teaser",
       "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/crons/ny-treasury-bridge",
-      "schedule": "0 9 * * *"
     }
   ]
 }
