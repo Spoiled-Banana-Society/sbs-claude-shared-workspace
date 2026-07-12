@@ -109,6 +109,16 @@ export interface BridgeResult {
   error?: string;
 }
 
+/** Read the relayer's own USDC balance on Optimism (6-dec units). Used by the
+ *  batched treasury-bridge cron to decide how much accumulated NY revenue to
+ *  move to Base. */
+export async function getRelayerOptimismUsdcBalance(): Promise<bigint> {
+  const relayer = getAdminWalletAddress();
+  if (!relayer) return 0n;
+  const { publicClient: opPub } = opClients();
+  return (await opPub.readContract({ address: USDC_OPTIMISM, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer] })) as bigint;
+}
+
 /**
  * Bridge `amount` (6-decimal USDC units) of the RELAYER's own USDC from Optimism
  * to Base via CCTP V2 Fast Transfer. The relayer must already hold `amount` USDC

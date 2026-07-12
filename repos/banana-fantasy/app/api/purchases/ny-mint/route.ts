@@ -1,8 +1,7 @@
 export const dynamic = 'force-dynamic';
-// The Optimism→Base treasury bridge runs in the background (runInBackground /
-// waitUntil) AFTER we respond, so allow the lambda to stay alive for it. The
-// buyer's response returns in ~30s (sweep + mint + bookkeep); the bridge (~60-90s)
-// finishes after, invisible to them.
+// The buyer's response returns after the synchronous sweep + owner-mint +
+// bookkeep (~30s). No per-purchase bridge (that's a batched cron). The ceiling is
+// generous to cover the rare swept-below-cost refund-bridge (waitUntil) edge.
 export const maxDuration = 300;
 
 import { createPublicClient, http, type Address, type Hex } from 'viem';
@@ -125,7 +124,7 @@ export async function POST(req: Request) {
       } catch (logErr) {
         logger.error('ny-mint.failed_mint_record_error', { user, err: logErr });
       }
-      runInBackground('ny-mint.treasury-bridge', bridgeRelayerUsdcOpToBase(swept).then(() => undefined));
+      // USDC stays safe in the relayer on Optimism; the treasury cron bridges it.
       return jsonError(
         'Your payment went through and your draft pass is on its way — it has been queued and will be delivered automatically, usually within a few minutes. You will NOT be charged again.',
         500, { paymentSucceeded: true },
@@ -148,14 +147,11 @@ export async function POST(req: Request) {
       mintResult,
     });
 
-    // 4. Bridge the relayer's Optimism USDC → Base treasury in the BACKGROUND.
-    //    The buyer already has their pass; this just relocates our own money.
-    //    waitUntil-backed so it survives the response; if it ever fails the USDC
-    //    is safe in the relayer on Optimism (retryable / batch-sweepable).
-    runInBackground('ny-mint.treasury-bridge', bridgeRelayerUsdcOpToBase(swept).then((r) => {
-      if (!r.ok) logger.error('ny-mint.treasury_bridge_failed', { user, swept: swept.toString(), err: r.error });
-    }));
-
+    // 4. The buyer already has their pass. The swept USDC stays in the relayer on
+    //    Optimism and is moved to the Base cold treasury in BATCHES by the
+    //    `ny-treasury-bridge` cron — no per-purchase bridge (no wallet-nonce race,
+    //    cheaper gas, less hot-wallet exposure). The USDC is safe in our relayer
+    //    meanwhile.
     logger.info('ny-mint.ok', { user, quantity, swept: swept.toString(), passCost: passCost.toString(), sweepTx: sweep.txHash, mintTx: mintResult.txHash });
     return json({
       success: true,
