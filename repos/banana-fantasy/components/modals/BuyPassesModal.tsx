@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
 import { useFiatOnramp, useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
-import { runNyOptimismBridge } from '@/lib/nyBuyFlow';
+import { runNyMint } from '@/lib/nyBuyFlow';
 import { Modal } from '../ui/Modal';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { useAuth } from '@/hooks/useAuth';
@@ -629,22 +629,33 @@ export function BuyPassesModal({
       // so the error UI shows a reassuring notice instead of a scary failure.
       setCardPaymentCommitted(true);
 
-      // NY branch: the USDC landed on Optimism, not Base. Sweep + bridge it to
-      // the buyer's OWN Base wallet now, so the normal Base wait + mint() below
-      // run completely unchanged. Stays inside this same stepper — no new UI, no
-      // crypto jargon. Non-NY buyers skip this entirely.
+      // NY branch (FAST): the USDC landed on Optimism, not Base. ny-mint sweeps
+      // it (payment secured) and IMMEDIATELY owner-mints the paid pass — the pass
+      // is delivered server-side here, with the identical paid/credit/promo
+      // bookkeeping card buyers get. So we jump straight to success and SKIP the
+      // Base wait + mint() below (no second on-chain mint, no second signature).
+      // The USDC→Base treasury bridge runs in the background server-side, unseen.
+      // Non-NY buyers skip this entirely and run the exact Base flow as before.
       if (isNy) {
-        setFlowStep('waiting-for-usdc');
-        await runNyOptimismBridge({
+        setFlowStep('processing');
+        await runNyMint({
           user: walletAddress as Address,
           quantity,
           passCost: usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6),
-          signTypedData: signTypedData as unknown as Parameters<typeof runNyOptimismBridge>[0]['signTypedData'],
-          wallets: wallets as unknown as Parameters<typeof runNyOptimismBridge>[0]['wallets'],
+          signTypedData: signTypedData as unknown as Parameters<typeof runNyMint>[0]['signTypedData'],
+          wallets: wallets as unknown as Parameters<typeof runNyMint>[0]['wallets'],
           getAccessToken,
           isCancelled: () => cancelledRef.current,
         });
         if (cancelledRef.current) return;
+        // Pass is already delivered — refresh the count + show success. Do NOT
+        // fall through to the Base wait + mint (that path is card/USDC-on-Base).
+        await trackPurchase(quantity, 'ny-mint');
+        clearResumeRecord();
+        clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'card', ny: true });
+        setFlowStep('success');
+        setMintedCount(quantity);
+        return;
       }
 
       // Confirm the USDC actually landed before minting — event-driven via the
