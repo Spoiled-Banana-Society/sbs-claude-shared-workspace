@@ -1469,6 +1469,32 @@ async function _incrementReferralPromosInTx(
   );
   if (!entry) return { referralMilestonesEarned: 0 };
 
+  // NEW PLAYERS ONLY (Boris 2026-07-13): a returning player pays no referral
+  // rewards. track/route.ts refuses to link them up front, but a user whose
+  // returning flag landed AFTER they were linked (web2 identity match runs on
+  // first login) can still have an entry — remove it here (unless a reward was
+  // already claimed) so the referrer never stares at eternally-"pending" rows.
+  // The referrer learns via the one-time "not a new player" bell instead.
+  const buyerIsReturning = (buyerUser as { isReturningPlayer?: boolean }).isReturningPlayer === true
+    || isReturningWalletSync(buyerUserId);
+  if (buyerIsReturning) {
+    // Manual pin (Boris 2026-07-13): an entry stamped keepEvenIfReturning
+    // stays visible in the history even though it can never pay (e.g.
+    // RisBrian's family account). Earns nothing, isn't auto-removed.
+    const pinned = (entry as { keepEvenIfReturning?: boolean }).keepEvenIfReturning === true;
+    if (pinned) return { referralMilestonesEarned: 0 };
+    const anythingClaimed = entry.rewards
+      && Object.values(entry.rewards).some((v) => v === 'claimed');
+    if (!anythingClaimed) {
+      referralPromo.modalContent.referralHistory = referralPromo.modalContent.referralHistory.filter(
+        (e: ReferralEntry) => e.referredUserId !== buyerUserId,
+      );
+      // merge:true replaces array fields wholesale, so the removal sticks.
+      tx.set(referralPromoDoc.ref, stripUndefined(referralPromo), { merge: true });
+    }
+    return { referralMilestonesEarned: 0 };
+  }
+
   let milestonesEarned = 0;
   const newlyHit: string[] = [];
   entry.draftsPurchased = (entry.draftsPurchased || 0) + quantity;

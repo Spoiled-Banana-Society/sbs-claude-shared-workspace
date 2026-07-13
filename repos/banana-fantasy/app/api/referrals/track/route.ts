@@ -44,16 +44,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot refer yourself' }, { status: 400 });
     }
 
-    const result = await trackReferral(
-      referrerUserId,
-      referredUserId,
-      referredUsername || `User${referredUserId}`,
-    );
-
-    // Will this referral actually credit the friend? A "new player" who earns
-    // their referrer credit is someone who (a) has NOT drafted yet, and (b) is
-    // NOT a returning player from a previous season (the imported list). Account
-    // age / balances don't matter — only those two things.
+    // ELIGIBILITY IS ENFORCED, not informational (Boris 2026-07-13 — the
+    // RisBrian/Vertig0 case: a returning player got linked and sat in the
+    // referrer's history as eternally-"pending" rows that could never pay).
+    // A referral only counts for a NEW player: (a) has NOT drafted yet, and
+    // (b) is NOT a returning player from a previous season. Ineligible users
+    // are NOT linked at all — nothing enters the referrer's history.
     let eligible = true;
     try {
       const userRef = db.collection('v2_users').doc(referredUserId);
@@ -66,7 +62,39 @@ export async function POST(req: NextRequest) {
       const isReturning = u.isReturningPlayer === true || isReturningWalletSync(referredUserId);
       const hasDrafted = !draftedSnap.empty;
       eligible = !hasDrafted && !isReturning;
-    } catch { /* default eligible:true on read error */ }
+    } catch { /* default eligible:true on read error — never block a real new user */ }
+
+    if (!eligible) {
+      // Tell the REFERRER what happened with ONE clean bell (deduped per
+      // referred user) — instead of a history row that could never pay
+      // (Boris 2026-07-13). Awaited so the Vercel lambda can't drop it.
+      try {
+        const { createNotification } = await import('@/lib/queueNotifications');
+        const name = referredUsername && !/^user-?[0-9a-fx]/i.test(String(referredUsername).trim())
+          && !/^0x[0-9a-f]{6,}/i.test(String(referredUsername).trim())
+          ? String(referredUsername).trim()
+          : 'Someone';
+        await createNotification(referrerUserId, {
+          type: 'promo',
+          title: 'Referral link used — not a new player',
+          message: `${name} used your referral link, but they’re not a new player. Referral rewards only come from NEW users — share your link with friends who haven’t played yet.`,
+          link: '/promos?promo=3',
+          dedupeKey: `referral-ineligible-${referredUserId}`,
+          icon: 'users',
+        });
+      } catch { /* best-effort — never block the response on the bell */ }
+      return NextResponse.json({
+        success: false,
+        eligible: false,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const result = await trackReferral(
+      referrerUserId,
+      referredUserId,
+      referredUsername || `User${referredUserId}`,
+    );
 
     return NextResponse.json({
       ...result,

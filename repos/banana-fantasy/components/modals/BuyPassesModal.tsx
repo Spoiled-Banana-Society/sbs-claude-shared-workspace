@@ -155,14 +155,15 @@ export function BuyPassesModal({
         );
         return;
       }
+      // Not eligible (returning player / already drafted) → the server did NOT
+      // link anything (2026-07-13): referrals are new-players-only, say so cleanly.
+      if (data?.eligible === false) {
+        setReferralState('error');
+        setReferralMsg('Referrals are for new players only — this account isn’t new, so the code can’t be applied.');
+        return;
+      }
       setReferralState('applied');
-      // Eligible (new player) → spell out what THEY must do for the friend to
-      // earn it. Not eligible (established account) → be honest it won't credit.
-      setReferralMsg(
-        data?.eligible === false
-          ? "Code found ✓ — but your account isn’t new, so your friend won’t be credited."
-          : 'Applied ✓ — for your friend to get credit: verify your X AND spin your free Banana Wheel, then buy.',
-      );
+      setReferralMsg('Applied ✓ — for your friend to get credit: verify your X AND spin your free Banana Wheel, then buy.');
     } catch {
       setReferralState('error');
       setReferralMsg('Network error — try again.');

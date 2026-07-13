@@ -267,7 +267,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        '• Share your unique referral link with friends.\n• You earn a Free Banana Spin at each milestone as your friend buys draft passes: their 1st pass, 4 total, and 10 total — up to 3 Spins per friend.\n• Your friend must also verify their X account and spin their Free Banana Spin.\n• One account per person — more than one account makes you ineligible to win prizes.\n• Real players only: referrals must actually play fantasy football. Farming free spins with fake invites makes BOTH you and your referral ineligible to win prizes.',
+        '• Share your unique referral link with friends.\n• You earn a Free Banana Spin at each milestone as your friend buys draft passes: their 1st pass, 4 total, and 10 total — up to 3 Spins per friend.\n• Your friend must also verify their X account and spin their Free Banana Spin.\n• NEW players only — returning players from previous seasons don’t count and won’t appear here.\n• One account per person — more than one account makes you ineligible to win prizes.\n• Real players only: referrals must actually play fantasy football. Farming free spins with fake invites makes BOTH you and your referral ineligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
