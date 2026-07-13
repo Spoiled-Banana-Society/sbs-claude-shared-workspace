@@ -1490,7 +1490,6 @@ async function _incrementReferralPromosInTx(
     return { referralMilestonesEarned: 0 };
   }
 
-
   let milestonesEarned = 0;
   const newlyHit: string[] = [];
   entry.draftsPurchased = (entry.draftsPurchased || 0) + quantity;
