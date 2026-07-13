@@ -119,15 +119,13 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
-        {/* First-purchase popup — REINSTATED 2026-07-12 (Boris): new users
-            must see the offer at their team reveal, before they leave. Mounted
-            UNCONDITIONALLY (not gated on !isDraftRoom): the unlock event can
-            fire while the user is still IN the draft room (the room pings
-            first-purchase-finished at isDraftClosed, before they navigate to
-            /draft-results) — the always-mounted listener catches it and holds
-            `open`, and the component renders nothing until they leave the
-            room, so the popup appears the moment the roster page shows. Once
-            per account, reload-safe fallback, never renders in-room. */}
+        {/* First-purchase popup — opens DURING the "Generating your Digital
+            Team" screen (Boris 2026-07-13: users are guaranteed to be watching
+            it). Mounted UNCONDITIONALLY: the live unlock event fires at
+            isDraftClosed (only ever for a CLOSED draft), so rendering in-room
+            on that path can never cover live picking; the reload-safe
+            fallback path still renders outside the room only. Once per
+            account, ×/outside-click/Maybe-later all dismiss. */}
         <FirstPurchasePromoModal />
         {/* The floating "Chat with us" launcher was removed — the only entry
             point is now "Chat with us" in the profile dropdown. */}
