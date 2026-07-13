@@ -96,10 +96,9 @@ interface FilterOpts {
   firstPurchaseBonusGranted?: boolean;
   /**
    * True once a brand-new user has finished their welcome-wheel free drafts.
-   * Returning (BB3) players see the first-purchase promo immediately (they
-   * get the CLASSIC variant server-side); new users only see it once this
-   * unlocks — so the card appears as their first box right after they've used
-   * up their free drafts (matching the banner/popup).
+   * NO LONGER gates the card (2026-07-12: the card shows from day one) —
+   * kept in the opts shape for callers; the flag still times the unlock
+   * BELL and the post-draft POPUP (FirstPurchasePromoModal).
    */
   firstPurchasePromoUnlocked?: boolean;
   /**
@@ -149,20 +148,17 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // for both audiences — the SERVER decides which variant they get
     // (returning players receive the classic copy + classic grant rate; new
     // players the every-pass-2-spins / $1K version).
+    //
+    // Since 2026-07-12 (Boris): new users see the card from DAY ONE — it sits
+    // right under the new-user welcome card. It used to wait for
+    // firstPurchasePromoUnlocked (free drafts finished), but many new users
+    // leave right after their free draft, so the offer must be visible from
+    // the start. The unlock flag still times the BELL + post-draft POPUP.
     if (p.type === 'first-purchase') {
       // Don't render until the gating flags are known — avoids flashing the card
       // for a purchased user during the brief pre-balance window.
       if (opts.flagsKnown === false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
-      // New users (non-BB3) only see it after they've used up their welcome-
-      // wheel free drafts. Returning players see it from the start.
-      if (
-        !opts.isBB3Holder &&
-        !opts.firstPurchasePromoUnlocked &&
-        !opts.firstPurchaseBonusGranted
-      ) {
-        return false;
-      }
     }
     return true;
   });
