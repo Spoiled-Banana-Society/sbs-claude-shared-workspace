@@ -12,6 +12,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { Header } from '@/components/layout/Header';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { EditProfileModal } from '@/components/modals/EditProfileModal';
+import { FirstPurchasePromoModal } from '@/components/modals/FirstPurchasePromoModal';
 import { OnboardingTutorial } from '@/components/onboarding/OnboardingTutorial';
 import { CrispChat } from '@/components/CrispChat';
 import { useAuth } from '@/hooks/useAuth';
@@ -118,10 +119,14 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
-        {/* First-purchase bonus is now announced via a subtle toast (see
-            useUserEventStream 'first-purchase-unlocked') + the persistent home
-            banner + promo box. The old full-screen modal was removed — too
-            abrupt on the post-draft card/roster reveal. */}
+        {/* First-purchase popup — opens DURING the "Generating your Digital
+            Team" screen (Boris 2026-07-13: users are guaranteed to be watching
+            it). Mounted UNCONDITIONALLY: the live unlock event fires at
+            isDraftClosed (only ever for a CLOSED draft), so rendering in-room
+            on that path can never cover live picking; the reload-safe
+            fallback path still renders outside the room only. Once per
+            account, ×/outside-click/Maybe-later all dismiss. */}
+        <FirstPurchasePromoModal />
         {/* The floating "Chat with us" launcher was removed — the only entry
             point is now "Chat with us" in the profile dropdown. */}
       </div>

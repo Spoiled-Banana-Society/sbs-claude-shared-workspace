@@ -84,6 +84,17 @@ export function PromosSidebar({
                   <span>{promo.title}</span>
                 )}
               </h4>
+              {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy on
+                  the box front as FIXED LINES — each line one complete idea,
+                  never wrapping mid-phrase. Other promos stay title-only. */}
+              {promo.type === 'first-purchase' && (
+                <div className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a]">
+                  <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
+                  <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
+                  <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
+                  <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                </div>
+              )}
               <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               <div className="mt-auto">
                 {hasProgress && (

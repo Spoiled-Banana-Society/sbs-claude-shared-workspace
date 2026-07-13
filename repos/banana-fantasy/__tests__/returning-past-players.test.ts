@@ -44,23 +44,23 @@ describe('all-time past-players → returning treatment', () => {
     expect(types).toContain('first-purchase');
   });
 
-  it('new user after unlock: first-purchase SHOWN', () => {
-    const types = filterAndSortVisiblePromos(promos, {
-      isBB3Holder: false,
-      flagsKnown: true,
-      firstPurchasePromoUnlocked: true,
-    }).map((p) => p.type);
-    expect(types).toContain('first-purchase');
-  });
-
-  it('genuine new user: new-user promo SHOWN', () => {
+  it('genuine new user: new-user promo first, first-purchase visible from DAY ONE right behind it (2026-07-12)', () => {
     const isBB3Holder = isReturningWalletSync(RANDOM_NEW_WALLET);
     const types = filterAndSortVisiblePromos(promos, {
       isBB3Holder,
       flagsKnown: true,
-      firstPurchasePromoUnlocked: false,
+      firstPurchasePromoUnlocked: false, // NOT unlocked yet — card shows anyway
     }).map((p) => p.type);
-    expect(types).toContain('new-user');
+    expect(types[0]).toBe('new-user');
+    expect(types[1]).toBe('first-purchase');
+  });
+
+  it('new user who already purchased with nothing to claim: first-purchase hidden', () => {
+    const types = filterAndSortVisiblePromos(promos, {
+      isBB3Holder: false,
+      flagsKnown: true,
+      firstPurchaseBonusGranted: true,
+    }).map((p) => p.type);
     expect(types).not.toContain('first-purchase');
   });
 });
