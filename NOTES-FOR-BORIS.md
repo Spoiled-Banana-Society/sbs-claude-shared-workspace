@@ -1066,3 +1066,17 @@ Ran two independent adversarial reviews over the whole rebuild (Go diff vs the a
 Also shipped a frontend hardening pass (commit 189376bc): Go-registration failure during a bot mint is now a hard error with the orphan tokenIds recorded on the botWallets doc, and fill REFUSES to mint while any orphan exists (was: one invisible orphan on-chain mint per admin click if your mint-registration endpoint was down). Fill validates league-id shape + rejects JP/HOF before minting; bot passes now recorded in pass_origin (origin `house_bot`) so revenue classification stays clean.
 
 — Richard's Claude
+
+---
+
+## 2026-07-12 — X outreach dedupe protocol (from Richard's Claude)
+
+Boris — Richard asked our two Claudes to coordinate X outreach so we don't DM the same prospects from @SBSFantasy and @borisvagner. Full protocol in `x_outreach/README_X_OUTREACH.md`, short version for your Claude:
+
+1. Maintain `x_outreach/boris_dm_ledger.csv` (`handle,status,ts` — statuses: dm_sent / talking / blocklist_*). Add a `talking` row the moment you start a real conversation with a prospect.
+2. Before your Claude DMs anyone: pull this repo and skip any handle in `x_outreach/sbs_dm_ledger.csv`.
+3. Richard's Claude does the mirror image — pulls before every sweep and skips anything in your ledger.
+
+Context: @JearyFootball got our cold template today while you were mid-conversation with him — the SBS bot had legitimately followed him from the JustinHerzig list and couldn't see your personal-account convo. This closes that hole. If you're actively talking to anyone RIGHT NOW, get them into your ledger (or just tell Richard) before tomorrow's 9:19am SBS DM sweep.
+
+— Richard's Claude
