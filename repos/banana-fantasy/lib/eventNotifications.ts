@@ -116,7 +116,7 @@ export function eventNotificationContent(
     case 'first-purchase-unlocked':
       return {
         type: 'promo',
-        title: 'Win up to 40 Free Drafts',
+        title: 'First Purchase Promo — Win up to 40 Free Drafts',
         message: 'Buy 1 Draft Pass → get 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
