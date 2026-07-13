@@ -205,6 +205,9 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // July 4th ended).
   return sorted.map((p) => {
     if (p.type === 'first-purchase') return { ...p, isNew: true };
+    // New-user welcome card carries the NEW ribbon too (Boris 2026-07-12) —
+    // forced here so already-seeded accounts match fresh seeds.
+    if (p.type === 'new-user') return { ...p, isNew: true };
     // Featured promo always carries the (big) NEW badge on every surface.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
       return { ...p, isNew: true, featured: true };

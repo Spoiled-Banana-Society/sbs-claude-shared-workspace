@@ -306,6 +306,9 @@ const seedPromos: Promo[] = [
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
+    // NEW ribbon (Boris 2026-07-12). Display-only; promoFilter force-sets it
+    // for 'new-user' so already-seeded accounts get the ribbon too.
+    isNew: true,
     claimable: false,
     claimCount: 0,
     modalContent: {
@@ -319,8 +322,8 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    title: 'First Purchase → WIN UP TO $1K IN DRAFTS',
-    description: 'Buy 1 Pass → 2 Free Spins: 2 Free Drafts GTD · shot at $1,000 (40 Free Drafts)',
+    title: 'First Purchase → WIN UP TO 40 FREE DRAFTS',
+    description: 'Buy 1 Pass → 2 Free Spins: 2 Free Drafts GTD · win up to 40 Free Drafts ($1,000 in Drafts)',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -333,9 +336,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Win up to $1,000 in Drafts',
+      title: 'Buy 1 Pass → 2 Free Spins → up to 40 Free Drafts ($1,000 in Drafts)',
       explanation:
-        '• Buy 1 Draft Pass → get 2 Free Spins: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts (40 Free Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to $2,000 (80 Free Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to $4,000 (160 Free Drafts).\n• No cap — every pass = 2 more Spins.\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
+        '• Buy 1 Draft Pass → get 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• No cap — every pass = 2 more Spins.\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
     },
   },
   {

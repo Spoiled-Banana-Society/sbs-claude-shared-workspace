@@ -82,8 +82,8 @@ export function FirstPurchasePromoModal() {
         <p className="mt-3 text-sm leading-relaxed text-white/70">
           First-purchase promo: Buy 1 Draft Pass → get{' '}
           <span className="font-semibold text-white">2 Free Spins</span>:{' '}
-          <span className="font-semibold text-white">2 Free Drafts guaranteed</span> — and a shot at{' '}
-          <span className="font-semibold text-banana">$1,000 in Drafts</span> (40 Free Drafts).
+          <span className="font-semibold text-white">2 Free Drafts guaranteed</span> — win up to{' '}
+          <span className="font-semibold text-banana">40 Free Drafts</span> ($1,000 in Drafts).
         </p>
         <p className="mt-3 text-xs leading-relaxed text-white/45">
           Buy 2 → 4 Spins · Buy 4 → 8 Spins — every pass adds 2 more.
