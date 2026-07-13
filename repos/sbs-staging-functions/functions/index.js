@@ -210,7 +210,12 @@ const NOTIFICATIONS_INTERNAL_SECRET = process.env.NOTIFICATIONS_INTERNAL_SECRET 
 exports.onPickAdvance = functions
   .region('us-central1')
   .database.ref('drafts/{draftId}/realTimeDraftInfo')
-  .onUpdate(async (change, ctx) => {
+  // onWrite, NOT onUpdate (2026-07-12): the node is CREATED at draft start, so
+  // onUpdate silently skipped the first pick of every draft — the first
+  // on-deck alert never sent. Same fix as onBotTurn; deletes guarded below,
+  // and the pure-tick guard already handles a null `before` (create).
+  .onWrite(async (change, ctx) => {
+    if (!change.after.exists()) return null; // node deleted — nothing to do
     const before = change.before.val();
     const after = change.after.val();
     const { draftId } = ctx.params;
@@ -538,7 +543,13 @@ exports.onBotTurn = functions
   .region('us-central1')
   .runWith({ timeoutSeconds: 180, memory: '256MB' })
   .database.ref('drafts/{draftId}/realTimeDraftInfo')
-  .onUpdate(async (change, ctx) => {
+  // onWrite, NOT onUpdate (2026-07-12): pick 1 of every draft arrives as the
+  // CREATION of this node at draft start — onUpdate never fired for it, so a
+  // bot holding pick 1 always buzzer-picked (seen live in fast-draft-122).
+  // onWrite fires on create + update; deletes are guarded below, and the
+  // pure-tick guard already handles a null `before` (create).
+  .onWrite(async (change, ctx) => {
+    if (!change.after.exists()) return null; // node deleted — nothing to do
     const before = change.before.val();
     const after = change.after.val();
     const { draftId } = ctx.params;
@@ -621,17 +632,84 @@ exports.onBotTurn = functions
         .filter((id) => !taken.has(id))
         .map((id) => ({ id, adp: Number(players[id].ADP) || 999 }))
         .sort((a, b) => a.adp - b.adp);
+      // Starter supply BEFORE any filtering — the reality-override rules below
+      // need to know whether RB1/WR1 are still gettable at all.
+      const supplyOf = (t) => available.filter((s) => typeOf(s.id) === t).length;
+      const rb1Supply = supplyOf('RB1');
+      const wr1Supply = supplyOf('WR1');
+
+      // Reality override (Richard, 2026-07-12, draft-122 round 13): the
+      // "never a backup before 2 starters" gate assumes starters are still
+      // available. If WR1s sell out while the bot holds only 1, a hard gate
+      // would ban it from EVER taking another WR — it spent round 13 on an
+      // RB2 instead. So: the backup gate only applies while that position's
+      // starters can still be drafted, and when they can't, the blueprint's
+      // backup allowance grows so the bot can reach 3 total at the position.
+      const wrTotalNow = (mine.WR1 || 0) + (mine.WR2 || 0);
+      const rbTotalNow = (mine.RB1 || 0) + (mine.RB2 || 0);
+      const effTargets = { ...targets };
+      if (wr1Supply === 0 && wrTotalNow < 3) {
+        effTargets.WR2 = Math.max(effTargets.WR2 ?? 0, (mine.WR2 || 0) + (3 - wrTotalNow));
+      }
+      if (rb1Supply === 0 && rbTotalNow < 3) {
+        effTargets.RB2 = Math.max(effTargets.RB2 ?? 0, (mine.RB2 || 0) + (3 - rbTotalNow));
+      }
+
       // Draft toward the blueprint: only slot types still needed, and never a
-      // backup (RB2/WR2) before 2+ starters at that position are rostered.
+      // backup (RB2/WR2) before 2+ starters at that position are rostered —
+      // unless the starters are gone (reality override above).
       const needed = available.filter((s) => {
         const t = typeOf(s.id);
-        if ((mine[t] || 0) >= (targets[t] ?? 0)) return false;
-        if (t === 'RB2' && (mine.RB1 || 0) < 2) return false;
-        if (t === 'WR2' && (mine.WR1 || 0) < 2) return false;
+        if ((mine[t] || 0) >= (effTargets[t] ?? 0)) return false;
+        if (t === 'RB2' && (mine.RB1 || 0) < 2 && rb1Supply > 0) return false;
+        if (t === 'WR2' && (mine.WR1 || 0) < 2 && wr1Supply > 0) return false;
         return true;
       });
       if (needed.length > 0) available = needed; // blueprint is a plan, not a straitjacket — never strand the bot
       if (available.length === 0) return null; // engine fallback will handle it
+
+      // Emergency narrowing, ANY round: under 3 TOTAL at a premium position
+      // whose starters are gone — take its backups NOW while they exist. This
+      // is what turns "RB2 in round 13 with one WR" into "grab WR2s," and
+      // "4th QB while holding 2 RBs" into "grab RB2s." WR before RB when
+      // both are starving.
+      let emergencyType = null;
+      if (wr1Supply === 0 && wrTotalNow < 3 && available.some((s) => typeOf(s.id) === 'WR2')) {
+        emergencyType = 'WR2';
+      } else if (rb1Supply === 0 && rbTotalNow < 3 && available.some((s) => typeOf(s.id) === 'RB2')) {
+        emergencyType = 'RB2';
+      }
+      if (emergencyType) available = available.filter((s) => typeOf(s.id) === emergencyType);
+
+      // Early-draft balance floor (Richard, 2026-07-12 after draft-122): walk
+      // out of the first 7 rounds with AT LEAST 2 RB1 and 2 WR1. The blueprint
+      // alone says how many to end with, not WHEN — an RB-heavy start let the
+      // WR1 shelf empty out and the bot finished with a single WR1. Two
+      // triggers narrow the pool to a deficit position:
+      //  - scarcity: a needed premium type is down to ≤10 available (≈ one
+      //    snake round of demand) — take it before the run finishes it;
+      //  - runway: deficit picks needed ≥ early picks remaining — stop
+      //    browsing, cover the floor.
+      // Most-endangered position first when both are short. If the position
+      // is already sold out, there's nothing to force — blueprint continues.
+      const myPickCount = Object.values(mine).reduce((a, b) => a + b, 0);
+      if (myPickCount < 7) {
+        const deficits = [];
+        for (const t of ['RB1', 'WR1']) {
+          const have = mine[t] || 0;
+          if (have < 2) {
+            const supply = available.filter((s) => typeOf(s.id) === t).length;
+            if (supply > 0) deficits.push({ t, need: 2 - have, supply });
+          }
+        }
+        const totalNeed = deficits.reduce((a, d) => a + d.need, 0);
+        const runwayTight = 7 - myPickCount <= totalNeed;
+        const scarce = deficits.filter((d) => d.supply <= 10);
+        if (deficits.length > 0 && (runwayTight || scarce.length > 0)) {
+          const focus = (scarce.length > 0 ? scarce : deficits).sort((a, b) => a.supply - b.supply)[0];
+          available = available.filter((s) => typeOf(s.id) === focus.t);
+        }
+      }
 
       // Variance: weighted draw from the top N by ADP (front-loaded weights).
       const topN = Math.max(1, Number(cfg.topN ?? 5));
