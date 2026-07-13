@@ -183,7 +183,7 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
     if (!file) return;
 
     if (!ALLOWED_ID_TYPES.includes(file.type) && !/\.(jpg|jpeg|png|heic|webp)$/i.test(file.name)) {
-      setError('Please upload a JPG, PNG, HEIC, or WEBP image of your ID.');
+      setError('Please upload a JPG or PNG image of your ID.');
       return;
     }
     const sizeMb = file.size / (1024 * 1024);
@@ -193,16 +193,24 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
     }
     setError('');
 
-    // Compress so the upload fits under the API request body limit.
-    // For HEIC files (iPhone default), the canvas approach below relies on
-    // the browser being able to decode them — Safari does, Chrome doesn't.
-    // We use the original file as fallback if compression fails for any
-    // reason; if it's still too big, the backend rejects with a clear message.
+    // Compress (and convert to JPEG) so the upload fits the request limit AND is
+    // a format Didit accepts. HEIC (iPhone default) can only be decoded here by
+    // Safari; Chrome can't, so compression fails. Didit REJECTS HEIC, so we must
+    // NOT fall back to uploading the original HEIC (that produced a misleading
+    // "try a clearer photo" loop) — tell the user how to fix it instead. A
+    // JPEG/PNG that fails compression is already a supported format, so for
+    // those the original is a safe fallback.
+    const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
     let toUpload = file;
     try {
       toUpload = await compressImage(file);
     } catch (err) {
-      console.warn('[Verification] Image compression failed, using original:', err);
+      console.warn('[Verification] Image compression failed:', err);
+      if (isHeic) {
+        setError("That looks like an iPhone (HEIC) photo your browser can't process here. Please upload a JPG or PNG instead — a screenshot of your ID works, or on iPhone set Camera → Formats → Most Compatible.");
+        return;
+      }
+      toUpload = file; // non-HEIC: original is already a supported format
     }
     setIdFile(toUpload);
 
@@ -450,7 +458,7 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
                   <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                 </svg>
                 <p className="text-text-primary text-sm font-medium">Upload ID photo</p>
-                <p className="text-text-muted text-xs mt-0.5">JPG, PNG, HEIC, or WEBP</p>
+                <p className="text-text-muted text-xs mt-0.5">JPG or PNG</p>
               </button>
             )}
           </div>

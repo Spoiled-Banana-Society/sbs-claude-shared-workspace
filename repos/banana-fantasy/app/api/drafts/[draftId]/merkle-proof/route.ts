@@ -8,7 +8,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { buildDraftMerkleProof, type DraftType } from '@/lib/batchMerkleClient';
-import { locateDraft, parseDraftNumber } from '@/lib/batchProof';
+import { locateDraft } from '@/lib/batchProof';
+import { resolveGlobalLeagueNumber } from '@/lib/leagueNumber';
 
 /**
  * GET /api/drafts/{draftId}/merkle-proof
@@ -36,9 +37,12 @@ export async function GET(req: Request, ctx: { params: { draftId: string } }) {
     const draftId = ctx.params.draftId?.trim();
     if (!draftId) return jsonError('Missing draftId', 400);
 
-    const draftNumber = parseDraftNumber(draftId);
+    // GLOBAL league number (DisplayName), never the slot-id counter — the
+    // Merkle leaves are committed against the global number, which drifts from
+    // the slot counter once slow drafts / cross-era ids exist.
+    const draftNumber = await resolveGlobalLeagueNumber(draftId);
     if (draftNumber === null) {
-      return jsonError(`Could not parse draft number from id: ${draftId}`, 400);
+      return jsonError(`Could not resolve league number for id: ${draftId}`, 400);
     }
     const locator = locateDraft(draftNumber);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 
 const BananaWheel = dynamic(() => import('@/components/wheel/BananaWheel').then(m => ({ default: m.BananaWheel })), {
@@ -27,6 +27,103 @@ export default function BananaWheelPage() {
   const promosQuery = usePromos({ userId: user?.id });
   const [queuedJP, setQueuedJP] = React.useState(0);
   const [queuedHOF, setQueuedHOF] = React.useState(0);
+
+  // A JP/HOF spin win just landed: poll the live queue until the winner's seat
+  // appears, then feed the win modal a live "X/10" + a Join-the-Lobby URL and
+  // fire the bell notification with the real remaining count. The seat is
+  // created server-side AFTER the spin response (waitUntil), so it typically
+  // resolves a few seconds after the wheel stops.
+  const [specialWin, setSpecialWin] = React.useState<{ kind: 'jackpot' | 'hof'; spinId: string | null; startedAt: number } | null>(null);
+  const [specialDraftStatus, setSpecialDraftStatus] = React.useState<{ count: number; draftRoomUrl: string | null } | null>(null);
+  // Wheel prize odds now live behind the "i" by the title (not a big discouraging
+  // panel on the page). Transparent (one tap), framed as "every spin wins".
+  const [showOdds, setShowOdds] = React.useState(false);
+  // Friendly "we're getting your prize ready" popup for when a won prize's
+  // delivery needed retries (or got stuck). No web3 wording is shown — see
+  // /api/wheel/pending-delivery.
+  const [delivery, setDelivery] = React.useState<'pending' | 'stuck' | null>(null);
+  const deliveryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingDismissedRef = useRef(false);
+  const watchRef = useRef<() => void>(() => {});
+  const specialWalletAddr = (user?.walletAddress || user?.id || '').toLowerCase();
+  React.useEffect(() => {
+    if (!specialWin || !specialWalletAddr) return;
+    let cancelled = false;
+    let notified = false;
+    const { kind, spinId, startedAt } = specialWin;
+    const label = kind === 'jackpot' ? 'Jackpot' : 'HOF';
+    const notify = (count: number | null) => {
+      if (notified || cancelled) return;
+      notified = true;
+      const remaining = count !== null ? Math.max(0, 10 - count) : null;
+      pushNotification({
+        type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+        title: `You won a ${label} Draft (from the Wheel)!`,
+        message: (remaining === null
+          ? `You're in a ${label}-only lobby. It drafts as soon as 10 wheel winners are in (Slow Draft, 8 hrs/pick).`
+          : remaining === 0
+            ? `Your ${label} lobby is full (10/10) — your draft is starting now! (Slow Draft, 8 hrs/pick).`
+            : `You're in a ${label}-only lobby (${count}/10) — ${remaining} more wheel winner${remaining === 1 ? '' : 's'} to go, then you draft (Slow Draft, 8 hrs/pick).`)
+          + (kind === 'jackpot' ? ' Win your league → skip to the Finals.' : ' Win your league → enter the HOF playoffs.'),
+        link: '/drafting',
+        ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
+      });
+      // A few seconds AFTER the congrats bell, a reminder to make sure Draft
+      // Alerts are on — JP/HOF wheel drafts are slow (8 hrs/pick), so missing
+      // the start or a pick is costly. Sent to everyone (neutral "make sure"
+      // copy reads fine whether they're already on or off); deduped per spin so
+      // it fires once. pushNotification persists server-side + renders locally.
+      setTimeout(() => {
+        if (cancelled) return;
+        pushNotification({
+          type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+          title: 'Make sure your Draft Alerts are on',
+          message: `Your ${label} Draft (from the Wheel) is a slow draft (8 hrs/pick) — turn on Draft Alerts so you don't miss the start or a pick.`,
+          link: '/profile?tab=notifications',
+          icon: '🔔',
+          ...(spinId ? { dedupeKey: `spin-alerts-${spinId}` } : {}),
+        });
+      }, 6000);
+    };
+    const poll = () => {
+      fetchJson<Record<string, { rounds?: Array<{ roundId: number; status: string; draftId?: string | null; members: Array<{ wallet: string }> }> }>>('/api/queues')
+        .then(queues => {
+          if (cancelled) return;
+          const rounds = (queues[kind]?.rounds || [])
+            .filter(r => (r.status === 'filling' || r.status === 'drafting')
+              && r.members.some(m => (m.wallet || '').toLowerCase() === specialWalletAddr))
+            .sort((a, b) => b.roundId - a.roundId);
+          const round = rounds[0];
+          if (!round) return;
+          const count = round.members.length;
+          const params = new URLSearchParams({
+            id: round.draftId || `queue-${kind}-${round.roundId}`,
+            name: 'Draft Room',
+            speed: 'slow',
+            players: String(count),
+          });
+          if (user?.walletAddress) {
+            params.set('mode', 'live');
+            params.set('wallet', user.walletAddress);
+          }
+          params.set('specialType', kind);
+          setSpecialDraftStatus({ count, draftRoomUrl: `/draft-room?${params.toString()}` });
+          notify(count);
+        })
+        .catch(() => { /* next tick retries; the 20s fallback noti covers a dead poll */ });
+    };
+    poll();
+    const iv = setInterval(() => {
+      if (Date.now() - startedAt > 120_000) { clearInterval(iv); return; }
+      poll();
+    }, 2_500);
+    // The win must ALWAYS ring the bell — if the seat hasn't resolved in 20s
+    // (slow mint), fire the generic copy; dedupeKey keeps it single.
+    const fallback = setTimeout(() => notify(null), 20_000);
+    return () => { cancelled = true; clearInterval(iv); clearTimeout(fallback); };
+    // user?.walletAddress intentionally read via specialWalletAddr (stable scalar) — Rule #0.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specialWin, specialWalletAddr]);
   React.useEffect(() => {
     if (!user?.id) return;
     fetchJson<Record<string, { rounds?: Array<{ status: string; members: Array<{ wallet: string }> }> }>>('/api/queues')
@@ -52,6 +149,33 @@ export default function BananaWheelPage() {
   const historyQuery = useWheelHistory(user?.id);
   const spinHistory = historyQuery.data ?? [];
 
+  // Lifetime spin winnings — the "My Winnings" scoreboard. Computed from the
+  // full spin history (cumulative, never decreases), unlike the spendable
+  // balances which drop when a pass/entry is used. Stored `prize` is the
+  // source of truth; legacy rows without one derive from the segment id.
+  const wonTotals = useMemo(() => {
+    let drafts = 0;
+    let jackpot = 0;
+    let hof = 0;
+    for (const s of spinHistory) {
+      const p = s.prize;
+      if (p && typeof p === 'object' && p.type) {
+        if (p.type === 'draft_pass' && typeof p.value === 'number') drafts += p.value;
+        else if (p.type === 'custom' && p.value === 'jackpot') jackpot += 1;
+        else if (p.type === 'custom' && p.value === 'hof') hof += 1;
+        continue;
+      }
+      const r = s.result || '';
+      if (r.startsWith('jackpot')) jackpot += 1;
+      else if (r.startsWith('hof')) hof += 1;
+      else {
+        const m = r.match(/^draft-(\d+)/);
+        if (m) drafts += Number(m[1]);
+      }
+    }
+    return { drafts, jackpot, hof };
+  }, [spinHistory]);
+
   const spinsAvailable = Math.max(0, user?.wheelSpins ?? 0);
 
   const segmentMap = useMemo(() => new Map(wheelSegments.map((segment) => [segment.id, segment])), []);
@@ -65,8 +189,19 @@ export default function BananaWheelPage() {
     // the post-landing prize reveal frame. Any SSE payload arriving
     // during the freeze is queued and applied automatically when the
     // freeze expires — no balance data is lost.
+    // The wheel now starts spinning instantly and only the ~1.3s landing
+    // happens AFTER the RNG request resolves. The network leg is variable
+    // (slow on mobile), so freeze once up front, then re-extend the freeze
+    // the moment the result lands to cover the landing window — otherwise a
+    // slow network could let the balance tick before the wheel stops and
+    // spoil the prize.
     freezeSpinReveal(SPIN_DURATION_MS + 800);
-    return spinMutation.mutateAsync();
+    // A fresh spin invalidates any previous JP/HOF seat poll/modal state.
+    setSpecialWin(null);
+    setSpecialDraftStatus(null);
+    const outcome = await spinMutation.mutateAsync();
+    freezeSpinReveal(SPIN_DURATION_MS + 800);
+    return outcome;
   }, [spinMutation, freezeSpinReveal]);
 
   const handleSpinComplete = useCallback(
@@ -114,6 +249,12 @@ export default function BananaWheelPage() {
       }
 
       if (!user || !segment) return;
+      // Any win that delivers a prize on-chain: start watching for a delayed
+      // delivery so we can reassure the user if it needs retries.
+      const isDeliverableWin =
+        (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number' && segment.prizeValue > 0) ||
+        (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof'));
+      if (isDeliverableWin) watchRef.current();
       if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
         const expectedDraftPasses = (user.draftPasses ?? 0) + segment.prizeValue;
         updateUser({ freeDrafts: (user.freeDrafts || 0) + segment.prizeValue });
@@ -132,35 +273,102 @@ export default function BananaWheelPage() {
             stack: err instanceof Error ? err.stack : undefined,
           });
         });
-        // Pluralize the title to match the count: "Free Draft Won!" for 1,
-        // "Free Drafts Won!" for 2+. Sticking "Drafts" on the title when
-        // the body says "1 free draft" reads sloppy.
+        // Count in the title: "Free Draft Won!" for 1, "2 Free Drafts Won!"
+        // for 2+ (Boris 2026-06-10). This is THE win bell entry — fired at
+        // the exact moment the wheel stops; the server deliberately doesn't
+        // fire one (it double-notified and the timing was off).
         pushNotification({
           type: 'promo',
-          title: segment.prizeValue === 1 ? 'Free Draft Won!' : 'Free Drafts Won!',
+          title: segment.prizeValue === 1 ? 'Free Draft Won!' : `${segment.prizeValue} Free Drafts Won!`,
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
+          // 'gift' = a FREE draft (won/earned), distinct from a PURCHASED pass
+          // ('ticket'). Same icon for every free-draft notification (wheel win
+          // + card-fee credit) so "free draft" always reads the same (Boris).
+          icon: 'gift',
+          // Stable key → idempotent server doc AND the instant local bell
+          // insert in pushNotification (entry shows the ms the wheel stops).
+          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
-        pushNotification({
-          type: 'jackpot_queue',
-          title: '🔥 Jackpot Draft Queued!',
-          message: 'You\'re in the Jackpot queue (8-hour picks). Draft starts as soon as 10 winners join!',
-          link: '/drafting',
-        });
+        // Bell noti fires from the seat poll (with the live X/10 count) — see
+        // the specialWin effect; a 20s fallback guarantees it always rings.
+        setSpecialDraftStatus(null);
+        setSpecialWin({ kind: 'jackpot', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
-        pushNotification({
-          type: 'hof_queue',
-          title: '🏆 HOF Draft Queued!',
-          message: 'You\'re in the HOF queue (8-hour picks). Draft starts as soon as 10 winners join!',
-          link: '/drafting',
-        });
+        setSpecialDraftStatus(null);
+        setSpecialWin({ kind: 'hof', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
       }
     },
     [updateUser, user, refreshBalance, refreshBalanceUntil, queryClient],
   );
+
+  // ── Delayed-prize delivery watch ────────────────────────────────────────
+  // Polls /api/wheel/pending-delivery so a prize whose delivery needed retries
+  // shows a reassuring popup instead of silently missing.
+  const pollDeliveryOnce = useCallback(async (): Promise<'pending' | 'stuck' | 'none'> => {
+    const w = (user?.walletAddress || user?.id || '').toLowerCase();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(w)) return 'none';
+    try {
+      const res = await fetchJson<{ status: 'pending' | 'stuck' | 'none' }>(
+        `/api/wheel/pending-delivery?wallet=${w}`,
+      );
+      return res?.status ?? 'none';
+    } catch {
+      return 'none';
+    }
+  }, [user?.walletAddress, user?.id]);
+
+  const watchDelivery = useCallback(() => {
+    if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current);
+    pendingDismissedRef.current = false;
+    let ticks = 0;
+    let sawPending = false;
+    const stop = () => {
+      if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current);
+      deliveryTimerRef.current = null;
+    };
+    const tick = async () => {
+      ticks += 1;
+      const status = await pollDeliveryOnce();
+      if (status === 'pending') {
+        sawPending = true;
+        if (!pendingDismissedRef.current) setDelivery('pending');
+      } else if (status === 'stuck') {
+        setDelivery('stuck'); // always surface — auto-recovery gave up
+        stop();
+        return;
+      } else if (sawPending) {
+        setDelivery(null); // was pending, now delivered
+        stop();
+        return;
+      }
+      if (ticks >= 15) stop(); // ~60s window
+    };
+    void tick();
+    deliveryTimerRef.current = setInterval(() => { void tick(); }, 4000);
+  }, [pollDeliveryOnce]);
+
+  // Keep the ref that handleSpinComplete calls pointed at the latest watcher.
+  useEffect(() => { watchRef.current = watchDelivery; }, [watchDelivery]);
+  // Clean up the poll timer on unmount.
+  useEffect(() => () => { if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current); }, []);
+
+  // On load / wallet ready: if a prize is already mid-delivery (e.g. the user
+  // reloaded), reflect it. Rule #0: deps are a stable scalar; the watcher is
+  // reached via ref, not the dep array.
+  const mountCheckRef = useRef(pollDeliveryOnce);
+  useEffect(() => { mountCheckRef.current = pollDeliveryOnce; }, [pollDeliveryOnce]);
+  useEffect(() => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(specialWalletAddr)) return;
+    void (async () => {
+      const status = await mountCheckRef.current();
+      if (status === 'pending') { setDelivery('pending'); watchRef.current(); }
+      else if (status === 'stuck') setDelivery('stuck');
+    })();
+  }, [specialWalletAddr]);
 
   const prizeSummary = useMemo(() => {
     const summary = new Map<string, { label: string; color: string; probability: number }>();
@@ -221,7 +429,7 @@ export default function BananaWheelPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-4">
         <div className="text-center mb-6" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>
           <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
-          <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
+          <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot/HOF Entries</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
           <div className="flex flex-col gap-4 order-3 lg:order-1">
@@ -231,7 +439,7 @@ export default function BananaWheelPage() {
           <div className="flex justify-center order-1 lg:order-2">
             <div className="w-[300px] h-[300px] bg-bg-tertiary rounded-full animate-pulse" />
           </div>
-          <div className="flex flex-col gap-4 order-2 lg:order-3">
+          <div className="flex flex-col gap-4 order-2 lg:order-3 mt-12 lg:mt-0">
             {skeletonCard}
             {skeletonCard}
           </div>
@@ -244,8 +452,20 @@ export default function BananaWheelPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-4">
       {/* Page Header */}
       <div className="text-center mb-6" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>
-        <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
-        <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <h1 className="text-[28px] font-semibold text-white tracking-tight">Banana Wheel</h1>
+          <button
+            type="button"
+            onClick={() => setShowOdds(true)}
+            aria-label="Prize odds"
+            className="text-white/30 hover:text-white/60 transition-colors"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
+        </div>
+        <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot/HOF Entries</p>
       </div>
 
       {/*
@@ -271,28 +491,11 @@ export default function BananaWheelPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
         {/* LEFT column on desktop (order-1); mobile bottom (order-3) */}
         <div className="flex flex-col gap-4 order-3 lg:order-1">
-          {/* Prizes on Wheel */}
-          <div
-            className="rounded-2xl p-6 backdrop-blur-md"
-            style={{
-              background: 'rgba(20, 20, 20, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
-            }}
-          >
-            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Prizes on Wheel</h3>
-            <div className="space-y-3.5 text-[14px]">
-              {prizeSummary.map((item) => (
-                <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
-                  <span className="font-semibold" style={{ color: item.color }}>{item.label}</span>
-                  <span className="font-semibold tabular-nums" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Prizes on Wheel moved into the "i" popover by the title (Boris 2026-06-20). */}
 
-          {/* What Are These? */}
+          {/* What Are These? — hugs its content (no forced stretch; the wheel+Spin
+              center column is taller than the right column, so stretching here just
+              created empty space — Boris 2026-06-20). */}
           <div
             className="rounded-2xl p-6 backdrop-blur-md"
             style={{
@@ -307,19 +510,25 @@ export default function BananaWheelPage() {
               <div>
                 <span className="text-[#ff6b6b] font-bold text-[15px]">Jackpot</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on Jackpot and you&apos;re placed into a Jackpot league. Win that league and skip straight to the finals!
+                  Land on Jackpot and you&apos;re placed into a Jackpot draft lobby. Draft starts when 10 wheel winners join. Win that league and skip straight to the finals.
+                </p>
+                <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#ffd60a] font-bold text-[15px]">HOF</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on HOF and you&apos;re placed into a HOF league. Compete for bonus prizes on top of regular rewards!
+                  Land on HOF and you&apos;re placed into a HOF draft lobby. Draft starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards.
+                </p>
+                <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#32d74b] font-bold text-[15px]">Free Drafts</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Free drafts can only be used to draft. They cannot be used for promos.
+                  Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot/HOF drafts won on the Wheel.
                 </p>
               </div>
             </div>
@@ -332,11 +541,12 @@ export default function BananaWheelPage() {
             spinsAvailable={spinsAvailable}
             onSpin={handleSpin}
             onSpinComplete={handleSpinComplete}
+            specialDraftStatus={specialDraftStatus}
           />
         </div>
 
         {/* RIGHT column on desktop (order-3); mobile sits right under the wheel (order-2) */}
-        <div className="flex flex-col gap-4 order-2 lg:order-3">
+        <div className="flex flex-col gap-4 order-2 lg:order-3 mt-12 lg:mt-0">
           {/*
             My Winnings + Recent Spins — combined card.
             Top section = scoreboard (totals). Bottom section = history.
@@ -353,19 +563,31 @@ export default function BananaWheelPage() {
           >
             <h3 className="text-[16px] font-semibold text-white tracking-tight">My Winnings</h3>
 
-            {/* Totals — your scoreboard, tabular numerals so digits line up */}
+            {/* Totals — big number = LIFETIME won from spins (cumulative, never
+                drops); muted suffix = spendable balance left right now. Both
+                live: totals bump when the wheel lands, "left" rides the
+                real-time balance stream (drops the moment a pass is used). */}
             <div className="mt-4 space-y-3.5">
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">Free Drafts</span>
-                <span className="text-[#32d74b] font-semibold text-[16px] tabular-nums">{user?.freeDrafts || 0}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#32d74b] font-semibold text-[16px] tabular-nums">{wonTotals.drafts}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {user?.freeDrafts || 0} left</span>
+                </span>
               </div>
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">Jackpot</span>
-                <span className="text-[#ff6b6b] font-semibold text-[16px] tabular-nums">{(user?.jackpotEntries || 0) + queuedJP}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#ff6b6b] font-semibold text-[16px] tabular-nums">{wonTotals.jackpot}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackpotEntries || 0) + queuedJP} left</span>
+                </span>
               </div>
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">HOF</span>
-                <span className="text-[#ffd60a] font-semibold text-[16px] tabular-nums">{(user?.hofEntries || 0) + queuedHOF}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#ffd60a] font-semibold text-[16px] tabular-nums">{wonTotals.hof}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.hofEntries || 0) + queuedHOF} left</span>
+                </span>
               </div>
             </div>
 
@@ -416,10 +638,11 @@ export default function BananaWheelPage() {
         </div>
       </div>
 
-      {/* How to Earn Spins */}
-      <section id="earn-spins" className="mt-12 scroll-mt-24">
-        <h2 className="text-xl font-semibold text-text-primary mb-4">How to Earn Spins</h2>
+      {/* Promo cards — the carousel renders its own heading. Tight gap now
+          that the "Earn spins by" list + extra heading are gone. */}
+      <section id="earn-spins" className="mt-8 lg:mt-14 scroll-mt-24">
         <PromoCarousel
+          heading="Promos to Earn Spins"
           promos={promosQuery.data ?? []}
           autoPlay={false}
           claimPromo={promosQuery.claimPromo}
@@ -427,6 +650,80 @@ export default function BananaWheelPage() {
           onGenerateReferralCode={promosQuery.generateReferralCode}
         />
       </section>
+
+      {/* Prize-odds popover (opened by the "i" next to the title). Transparent
+          odds, one tap, framed as "every spin wins". */}
+      {showOdds && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setShowOdds(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{ background: 'rgba(20,20,20,0.96)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[17px] font-semibold text-white tracking-tight">Prizes on Wheel</h3>
+              <button type="button" onClick={() => setShowOdds(false)} aria-label="Close" className="text-white/40 hover:text-white transition-colors text-[20px] leading-none">×</button>
+            </div>
+            <div className="space-y-3.5 text-[14px]">
+              {prizeSummary.map((item) => (
+                <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
+                  <span className="font-semibold" style={{ color: item.color }}>{item.label}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delayed-prize delivery popup. Reassures the user when a won prize is
+          taking a moment to arrive (or, rarely, got stuck and a human's on it).
+          Deliberately NO web3 wording. */}
+      {delivery && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 text-center"
+            style={{ background: 'rgba(20,20,20,0.96)', border: '1px solid rgba(251,191,36,0.25)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+          >
+            <div className="text-4xl mb-3">🍌</div>
+            {delivery === 'pending' ? (
+              <>
+                <div className="mx-auto mb-4 h-8 w-8 rounded-full border-2 border-banana/30 border-t-banana animate-spin" />
+                <h3 className="text-[17px] font-semibold text-white tracking-tight mb-2">Getting your prize ready…</h3>
+                <p className="text-[14px] text-white/70 leading-relaxed mb-5">
+                  Hang tight — this can take a minute. You don&apos;t need to do anything; your prize will show up automatically.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { pendingDismissedRef.current = true; setDelivery(null); }}
+                  className="w-full rounded-xl py-2.5 text-[15px] font-semibold text-black"
+                  style={{ background: '#fbbf24' }}
+                >
+                  Got it
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-[17px] font-semibold text-white tracking-tight mb-2">We&apos;re on it</h3>
+                <p className="text-[14px] text-white/70 leading-relaxed mb-5">
+                  Your prize is taking longer than usual to arrive. Don&apos;t worry — our team has been alerted and will make sure you get it. Nothing needed on your end.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDelivery(null)}
+                  className="w-full rounded-xl py-2.5 text-[15px] font-semibold text-black"
+                  style={{ background: '#fbbf24' }}
+                >
+                  Got it
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

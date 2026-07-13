@@ -13,6 +13,8 @@ import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { createSyntheticPrize } from '@/lib/prizeOverlay';
+import { createNotification } from '@/lib/queueNotifications';
+import { runInBackground } from '@/lib/serverBackground';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -50,6 +52,18 @@ export async function POST(req: Request) {
       grantedBy: actor,
     });
     if (!prize) throw new ApiError(503, 'Firestore not configured');
+
+    // Synced bell noti (instant ping on all the winner's devices). When real
+    // prize wins get a server-side write path (Go → frontend), fire the same
+    // noti there. dedupeKey keeps admin retries idempotent.
+    runInBackground('prize.won-noti', createNotification(targetWallet, {
+      type: 'prize',
+      title: 'You won a prize!',
+      message: `$${amount.toFixed(2)} — ${contestName}. It's on your Winnings page.`,
+      link: '/winnings',
+      dedupeKey: `prize-${prize.id}`,
+      icon: 'trophy',
+    }));
 
     await logAdminAction({
       actor,

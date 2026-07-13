@@ -26,7 +26,10 @@ export type AdminAction =
   | 'wheel-period-finalize'
   | 'wheel-period-reveal'
   | 'admin-broadcast'
-  | 'admin-bulk-grant';
+  | 'admin-bulk-grant'
+  | 'import-winners'
+  | 'mark-paid-batch'
+  | 'withdraw-contract-usdc';
 
 export interface AdminActionRecord {
   actor: string;          // wallet address of admin who performed action

@@ -126,14 +126,26 @@ export const RATE_LIMITS = {
   purchases: { limit: 10, windowMs: 60_000 },
   /** Admin: 300 req/min — admin auth already gates access; this is just scanner protection */
   admin: { limit: 300, windowMs: 60_000 },
-  /** Wheel spins: 5 req/min */
-  wheel: { limit: 5, windowMs: 60_000 },
+  /** Wheel spin action: 20 req/min. ONLY the spin POST uses this now — the
+   *  page's read/polling routes + confirm-reveal were moved to `general`.
+   *  A spin can't happen without a server-checked spin credit, so this is
+   *  just bot-flood protection; 5/min was blocking users with banked spins. */
+  wheel: { limit: 20, windowMs: 60_000 },
   /** RNG: 5 req/min */
   rng: { limit: 5, windowMs: 60_000 },
-  /** General reads: 60 req/min */
-  general: { limit: 60, windowMs: 60_000 },
-  /** Auth/owner: 15 req/min */
-  auth: { limit: 15, windowMs: 60_000 },
+  /** General reads: 600 req/min. NOTE: this is ONE shared bucket per IP across
+   *  EVERY route using RATE_LIMITS.general (promos, badges, owner/balance,
+   *  user/metadata, founder-schedule, display-batch, …). The old 60/min was far
+   *  too low for legit use: one logged-in page load fires ~8 of these, and a
+   *  power user with several tabs (or a NAT'd household/office sharing an IP)
+   *  blows past 60/min in seconds → the whole site 429s for up to a minute
+   *  ("freeze → 404 → recovers"). 600/min still catches a true render-loop
+   *  self-DDoS (which fires thousands/min) within seconds; the Vercel firewall
+   *  (1500/min/IP) remains the outer backstop. */
+  general: { limit: 600, windowMs: 60_000 },
+  /** Auth/owner: 120 req/min (was 15 — same shared-bucket false-positive as
+   *  `general`; balance/auth reads + multi-tab focus refetches exceed 15 easily). */
+  auth: { limit: 120, windowMs: 60_000 },
   /** Prizes/withdrawals: 10 req/min */
   prizes: { limit: 10, windowMs: 60_000 },
 } as const;

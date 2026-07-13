@@ -1,0 +1,15 @@
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
+const sa = JSON.parse(readFileSync(process.env.SA_PATH, 'utf8'));
+admin.initializeApp({ credential: admin.credential.cert(sa) });
+const fs = admin.firestore();
+const p2 = (await fs.collection('wheel_periods').doc('2').get()).data();
+console.log('period 2:');
+console.log('  status:', p2?.status);
+console.log('  maxSpins:', p2?.maxSpins);
+console.log('  saltHash:', p2?.saltHash?.slice(0, 18) + '…');
+console.log('  segmentsHash:', p2?.segmentsHash?.slice(0, 16) + '…');
+console.log('  segmentsSnapshot:', Array.isArray(p2?.segmentsSnapshot) ? p2.segmentsSnapshot.map(s => `${s.id}:${s.probability}`).join(' ') : '(missing)');
+const p1 = (await fs.collection('wheel_periods').doc('1').get()).data();
+console.log('\nperiod 1: status:', p1?.status, 'spinCount:', p1?.spinCount, 'revealTx:', p1?.revealTxHash ? p1.revealTxHash.slice(0, 14) + '…' : '(not revealed)');
+process.exit(0);

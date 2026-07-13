@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
 
     const vendorData = privyUser.userId;
-    const callback = typeof body.callback === 'string' ? body.callback : `${process.env.NEXT_PUBLIC_APP_URL || 'https://banana-fantasy-sbs.vercel.app'}/prizes`;
+    const callback = typeof body.callback === 'string' ? body.callback : `${process.env.NEXT_PUBLIC_APP_URL || 'https://banana-fantasy-sbs.vercel.app'}/winnings`;
 
     const res = await fetch(`${DIDIT_BASE_URL}/v3/session/`, {
       method: 'POST',

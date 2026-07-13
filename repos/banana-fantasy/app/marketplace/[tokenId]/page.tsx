@@ -3,19 +3,29 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
+import { friendlyTxError } from '@/lib/marketplace/txErrors';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
+import { useListTeam } from '@/hooks/useListTeam';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
+import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
+import { BBB4_CONTRACT, resolveLeagueNumber } from '@/lib/opensea';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
+import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { UserPopover } from '@/components/social/UserPopover';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { Ripeness } from '@/types';
 import { logger } from '@/lib/logger';
 
 interface NftTrait {
@@ -33,11 +43,14 @@ interface NftDetail {
   owner: string | null;
   ownerName: string | null;
   ownerPfp: string | null;
+  ownerBadge?: string | null;
+  ownerRipeness?: Ripeness | null;
+  pricePaid?: number | null;
   listing: {
     order_hash: string;
     protocol_address: string;
     price: { current: { value: string; decimals: number } };
-    protocol_data: { parameters: { offerer: string } };
+    protocol_data: { parameters: { offerer: string; endTime?: string; startTime?: string } };
   } | null;
   team?: {
     leagueId: string;
@@ -84,13 +97,59 @@ function timeUntil(iso: string): string {
   return `${days}d`;
 }
 
+/** Human "time left" for a Seaport order's endTime (Unix seconds string). */
+function formatExpiresIn(endTimeSec?: string): string | null {
+  if (!endTimeSec) return null;
+  const end = Number(endTimeSec) * 1000;
+  if (!Number.isFinite(end) || end <= 0) return null;
+  const diff = end - Date.now();
+  if (diff <= 0) return 'Expired';
+  const days = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+// How long a listing stays live before OpenSea expires it. The user picks one;
+// the value flows into the Seaport order's endTime at sign time. OpenSea caps
+// listings at ~6 months, so 90 days is comfortably inside that.
+const LISTING_DURATIONS: Array<{ label: string; seconds: number }> = [
+  { label: '1 day', seconds: 1 * 24 * 3600 },
+  { label: '3 days', seconds: 3 * 24 * 3600 },
+  { label: '7 days', seconds: 7 * 24 * 3600 },
+  { label: '14 days', seconds: 14 * 24 * 3600 },
+  { label: '30 days', seconds: 30 * 24 * 3600 },
+  { label: '90 days', seconds: 90 * 24 * 3600 },
+];
+const DEFAULT_LISTING_SECONDS = 30 * 24 * 3600;
+
 export default function NftDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  // Return to the marketplace page/tab the user came FROM (it stores its tab +
+  // filter in the URL), not the default Listed view. history.back() restores
+  // that exact URL; fall back to /marketplace if they deep-linked here.
+  const goBackToMarketplace = useCallback(() => {
+    // Scroll restore is handled by the marketplace itself (it detects it arrived
+    // from a team page via getLastPath, for button + browser back alike). Here we
+    // just return to the tab/filter the user came from — history.back restores it.
+    if (typeof window !== 'undefined' && window.history.length > 1 && document.referrer.includes('/marketplace')) {
+      router.back();
+    } else {
+      router.push('/marketplace');
+    }
+  }, [router]);
   const tokenId = (params?.tokenId as string) ?? '';
   const autoBuy = searchParams?.get('buy') === 'true';
   const autoOffer = searchParams?.get('offer') === 'true';
-  const { isLoggedIn, walletAddress, user, setShowLoginModal } = useAuth();
+  // Arriving from the "Review" button on Offers-on-Your-Teams: jump straight to
+  // the Offers section so the owner can Accept without scrolling the whole page.
+  const reviewOffers = searchParams?.get('review') === 'offers';
+  const offersSectionRef = React.useRef<HTMLDivElement>(null);
+  const { isLoggedIn, walletAddress, user, setShowLoginModal, isEmbeddedWallet } = useAuth();
   const { wallets, ready: _walletsReady } = useWallets();
   const { sendTransaction } = useSendTransaction();
   const { fundWallet } = useFundWallet();
@@ -104,10 +163,65 @@ export default function NftDetailPage() {
     return wallets[0];
   }, [walletAddress, wallets]);
 
+  // Route transactions by wallet type — same pattern as marketplace/page.tsx.
+  // Privy's useSendTransaction with sponsor:true is gasless but ONLY works for
+  // embedded Privy wallets; calling it with an external wallet (MetaMask,
+  // Coinbase) throws "No embedded or connected wallet found for address."
+  // External wallets sign via their own provider and pay their own gas.
+  const sendTx = useCallback(async (
+    txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
+    opts: { description: string; waitForReceipt?: boolean },
+  ): Promise<{ hash: string }> => {
+    if (!selectedWallet) throw new Error('No wallet connected');
+
+    if (selectedWallet.walletClientType === 'privy') {
+      const receipt = await sendTransaction(
+        txRequest,
+        // Embedded (web2) wallets sign silently — zero-friction buy/sell/offer.
+        { sponsor: true, uiOptions: { description: opts.description, showWalletUIs: false } },
+      );
+      const r = receipt as Record<string, unknown>;
+      return { hash: String(r.hash ?? r.transactionHash ?? '') };
+    }
+
+    const ethereum = await selectedWallet.getEthereumProvider();
+    const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
+    if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
+      await selectedWallet.switchChain(txRequest.chainId);
+    }
+    const { ethers } = await import('ethers');
+    const provider = new ethers.BrowserProvider(ethereum);
+    const signer = await provider.getSigner();
+    const tx = await signer.sendTransaction({
+      to: txRequest.to,
+      data: txRequest.data,
+      value: txRequest.value,
+    });
+    if (opts.waitForReceipt) await tx.wait();
+    return { hash: tx.hash };
+  }, [selectedWallet, sendTransaction]);
+
   const [nft, setNft] = useState<NftDetail | null>(null);
+  // Founder-draft team? (one batched check; team leagueId == founder draftId)
+  const founderTeamIds = useFounderTeams(
+    tokenId ? [{ tokenId, owner: nft?.owner ?? null, leagueId: nft?.team?.leagueId ?? null }] : [],
+  );
+  const isFounderTeam = founderTeamIds.has(tokenId);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Wheel-won JP/HOF level for a pass still in a filling round — drives the
+  // tier-styled card art so the detail/listing page matches the Sell grid.
+  const [fillingLevel, setFillingLevel] = useState<'hof' | 'jackpot' | null>(null);
   const [buyStep, setBuyStep] = useState<'confirm' | 'processing' | 'complete'>('confirm');
+  // Set true to abort a card buy that's stuck waiting on MoonPay funds (user
+  // bailed). The funds-polling loop checks it so the user can close the modal.
+  const cancelBuyRef = useRef(false);
+  const cancelBuy = useCallback(() => {
+    cancelBuyRef.current = true;
+    setCardFlowStep('idle');
+    setBuyStep('confirm');
+    setShowBuyModal(false);
+  }, []);
   const [txError, setTxError] = useState<string | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'usdc'>('card');
@@ -117,11 +231,24 @@ export default function NftDetailPage() {
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
   const [offerExpiration, setOfferExpiration] = useState(7);
+  const [offerPaymentMethod, setOfferPaymentMethod] = useState<'card' | 'usdc'>('usdc');
   const [showCustomExpiry, setShowCustomExpiry] = useState(false);
   const [customExpiryAmount, setCustomExpiryAmount] = useState('');
   const [customExpiryUnit, setCustomExpiryUnit] = useState<'hours' | 'days'>('hours');
+
+  // Owner-side listing controls (list / cancel for the team's owner).
+  const { listTeam, cancelTeam, busy: listBusy, error: listError } = useListTeam(walletAddress);
+  const [ownerListPrice, setOwnerListPrice] = useState('');
+  const [listDurationSeconds, setListDurationSeconds] = useState(DEFAULT_LISTING_SECONDS);
   const [offerStep, setOfferStep] = useState<'input' | 'processing' | 'complete'>('input');
   const [offerError, setOfferError] = useState<string | null>(null);
+  // Bail out of a card-funded offer stuck waiting on MoonPay funds.
+  const cancelOfferRef = useRef(false);
+  const cancelOffer = useCallback(() => {
+    cancelOfferRef.current = true;
+    setOfferStep('input');
+    setShowOfferModal(false);
+  }, []);
 
   // Accept offer state
   const [acceptingOfferHash, setAcceptingOfferHash] = useState<string | null>(null);
@@ -129,33 +256,201 @@ export default function NftDetailPage() {
 
   // Cancel offer state
   const [cancellingOfferHash, setCancellingOfferHash] = useState<string | null>(null);
+  const [cancellingAllOffers, setCancellingAllOffers] = useState(false);
 
   // Share state
   const [shareCopied, setShareCopied] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
+  // Activity feed (sales + listings) filter + truncation.
+  const [activityFilter, setActivityFilter] = useState<'all' | 'sales' | 'listings'>('all');
+  const [activityExpanded, setActivityExpanded] = useState(false);
+
   // Offers data
   const { offers, isLoading: offersLoading, refetch: refetchOffers, bestOffer } = useNftOffers(tokenId);
 
-  // Sale history
+  // Activity feed: sales + listings, newest first.
   const { activities: saleHistory, isLoading: saleHistoryLoading } = useTokenSaleHistory(tokenId);
 
-  const fetchNft = useCallback(() => {
+  // Normalize raw activity rows into display items. A sale is logged twice (a
+  // 'buy' by the buyer + a 'sell' by the seller, same txHash) — collapse those
+  // into a single "Sold" row so the feed reads cleanly.
+  const activityItems = useMemo(() => {
+    const buyTxs = new Set(
+      saleHistory.filter(a => a.type === 'buy' && a.txHash).map(a => a.txHash as string),
+    );
+    type Item = { id: string; kind: 'sale' | 'listing' | 'delisting'; label: string; price: number | null; who: string | null; seller: string | null; timestamp: string };
+    const items: Item[] = [];
+    for (const a of saleHistory) {
+      if (a.type === 'sell' && a.txHash && buyTxs.has(a.txHash)) continue; // dup of a buy
+      if (a.type === 'buy' || a.type === 'sell') {
+        // Keep BOTH sides so the row can show the viewer's own role (bought vs sold).
+        const buyer = a.type === 'buy' ? a.walletAddress : a.counterparty;
+        const seller = a.type === 'buy' ? a.counterparty : a.walletAddress;
+        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: buyer, seller, timestamp: a.timestamp });
+      } else if (a.type === 'offer_accepted') {
+        // Offer acceptance IS a sale: the owner (walletAddress) sold to the
+        // offerer (counterparty). Without this the sale never showed in the feed.
+        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: a.counterparty, seller: a.walletAddress, timestamp: a.timestamp });
+      } else if (a.type === 'list') {
+        items.push({ id: a.id, kind: 'listing', label: 'Listed', price: a.price, who: a.walletAddress, seller: null, timestamp: a.timestamp });
+      } else if (a.type === 'cancel') {
+        items.push({ id: a.id, kind: 'delisting', label: 'Listing removed', price: null, who: a.walletAddress, seller: null, timestamp: a.timestamp });
+      }
+    }
+    return items;
+  }, [saleHistory]);
+
+  const filteredActivity = useMemo(() => {
+    if (activityFilter === 'sales') return activityItems.filter(i => i.kind === 'sale');
+    if (activityFilter === 'listings') return activityItems.filter(i => i.kind === 'listing' || i.kind === 'delisting');
+    return activityItems;
+  }, [activityItems, activityFilter]);
+
+  // Resolve the buyer/seller wallets in the sale history to usernames so rows
+  // read "from Boris" instead of raw hex. Guarded by `namesResolvedRef` (each
+  // wallet fetched once) so it never loops — Rule #0 safe.
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const namesResolvedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const wallets = Array.from(new Set(
+      activityItems.flatMap(i => [i.who, i.seller]).filter(Boolean) as string[],
+    )).map(w => w.toLowerCase());
+    const missing = wallets.filter(w => /^0x[0-9a-fA-F]{40}$/.test(w) && !namesResolvedRef.current.has(w));
+    if (missing.length === 0) return;
+    missing.forEach(w => namesResolvedRef.current.add(w));
+    let cancelled = false;
+    fetch(`/api/marketplace/resolve-users?wallets=${missing.join(',')}`)
+      .then(r => (r.ok ? r.json() : { names: {} }))
+      .then((d: { names?: Record<string, string> }) => { if (!cancelled && d.names) setNameMap(prev => ({ ...prev, ...d.names })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activityItems]);
+
+  const nameFor = (w?: string | null) => {
+    if (!w) return '';
+    return nameMap[w.toLowerCase()] || bananaPlaceholderName(w);
+  };
+
+  const ACTIVITY_PREVIEW = 5;
+  const visibleActivity = activityExpanded ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PREVIEW);
+
+  const fetchNft = useCallback((opts?: { silent?: boolean }) => {
     if (!tokenId) return;
-    setIsLoading(true);
-    fetch(`/api/marketplace/nft/${tokenId}`)
+    // Silent refetches (the post-landing OpenSea-lag re-checks) update the data
+    // in the background WITHOUT flipping the loading state — otherwise the page
+    // visibly "refreshes" a couple times on its own after landing.
+    if (!opts?.silent) setIsLoading(true);
+    // Pass the viewer's wallet so the API can fall back to our backend when
+    // OpenSea hasn't revealed a freshly-drafted team yet (a few-minute lag) —
+    // the person viewing their own new team is its owner.
+    const q = walletAddress ? `?owner=${walletAddress}` : '';
+    fetch(`/api/marketplace/nft/${tokenId}${q}`)
       .then(res => {
         if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
         return res.json();
       })
       .then(data => { setNft(data); setError(null); })
       .catch(err => setError(err.message))
-      .finally(() => setIsLoading(false));
-  }, [tokenId]);
+      .finally(() => { if (!opts?.silent) setIsLoading(false); });
+  }, [tokenId, walletAddress]);
+
+  const handleOwnerList = useCallback(async () => {
+    if (!isLoggedIn) { setShowLoginModal(true); return; }
+    const p = parseFloat(ownerListPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    try {
+      const res = await listTeam(tokenId, p, listDurationSeconds);
+      setOwnerListPrice('');
+      // Optimistically show it as listed; delay the reconciling refetch so a
+      // stale OpenSea read can't overwrite this before it has indexed.
+      setNft(prev => prev ? {
+        ...prev,
+        listing: {
+          order_hash: res.orderHash,
+          protocol_address: '',
+          price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + listDurationSeconds) } },
+        },
+      } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch { /* listError surfaces the message */ }
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft, walletAddress, listDurationSeconds]);
+
+  const handleOwnerCancel = useCallback(async () => {
+    const orderHash = nft?.listing?.order_hash;
+    if (!orderHash) return;
+    try {
+      await cancelTeam(tokenId, orderHash);
+      // Optimistically clear the listing; reconcile once OpenSea drops it.
+      setNft(prev => prev ? { ...prev, listing: null } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch { /* listError surfaces the message */ }
+  }, [nft, cancelTeam, tokenId, fetchNft]);
+
+  // Change the price of an active listing. A Seaport order's price is immutable,
+  // so under the hood this cancels the old order and creates a fresh one at the
+  // new price — presented as a single "Update Price" action so it feels like an
+  // in-place edit (no separate cancel + re-list dance for the user).
+  const handleOwnerUpdatePrice = useCallback(async () => {
+    if (!isLoggedIn) { setShowLoginModal(true); return; }
+    const p = parseFloat(ownerListPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    const orderHash = nft?.listing?.order_hash;
+    if (!orderHash) return;
+    try {
+      await cancelTeam(tokenId, orderHash);
+      const res = await listTeam(tokenId, p, listDurationSeconds);
+      setOwnerListPrice('');
+      setNft(prev => prev ? {
+        ...prev,
+        listing: {
+          order_hash: res.orderHash,
+          protocol_address: '',
+          price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + listDurationSeconds) } },
+        },
+      } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch {
+      // listError surfaces the message. But if the cancel succeeded and only the
+      // re-list failed, the team is now delisted on-chain while the UI still shows
+      // the old listing — reconcile from chain so it doesn't show a phantom price.
+      fetchNft();
+    }
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, nft, cancelTeam, listTeam, tokenId, fetchNft, walletAddress, listDurationSeconds]);
 
   useEffect(() => {
     fetchNft();
   }, [fetchNft]);
+
+  // OpenSea lags a few seconds indexing a just-created/cancelled listing, so a
+  // fresh page load can show the wrong listing state (e.g. "List for Sale" on a
+  // team you just listed). Re-check a couple times shortly after landing so it
+  // self-corrects without a manual refresh.
+  useEffect(() => {
+    if (!tokenId) return;
+    const t1 = setTimeout(() => fetchNft({ silent: true }), 7000);
+    const t2 = setTimeout(() => fetchNft({ silent: true }), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [tokenId, fetchNft]);
+
+  // One-shot: is this token a wheel-won JP/HOF pass still in a filling round?
+  // If so, render the tier-styled card art (matches the Sell grid). Deps are a
+  // stable scalar only (tokenId) — no Privy-derived callback (Rule #0).
+  useEffect(() => {
+    if (!tokenId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/queues/wheel-pass-filling?tokenIds=${tokenId}`);
+        if (!r.ok) return;
+        const lvl = ((await r.json()) as { levels?: Record<string, 'hof' | 'jackpot'> }).levels?.[tokenId];
+        if (!cancelled && (lvl === 'hof' || lvl === 'jackpot')) setFillingLevel(lvl);
+      } catch { /* best-effort — falls back to the normal image */ }
+    })();
+    return () => { cancelled = true; };
+  }, [tokenId]);
 
   // Auto-refresh OpenSea metadata once per tokenId when traits look stale
   // (no LEAGUE-NAME and no roster slots). OpenSea sometimes serves a cached
@@ -173,7 +468,7 @@ export default function NftDetailPage() {
 
     refreshAttemptedRef.current.add(tokenId);
     fetch(`/api/marketplace/refresh/${tokenId}`, { method: 'POST' })
-      .then(res => { if (res.ok) setTimeout(() => fetchNft(), 5000); })
+      .then(res => { if (res.ok) setTimeout(() => fetchNft({ silent: true }), 5000); })
       .catch(() => { /* refresh is best-effort */ });
   }, [tokenId, nft, isLoading, fetchNft]);
 
@@ -225,6 +520,16 @@ export default function NftDetailPage() {
     }
   }, [autoOffer, nft, isLoggedIn]);
 
+  // Navigated via "Review" (?review=offers): scroll straight to the Offers
+  // section once it's rendered, so accepting an offer is one tap, no scrolling.
+  const reviewScrolled = React.useRef(false);
+  useEffect(() => {
+    if (reviewOffers && !reviewScrolled.current && offersSectionRef.current && (offers.length > 0 || !offersLoading)) {
+      reviewScrolled.current = true;
+      offersSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [reviewOffers, offers.length, offersLoading]);
+
   const executeBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
 
@@ -232,19 +537,42 @@ export default function NftDetailPage() {
       ? Number(nft.listing.price.current.value) / Math.pow(10, nft.listing.price.current.decimals ?? 18)
       : null;
 
-    const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
-    const tx = await getFulfillmentTx(
-      nft.listing.order_hash,
-      walletAddress,
-      nft.listing.protocol_address,
-    );
-    const receipt = await sendTransaction(
-      { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { sponsor: true, uiOptions: { description: 'Purchase NFT — gas fees covered by SBS' } },
-    );
-    const txHashResult = (receipt as Record<string, unknown>).transactionHash ?? (receipt as Record<string, unknown>).hash;
+    let txHashResult: string;
+    if (selectedWallet && selectedWallet.walletClientType !== 'privy' && nft.listing?.price?.current?.value) {
+      // External wallet (MetaMask, Coinbase, …): gasless relay. One free
+      // permit signature; the server pulls the USDC and fulfills the Seaport
+      // order with the NFT delivered straight to this wallet. No ETH needed.
+      const { relayBuyExternal } = await import('@/lib/marketplace/relay');
+      const receipt = await relayBuyExternal({
+        wallet: selectedWallet,
+        orderHash: nft.listing.order_hash,
+        protocolAddress: nft.listing.protocol_address,
+        priceWei: BigInt(nft.listing.price.current.value),
+      });
+      txHashResult = receipt.hash;
+    } else {
+      const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+      const tx = await getFulfillmentTx(
+        nft.listing.order_hash,
+        walletAddress,
+        nft.listing.protocol_address,
+      );
+      const receipt = await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Purchase NFT — gas fees covered by SBS' },
+      );
+      txHashResult = receipt.hash;
+    }
 
     const sellerAddr = nft.listing?.protocol_data?.parameters?.offerer || nft.owner;
+
+    // The purchase consumed the seller's order — mark it dead in our listing
+    // cache (keyed by tokenId) so it no longer reads as "Listed" for the buyer.
+    void fetch('/api/marketplace/listings/cancelled', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenId, wallet: sellerAddr || walletAddress }),
+    }).catch(() => { /* best-effort */ });
+
     if (sellerAddr) {
       notifySeller({
         sellerWallet: sellerAddr,
@@ -287,7 +615,7 @@ export default function NftDetailPage() {
     });
 
     return txHashResult;
-  }, [nft, walletAddress, sendTransaction, tokenId, addNotification]);
+  }, [nft, walletAddress, sendTx, tokenId, addNotification, selectedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
@@ -309,11 +637,18 @@ export default function NftDetailPage() {
         }
 
         await executeBuy();
+        // Bought a still-filling wheel pass → move the queue slot to us so the
+        // draft shows on our drafting page (server verifies on-chain ownership).
+        if (fillingLevel && walletAddress) {
+          try {
+            await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId, wallet: walletAddress }) });
+          } catch { /* best-effort */ }
+        }
         setBuyStep('complete');
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
         console.error('[NFT Detail] Buy failed:', err);
-        setTxError(err instanceof Error ? err.message : 'Transaction failed');
+        setTxError(friendlyTxError(err, "We couldn't confirm your purchase. If any USDC left your wallet, it's returned automatically within a few minutes — check your balance before trying again."));
         setBuyStep('confirm');
       }
     } else {
@@ -323,17 +658,20 @@ export default function NftDetailPage() {
       setBuyStep('processing');
 
       try {
+        cancelBuyRef.current = false;
         const result = await fundWallet({
           address: walletAddress,
           options: {
             chain: BASE_SEPOLIA,
             amount: String(buyPrice),
             asset: 'USDC',
+            defaultFundingMethod: 'card',
             card: { preferredProvider: 'moonpay' },
           },
         });
 
-        if (result.status === 'cancelled') {
+        if (cancelBuyRef.current || result.status === 'cancelled') {
+          cancelBuyRef.current = false;
           setCardFlowStep('idle');
           setBuyStep('confirm');
           return;
@@ -346,6 +684,7 @@ export default function NftDetailPage() {
         const maxWait = 300_000;
 
         while (Date.now() - startTime < maxWait) {
+          if (cancelBuyRef.current) { cancelBuyRef.current = false; setCardFlowStep('idle'); setBuyStep('confirm'); return; }
           const balance = await getUsdcBalance(walletAddress as Address);
           if (balance >= requiredUsdc) break;
           await new Promise(r => setTimeout(r, 3000));
@@ -355,17 +694,25 @@ export default function NftDetailPage() {
         setCardFlowStep('buying');
         await executeBuy();
 
+        // Bought a still-filling wheel pass → move the queue slot to us (server
+        // verifies on-chain ownership) so the draft shows on our drafting page.
+        if (fillingLevel && walletAddress) {
+          try {
+            await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId, wallet: walletAddress }) });
+          } catch { /* best-effort */ }
+        }
+
         setBuyStep('complete');
         setCardFlowStep('idle');
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
         console.error('[NFT Detail] Card buy failed:', err);
-        setTxError(err instanceof Error ? err.message : 'Payment failed');
+        setTxError(friendlyTxError(err, 'Payment failed. Please try again.'));
         setBuyStep('confirm');
         setCardFlowStep('idle');
       }
     }
-  }, [nft, walletAddress, paymentMethod, executeBuy, fundWallet, fetchNft]);
+  }, [nft, walletAddress, paymentMethod, executeBuy, fundWallet, fetchNft, fillingLevel, tokenId]);
 
   const handleMakeOffer = useCallback(async () => {
     if (!walletAddress || !selectedWallet || !offerAmount) return;
@@ -379,6 +726,25 @@ export default function NftDetailPage() {
     setOfferError(null);
 
     try {
+      // Card path: buy the USDC for the offer via MoonPay first, then the offer
+      // is created/escrowed once it lands (createOffer handles the approval).
+      if (offerPaymentMethod === 'card') {
+        cancelOfferRef.current = false;
+        const fundRes = await fundWallet({
+          address: walletAddress,
+          options: { chain: BASE_SEPOLIA, amount: String(amount), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
+        });
+        if (cancelOfferRef.current || fundRes.status === 'cancelled') { cancelOfferRef.current = false; setOfferStep('input'); return; }
+        const requiredUsdc = BigInt(Math.ceil(amount * 1e6));
+        const start = Date.now();
+        while (Date.now() - start < 300_000) {
+          if (cancelOfferRef.current) { cancelOfferRef.current = false; setOfferStep('input'); return; }
+          const bal = await getUsdcBalance(walletAddress as Address);
+          if (bal >= requiredUsdc) break;
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
       const { createOffer } = await import('@/lib/marketplace/offer');
       const { ethers } = await import('ethers');
 
@@ -386,36 +752,44 @@ export default function NftDetailPage() {
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
-      // Sponsor USDC approval for the conduit if needed
-      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
-      const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-      const iface = new ethers.Interface([
-        'function allowance(address owner, address spender) view returns (uint256)',
-        'function approve(address spender, uint256 amount) returns (bool)',
-      ]);
-
-      // Check current allowance
-      const checkData = iface.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
-      const checkRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0', id: 1, method: 'eth_call',
-          params: [{ to: USDC_BASE, data: checkData }, 'latest'],
-        }),
-      });
-      const checkResult = await checkRes.json();
-      const currentAllowance = BigInt(checkResult?.result || '0x0');
       const requiredAmount = ethers.parseUnits(amount.toString(), 6);
 
-      if (currentAllowance < requiredAmount) {
-        // Approve max USDC for the conduit (sponsored)
-        const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
-        const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
-        await sendTransaction(
-          { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: 'Approve USDC for offers — no cost to you' } },
-        );
+      if (selectedWallet.walletClientType !== 'privy') {
+        // External wallet: gasless USDC approval — free permit signature,
+        // the server submits it on-chain and pays the gas.
+        const { ensureConduitAllowanceGasless } = await import('@/lib/marketplace/relay');
+        await ensureConduitAllowanceGasless({ wallet: selectedWallet, requiredWei: BigInt(requiredAmount) });
+      } else {
+        // Embedded wallet: sponsored approve tx, as before.
+        const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+        const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+        const iface = new ethers.Interface([
+          'function allowance(address owner, address spender) view returns (uint256)',
+          'function approve(address spender, uint256 amount) returns (bool)',
+        ]);
+
+        // Check current allowance
+        const checkData = iface.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+        const checkRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: 1, method: 'eth_call',
+            params: [{ to: USDC_BASE, data: checkData }, 'latest'],
+          }),
+        });
+        const checkResult = await checkRes.json();
+        const currentAllowance = BigInt(checkResult?.result || '0x0');
+
+        if (currentAllowance < requiredAmount) {
+          // Approve max USDC for the conduit (sponsored)
+          const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+          const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
+          await sendTx(
+            { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
+            { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true },
+          );
+        }
       }
 
       const provider = new ethers.BrowserProvider(ethereum);
@@ -461,10 +835,10 @@ export default function NftDetailPage() {
         context: { tokenId, offerAmount: amount, offerExpiration },
         stack: err instanceof Error ? err.stack : undefined,
       });
-      setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
+      setOfferError(friendlyTxError(err, 'Failed to create offer. Please try again.'));
       setOfferStep('input');
     }
-  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, tokenId, sendTransaction, refetchOffers, nft]);
+  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft]);
 
   const handleAcceptOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress || !selectedWallet) return;
@@ -499,11 +873,19 @@ export default function NftDetailPage() {
       const checkResult = await checkRes.json();
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
+      const isExternal = selectedWallet.walletClientType !== 'privy';
+
       if (!isApproved) {
+        if (isExternal) {
+          // We pay the gas: fund the wallet's exact shortfall before it
+          // sends the approval tx (can't be signature-relayed on ERC-721).
+          const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+          await topUpGasIfNeeded('approve-nft');
+        }
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
-        await sendTransaction(
+        await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: 'Approve marketplace — no cost to you' } },
+          { description: 'Approve marketplace — no cost to you', waitForReceipt: true },
         );
       }
 
@@ -514,22 +896,46 @@ export default function NftDetailPage() {
         tokenId,
       );
 
-      await sendTransaction(
-        { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: 'Accept offer — gas fees covered by SBS' } },
+      if (isExternal) {
+        const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+        await topUpGasIfNeeded('accept-offer');
+      }
+      const acceptReceipt = await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Accept offer — gas fees covered by SBS', waitForReceipt: true },
       );
+      const acceptTxHash = acceptReceipt.hash || null;
 
       logger.debug('[NFT Detail] Offer accepted:', offer.orderHash);
 
+      // Accepting an offer IS a sale — log it as a buy+sell pair (same shape as
+      // a Buy Now), not just 'offer_accepted'. This is what powers "You paid $X"
+      // for the buyer (paidByToken reads 'buy') and the instant drop from the
+      // seller's My Teams (recentSells reads 'sell'); offer_accepted alone fed
+      // neither, so a sold-via-offer team lingered and "You paid" stayed stale.
+      // Same txHash on both → the activity feed dedups them into one Sold row.
       logActivity({
-        type: 'offer_accepted',
+        type: 'sell',
         walletAddress,
         tokenId,
         teamName: nft?.name || `Team #${tokenId}`,
         price: offer.amount,
         counterparty: offer.offererAddress || null,
         orderHash: offer.orderHash || null,
+        txHash: acceptTxHash,
       });
+      if (offer.offererAddress) {
+        logActivity({
+          type: 'buy',
+          walletAddress: offer.offererAddress,
+          tokenId,
+          teamName: nft?.name || `Team #${tokenId}`,
+          price: offer.amount,
+          counterparty: walletAddress,
+          orderHash: offer.orderHash || null,
+          txHash: acceptTxHash,
+        });
+      }
 
       // Notify the offerer (Firestore — they're not on this page)
       if (offer.offererAddress) {
@@ -541,6 +947,7 @@ export default function NftDetailPage() {
         });
       }
 
+      void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash, tokenId }) }).catch(() => {});
       refetchOffers();
       setTimeout(() => fetchNft(), 2000);
     } catch (err) {
@@ -552,11 +959,11 @@ export default function NftDetailPage() {
         context: { tokenId, orderHash: offer.orderHash, offerAmount: offer.amount, offererAddress: offer.offererAddress || null },
         stack: err instanceof Error ? err.stack : undefined,
       });
-      setAcceptError(err instanceof Error ? err.message : 'Failed to accept offer');
+      setAcceptError(friendlyTxError(err, 'Failed to accept offer. Please try again.'));
     } finally {
       setAcceptingOfferHash(null);
     }
-  }, [walletAddress, selectedWallet, tokenId, sendTransaction, refetchOffers, nft, fetchNft]);
+  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft]);
 
   const handleCancelOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress) return;
@@ -577,9 +984,9 @@ export default function NftDetailPage() {
 
       const tx = await res.json();
 
-      await sendTransaction(
+      await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: 'Cancel your offer — fees covered by SBS' } },
+        { description: 'Cancel your offer — fees covered by SBS' },
       );
 
       logger.debug('[NFT Detail] Cancelled offer:', offer.orderHash);
@@ -593,14 +1000,78 @@ export default function NftDetailPage() {
         orderHash: offer.orderHash || null,
       });
 
+      void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash, tokenId }) }).catch(() => {});
       refetchOffers();
     } catch (err) {
       console.error('[NFT Detail] Cancel offer failed:', err);
-      setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offer');
+      reportClientError({
+        source: LOG_SOURCES.marketplace.CANCEL_OFFER_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace-detail',
+        actor: walletAddress,
+        context: { tokenId, orderHash: offer.orderHash },
+      });
+      setAcceptError(friendlyTxError(err, 'Failed to cancel offer. Please try again.'));
     } finally {
       setCancellingOfferHash(null);
     }
-  }, [walletAddress, sendTransaction, refetchOffers, tokenId, nft]);
+  }, [walletAddress, sendTx, refetchOffers, tokenId, nft]);
+
+  /** Cancel EVERY offer the viewer has on this token — Seaport's cancel takes
+   *  an array of orders, so this is one signature / one sponsored tx. */
+  const handleCancelAllOffers = useCallback(async (myOffers: OfferData[]) => {
+    if (!walletAddress || myOffers.length === 0) return;
+    setCancellingAllOffers(true);
+    setAcceptError(null);
+
+    const hashes = myOffers.map(o => o.orderHash).filter(Boolean);
+    try {
+      const res = await fetch('/api/marketplace/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHashes: hashes, type: 'offer' }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Failed to cancel offers' }));
+        throw new Error(errData.error || `Cancel failed: ${res.status}`);
+      }
+
+      const tx = await res.json();
+
+      await sendTx(
+        { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: `Cancel ${hashes.length} offers in one go — fees covered by SBS` },
+      );
+
+      logger.debug('[NFT Detail] Cancelled all offers:', hashes);
+
+      for (const offer of myOffers) {
+        logActivity({
+          type: 'cancel',
+          walletAddress,
+          tokenId,
+          teamName: nft?.name || `Team #${tokenId}`,
+          price: offer.amount,
+          orderHash: offer.orderHash || null,
+        });
+        void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash, tokenId }) }).catch(() => {});
+      }
+      refetchOffers();
+    } catch (err) {
+      console.error('[NFT Detail] Cancel all offers failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.CANCEL_OFFER_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace-detail',
+        actor: walletAddress,
+        context: { tokenId, orderHashes: hashes },
+      });
+      setAcceptError(friendlyTxError(err, 'Failed to cancel offers. Please try again.'));
+    } finally {
+      setCancellingAllOffers(false);
+    }
+  }, [walletAddress, sendTx, refetchOffers, tokenId, nft]);
 
   if (isLoading) {
     return (
@@ -627,9 +1098,9 @@ export default function NftDetailPage() {
         <div className="text-4xl mb-4">🍌</div>
         <h2 className="text-text-primary text-xl font-semibold mb-2">Team Not Found</h2>
         <p className="text-text-secondary text-sm mb-6">{error || 'This team could not be loaded.'}</p>
-        <Link href="/marketplace" className="text-banana hover:underline text-sm">
+        <button type="button" onClick={goBackToMarketplace} className="text-banana hover:underline text-sm">
           Back to Marketplace
-        </Link>
+        </button>
       </div>
     );
   }
@@ -645,6 +1116,12 @@ export default function NftDetailPage() {
   const seasonScore = parseTrait(traits, 'SEASON-SC0RE') || parseTrait(traits, 'SEASON-SCORE');
   const weekScore = parseTrait(traits, 'WEEK-SCORE');
   const leagueName = parseTrait(traits, 'LEAGUE-NAME');
+  // Pre-season the RANK trait holds a placeholder (the token id), not a 1-10 league
+  // position, and SEASON/WEEK scores are seed values — only treat them as real once
+  // the season has actually scored points.
+  const rankNum = rank ? parseInt(rank, 10) : 0;
+  const hasValidRank = hasSeasonStarted() && rankNum >= 1 && rankNum <= 10;
+  const hasSeasonStats = hasSeasonStarted();
   const level = parseTrait(traits, 'LEVEL');
 
   const draftType: DraftType = level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
@@ -661,7 +1138,15 @@ export default function NftDetailPage() {
   const isOwner = walletAddress && nftOwner && walletAddress.toLowerCase() === nftOwner.toLowerCase();
 
   const imageUrl = nft.display_image_url || nft.image_url;
-  const teamName = leagueName || nft.name || `Team #${tokenId}`;
+  // For a wheel-won JP/HOF pass still filling, show the tier-styled card art
+  // (gold HOF / red Jackpot) instead of the generic pass image — matches the
+  // Sell grid. Keep `imageUrl` for league-number resolution below.
+  const cardImage = fillingLevel ? buildTieredDraftPassUrl(tokenId, fillingLevel) : imageUrl;
+  // Users only ever see Team # (= token id) and League #. Never the raw league
+  // name ("BBB #…") or "Token #". League # comes from the same source the card
+  // image uses (backend-derived), so text === card.
+  const leagueNumber = resolveLeagueNumber(imageUrl, leagueName);
+  const teamName = `Team #${tokenId}`;
 
   // Group roster by position type
   const qbs = roster.filter(r => r.slot.startsWith('QB'));
@@ -675,31 +1160,33 @@ export default function NftDetailPage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-6xl mx-auto">
-      {/* Back Link */}
-      <Link
-        href="/marketplace"
+      {/* Back Link — returns to the tab/filter the user came from */}
+      <button
+        type="button"
+        onClick={goBackToMarketplace}
         className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary text-sm mb-8 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back to Marketplace
-      </Link>
+      </button>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Left: Card Image */}
         <div>
           <div className={`relative aspect-[3/4] rounded-2xl overflow-hidden border ${
-            draftType === 'jackpot' ? 'border-error/40' : draftType === 'hof' ? 'border-hof/40' : 'border-bg-tertiary'
+            (fillingLevel ?? draftType) === 'jackpot' ? 'border-error/40' : (fillingLevel ?? draftType) === 'hof' ? 'border-hof/40' : 'border-bg-tertiary'
           }`}>
-            {imageUrl ? (
+            {cardImage ? (
               <Image
-                src={imageUrl}
+                src={cardImage}
                 alt={teamName}
                 fill
-                className="object-cover"
+                className="object-contain"
                 sizes="(max-width: 1024px) 100vw, 50vw"
                 priority
+                unoptimized
               />
             ) : (
               <div className={`w-full h-full bg-gradient-to-br ${
@@ -715,20 +1202,22 @@ export default function NftDetailPage() {
               </div>
             )}
 
-            {/* Type Badge */}
-            {draftType !== 'pro' && (
-              <div className="absolute top-4 left-4">
+            {/* Type + Founder badges */}
+            {(draftType !== 'pro' || isFounderTeam) && (
+              <div className="absolute top-4 left-4 flex items-center gap-2">
                 {draftType === 'jackpot' && (
                   <span className="px-4 py-1.5 bg-error text-white text-xs font-bold uppercase rounded-full shadow-lg">
                     JACKPOT
                   </span>
                 )}
                 {draftType === 'hof' && (
-                  <span className="px-4 py-1.5 bg-gradient-to-r from-hof to-pink-600 text-white text-xs font-bold uppercase rounded-full shadow-lg flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>
-                    HALL OF FAME
+                  <span className="px-4 py-1.5 bg-hof text-white text-xs font-bold uppercase rounded-full shadow-lg">
+                    HOF
+                  </span>
+                )}
+                {isFounderTeam && (
+                  <span className="px-4 py-1.5 text-white text-xs font-bold uppercase rounded-full shadow-lg" style={{ background: '#06b6d4' }}>
+                    Founder
                   </span>
                 )}
               </div>
@@ -783,61 +1272,212 @@ export default function NftDetailPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 text-text-muted text-sm mb-6">
-            <span>Token #{tokenId}</span>
-            <span>&middot;</span>
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            {leagueNumber != null && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary text-xs font-mono">
+                League #{leagueNumber}
+              </span>
+            )}
             <a
-              href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${tokenId}`}
+              href={`https://opensea.io/assets/base/${BBB4_CONTRACT}/${tokenId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-text-muted hover:text-text-primary text-xs underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:border-white/20 transition-colors text-xs font-medium"
               title="View on OpenSea"
             >
-              OpenSea ↗
+              OpenSea
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 17 17 7M17 7H8M17 7v9" />
+              </svg>
             </a>
-            {nft.team && (
-              <>
-                <span>&middot;</span>
-                <span className="text-banana/80 text-xs" title="Team data sourced from the SBS backend, not OpenSea metadata">
-                  Stats from SBS
-                </span>
-              </>
-            )}
-            {!nft.team && (
-              <>
-                <span>&middot;</span>
-                <span
-                  className="px-2 py-0.5 bg-white/5 text-white/40 text-[10px] font-bold rounded uppercase tracking-wide"
-                  title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
-                >
-                  Stage Mint
-                </span>
-              </>
-            )}
             {nftOwner && (
-              <>
-                <span>&middot;</span>
-                <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
-                  <span className="inline-flex items-center gap-1.5 hover:underline cursor-pointer">
-                    {nft.ownerPfp ? (
-                      <Image src={nft.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
-                    ) : null}
-                    <span>
-                      Owner: {nft.ownerName || `${nftOwner.slice(0, 6)}...${nftOwner.slice(-4)}`}
-                    </span>
+              <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
+                <span className="inline-flex items-center gap-2.5 pl-1 pr-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
+                  {/* Banana pfp + name by default; their custom pfp/name if set;
+                      a badge ONLY if they've equipped/earned one (no default badge). */}
+                  <AvatarWithBadge
+                    imageUrl={nft.ownerPfp}
+                    alt={nft.ownerName ?? 'owner'}
+                    size={20}
+                    equippedBadge={nft.ownerBadge ?? null}
+                    ripeness={nft.ownerRipeness ?? null}
+                    showBadge={!!nft.ownerBadge || (!!nft.ownerRipeness && nft.ownerRipeness.count >= 1)}
+                    useNextImage={false}
+                    badgeRingColor="#13141a"
+                  />
+                  <span className="text-text-secondary">
+                    {nft.ownerName || bananaPlaceholderName(nftOwner)}
                   </span>
-                </UserPopover>
+                </span>
+              </UserPopover>
+            )}
+          </div>
+
+          {/* Price & Buy / Make Offer — primary action, kept at the top */}
+          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
+            {isOwner && typeof nft.pricePaid === 'number' && nft.pricePaid > 0 && (
+              <div className="flex items-center gap-1.5 mb-3 text-xs text-text-secondary">
+                <span className="text-text-muted">You paid</span>
+                <span className="font-mono font-semibold text-banana">${nft.pricePaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {price !== null ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-text-muted text-xs mb-1">Current Price</p>
+                    <p className="text-text-primary font-mono text-3xl font-bold">
+                      ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    {(() => {
+                      const exp = formatExpiresIn(nft?.listing?.protocol_data?.parameters?.endTime);
+                      return exp ? <p className="text-text-muted text-xs mt-1">Listing expires in {exp}</p> : null;
+                    })()}
+                  </div>
+
+                  {buyStep === 'complete' && showBuyModal ? null : buyStep === 'complete' ? (
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 text-success font-semibold">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Yours!
+                      </div>
+                      <Link href="/marketplace?tab=sell" className="text-banana text-xs hover:underline">
+                        View My Teams
+                      </Link>
+                    </div>
+                  ) : !isOwner ? (
+                    <button
+                      onClick={() => {
+                        if (!isLoggedIn) { setShowLoginModal(true); return; }
+                        setBuyStep('confirm');
+                        setTxError(null);
+                        setShowBuyModal(true);
+                      }}
+                      className="px-8 py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all"
+                    >
+                      Buy Now
+                    </button>
+                  ) : isOwner ? (
+                    // Owner of a LISTED team: change the price in place, or cancel.
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5 w-28">
+                          <span className="text-text-muted">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={ownerListPrice}
+                            onChange={e => setOwnerListPrice(e.target.value)}
+                            placeholder={price.toFixed(2)}
+                            className="w-full bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none font-mono"
+                          />
+                        </div>
+                        <button
+                          onClick={handleOwnerUpdatePrice}
+                          disabled={listBusy || !ownerListPrice || parseFloat(ownerListPrice) <= 0 || parseFloat(ownerListPrice) === price}
+                          className="px-5 py-2.5 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all disabled:opacity-50"
+                        >
+                          {listBusy ? 'Updating…' : 'Update Price'}
+                        </button>
+                      </div>
+                      <button
+                        onClick={handleOwnerCancel}
+                        disabled={listBusy}
+                        className="text-red-400 text-xs hover:underline disabled:opacity-50"
+                      >
+                        Cancel Listing
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {(txError || listError) && (
+                  <p className="text-error text-xs mt-3">{txError || listError}</p>
+                )}
               </>
+            ) : isOwner ? (
+              // Owner viewing their own unlisted team — let them list it here.
+              <div>
+                <p className="text-text-muted text-xs mb-2">List this team for sale</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 flex-1 bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5">
+                    <span className="text-text-muted">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={ownerListPrice}
+                      onChange={e => setOwnerListPrice(e.target.value)}
+                      placeholder="Price in USDC"
+                      className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none font-mono"
+                    />
+                  </div>
+                  <select
+                    value={listDurationSeconds}
+                    onChange={e => setListDurationSeconds(Number(e.target.value))}
+                    aria-label="Listing duration"
+                    className="bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5 text-text-primary text-sm focus:outline-none focus:border-banana/50 cursor-pointer"
+                  >
+                    {LISTING_DURATIONS.map(({ label, seconds }) => (
+                      <option key={seconds} value={seconds}>{label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleOwnerList}
+                    disabled={listBusy || !ownerListPrice || parseFloat(ownerListPrice) <= 0}
+                    className="px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all disabled:opacity-50"
+                  >
+                    {listBusy ? 'Listing…' : 'List for Sale'}
+                  </button>
+                </div>
+                <p className="text-text-muted text-[11px] mt-2">
+                  Lists for {LISTING_DURATIONS.find(d => d.seconds === listDurationSeconds)?.label ?? '30 days'} · only a 1% OpenSea fee · you keep the rest.
+                </p>
+                {listError && <p className="text-error text-xs mt-2">{listError}</p>}
+                {bestOffer && (
+                  <p className="text-text-secondary text-xs mt-2">
+                    Best offer: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="text-text-muted text-sm">This team is not currently listed for sale.</p>
+                {bestOffer && (
+                  <p className="text-text-secondary text-xs mt-1">
+                    Best offer: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Make Offer button — shown to non-owners */}
+            {!isOwner && buyStep !== 'complete' && (
+              <button
+                onClick={() => {
+                  if (!isLoggedIn) { setShowLoginModal(true); return; }
+                  setShowOfferModal(true);
+                  setOfferStep('input');
+                  setOfferAmount('');
+                  setOfferError(null);
+                }}
+                className="w-full mt-3 py-3 border border-banana text-banana font-semibold rounded-xl hover:bg-banana/10 transition-all text-sm"
+              >
+                Make Offer
+              </button>
             )}
           </div>
 
           {/* Stats Row */}
-          {(rank || seasonScore || weekScore) && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {rank && rank !== 'N/A' && (
+          {hasSeasonStats && (
+            <div className={`grid ${hasValidRank ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-6`}>
+              {hasValidRank && (
                 <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
                   <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
+                  <p className="font-mono text-xl font-bold text-banana">#{rank}/10</p>
                 </div>
               )}
               {seasonScore && (
@@ -856,6 +1496,27 @@ export default function NftDetailPage() {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Wheel-pass explainer — what you're buying, how it was won, what it gives. */}
+          {fillingLevel && (
+            <div className={`rounded-2xl p-5 mb-6 border ${fillingLevel === 'jackpot' ? 'border-error/30 bg-error/[0.04]' : 'border-hof/30 bg-hof/[0.04]'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">⚡</span>
+                <h3 className="text-text-primary font-semibold text-sm">
+                  {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass — won on the Banana Wheel
+                </h3>
+              </div>
+              <p className="text-text-secondary text-xs leading-relaxed mb-3">
+                This isn&apos;t a drafted team — it&apos;s a <span className="text-text-primary font-semibold">{fillingLevel === 'jackpot' ? 'Jackpot' : 'Hall of Fame'} entry someone won on the Banana Wheel</span>, and its draft lobby is still filling — so right now it trades as a pass to that seat.
+              </p>
+              <div className="space-y-1.5 text-text-secondary text-xs leading-relaxed">
+                <p><span className="text-text-primary font-semibold">Buy it →</span> the seat is transferred to you and you take their spot in the {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'}-only lobby.</p>
+                <p><span className="text-text-primary font-semibold">When the lobby fills (10 winners) →</span> you draft your team. Slow Draft, 8 hours per pick.</p>
+                <p><span className="text-text-primary font-semibold">Win your league →</span> {fillingLevel === 'jackpot' ? 'you skip straight to the season Finals.' : 'you enter the Hall of Fame playoff bracket for bonus prizes.'}</p>
+                <p className="text-text-muted pt-1">Once it fills, the pass becomes your drafted team.</p>
+              </div>
             </div>
           )}
 
@@ -889,89 +1550,34 @@ export default function NftDetailPage() {
             </div>
           )}
 
-          {/* Price & Buy / Make Offer */}
-          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
-            {price !== null ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-text-muted text-xs mb-1">Current Price</p>
-                    <p className="text-text-primary font-mono text-3xl font-bold">
-                      ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-
-                  {buyStep === 'complete' && showBuyModal ? null : buyStep === 'complete' ? (
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 text-success font-semibold">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        Yours!
-                      </div>
-                      <Link href="/marketplace?tab=sell" className="text-banana text-xs hover:underline">
-                        View My Teams
-                      </Link>
-                    </div>
-                  ) : !isOwner ? (
-                    <button
-                      onClick={() => {
-                        if (!isLoggedIn) { setShowLoginModal(true); return; }
-                        setBuyStep('confirm');
-                        setTxError(null);
-                        setShowBuyModal(true);
-                      }}
-                      className="px-8 py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all"
-                    >
-                      Buy Now
-                    </button>
-                  ) : null}
-                </div>
-
-                {txError && (
-                  <p className="text-error text-xs mt-3">{txError}</p>
-                )}
-              </>
-            ) : (
-              <div className="text-center">
-                <p className="text-text-muted text-sm">This team is not currently listed for sale.</p>
-                {bestOffer && (
-                  <p className="text-text-secondary text-xs mt-1">
-                    Best offer: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Make Offer button — shown to non-owners */}
-            {!isOwner && buyStep !== 'complete' && (
-              <button
-                onClick={() => {
-                  if (!isLoggedIn) { setShowLoginModal(true); return; }
-                  setShowOfferModal(true);
-                  setOfferStep('input');
-                  setOfferAmount('');
-                  setOfferError(null);
-                }}
-                className="w-full mt-3 py-3 border border-banana text-banana font-semibold rounded-xl hover:bg-banana/10 transition-all text-sm"
-              >
-                Make Offer
-              </button>
-            )}
-          </div>
-
           {/* Offers Section */}
           {(offers.length > 0 || offersLoading) && (
-            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
+            <div ref={offersSectionRef} className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 scroll-mt-24">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-text-primary font-semibold text-sm">
                   Offers {offers.length > 0 && <span className="text-text-muted font-normal">({offers.length})</span>}
                 </h3>
-                {bestOffer && (
-                  <span className="text-xs text-text-muted">
-                    Best: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const myOffers = walletAddress
+                      ? offers.filter(o => o.offererAddress?.toLowerCase() === walletAddress.toLowerCase() && o.orderHash)
+                      : [];
+                    return myOffers.length >= 2 ? (
+                      <button
+                        onClick={() => handleCancelAllOffers(myOffers)}
+                        disabled={cancellingAllOffers || cancellingOfferHash != null}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold border border-error/40 text-error hover:bg-error/10 transition-all disabled:opacity-50"
+                      >
+                        {cancellingAllOffers ? 'Cancelling…' : `Cancel all (${myOffers.length})`}
+                      </button>
+                    ) : null;
+                  })()}
+                  {bestOffer && (
+                    <span className="text-xs text-text-muted">
+                      Best: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
+                    </span>
+                  )}
+                </div>
               </div>
 
               {offersLoading && offers.length === 0 ? (
@@ -1024,13 +1630,26 @@ export default function NftDetailPage() {
                             </button>
                           )}
                           {isOwner && !isMyOffer && (
-                            <button
-                              onClick={() => handleAcceptOffer(offer)}
-                              disabled={acceptingOfferHash === offer.orderHash}
-                              className="px-4 py-1.5 bg-success text-white text-xs font-semibold rounded-lg hover:brightness-110 transition-all disabled:opacity-50"
-                            >
-                              {acceptingOfferHash === offer.orderHash ? 'Accepting...' : 'Accept'}
-                            </button>
+                            offer.protocolAddress ? (
+                              <button
+                                onClick={() => handleAcceptOffer(offer)}
+                                disabled={acceptingOfferHash === offer.orderHash}
+                                className="px-4 py-1.5 bg-success text-white text-xs font-semibold rounded-lg hover:brightness-110 transition-all disabled:opacity-50"
+                              >
+                                {acceptingOfferHash === offer.orderHash ? 'Accepting...' : 'Accept'}
+                              </button>
+                            ) : (
+                              // Offer is in our cache but OpenSea hasn't indexed it yet
+                              // (~5-15s). Accepting needs OpenSea's fulfillment data, so
+                              // show a disabled hint instead of letting it hard-fail.
+                              <button
+                                disabled
+                                title="This offer is still being confirmed — you can accept it in a few seconds."
+                                className="px-4 py-1.5 bg-white/10 text-text-muted text-xs font-semibold rounded-lg cursor-not-allowed"
+                              >
+                                Indexing…
+                              </button>
+                            )
                           )}
                         </div>
                       </div>
@@ -1045,59 +1664,107 @@ export default function NftDetailPage() {
             </div>
           )}
 
-          {/* Sale History */}
-          {(saleHistory.length > 0 || saleHistoryLoading) && (
+          {/* Activity — sales + listings, filterable, truncated */}
+          {(activityItems.length > 0 || saleHistoryLoading) && (
             <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mt-6">
-              <h3 className="text-text-primary font-semibold text-sm mb-4">
-                Sale History {saleHistory.length > 0 && <span className="text-text-muted font-normal">({saleHistory.length})</span>}
-              </h3>
-              {saleHistoryLoading && saleHistory.length === 0 ? (
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-text-primary font-semibold text-sm">
+                  Activity {activityItems.length > 0 && <span className="text-text-muted font-normal">({activityItems.length})</span>}
+                </h3>
+                {activityItems.length > 0 && (
+                  <div className="flex items-center gap-1 bg-bg-primary rounded-lg p-0.5">
+                    {([
+                      { key: 'all', label: 'All' },
+                      { key: 'sales', label: 'Sales' },
+                      { key: 'listings', label: 'Listings' },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => { setActivityFilter(key); setActivityExpanded(false); }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                          activityFilter === key ? 'bg-bg-tertiary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {saleHistoryLoading && activityItems.length === 0 ? (
                 <div className="space-y-3">
                   {[...Array(2)].map((_, i) => (
                     <div key={i} className="h-10 bg-bg-tertiary rounded-xl animate-pulse" />
                   ))}
                 </div>
+              ) : visibleActivity.length === 0 ? (
+                <p className="text-text-muted text-xs">No {activityFilter === 'all' ? '' : activityFilter} activity yet.</p>
               ) : (
-                <div className="space-y-2">
-                  {saleHistory.map(sale => {
-                    const saleDate = new Date(sale.timestamp);
-                    const timeAgo = (() => {
-                      const diff = Date.now() - saleDate.getTime();
-                      const mins = Math.floor(diff / 60000);
-                      if (mins < 60) return `${mins}m ago`;
-                      const hrs = Math.floor(mins / 60);
-                      if (hrs < 24) return `${hrs}h ago`;
-                      const days = Math.floor(hrs / 24);
-                      if (days < 30) return `${days}d ago`;
-                      return saleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    })();
-                    return (
-                      <div
-                        key={sale.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-banana/10 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                          </div>
-                          <div>
-                            <p className="text-text-primary text-sm font-mono font-medium">
-                              ${sale.price?.toFixed(2) ?? '—'}
-                            </p>
-                            {sale.counterparty && (
-                              <p className="text-text-muted text-[11px]">
-                                {sale.type === 'buy' ? 'Bought by' : 'Sold to'} {sale.counterparty.slice(0, 6)}...{sale.counterparty.slice(-4)}
+                <>
+                  <div className="space-y-2">
+                    {visibleActivity.map(item => {
+                      const date = new Date(item.timestamp);
+                      const timeAgo = (() => {
+                        const diff = Date.now() - date.getTime();
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 1) return 'just now';
+                        if (mins < 60) return `${mins}m ago`;
+                        const hrs = Math.floor(mins / 60);
+                        if (hrs < 24) return `${hrs}h ago`;
+                        const days = Math.floor(hrs / 24);
+                        if (days < 30) return `${days}d ago`;
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      })();
+                      const tone = item.kind === 'sale'
+                        ? { bg: 'bg-green-500/10', text: 'text-green-400' }
+                        : item.kind === 'listing'
+                          ? { bg: 'bg-banana/10', text: 'text-banana' }
+                          : { bg: 'bg-white/5', text: 'text-text-muted' };
+                      // Show the row from the viewer's perspective: if the logged-in
+                      // wallet is the buyer → "You bought · from <seller>"; if the
+                      // seller → "You sold · to <buyer>"; otherwise neutral "Sold".
+                      const me = walletAddress?.toLowerCase();
+                      const iBought = item.kind === 'sale' && !!me && item.who?.toLowerCase() === me;
+                      const iSold = item.kind === 'sale' && !!me && item.seller?.toLowerCase() === me;
+                      const saleLabel = item.kind === 'sale' ? (iBought ? 'You bought' : iSold ? 'You sold' : 'Sold') : item.label;
+                      const counterparty = iBought ? item.seller : item.who;
+                      const whoLabel = item.kind === 'sale'
+                        ? (counterparty ? `${iBought ? 'from' : 'to'} ${nameFor(counterparty)}` : null)
+                        : item.who ? `by ${nameFor(item.who)}` : null;
+                      return (
+                        <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tone.bg}`}>
+                              {item.kind === 'sale' ? (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              ) : item.kind === 'listing' ? (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>
+                              ) : (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-text-primary text-sm font-medium">
+                                {saleLabel}{item.price != null && <span className="font-mono"> · ${item.price.toFixed(2)}</span>}
                               </p>
-                            )}
+                              {whoLabel && <p className="text-text-muted text-[11px]">{whoLabel}</p>}
+                            </div>
                           </div>
+                          <span className="text-text-muted text-xs">{timeAgo}</span>
                         </div>
-                        <span className="text-text-muted text-xs">{timeAgo}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                  {filteredActivity.length > ACTIVITY_PREVIEW && (
+                    <button
+                      onClick={() => setActivityExpanded(v => !v)}
+                      className="w-full mt-3 py-2 text-xs font-medium text-banana hover:bg-banana/5 rounded-lg transition-colors"
+                    >
+                      {activityExpanded ? 'Show less' : `Show all ${filteredActivity.length}`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1108,12 +1775,27 @@ export default function NftDetailPage() {
       {showBuyModal && nft?.listing && price !== null && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => buyStep === 'confirm' && setShowBuyModal(false)}
+          onClick={() => {
+            if (buyStep === 'confirm') setShowBuyModal(false);
+            // Stuck waiting on MoonPay funds → tapping the backdrop bails out.
+            else if (buyStep === 'processing' && cardFlowStep !== 'buying') cancelBuy();
+          }}
         >
           <div
-            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md"
+            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative"
             onClick={e => e.stopPropagation()}
           >
+            {/* Escape hatch while waiting on card funds (can't cancel mid-purchase). */}
+            {buyStep === 'processing' && cardFlowStep !== 'buying' && (
+              <button
+                type="button"
+                onClick={cancelBuy}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {buyStep === 'confirm' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">
@@ -1151,8 +1833,8 @@ export default function NftDetailPage() {
                         {draftType === 'hof' && (
                           <span className="px-2 py-0.5 bg-hof/20 text-hof text-[10px] font-bold rounded">HOF</span>
                         )}
-                        {rank && rank !== 'N/A' && (
-                          <span className="text-text-muted text-xs">Rank #{rank}</span>
+                        {hasValidRank && (
+                          <span className="text-text-muted text-xs">Rank #{rank}/10</span>
                         )}
                       </div>
                     </div>
@@ -1161,55 +1843,13 @@ export default function NftDetailPage() {
                   {/* Payment Method */}
                   <div className="mb-4">
                     <label className="block text-text-secondary text-sm mb-3">Payment Method</label>
-                    <div className="grid gap-3 grid-cols-2">
-                      <button
-                        onClick={() => setPaymentMethod('card')}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          paymentMethod === 'card'
-                            ? 'border-banana bg-banana/10'
-                            : 'border-bg-tertiary hover:border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <svg className="w-6 h-4" viewBox="0 0 24 16" fill="none">
-                            <rect width="24" height="16" rx="2" fill="#1A1F71"/>
-                            <path d="M9.5 10.5L10.5 5.5H12L11 10.5H9.5Z" fill="white"/>
-                            <path d="M15.5 5.5C15 5.5 14.5 5.7 14.3 6L12 10.5H13.7L14 9.7H16L16.2 10.5H17.7L16.5 5.5H15.5ZM14.5 8.5L15.2 6.7L15.6 8.5H14.5Z" fill="white"/>
-                            <path d="M8 5.5L6 10.5H7.5L7.8 9.5H9.5L9.8 10.5H11.3L9.3 5.5H8ZM8 8.3L8.5 6.7L9 8.3H8Z" fill="white"/>
-                          </svg>
-                          <svg className="w-8 h-5" viewBox="0 0 32 20" fill="none">
-                            <rect width="32" height="20" rx="2" fill="#EB001B"/>
-                            <circle cx="12" cy="10" r="6" fill="#EB001B"/>
-                            <circle cx="20" cy="10" r="6" fill="#F79E1B"/>
-                            <path d="M16 5.5C17.5 6.7 18.5 8.2 18.5 10C18.5 11.8 17.5 13.3 16 14.5C14.5 13.3 13.5 11.8 13.5 10C13.5 8.2 14.5 6.7 16 5.5Z" fill="#FF5F00"/>
-                          </svg>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          Card
-                        </span>
-                        <p className="text-text-muted text-[10px] mt-1">Powered by MoonPay</p>
-                      </button>
-                      <button
-                        onClick={() => setPaymentMethod('usdc')}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          paymentMethod === 'usdc'
-                            ? 'border-banana bg-banana/10'
-                            : 'border-bg-tertiary hover:border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <span className="text-lg font-bold text-text-primary">$</span>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          USDC
-                        </span>
-                        {user?.usdcBalance != null && (
-                          <p className="text-text-muted text-[10px] mt-1">
-                            Balance: ${user.usdcBalance.toFixed(2)}
-                          </p>
-                        )}
-                      </button>
-                    </div>
+                    <PaymentMethodSquares
+                      value={paymentMethod}
+                      onChange={setPaymentMethod}
+                      isEmbeddedWallet={isEmbeddedWallet}
+                      usdcBalance={user?.usdcBalance ?? null}
+                      requiredAmount={price ?? 0}
+                    />
                   </div>
 
                   {/* Error display */}
@@ -1266,14 +1906,14 @@ export default function NftDetailPage() {
                       </>
                     ) : (
                       <>
-                        Pay ${(price + 0.01).toFixed(2)} USDC
+                        Pay ${(price + 0.01).toFixed(2)}{isEmbeddedWallet ? '' : ' USDC'}
                       </>
                     )}
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
                     {paymentMethod === 'card'
                       ? 'Secure payment powered by MoonPay'
-                      : 'USDC payment on Base network'
+                      : 'Paid with your balance'
                     }
                   </p>
                 </div>
@@ -1298,8 +1938,8 @@ export default function NftDetailPage() {
                   {paymentMethod === 'card'
                     ? cardFlowStep === 'funding' ? 'Complete your payment in the MoonPay window...'
                     : cardFlowStep === 'waiting' ? 'Your funds are on the way. This may take a moment...'
-                    : 'Completing your purchase on Base...'
-                    : 'Completing your purchase on Base...'
+                    : 'Completing your purchase...'
+                    : 'Completing your purchase...'
                   }
                 </p>
                 {paymentMethod === 'card' && cardFlowStep !== 'idle' && (
@@ -1347,7 +1987,11 @@ export default function NftDetailPage() {
                   </svg>
                 </div>
                 <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-                <p className="text-text-secondary text-sm mb-6">{teamName} is now yours</p>
+                <p className="text-text-secondary text-sm mb-6">
+                  {fillingLevel
+                    ? `${fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${tokenId} is yours — your draft is filling`
+                    : `${teamName} is now yours`}
+                </p>
                 <div className="flex gap-3 justify-center">
                   <button
                     onClick={() => {
@@ -1358,11 +2002,13 @@ export default function NftDetailPage() {
                   >
                     Close
                   </button>
+                  {/* A still-filling wheel pass is a draft-in-progress, not a team
+                      yet — send the buyer to their drafting page, not My Teams. */}
                   <Link
-                    href="/marketplace?tab=sell"
+                    href={fillingLevel ? '/drafting' : '/marketplace?tab=sell'}
                     className="px-6 py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all text-sm"
                   >
-                    View My Teams
+                    {fillingLevel ? 'View Draft' : 'View My Teams'}
                   </Link>
                 </div>
               </div>
@@ -1375,12 +2021,26 @@ export default function NftDetailPage() {
       {showOfferModal && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => offerStep === 'input' && setShowOfferModal(false)}
+          onClick={() => {
+            if (offerStep === 'input') setShowOfferModal(false);
+            else if (offerStep === 'processing') cancelOffer();
+          }}
         >
           <div
-            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md"
+            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative"
             onClick={e => e.stopPropagation()}
           >
+            {/* Escape hatch while a card-funded offer waits on MoonPay funds. */}
+            {offerStep === 'processing' && (
+              <button
+                type="button"
+                onClick={cancelOffer}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {offerStep === 'input' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">
@@ -1411,13 +2071,13 @@ export default function NftDetailPage() {
                     )}
                     <div>
                       <h3 className="text-text-primary font-semibold font-mono">{teamName}</h3>
-                      <p className="text-text-muted text-xs">Token #{tokenId}</p>
+                      <p className="text-text-muted text-xs">{isEmbeddedWallet ? '#' : 'Token #'}{tokenId}</p>
                     </div>
                   </div>
 
                   {/* Offer Amount */}
                   <div className="mb-4">
-                    <label className="block text-text-secondary text-sm mb-2">Your Offer (USDC)</label>
+                    <label className="block text-text-secondary text-sm mb-2">Your Offer{isEmbeddedWallet ? '' : ' (USDC)'}</label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-lg font-mono">$</span>
                       <input
@@ -1524,6 +2184,18 @@ export default function NftDetailPage() {
                     )}
                   </div>
 
+                  {/* Payment Method — Card funds the offer via MoonPay, then it escrows */}
+                  <div className="mb-4">
+                    <label className="block text-text-secondary text-sm mb-2">Pay with</label>
+                    <PaymentMethodSquares
+                      value={offerPaymentMethod}
+                      onChange={setOfferPaymentMethod}
+                      isEmbeddedWallet={isEmbeddedWallet}
+                      usdcBalance={user?.usdcBalance ?? null}
+                      requiredAmount={offerAmountNum}
+                    />
+                  </div>
+
                   {/* Summary */}
                   {offerAmountNum > 0 && (
                     <div className="p-4 bg-bg-primary rounded-xl space-y-2 mb-4">
@@ -1532,11 +2204,11 @@ export default function NftDetailPage() {
                         <span className="text-text-primary font-mono">${offerAmountNum.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-text-secondary">OpenSea Fee (1%)</span>
-                        <span className="text-text-primary font-mono">${offerFee.toFixed(2)}</span>
+                        <span className="text-text-secondary">Seller receives (after 1% OpenSea fee)</span>
+                        <span className="text-text-primary font-mono">${(offerAmountNum - offerFee).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-sm pt-2 border-t border-bg-tertiary font-semibold">
-                        <span className="text-text-primary">Total USDC Required</span>
+                        <span className="text-text-primary">You Pay</span>
                         <span className="text-text-primary font-mono">${offerAmountNum.toFixed(2)}</span>
                       </div>
                     </div>
@@ -1556,7 +2228,9 @@ export default function NftDetailPage() {
                     Submit Offer
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
-                    Your USDC will be held in escrow until the offer is accepted or expires.
+                    {isEmbeddedWallet
+                      ? 'Your offer is held securely until it’s accepted or expires.'
+                      : 'Your USDC will be held in escrow until the offer is accepted or expires.'}
                   </p>
                 </div>
               </>
@@ -1572,7 +2246,7 @@ export default function NftDetailPage() {
                   Creating Offer
                 </h3>
                 <p className="text-text-secondary text-sm">
-                  Signing your offer on Base...
+                  Signing your offer...
                 </p>
               </div>
             )}

@@ -69,7 +69,7 @@ export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', si
       <p className="text-[11px] text-white/70 mb-2 leading-relaxed">
         Every 100 drafts has exactly <span className="font-semibold text-white">94 Pro, 5 HOF, 1 Jackpot</span>.
         The exact slots were randomized by <span className="font-semibold text-white">Chainlink VRF</span> —
-        the same oracle network Polymarket and Aave use — and committed on Base before any draft filled.
+        the same oracle network Polymarket and Aave use — and locked in before any draft filled.
       </p>
 
       <div className="text-[10px] text-white/40 text-center mt-2 pt-2 border-t border-white/10">
@@ -123,7 +123,7 @@ export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', si
           // hovering for the tooltip.
           onClick={(e) => e.stopPropagation()}
           className={className}
-          aria-label="Verified — provably fair distribution"
+          aria-label="Verified — fair distribution"
         >
           {inner}
         </div>

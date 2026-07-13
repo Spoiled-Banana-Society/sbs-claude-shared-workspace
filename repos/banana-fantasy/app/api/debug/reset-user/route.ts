@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isProd, testHelpersEnabled } from '@/lib/envGates';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
 function ensureStagingOnly() {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (isProd() || !testHelpersEnabled()) {
     return NextResponse.json({ error: 'Not Found' }, { status: 404 });
   }
   return null;

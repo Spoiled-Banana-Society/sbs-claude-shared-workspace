@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/components/ui/Toast';
 import { pushNotification } from '@/components/NotificationCenter';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
@@ -76,12 +74,6 @@ function addNotified(userId: string, badgeId: string) {
  */
 export function useBadgeUnlockNotifier() {
   const { user, isLoggedIn } = useAuth();
-  const { show } = useToast();
-  const pathname = usePathname();
-  // Latest pathname in a ref so the polling closure reads the current
-  // route without needing to re-bind the interval on every navigation.
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
   const seedDoneRef = useRef<Set<string>>(new Set()); // tracks userIds we've seeded the "seen" set for
   const inFlightRef = useRef(false);
 
@@ -137,12 +129,6 @@ export function useBadgeUnlockNotifier() {
         // diff above is the *trigger*; this is the *gate*.
         const notified = readNotified(userId);
 
-        // Suppress toast (not notification entry) while the user is in
-        // the draft lobby or actively drafting — a popup over the timer
-        // / pick UI is disruptive. The bell still shows the unlock so
-        // they see it the moment they leave the room.
-        const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
-
         for (const id of newlyUnlocked) {
           const badge = BADGE_BY_ID[id];
           if (!badge) continue;
@@ -150,15 +136,10 @@ export function useBadgeUnlockNotifier() {
           const unlockedAtMs = unlockedAt ? Date.parse(unlockedAt) : NaN;
           const isRecent = Number.isFinite(unlockedAtMs) && (nowMs - unlockedAtMs) < NOTIFY_WINDOW_MS;
           if (!isRecent) continue; // silently absorb — already-earned badge
-          if (notified.has(id)) continue; // already announced this one — skip both surfaces
+          if (notified.has(id)) continue; // already announced this one — skip
 
-          if (!inDraftRoom) {
-            show({
-              level: 'success',
-              message: `Badge unlocked: ${badge.label} ${badge.glyph}`,
-              action: { label: 'View', onClick: () => { window.location.href = '/profile?tab=badges'; } },
-            });
-          }
+          // No toasts (Boris 2026-07-10): the bell entry below is the only
+          // surface for badge unlocks.
           pushNotification({
             type: 'promo',
             title: `Badge unlocked: ${badge.label}`,
@@ -192,5 +173,5 @@ export function useBadgeUnlockNotifier() {
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [isLoggedIn, user?.id, show]);
+  }, [isLoggedIn, user?.id]);
 }

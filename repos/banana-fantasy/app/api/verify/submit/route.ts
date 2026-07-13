@@ -183,8 +183,15 @@ export async function POST(req: Request) {
         errorMessage: `Didit API ${verifyRes.status}: ${text.slice(0, 500)}`,
         durationMs: Date.now() - startMs,
       });
+      // Didit rejects some formats (notably HEIC, iPhone's default). The client
+      // converts HEIC→JPEG when it can, but as a backstop give a format-specific
+      // message instead of the misleading "try a clearer photo" when that's the
+      // actual cause — otherwise iPhone users loop forever on a fine photo.
+      const isFormatError = /extension|not allowed|file type|unsupported|invalid.*image/i.test(text);
       return jsonError(
-        'Failed to verify ID. Please try a clearer photo of your driver\'s license, passport, or state ID.',
+        isFormatError
+          ? 'That image format isn\'t supported. Please upload a JPG or PNG (a screenshot of your ID works).'
+          : 'Failed to verify ID. Please try a clearer photo of your driver\'s license, passport, or state ID.',
         502,
       );
     }

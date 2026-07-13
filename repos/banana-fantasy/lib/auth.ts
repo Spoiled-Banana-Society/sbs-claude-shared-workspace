@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { ApiError } from '@/lib/api/errors';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { getRequestGeo } from '@/lib/geoLocation';
 
 type JwtPayload = Record<string, unknown>;
 
@@ -185,6 +186,12 @@ async function verifyPrivyJwt(token: string): Promise<{ userId: string; walletAd
 // 5-minute TTL.
 const privyUserCache = new Map<string, { walletAddress: string | null; expires: number }>();
 const PRIVY_USER_TTL_MS = 5 * 60 * 1000;
+// A NULL (wallet not yet visible in the Privy User API) is cached only briefly:
+// a brand-new social user's embedded wallet takes a beat to appear server-side,
+// and a 5-min negative cache would wedge every auth'd endpoint (username check,
+// returning-check) at "no wallet" for the whole session. Short TTL = recover in
+// seconds once the wallet exists. Positive resolutions still cache the full TTL.
+const PRIVY_USER_NEG_TTL_MS = 5 * 1000;
 
 interface PrivyLinkedAccount {
   type?: string;
@@ -193,14 +200,11 @@ interface PrivyLinkedAccount {
   chain_type?: string;
 }
 
-async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
-  const cached = privyUserCache.get(userId);
-  if (cached && cached.expires > Date.now()) return cached.walletAddress;
-
+// Single uncached call to the Privy User API → the user's wallet, or null.
+async function privyUserApiFetchOnce(userId: string): Promise<string | null> {
   const appId = getPrivyAppId();
   const appSecret = process.env.PRIVY_APP_SECRET?.trim();
   if (!appSecret) return null;
-
   try {
     const auth = Buffer.from(`${appId}:${appSecret}`).toString('base64');
     const res = await fetch(`https://auth.privy.io/api/v1/users/${encodeURIComponent(userId)}`, {
@@ -211,25 +215,48 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     });
     if (!res.ok) {
       console.warn('[auth] Privy User API non-OK:', res.status);
-      privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_TTL_MS });
+      logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { actor: userId, context: { status: res.status } });
       return null;
     }
     const data = (await res.json()) as { linked_accounts?: PrivyLinkedAccount[]; wallet?: { address?: string } };
-    let wallet: string | null = null;
     // Prefer the first non-Privy embedded wallet (external > embedded)
     const accounts = Array.isArray(data.linked_accounts) ? data.linked_accounts : [];
     const external = accounts.find(
       (a) => a.type === 'wallet' && a.wallet_client_type !== 'privy' && typeof a.address === 'string',
     );
     const anyWallet = accounts.find((a) => a.type === 'wallet' && typeof a.address === 'string');
-    wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
-    if (wallet) wallet = wallet.toLowerCase();
-    privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + PRIVY_USER_TTL_MS });
-    return wallet;
+    const wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
+    return wallet ? wallet.toLowerCase() : null;
   } catch (err) {
     console.warn('[auth] Privy User API fetch failed:', err);
+    logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { err, actor: userId });
     return null;
   }
+}
+
+async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
+  const cached = privyUserCache.get(userId);
+  // CRITICAL: only a POSITIVE cached wallet may short-circuit. A cached NULL
+  // must NEVER be served — proven via the Privy probe: a brand-new web2 user's
+  // embedded wallet IS linked in Privy, but lands a beat after login. The first
+  // request resolved null and cached it; every request in that 5s window
+  // (returning-check + ALL its client retries, the username claim) then got the
+  // stale null and never re-queried Privy — so firstLoginAt/bells were skipped
+  // and the name claim 400'd as "Username unavailable". Re-resolving on every
+  // call until the wallet appears is what actually fixes the first session.
+  if (cached && cached.walletAddress && cached.expires > Date.now()) return cached.walletAddress;
+
+  // Retry briefly within the request so the wallet resolves the moment Privy
+  // propagation lands. Only fresh-wallet users ever loop here; everyone else's
+  // first call returns a wallet immediately (then positive-cached for 5min).
+  let wallet: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    wallet = await privyUserApiFetchOnce(userId);
+    if (wallet) break;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 700));
+  }
+  privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + (wallet ? PRIVY_USER_TTL_MS : PRIVY_USER_NEG_TTL_MS) });
+  return wallet;
 }
 
 export async function getPrivyUser(req: Request): Promise<{ userId: string; walletAddress: string | null }> {
@@ -250,10 +277,7 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
   const user = await verifyPrivyJwt(token);
 
   // JWTs from social-login Privy sessions don't carry the wallet claim.
-  // Fall back to the Privy User API so every downstream check (verification
-  // doc key, ban check, audit logging) gets the wallet — without this, all
-  // writes happen under did:privy:… and reads under the wallet, and they
-  // never reconcile.
+  // Fall back to the Privy User API so every downstream check gets the wallet.
   if (!user.walletAddress) {
     const apiWallet = await fetchWalletFromPrivyUserApi(user.userId);
     if (apiWallet) user.walletAddress = apiWallet;
@@ -275,8 +299,14 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
   // the previous in-memory throttle).
   const loginId = user.walletAddress || user.userId;
   if (loginId) {
+    // Passively record where Vercel geolocates this request from (US state via
+    // IP) alongside the activity touch — this fires on EVERY authenticated
+    // request, so ACTIVE users are captured, not just fresh logins (the
+    // returning-check hook only fired on login and missed established sessions).
+    // Piggybacks on the throttled lastActiveAt write, so no extra Firestore ops.
+    const geo = getRequestGeo(req);
     import('@/lib/userEvents')
-      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId))
+      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId, { geo }))
       .catch(() => { /* non-fatal */ });
   }
 

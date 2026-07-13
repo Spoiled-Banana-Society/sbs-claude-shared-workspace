@@ -3,8 +3,36 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { normalizeWalletAddress } from '@/lib/api/client';
+import { logger } from '@/lib/logger';
+import { claimUsername } from '@/lib/usernames';
+import { usernameErrorText } from '@/lib/usernameMessages';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
+
+/**
+ * Enforce unique display names at the owner-write boundary. Onboarding
+ * (useOnboarding.createProfile/updateProfile → here) previously wrote the Go
+ * display name with NO uniqueness check, so two new/returning users could pick
+ * the same name (e.g. both "Richard"). claimUsername atomically reserves the
+ * name for this wallet (or confirms they already hold it) and rejects names
+ * held by another wallet or reserved for the founders. Throws ApiError(409)
+ * on conflict / ApiError(400) on a bad-shape name, surfaced to the client.
+ */
+async function enforceUniqueDisplayName(walletAddress: string, displayName: string): Promise<void> {
+  const result = await claimUsername(displayName, walletAddress);
+  if (result.available) {
+    // Name claimed → refresh the referral code to match it immediately
+    // (real-time). Best-effort; getPromos re-derives on next read regardless.
+    try {
+      const { ensureNamedReferralCode } = await import('@/lib/db');
+      await ensureNamedReferralCode(walletAddress);
+    } catch { /* non-fatal — referral self-heals on next promos read */ }
+    return;
+  }
+  const reason = result.reason ?? 'taken';
+  const status = reason === 'taken' || reason === 'reserved' ? 409 : 400;
+  throw new ApiError(status, usernameErrorText(reason));
+}
 
 async function readErrorMessage(res: Response): Promise<string | null> {
   try {
@@ -51,6 +79,7 @@ export async function GET(req: Request) {
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('Owner fetch failed:', err);
+    logger.error('draft.owners.unhandled', { err, actor: getWalletParam(req) ?? undefined });
     return jsonError('Owner fetch failed', 500);
   }
 }
@@ -77,6 +106,9 @@ export async function POST(req: Request) {
       avatar,
       onboardingComplete,
     };
+
+    // Reject before hitting Go if the name is already taken / reserved.
+    await enforceUniqueDisplayName(payload.walletAddress, displayName);
 
     const res = await fetch(`${API_BASE}/owner/create`, {
       method: 'POST',
@@ -121,6 +153,9 @@ export async function PUT(req: Request) {
       avatar,
       onboardingComplete,
     };
+
+    // Reject before hitting Go if the name is already taken / reserved.
+    await enforceUniqueDisplayName(payload.walletAddress, displayName);
 
     const res = await fetch(`${API_BASE}/owner/${payload.walletAddress}`, {
       method: 'PUT',

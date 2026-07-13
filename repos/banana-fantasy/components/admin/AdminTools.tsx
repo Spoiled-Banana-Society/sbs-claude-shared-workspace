@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { GrantPrizeForm } from '@/components/admin/GrantPrizeForm';
+import { WinnersImportPanel } from '@/components/admin/WinnersImportPanel';
 import { NftMappingTool } from '@/components/admin/NftMappingTool';
 import { RecoverDraftCardForm } from '@/components/admin/RecoverDraftCardForm';
+import { IntegrityAuditPanel } from '@/components/admin/IntegrityAuditPanel';
 import { WheelProofAdminPanel } from '@/components/admin/WheelProofAdminPanel';
 import { DraftMerkleAdminPanel } from '@/components/admin/DraftMerkleAdminPanel';
 import { BroadcastsPanel } from '@/components/admin/BroadcastsPanel';
@@ -346,7 +348,9 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
       <BroadcastsPanel />
       <BulkGrantPanel />
       <DigestPreviewButton />
+      <IntegrityAuditPanel getHeaders={getHeaders} />
 
+      <WinnersImportPanel />
       <GrantPrizeForm />
 
       <NftMappingTool enabled={enabled} />

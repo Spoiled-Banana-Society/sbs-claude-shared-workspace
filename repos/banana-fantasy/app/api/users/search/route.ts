@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import { searchUsers } from '@/lib/friends';
+import { searchRoster } from '@/lib/userRoster';
 
 export async function GET(req: Request) {
   let user: { userId: string; walletAddress: string | null };
@@ -28,7 +29,21 @@ export async function GET(req: Request) {
   if (q.length > 60) return NextResponse.json({ error: 'query too long' }, { status: 400 });
 
   try {
-    const users = await searchUsers(q, user.walletAddress, 10);
+    // Two sources merged: the stored-username index (fast, exact) + the
+    // resolved roster (covers wallet-derived Banana defaults and legacy Go
+    // names that aren't stored in v2_users — without it, most users were
+    // unfindable because their doc has no username field at all).
+    const [indexed, fromRoster] = await Promise.all([
+      searchUsers(q, user.walletAddress, 10),
+      searchRoster(q, user.walletAddress, 10).catch(() => []),
+    ]);
+    const seen = new Set(indexed.map((u) => u.walletAddress.toLowerCase()));
+    const users = [
+      ...indexed,
+      ...fromRoster
+        .filter((u) => !seen.has(u.walletAddress))
+        .map((u) => ({ walletAddress: u.walletAddress, username: u.username, profilePicture: u.profilePicture ?? undefined })),
+    ].slice(0, 10);
     return NextResponse.json({ users });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';

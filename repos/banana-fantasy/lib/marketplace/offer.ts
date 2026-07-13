@@ -90,13 +90,23 @@ export async function createOffer(
   // This handles USDC approval (if needed) + EIP-712 signing
   const order = await executeAllActions();
 
+  // Seaport order hashes are deterministic — compute it locally so the offer
+  // cache always carries the real hash (Accept/Cancel need it) even when
+  // OpenSea's POST response doesn't echo one back.
+  let localOrderHash = '';
+  try { localOrderHash = seaport.getOrderHash(order.parameters); } catch { /* best-effort */ }
+
   // Post signed offer through our server route (keeps OPENSEA_API_KEY server-side).
+  // `_meta` carries the offer details for our own offer cache so the server
+  // doesn't have to dig them out of the signed order — it forwards only the
+  // order fields to OpenSea and uses _meta for the cache.
   const postRes = await fetch('/api/marketplace/offers', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       ...order,
       protocol_address: CROSS_CHAIN_SEAPORT_V1_6_ADDRESS,
+      _meta: { tokenId: String(tokenId), priceUsd: offerAmountUsd, offerer: offererAddress, endTimeSec: endTime.toString(), orderHash: localOrderHash },
     }),
   });
 

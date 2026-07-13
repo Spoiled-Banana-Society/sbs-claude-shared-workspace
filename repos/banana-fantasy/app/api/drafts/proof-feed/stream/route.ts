@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { normalizeContestName } from '@/lib/draftStore';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,6 +17,14 @@ interface FeedDraft {
   displayName: string;
   speed: 'fast' | 'slow';
   filledAt: string | null;
+  /** Jackpot drafts only: the recorded Spin Draw + its on-chain receipt. */
+  draw?: {
+    winnerName: string | null;
+    paidCount: number;
+    reward: number;
+    receiptTxHash: string | null;
+    vrfPeriod: number | null;
+  } | null;
 }
 
 interface RoundSummary {
@@ -90,7 +99,10 @@ export async function GET(req: Request) {
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
     for (let i = -SLOT_BUFFER; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
-      if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
+      // Floor at 0, not 1: after a clean-slate reset the slot counter
+      // starts at 0, so the very first draft is `…-draft-0`. A floor of 1
+      // skipped it and the newest league never appeared in the feed.
+      if (num < Math.max(0, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
         for (const year of yearPrefixes) {
           candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
@@ -106,6 +118,24 @@ export async function GET(req: Request) {
     // global league number from DisplayName, not the slot id.
     const seen = new Set<number>();
     const drafts: FeedDraft[] = [];
+    const jackpotSlotIds = new Map<number, string>(); // globalNumber → slot doc id (jackpot_draws key)
+    // VRF-committed type per draft (provably-fair source of truth). Gate display
+    // so a sealed HOF/Jackpot only shows once its written Level matches — never
+    // the 'Pro' creation-default before the slot machine determines it.
+    const { locateDraft } = await import('@/lib/batchProof');
+    const batchCache = new Map<number, { jackpotPositions?: number[]; hofPositions?: number[] } | null>();
+    const committedTypeOf = async (globalNumber: number): Promise<FeedDraft['level'] | null> => {
+      const loc = locateDraft(globalNumber);
+      if (!batchCache.has(loc.batchNumber)) {
+        const s = await db.collection('batch_proofs').doc(String(loc.batchNumber)).get();
+        batchCache.set(loc.batchNumber, s.exists ? (s.data() as { jackpotPositions?: number[]; hofPositions?: number[] }) : null);
+      }
+      const b = batchCache.get(loc.batchNumber);
+      if (!b) return null;
+      if ((b.jackpotPositions ?? []).includes(loc.positionInBatch)) return 'Jackpot';
+      if ((b.hofPositions ?? []).includes(loc.positionInBatch)) return 'Hall of Fame';
+      return 'Pro';
+    };
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const snap = snaps[i];
@@ -122,20 +152,50 @@ export async function GET(req: Request) {
       // future leagues don't render.
       if (globalNumber > filled) continue;
       if (seen.has(globalNumber)) continue;
+      const level = normalizeLevel(data?.Level);
+      // Only show once the written Level matches the VRF-committed type — a sealed
+      // HOF/Jackpot stays hidden until the slot machine determines it (real-time).
+      const committed = await committedTypeOf(globalNumber);
+      if (committed && committed !== level) continue;
       seen.add(globalNumber);
       // updateTime = last write to the doc = slot machine reveal moment.
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
+      if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber),
         draftNumber: globalNumber,
-        level: normalizeLevel(data?.Level),
-        displayName: dn || `BBB #${globalNumber}`,
+        level,
+        displayName: normalizeContestName(dn) || `League #${globalNumber}`,
         speed: c.speed,
         filledAt,
       });
     }
     drafts.sort((a, b) => b.draftNumber - a.draftNumber);
     if (drafts.length > FEED_LIMIT) drafts.length = FEED_LIMIT;
+
+    // Attach the recorded Spin Draw (winner + on-chain receipt) to jackpot rows.
+    await Promise.all(
+      drafts
+        .filter((d) => d.level === 'Jackpot' && jackpotSlotIds.has(d.draftNumber))
+        .map(async (d) => {
+          try {
+            const drawSnap = await db.collection('jackpot_draws').doc(jackpotSlotIds.get(d.draftNumber)!).get();
+            const dd = drawSnap.data() as {
+              pending?: boolean; winnerName?: string | null; eligible?: unknown[];
+              reward?: number; receiptTxHash?: string | null; vrfPeriod?: number | null;
+            } | undefined;
+            if (drawSnap.exists && dd && dd.pending === false) {
+              d.draw = {
+                winnerName: dd.winnerName ?? null,
+                paidCount: Array.isArray(dd.eligible) ? dd.eligible.length : 0,
+                reward: Number(dd.reward ?? 0),
+                receiptTxHash: dd.receiptTxHash ?? null,
+                vrfPeriod: dd.vrfPeriod ?? null,
+              };
+            }
+          } catch { /* row simply renders without draw info */ }
+        }),
+    );
     return { drafts, round: await loadRound(db) };
   };
 
@@ -292,8 +352,13 @@ async function getEarliestMerkleDraftNumber(db: FirebaseFirestore.Firestore): Pr
       .get();
     if (snap.empty) return null;
     const data = snap.docs[0].data() as { firstBatchNumber?: number };
-    if (!data.firstBatchNumber) return null;
-    return (data.firstBatchNumber - 1) * 100 + 1;
+    // firstBatchNumber === 0 is VALID after a clean-slate reset (launch round
+    // starts at batch 0). The old `!data.firstBatchNumber` treated 0 as missing →
+    // returned null → the real-time feed short-circuited to "No drafts have filled
+    // yet" even though drafts had filled (2026-06-22 falsy-zero bug). Only a truly
+    // absent value disqualifies; clamp ≥ 0 so league #1 (slot draft-0) is included.
+    if (data.firstBatchNumber == null) return null;
+    return Math.max(0, (data.firstBatchNumber - 1) * 100 + 1);
   } catch {
     return null;
   }

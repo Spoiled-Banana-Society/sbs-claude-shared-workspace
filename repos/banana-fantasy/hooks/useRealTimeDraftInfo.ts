@@ -19,6 +19,12 @@ export interface RealTimeDraftInfo {
   lastPick: LastPickInfo | null;
   isDraftComplete: boolean;
   isDraftClosed: boolean;
+  // Draft type, synced LIVE from the server when the draft fills so every
+  // device shows the same Pro/HOF/Jackpot (no per-device derivation drift).
+  // Optional: older server builds don't write it yet — frontend falls back to
+  // the owner-token-level resolution until the backend write + RTDB read-rule
+  // ship. Server writes the human strings OR the short codes; both accepted.
+  type?: 'pro' | 'hof' | 'jackpot' | 'Pro' | 'Hall of Fame' | 'Jackpot' | null;
 }
 
 export interface LastPickInfo {
@@ -137,26 +143,34 @@ export function useRealTimeDraftInfo(
         // ticks on their first miss → airplane-mode auto-enable fires
         // one pick late. So always fire when we see a fresh lastPick.
         if (value.lastPick) {
-          const currentPickNum = value.pickNumber;
+          // Track by the LAST PICK's own number, NOT the next-pick pointer
+          // (value.pickNumber). On the final pick (150) the draft completes and
+          // pickNumber never advances to 151 — there's no next picker — so a
+          // pickNumber-based check never detects the last pick, processPick(150)
+          // never runs, and the board never shows it before the draft closes
+          // (the "last auto-pick didn't show, jumped to next phase" bug).
+          // lastPick.pickNum always advances, so this catches every pick incl.
+          // the last. Dedup is handled by the engine's lastPickRef, so re-firing
+          // a known pick is harmless. Position-1's first snapshot
+          // (lastPick.pickNum=1, ref=null) still fires via the null check.
+          const lastNum = value.lastPick.pickNum;
           if (
             lastPickNumberRef.current === null ||
-            currentPickNum > lastPickNumberRef.current
+            lastNum > lastPickNumberRef.current
           ) {
             logger.debug(
-              '[Firebase RTDB] New pick detected: pickNumber',
-              currentPickNum,
+              '[Firebase RTDB] New pick detected: lastPick.pickNum',
+              lastNum,
               'player',
               value.lastPick.playerId,
             );
             setNewPickDetected(true);
             setDetectedPick(value.lastPick);
-            lastPickNumberRef.current = currentPickNum;
+            lastPickNumberRef.current = lastNum;
           }
-        } else if (lastPickNumberRef.current === null) {
-          // Pre-draft snapshot with no picks yet — track pickNumber so
-          // the first real pick is correctly identified as a forward step.
-          lastPickNumberRef.current = value.pickNumber;
         }
+        // Pre-draft snapshots have no lastPick → nothing to track; the first
+        // real pick fires via the null check above.
       },
       (error) => {
         // Firebase permission_denied or other errors — signal WS fallback

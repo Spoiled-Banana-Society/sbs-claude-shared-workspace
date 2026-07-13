@@ -1,414 +1,168 @@
 import type { Badge } from '@/types';
+import { RIPENESS_TIERS, ripenessBadgeId } from './ripeness';
 
 /**
- * Single source of truth for all badges. Same pattern as the promo seed
- * list — ordered as displayed in the catalog grid. Adding a badge here +
- * deploying is sufficient for new users to see it; existing users get the
- * lazy-backfill on their next /api/badges read.
+ * Single source of truth for all badges — the "obsidian disc" set.
  *
- * Visual design rules:
- *  - Every badge has a unique glyph + color combo (no two look the same).
- *  - Champion-tier badges (BBB Champion, HOF Champion, Founder's Pick)
- *    get pulse + double-ring + gradient.
- *  - HOF podium uses gold ring overlay so it reads distinct from BBB
- *    podium even though the medal glyphs match.
- *  - Rare/special badges (drafts-100, beat-founder) get gradient fills.
+ * Every badge renders as a dark-glass disc with a solid colored rim and a
+ * flat center icon (NO glow). The renderer (components/badges/BadgeIcon.tsx)
+ * switches on `contentKind`; the catalog just declares colors + content.
+ * Designs/colors are locked to ~/Desktop/badges-each.html.
+ *
+ * The set, in catalog order:
+ *  - Ripeness — ONE dynamic banana everyone carries; its fill color comes
+ *    from how many paid BBB4 passes they've bought (lib/badges/ripeness.ts).
+ *    Never "unlocked"; always the default badge unless they equip another.
+ *  - Championships — BBB Champion I–III (blue), HOF Champion I–IV (gold).
+ *  - Clubs — Jackpot Club (red), HOF Club (gold).
+ *  - Status — King of Drafts (purple, transient/weekly), Founders, OG.
+ *  - Team flair — 32 NFL logos, always available (cosmetic).
+ *
+ * Adding a badge here + deploying is enough for new users; existing users
+ * get the lazy-backfill on their next /api/badges read.
  */
+
+const RIM_GREY = '#48484f';
+
+// Champion badges per season. Roman numeral is shown on the disc; the season
+// number drives the id + copy. BBB = blue, HOF = gold.
+const BBB_SEASONS: Array<[num: number, roman: string]> = [
+  [1, 'I'], [2, 'II'], [3, 'III'], [4, 'IV'],
+];
+const HOF_SEASONS: Array<[num: number, roman: string]> = [
+  [1, 'I'], [2, 'II'], [3, 'III'], [4, 'IV'],
+];
+
 export const BADGE_CATALOG: Badge[] = [
-  // ── Drafts ───────────────────────────────────────────────────────────
-  {
-    id: 'first-draft',
-    label: 'First Draft',
-    description: 'Completed your first draft. Welcome to SBS.',
-    criteria: 'Complete 1 draft',
-    category: 'drafts',
-    color: '#84cc16', // lime — fresh start
-    glyph: '🌱',
-  },
-  {
-    id: 'drafts-20',
-    label: 'Veteran',
-    description: '20 drafts deep. You know the lobby by heart.',
-    criteria: 'Complete 20 drafts',
-    category: 'drafts',
-    color: '#3b82f6', // blue
-    accentColor: '#1e40af',
-    gradient: true,
-    glyph: '⚔️',
-  },
-  {
-    id: 'drafts-50',
-    label: 'Grinder',
-    description: '50 drafts in. The grind is paying off.',
-    criteria: 'Complete 50 drafts',
-    category: 'drafts',
-    color: '#6366f1', // indigo — between blue Veteran and purple Centurion
-    accentColor: '#8b5cf6', // violet
-    gradient: true,
-    glyph: '🎖️',
-  },
-  {
-    id: 'drafts-100',
-    label: 'Centurion',
-    description: '100 drafts. Certified degenerate.',
-    criteria: 'Complete 100 drafts',
-    category: 'drafts',
-    color: '#a855f7', // purple
-    accentColor: '#ec4899', // pink
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'pulse',
-    glyph: '💯',
-  },
+  // ── Your Banana (6 ripeness tiers — unlock by buying PAID BBB4 drafts) ─
+  // Each tier is a real, equippable badge: grey/locked until you cross its
+  // paid-pass threshold, then it turns its tier color and you can equip it.
+  // Unripe is everyone's starting banana (always unlocked).
+  ...RIPENESS_TIERS.map((t): Badge => ({
+    id: ripenessBadgeId(t.key),
+    label: t.label,
+    description: `${t.range} paid drafts this season.`,
+    criteria: t.min <= 0
+      ? 'Everyone starts here.'
+      : `Fill ${t.min}+ paid drafts.`,
+    category: 'ripeness',
+    contentKind: 'banana',
+    contentColor: t.color, // the banana fills with this when unlocked
+    rimColor: t.rim ?? RIM_GREY, // Spoiled gets a gold frame; rest grey
+    color: t.color,
+    glyph: '🍌',
+    // Unripe is the floor everyone carries; the rest unlock by buying.
+    ...(t.min <= 0 ? { alwaysUnlocked: true } : {}),
+  })),
 
-  // ── League winners (weeks 1–14) ──────────────────────────────────────
-  {
-    id: 'league-winner-pro',
-    label: 'Pro League Winner',
-    description: '1st place in your Pro draft pod, weeks 1–14.',
-    criteria: 'Finish 1st in a Pro league regular season',
-    category: 'league',
-    color: '#a855f7', // pro purple
+  // ── Championships ────────────────────────────────────────────────────
+  // Hidden while locked: these are winner-only trophies (snapshot/admin
+  // grant). Non-winners can't earn them, so they don't show as locked teasers
+  // — they only appear in the catalog of the champions who hold them.
+  ...BBB_SEASONS.map(([num, roman]): Badge => ({
+    id: `bbb-champion-${num}`,
+    label: `BBB ${roman} Champion`,
+    description: `Won the Season ${num} final.`,
+    criteria: 'Win a BBB season final.',
+    category: 'championship',
+    contentKind: 'numeral-crown',
+    numeral: roman,
+    rimColor: '#3b82f6',
+    contentColor: '#9dc1fb',
+    color: '#3b82f6',
     glyph: '👑',
-  },
-  {
-    id: 'league-winner-jp',
-    label: 'Jackpot League Winner',
-    description: '1st place in your Jackpot draft pod — straight to the finals.',
-    criteria: 'Finish 1st in a Jackpot league regular season',
-    category: 'league',
-    color: '#ef4444', // jackpot red
-    accentColor: '#fbbf24', // gold accent (jp bling)
-    gradient: true,
-    glyph: '💰',
-  },
-  {
-    id: 'league-winner-hof',
-    label: 'HOF League Winner',
-    description: '1st place in your HOF draft pod — into the HOF playoffs.',
-    criteria: 'Finish 1st in a HOF league regular season',
-    category: 'league',
-    color: '#D4AF37', // hof gold
-    ringStyle: 'double',
-    glyph: '🏛️',
-  },
-  {
-    id: 'made-playoffs',
-    label: 'Playoff Bound',
-    description: 'Top 2 in your league regular season — made the playoffs.',
-    criteria: 'Finish top 2 in any league regular season',
-    category: 'league',
-    color: '#22c55e', // green
-    glyph: '🏈',
-  },
-  {
-    id: 'week-winner',
-    label: 'Week Champion',
-    description: 'Highest-scoring team across the entire contest in a single week.',
-    criteria: 'Finish #1 overall in any week (1–14)',
-    category: 'league',
-    color: '#fbbf24', // banana yellow
-    accentColor: '#fb923c', // orange — separates from league-pod wins
-    gradient: true,
-    glow: 'soft',
-    glyph: '🔥',
-  },
-
-  // ── Finals (BBB main bracket) ────────────────────────────────────────
-  {
-    id: 'made-finals',
-    label: 'Finalist',
-    description: 'Reached the week-17 finals. The big stage.',
-    criteria: 'Reach the BBB finals',
-    category: 'finals',
-    color: '#facc15', // yellow
-    glow: 'soft',
-    glyph: '🎯',
-  },
-  {
-    id: 'bbb-bronze',
-    label: 'BBB Bronze',
-    description: '3rd place in the BBB finals.',
-    criteria: 'Finish 3rd in the BBB finals',
-    category: 'finals',
-    color: '#cd7f32', // bronze
-    glyph: '🥉',
-  },
-  {
-    id: 'bbb-silver',
-    label: 'BBB Silver',
-    description: '2nd place in the BBB finals.',
-    criteria: 'Finish 2nd in the BBB finals',
-    category: 'finals',
-    color: '#c0c0c0', // silver
-    glyph: '🥈',
-  },
-  {
-    id: 'bbb-champion',
-    label: 'BBB Champion',
-    description: 'BBB Champion. The whole damn season.',
-    criteria: 'Win the BBB finals',
-    category: 'finals',
-    color: '#ffd700',
-    accentColor: '#fb923c', // amber
-    gradient: true,
-    ringStyle: 'rainbow',
-    glow: 'pulse',
+    hidden: true,
+  })),
+  ...HOF_SEASONS.map(([num, roman]): Badge => ({
+    id: `hof-champion-${num}`,
+    label: `HOF ${roman} Champion`,
+    description: `Won the Season ${num} HOF bracket.`,
+    criteria: 'Win a HOF bracket.',
+    category: 'championship',
+    contentKind: 'hof-champ',
+    numeral: roman,
+    rimColor: '#cca54f',
+    contentColor: '#f7e6ad',
+    color: '#cca54f',
     glyph: '🏆',
-  },
+    hidden: true,
+  })),
 
-  // ── HOF playoffs (weeks 15–17 cumulative) ────────────────────────────
-  // Same medal glyphs as BBB podium, but with a gold ring overlay so
-  // viewers can distinguish "HOF bronze" from "BBB bronze" at a glance.
+  // ── Clubs ────────────────────────────────────────────────────────────
   {
-    id: 'hof-bronze',
-    label: 'HOF Bronze',
-    description: '3rd place in HOF playoffs.',
-    criteria: 'Finish 3rd in the HOF playoff bracket',
-    category: 'finals',
-    color: '#cd7f32',
-    ringColor: '#D4AF37', // gold ring marks it HOF
-    ringStyle: 'double',
-    glyph: '🥉',
-  },
-  {
-    id: 'hof-silver',
-    label: 'HOF Silver',
-    description: '2nd place in HOF playoffs.',
-    criteria: 'Finish 2nd in the HOF playoff bracket',
-    category: 'finals',
-    color: '#c0c0c0',
-    ringColor: '#D4AF37',
-    ringStyle: 'double',
-    glyph: '🥈',
-  },
-  {
-    id: 'hof-champion',
-    label: 'HOF Champion',
-    description: 'Won the HOF playoffs. Untouchable.',
-    criteria: 'Win the HOF playoff bracket',
-    category: 'finals',
-    color: '#D4AF37',
-    accentColor: '#fde68a',
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'pulse',
-    glyph: '🌟',
-  },
-
-  // ── Wheel ────────────────────────────────────────────────────────────
-  {
-    id: 'first-spin',
-    label: 'First Spin',
-    description: 'Spun the wheel for the first time.',
-    criteria: 'Spin the wheel once',
-    category: 'wheel',
-    color: '#94a3b8', // slate
-    glyph: '🎡',
-  },
-  {
-    id: 'spin-jackpot',
-    label: 'Lucky Spin (JP)',
-    description: 'Hit Jackpot on the wheel.',
-    criteria: 'Land on Jackpot on a wheel spin',
-    category: 'wheel',
-    color: '#ef4444',
-    glow: 'soft',
+    id: 'jackpot-club',
+    label: 'Jackpot Club',
+    description: 'You landed a Jackpot draft.',
+    criteria: 'Land a Jackpot draft.',
+    category: 'club',
+    contentKind: 'text',
+    text: 'JP',
+    rimColor: '#b5453f',
+    contentColor: '#daa29f',
+    color: '#b5453f',
     glyph: '🎰',
   },
   {
-    id: 'spin-hof',
-    label: 'Lucky Spin (HOF)',
-    description: 'Hit HOF on the wheel.',
-    criteria: 'Land on HOF on a wheel spin',
-    category: 'wheel',
-    color: '#D4AF37',
-    glow: 'soft',
-    glyph: '🪙', // coin — distinct from slot machine
+    id: 'hof-club',
+    label: 'HOF Club',
+    description: 'You landed a Hall of Fame draft.',
+    criteria: 'Land a HOF draft.',
+    category: 'club',
+    contentKind: 'text',
+    text: 'HOF',
+    rimColor: '#cca54f',
+    contentColor: '#f7e6ad',
+    color: '#cca54f',
+    glyph: '🏛️',
   },
 
-  // ── Founder ──────────────────────────────────────────────────────────
+  // ── Status ───────────────────────────────────────────────────────────
   {
-    id: 'beat-founder',
-    label: 'Beat the Founder',
-    description: 'Outscored the founder in your Founder league, weeks 1–14.',
-    criteria: 'Score more than the founder in a Founder league regular season',
-    category: 'founder',
-    color: '#06b6d4', // cyan
-    accentColor: '#7dd3fc', // light cyan
-    gradient: true,
-    glyph: '⚡',
+    id: 'king-of-drafts',
+    label: 'King of Drafts',
+    description: 'Most paid drafts filled this week. Wear the crown.',
+    criteria: 'Fill the most paid drafts Mon–Sun.',
+    category: 'status',
+    contentKind: 'icon',
+    iconName: 'crown',
+    rimColor: '#8b5cf6',
+    contentColor: '#c5aefb',
+    color: '#8b5cf6',
+    glyph: '👑',
   },
   {
-    id: 'founder-pick',
-    label: "Founder's Pick",
-    description: 'Drawn from the beat-the-founder pool — straight to finals.',
-    criteria: 'Be randomly selected from the Founder draw',
-    category: 'founder',
-    color: '#06b6d4',
-    accentColor: '#fbbf24', // cyan + gold = lucky pick
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'pulse',
-    glyph: '🎟️',
-  },
-
-  // ── Season participation ─────────────────────────────────────────────
-  // BBB4 is the current season — earned by anyone who owns a BBB4 pass,
-  // visible/unlockable as you go. BBB1/2/3 are retroactive — hidden until
-  // admin-granted based on on-chain holders of those past collections.
-  {
-    id: 'bbb4-participant',
-    label: 'BBB4 Participant',
-    description: 'Held a Banana Best Ball Season 4 draft pass.',
-    criteria: 'Own a BBB4 draft pass',
-    category: 'legacy',
-    color: '#fbbf24',         // banana yellow → orange — current season pops
-    accentColor: '#f97316',
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'pulse',            // pulse marks it as the live/active season
-    glyph: 'BBB4',
+    id: 'founders-league',
+    label: 'Founders League',
+    description: 'You played in a Founders league.',
+    criteria: 'Play in a Founders league.',
+    category: 'status',
+    contentKind: 'icon',
+    iconName: 'key',
+    rimColor: RIM_GREY,
+    contentColor: '#f3f5f8',
+    color: RIM_GREY,
+    glyph: '🔑',
   },
   {
-    id: 'bbb1-participant',
-    label: 'BBB1 Participant',
-    description: 'Held a Banana Best Ball Season 1 draft pass.',
-    criteria: 'Past-season participant',
-    category: 'legacy',
-    color: '#22c55e',         // emerald → forest, OG roots
-    accentColor: '#0f5132',
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'soft',
-    glyph: 'BBB1',
-    hidden: true,
-  },
-  {
-    id: 'bbb2-participant',
-    label: 'BBB2 Participant',
-    description: 'Held a Banana Best Ball Season 2 draft pass.',
-    criteria: 'Past-season participant',
-    category: 'legacy',
-    color: '#3b82f6',         // blue → deep navy
-    accentColor: '#1e3a8a',
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'soft',
-    glyph: 'BBB2',
-    hidden: true,
-  },
-  {
-    id: 'bbb3-participant',
-    label: 'BBB3 Participant',
-    description: 'Held a Banana Best Ball Season 3 draft pass.',
-    criteria: 'Past-season participant',
-    category: 'legacy',
-    color: '#ec4899',         // pink → deep magenta
-    accentColor: '#831843',
-    gradient: true,
-    ringStyle: 'double',
-    glow: 'soft',
-    glyph: 'BBB3',
-    hidden: true,
-  },
-
-  // ── Legacy / past-season champions (HIDDEN until unlocked) ────────────
-  // These never show in the catalog while locked — they only appear on a
-  // user's profile once admin-awarded. Cosmetic-only proof that someone
-  // won a previous BBB season or its HOF bracket.
-  {
-    id: 'bbb1-champion',
-    label: 'BBB1 Champion',
-    description: 'Won Banana Best Ball Season 1.',
-    criteria: 'Past-season champion',
-    category: 'legacy',
-    color: '#ffd700',
-    accentColor: '#22c55e', // S1 emerald flair
-    gradient: true,
-    ringStyle: 'rainbow',
-    glow: 'pulse',
-    glyph: '①',
-    hidden: true,
-  },
-  {
-    id: 'bbb1-hof-champion',
-    label: 'BBB1 HOF Champion',
-    description: 'Won the BBB Season 1 HOF bracket.',
-    criteria: 'Past-season HOF champion',
-    category: 'legacy',
-    color: '#D4AF37',
-    accentColor: '#22c55e',
-    gradient: true,
-    ringStyle: 'double',
-    ringColor: '#22c55e',
-    glow: 'pulse',
-    glyph: '①',
-    hidden: true,
-  },
-  {
-    id: 'bbb2-champion',
-    label: 'BBB2 Champion',
-    description: 'Won Banana Best Ball Season 2.',
-    criteria: 'Past-season champion',
-    category: 'legacy',
-    color: '#ffd700',
-    accentColor: '#3b82f6', // S2 blue flair
-    gradient: true,
-    ringStyle: 'rainbow',
-    glow: 'pulse',
-    glyph: '②',
-    hidden: true,
-  },
-  {
-    id: 'bbb2-hof-champion',
-    label: 'BBB2 HOF Champion',
-    description: 'Won the BBB Season 2 HOF bracket.',
-    criteria: 'Past-season HOF champion',
-    category: 'legacy',
-    color: '#D4AF37',
-    accentColor: '#3b82f6',
-    gradient: true,
-    ringStyle: 'double',
-    ringColor: '#3b82f6',
-    glow: 'pulse',
-    glyph: '②',
-    hidden: true,
-  },
-  {
-    id: 'bbb3-champion',
-    label: 'BBB3 Champion',
-    description: 'Won Banana Best Ball Season 3.',
-    criteria: 'Past-season champion',
-    category: 'legacy',
-    color: '#ffd700',
-    accentColor: '#ec4899', // S3 pink flair
-    gradient: true,
-    ringStyle: 'rainbow',
-    glow: 'pulse',
-    glyph: '③',
-    hidden: true,
-  },
-  {
-    id: 'bbb3-hof-champion',
-    label: 'BBB3 HOF Champion',
-    description: 'Won the BBB Season 3 HOF bracket.',
-    criteria: 'Past-season HOF champion',
-    category: 'legacy',
-    color: '#D4AF37',
-    accentColor: '#ec4899',
-    gradient: true,
-    ringStyle: 'double',
-    ringColor: '#ec4899',
-    glow: 'pulse',
-    glyph: '③',
+    id: 'og',
+    label: 'OG',
+    description: 'Here since BBB1–3.',
+    criteria: 'Played a past BBB season.',
+    category: 'status',
+    contentKind: 'text',
+    text: 'OG',
+    rimColor: RIM_GREY,
+    contentColor: '#f3f5f8',
+    color: RIM_GREY,
+    glyph: '⭐',
+    // Hidden while locked: you either ARE an OG (past-season player) or you
+    // aren't — it can't be earned this season, so no locked teaser.
     hidden: true,
   },
 
   // ── NFL team flair ───────────────────────────────────────────────────
   // Cosmetic only. Available to everyone immediately — no unlock criteria.
-  // Glyph is the team's 3-letter code; color is the team's primary brand
-  // color so the disc reads as that team at a glance.
+  // The disc keeps the grey rim; the team's full-color logo fills the center.
   ...([
     ['team-ari', 'Cardinals', 'ARI', '#97233F'],
     ['team-atl', 'Falcons', 'ATL', '#A71930'],
@@ -445,10 +199,12 @@ export const BADGE_CATALOG: Badge[] = [
   ] as const).map(([id, name, code, color]): Badge => ({
     id,
     label: name,
-    description: `${name} fan flair.`,
-    criteria: 'Always available — pick your team',
+    description: `Rep the ${name}.`,
+    criteria: 'Free for everyone.',
     category: 'team',
-    color,
+    contentKind: 'logo',
+    rimColor: RIM_GREY,
+    color, // team brand color (back-compat; rim stays grey)
     glyph: code, // fallback if image fails to load
     iconUrl: `https://a.espncdn.com/i/teamlogos/nfl/500/${code.toLowerCase()}.png`,
     alwaysUnlocked: true,
@@ -461,10 +217,11 @@ export const BADGE_BY_ID: Record<string, Badge> = Object.fromEntries(
 );
 
 /** Initial UserBadge docs seeded into a new user — every badge starts locked.
- *  Skips alwaysUnlocked cosmetics (NFL team flair) since their unlock state
- *  is implicit in the catalog and doesn't need a per-user Firestore doc. */
+ *  Skips alwaysUnlocked cosmetics (NFL team flair) and dynamic badges
+ *  (ripeness — always present, never a Firestore unlock) since their state
+ *  isn't a per-user locked doc. */
 export function seedUserBadges(): { id: string; unlocked: false }[] {
   return BADGE_CATALOG
-    .filter(b => !b.alwaysUnlocked)
+    .filter(b => !b.alwaysUnlocked && !b.dynamic)
     .map(b => ({ id: b.id, unlocked: false as const }));
 }

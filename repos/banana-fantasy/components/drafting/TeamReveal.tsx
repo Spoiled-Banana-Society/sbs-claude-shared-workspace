@@ -159,7 +159,7 @@ export function TeamReveal({ draftId, players, draftLevel, walletAddress: _walle
           <div className="text-4xl mb-4">😔</div>
           <h2 className="text-white text-xl font-bold mb-2">Couldn&apos;t load your team</h2>
           <p className="text-white/50 mb-6 text-sm">{error}</p>
-          <Link href="/standings" className="px-5 py-2.5 bg-[#F3E216] text-black font-semibold rounded-lg">
+          <Link href="/my-teams" className="px-5 py-2.5 bg-[#F3E216] text-black font-semibold rounded-lg">
             View Standings
           </Link>
         </div>
@@ -342,7 +342,7 @@ export function TeamReveal({ draftId, players, draftLevel, walletAddress: _walle
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Link
-                  href="/standings"
+                  href="/my-teams"
                   className="px-6 py-3 bg-[#F3E216] text-black font-semibold rounded-xl hover:bg-yellow-400 transition-colors text-center"
                 >
                   View Standings

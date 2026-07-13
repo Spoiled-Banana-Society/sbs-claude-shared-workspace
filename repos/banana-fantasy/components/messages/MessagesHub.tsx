@@ -7,7 +7,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
+import { useFriendSuggestions } from '@/hooks/useFriendSuggestions';
+import { usePresenceMap } from '@/hooks/usePresence';
 import { GlobalChat } from '@/components/chat/GlobalChat';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 /**
  * Unified messages hub: #general chat + Friends + DMs + Requests in one page.
@@ -23,32 +26,49 @@ import { GlobalChat } from '@/components/chat/GlobalChat';
  */
 
 type View =
+  | { kind: 'menu' } // mobile root: the Messages list itself (desktop treats it as general)
   | { kind: 'general' }
   | { kind: 'friends' }
+  | { kind: 'all-users' }
   | { kind: 'requests' }
   | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
 
-function shortWallet(w: string): string {
-  return `${w.slice(0, 6)}…${w.slice(-4)}`;
-}
-
 function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' }) {
   const px = size === 'sm' ? 32 : 40;
+  const { isOnline } = usePresenceMap();
+  const online = isOnline(user.walletAddress);
   return (
-    <AvatarWithBadge
-      imageUrl={user.profilePicture}
-      alt={user.username}
-      size={px}
-      equippedBadge={user.equippedBadge ?? null}
-      useNextImage={false}
-    />
+    <div className="relative flex-shrink-0">
+      <AvatarWithBadge
+        imageUrl={user.profilePicture}
+        alt={user.username}
+        size={px}
+        equippedBadge={user.equippedBadge ?? null}
+        useNextImage={false}
+      />
+      {online && (
+        // Quiet presence dot — green only when online; absence = offline.
+        <span
+          title="Online"
+          className="absolute rounded-full"
+          style={{
+            width: Math.max(8, Math.round(px * 0.28)),
+            height: Math.max(8, Math.round(px * 0.28)),
+            right: -1,
+            bottom: -1,
+            background: '#22c55e',
+            border: '2px solid #111114',
+          }}
+        />
+      )}
+    </div>
   );
 }
 
 // ─── Thread pane ────────────────────────────────────────────────────────────
 
-function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () => void }) {
+function ThreadPane({ otherWallet, onBack, onBlockChange }: { otherWallet: string; onBack: () => void; onBlockChange?: () => void }) {
   const { user } = useAuth();
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const { messages, other, permission, block, loading, send, accept, block_: blockUser, unblock } = useDmThread(otherWallet);
@@ -101,6 +121,7 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to block');
       setTimeout(() => setFeedback(null), 3000);
     } else {
+      onBlockChange?.(); // drop the thread from the inbox list right away
       setFeedback('User blocked');
       setTimeout(() => setFeedback(null), 2000);
     }
@@ -113,7 +134,8 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to unblock');
       setTimeout(() => setFeedback(null), 3000);
     } else {
-      setFeedback('User unblocked');
+      onBlockChange?.(); // restore the thread + history in the inbox list
+      setFeedback('User unblocked — chat restored');
       setTimeout(() => setFeedback(null), 2000);
     }
   };
@@ -135,8 +157,7 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
         </button>
         {other && <Avatar user={other} />}
         <div className="flex-1 min-w-0">
-          <p className="text-white font-medium truncate">{other?.username || shortWallet(otherWallet)}</p>
-          <p className="text-white/40 text-[10px] font-mono truncate">{shortWallet(otherWallet)}</p>
+          <p className="text-white font-medium truncate">{getTruncatedAccountName(other?.username || '', otherWallet)}</p>
         </div>
         {permission === 'reply' && !isBlocked && (
           <button onClick={handleAccept} className="px-3 py-1.5 rounded-lg bg-banana text-black text-xs font-bold hover:bg-banana-light">
@@ -260,6 +281,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { data, loading, accept, remove, sendRequest, search } = useFriends(enabled);
+  const { suggestions, dismiss: dismissSuggestion } = useFriendSuggestions(enabled);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Search state — merged from the old Add Friend pane.
@@ -342,8 +364,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     {action}
                   </div>
@@ -356,6 +377,33 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
         {/* Hide the friends sections while searching to keep focus on results. */}
         {!isSearching && (
           <>
+            {/* Suggested friends — people you recently drafted with. */}
+            {suggestions.length > 0 && (
+              <section className="mb-4">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Suggested friends</p>
+                <div className="space-y-1">
+                  {suggestions.map((u) => (
+                    <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                      <Avatar user={u} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          dismissSuggestion(u.walletAddress);
+                          const r = await sendRequest(u.walletAddress);
+                          flash(r.ok ? 'Request sent' : r.error || 'Failed');
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light"
+                      >
+                        Add Friend
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Incoming requests */}
             {data.incoming.length > 0 && (
               <section className="mb-4">
@@ -365,8 +413,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }}
@@ -395,8 +442,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Cancelled' : r.error || 'Failed'); }}
@@ -420,8 +466,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     <button
                       onClick={() => onSelectDm(u.walletAddress)}
@@ -448,9 +493,115 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
 
 // ─── (Old Add-friend pane removed — search lives at the top of Friends) ─────
 
+// ─── All Users pane ──────────────────────────────────────────────────────────
+// Directory of everyone who has logged into the new site (new or returning),
+// live names + pfps (default Banana handle or edited), Add Friend on each.
+
+function AllUsersPane({ onBack }: { onBack: () => void }) {
+  const { user, isLoggedIn } = useAuth();
+  const privy = usePrivy();
+  const myWallet = (user?.walletAddress || '').toLowerCase();
+  const enabled = !!user?.walletAddress && isLoggedIn;
+  const { data, accept, sendRequest } = useFriends(enabled);
+  const [roster, setRoster] = useState<PublicUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Ref the token getter — Privy hook identity churns per render and a fetch
+  // effect must never depend on it directly ([[render-loop-self-ddos]]).
+  const getTokenRef = useRef(privy.getAccessToken);
+  useEffect(() => { getTokenRef.current = privy.getAccessToken; }, [privy.getAccessToken]);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getTokenRef.current();
+        const res = await fetch('/api/users/roster', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error(`roster ${res.status}`);
+        const json = (await res.json()) as { users?: PublicUser[] };
+        if (!cancelled) setRoster(json.users ?? []);
+      } catch { /* shows empty-state */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [enabled]);
+
+  const flash = (text: string) => {
+    setFeedback(text);
+    setTimeout(() => setFeedback(null), 2000);
+  };
+
+  const stateFor = (wallet: string): 'friend' | 'incoming' | 'outgoing' | 'none' => {
+    const w = wallet.toLowerCase();
+    if (data.friends.some((u) => u.walletAddress.toLowerCase() === w)) return 'friend';
+    if (data.incoming.some((u) => u.walletAddress.toLowerCase() === w)) return 'incoming';
+    if (data.outgoing.some((u) => u.walletAddress.toLowerCase() === w)) return 'outgoing';
+    return 'none';
+  };
+
+  const q = filter.trim().toLowerCase();
+  const shown = roster.filter((u) =>
+    !q || u.username.toLowerCase().includes(q) || u.walletAddress.startsWith(q),
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0">
+        <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <h2 className="text-white text-lg font-semibold flex-1">All Users</h2>
+        <span className="text-white/40 text-xs">{roster.length} user{roster.length === 1 ? '' : 's'}</span>
+      </div>
+
+      <div className="px-4 pt-4 pb-2 flex-shrink-0">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by name or wallet…"
+          className="w-full bg-[#1c1c1e] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-banana/50"
+          maxLength={60}
+        />
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
+        {loading && <p className="text-white/30 text-sm text-center py-8">Loading users…</p>}
+        {!loading && shown.length === 0 && <p className="text-white/30 text-sm text-center py-8">No users found.</p>}
+        <div className="space-y-1">
+          {shown.map((u) => {
+            const isMe = u.walletAddress.toLowerCase() === myWallet;
+            const state = stateFor(u.walletAddress);
+            let action: React.ReactNode = null;
+            if (isMe) action = <span className="text-white/30 text-xs px-3 py-1.5">You</span>;
+            else if (state === 'friend') action = <span className="text-green-400 text-xs px-3 py-1.5">Friends</span>;
+            else if (state === 'incoming') action = (
+              <button onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Accept</button>
+            );
+            else if (state === 'outgoing') action = <span className="text-white/40 text-xs px-3 py-1.5">Requested</span>;
+            else action = (
+              <button onClick={async () => { const r = await sendRequest(u.walletAddress); flash(r.ok ? 'Request sent' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Add Friend</button>
+            );
+            return (
+              <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.04]">
+                <Avatar user={u} />
+                <span className="text-white text-sm flex-1 truncate">{u.username}</span>
+                {action}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Blocked-users pane ─────────────────────────────────────────────────────
 
-function BlockedPane({ onBack }: { onBack: () => void }) {
+function BlockedPane({ onBack, onChange }: { onBack: () => void; onChange?: () => void }) {
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { blocked, loading, unblock } = useBlockedUsers(enabled);
@@ -487,11 +638,10 @@ function BlockedPane({ onBack }: { onBack: () => void }) {
             <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
               <Avatar user={u} />
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
               </div>
               <button
-                onClick={async () => { const r = await unblock(u.walletAddress); flash(r.ok ? 'Unblocked' : r.error || 'Failed'); }}
+                onClick={async () => { const r = await unblock(u.walletAddress); if (r.ok) onChange?.(); flash(r.ok ? 'Unblocked — chat restored' : r.error || 'Failed'); }}
                 className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-banana hover:text-black text-white/70 text-xs font-medium transition-colors"
               >
                 Unblock
@@ -531,7 +681,7 @@ export function MessagesHub() {
   const searchParams = useSearchParams();
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
-  const { inbox, loading, reject: rejectDmRequest } = useDmInbox(enabled);
+  const { inbox, loading, reject: rejectDmRequest, refresh: refreshInbox } = useDmInbox(enabled);
   const { data: friendsData } = useFriends(enabled);
   const privy = usePrivy();
 
@@ -539,12 +689,18 @@ export function MessagesHub() {
     const v = searchParams?.get('view') || '';
     const w = searchParams?.get('with') || '';
     if (v === 'friends') return { kind: 'friends' };
+    if (v === 'all-users') return { kind: 'all-users' };
     if (v === 'requests') return { kind: 'requests' };
     if (v === 'add-friend') return { kind: 'friends' };
     if (v === 'blocked') return { kind: 'blocked' };
     if (v === 'general') return { kind: 'general' };
     if (w) return { kind: 'dm', wallet: w };
-    // Default: general chat for unauth; messages list for auth with no selection.
+    // Default: the Messages MENU on mobile (otherwise you're trapped in
+    // #general with no way to the rest, Boris 2026-06-11); general on desktop
+    // where the sidebar is always visible anyway.
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      return { kind: 'menu' };
+    }
     return { kind: 'general' };
   }, [searchParams]);
 
@@ -556,11 +712,15 @@ export function MessagesHub() {
     const w = searchParams?.get('with') || '';
     const fromUrl: View = (() => {
       if (v === 'friends') return { kind: 'friends' };
+      if (v === 'all-users') return { kind: 'all-users' };
       if (v === 'requests') return { kind: 'requests' };
       if (v === 'add-friend') return { kind: 'friends' };
       if (v === 'blocked') return { kind: 'blocked' };
       if (v === 'general') return { kind: 'general' };
       if (w) return { kind: 'dm', wallet: w };
+      if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+        return { kind: 'menu' };
+      }
       return { kind: 'general' };
     })();
     setView(fromUrl);
@@ -570,8 +730,10 @@ export function MessagesHub() {
   const navigate = (next: View) => {
     setView(next);
     let url = '/messages';
-    if (next.kind === 'general') url = '/messages?view=general';
+    if (next.kind === 'menu') url = '/messages';
+    else if (next.kind === 'general') url = '/messages?view=general';
     else if (next.kind === 'friends') url = '/messages?view=friends';
+    else if (next.kind === 'all-users') url = '/messages?view=all-users';
     else if (next.kind === 'requests') url = '/messages?view=requests';
     else if (next.kind === 'blocked') url = '/messages?view=blocked';
     else if (next.kind === 'dm') url = `/messages?with=${encodeURIComponent(next.wallet)}`;
@@ -605,13 +767,12 @@ export function MessagesHub() {
   // For mobile: when a content view is active, hide the sidebar.
   const hideSidebarOnMobile = view.kind !== 'general' || (view.kind === 'general' && false);
   void hideSidebarOnMobile;
-  const showSidebarMobile = true; // sidebar is always visible on desktop; on mobile, hidden once a non-general view is selected.
 
   return (
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-4 py-4">
       <div className="h-full flex bg-[#0f0f12] border border-white/[0.06] rounded-2xl overflow-hidden">
         {/* Sidebar */}
-        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'menu' ? 'flex' : 'hidden'} md:flex`}>
           <SidebarContent
             view={view}
             inbox={inbox}
@@ -622,27 +783,12 @@ export function MessagesHub() {
           />
         </aside>
 
-        {/* Mobile: sidebar shown when no view selected. We always show one or
-            the other on mobile to avoid blank screen. */}
-        {!showSidebarMobile && (
-          <aside className="flex md:hidden flex-col w-full">
-            <SidebarContent
-              view={view}
-              inbox={inbox}
-              loading={loading}
-              requestCount={requestCount}
-              friendRequestCount={friendRequestCount}
-              onNavigate={navigate}
-            />
-          </aside>
-        )}
-
         {/* Main pane */}
-        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
-          {view.kind === 'general' && (
+        <main className={`flex-1 flex-col min-w-0 ${view.kind === 'menu' ? 'hidden' : 'flex'} md:flex`}>
+          {(view.kind === 'general' || view.kind === 'menu') && (
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
-                <button onClick={() => navigate({ kind: 'general' })} className="text-white/40 hover:text-white" aria-label="Back">
+                <button onClick={() => navigate({ kind: 'menu' })} className="text-white/40 hover:text-white" aria-label="Back">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
                 <h2 className="text-white font-semibold">#general</h2>
@@ -652,12 +798,13 @@ export function MessagesHub() {
               </div>
             </div>
           )}
-          {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'menu' })} />}
+          {view.kind === 'all-users' && <AllUsersPane onBack={() => navigate({ kind: 'menu' })} />}
+          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'menu' })} onChange={refreshInbox} />}
           {view.kind === 'requests' && (
-            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
+            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'menu' })} onReject={rejectDmRequest} />
           )}
-          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'menu' })} onBlockChange={refreshInbox} />}
         </main>
       </div>
     </div>
@@ -712,6 +859,11 @@ function SidebarContent({
             badge={friendRequestCount}
             active={isActive('friends')}
             onClick={() => onNavigate({ kind: 'friends' })}
+          />
+          <SidebarLink
+            label="All Users"
+            active={isActive('all-users')}
+            onClick={() => onNavigate({ kind: 'all-users' })}
           />
           <SidebarLink
             label="Message Requests"

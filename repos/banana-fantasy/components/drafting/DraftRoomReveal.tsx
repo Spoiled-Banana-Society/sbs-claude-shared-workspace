@@ -4,8 +4,11 @@ import React from 'react';
 import { SlotMachineOverlay } from '@/components/drafting/SlotMachineOverlay';
 import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { draftBandBackground, draftBandShadow } from '@/lib/draftBandStyle';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName } from '@/utils/helpers';
+import { UserPopover } from '@/components/social/UserPopover';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -13,6 +16,7 @@ interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
   equippedBadge?: string | null;
+  ripeness?: import('@/types').Ripeness | null;
 }
 
 interface DraftRoomRevealProps {
@@ -198,7 +202,7 @@ export function DraftRoomReveal({
         </div>
       )}
 
-      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
+      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ background: draftBandBackground(visibleDraftType), boxShadow: draftBandShadow(visibleDraftType), paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
@@ -206,24 +210,25 @@ export function DraftRoomReveal({
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
             const otherBadge = playerUser?.equippedBadge ?? null;
-            // Prefer the resolved username (already applied to displayName upstream),
-            // then fall back to truncated wallet.
-            const rawName = player ? (player.displayName || player.name || '') : '???';
+            const otherRipeness = playerUser?.ripeness ?? null;
+            // Real (non-bot, non-you) drafters are friend/message-able during the
+            // reveal + pre-draft countdown (live-mode name is a wallet).
+            const friendWallet = !isUser && player?.name?.toLowerCase().startsWith('0x')
+              ? player.name
+              : null;
+            // Prefer the resolved username; otherwise an on-brand Banana #
+            // default derived from the wallet — never a raw/truncated wallet.
             const displayName = player
               ? (player.isYou
                   ? myName
-                  : (playerUser?.displayName
-                      ? playerUser.displayName
-                      : (rawName.length > 14 ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}` : rawName)))
+                  : (playerUser?.displayName || getTruncatedAccountName(player.name || '', player.name || '')))
               : '???';
             const truncatedName = displayName.length > 14 ? `${displayName.substring(0, 12)}...` : displayName;
             const showCountdown = i === 0;
-            const bgColor = isUser
-              ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-              : '#222';
-            const textColor = isUser && visibleDraftType === 'jackpot' ? '#222'
-              : isUser && visibleDraftType === 'hof' ? '#111'
-              : '#fff';
+            // New HOF/JP look: the gold/red lives on the BANNER, so every
+            // card stays dark. "You" is the gold border + gold pfp ring.
+            const bgColor = '#222';
+            const textColor = '#fff';
             const tileBorder = isUser ? '#F3E216' : '#444';
 
             return (
@@ -249,9 +254,24 @@ export function DraftRoomReveal({
                         alt="You"
                         size={48}
                         equippedBadge={user?.equippedBadge}
+                        ripeness={user?.ripeness}
                         useNextImage={false}
-                        className="border border-gray-500"
+                        ringClassName="border-2 border-[#F3E216]"
                       />
+                    </div>
+                  ) : friendWallet ? (
+                    <div className="flex justify-center">
+                      <UserPopover walletAddress={friendWallet} username={displayName} pfpUrl={otherPfp}>
+                        <AvatarWithBadge
+                          imageUrl={otherPfp}
+                          alt={displayName}
+                          size={48}
+                          equippedBadge={otherBadge}
+                          ripeness={otherRipeness}
+                          useNextImage={false}
+                          className="cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
+                        />
+                      </UserPopover>
                     </div>
                   ) : (
                     <div className="flex justify-center">
@@ -260,13 +280,14 @@ export function DraftRoomReveal({
                         alt={displayName}
                         size={48}
                         equippedBadge={otherBadge}
+                        ripeness={otherRipeness}
                         useNextImage={false}
-                        className="border border-gray-500"
+                        className=""
                       />
                     </div>
                   )}
 
-                  <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                  <div className="mt-2 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
                     {truncatedName}
                   </div>
 
@@ -307,19 +328,22 @@ export function DraftRoomReveal({
 
         <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
           {phase === 'pre-spin' ? (
-            <span className="text-yellow-400 flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-              {<>Draft type reveal in {preSpinCountdown}s<span className="text-white/50 ml-2">· Starting in {formatTime(mainCountdown)}</span></>}
+            <span className={`flex items-center justify-center gap-2 ${visibleDraftType === 'hof' ? 'text-[#1a1400]' : 'text-yellow-400'}`}>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${visibleDraftType === 'hof' ? 'bg-[#5a4708]' : 'bg-yellow-500'}`} />
+              {<>Draft type reveal in {preSpinCountdown}s<span className={`ml-2 ${visibleDraftType === 'hof' ? 'text-black/40' : 'text-white/50'}`}>· Starting in {formatTime(mainCountdown)}</span></>}
             </span>
           ) : (
-            <span className="text-white/70">Draft starting in {formatTime(mainCountdown)}</span>
+            <span className={visibleDraftType === 'hof' ? 'text-black/70' : 'text-white/70'}>Draft starting in {formatTime(mainCountdown)}</span>
           )}
         </div>
 
         {controls}
       </div>
 
-      <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
+      {/* Extra height for colored (jackpot/HOF) banners so the red/gold bar
+          doesn't visually touch the content/tab menu below. See the matching
+          spacer in DraftRoomDrafting. */}
+      <div style={{ height: `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`, flexShrink: 0, backgroundColor: '#000' }} />
 
       {showSlotMachine && (
         <SlotMachineOverlay

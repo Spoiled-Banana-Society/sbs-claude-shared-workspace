@@ -116,6 +116,52 @@ export async function POST(req: Request) {
     logger.warn('alchemy.webhook.reconcile_partial_failures', { eventId, ok, failed });
   }
 
+  // SERVER-SIDE sale notification + instant My Teams refresh on wallet→wallet
+  // transfers. The seller's "Your Team Was Sold!" used to be fired by the
+  // BUYER's browser after the tx — close the tab fast and it was lost
+  // forever. This webhook is the chain's own signature-verified record of the
+  // transfer, so it can't be missed. dedupeKey (tokenId + tx hash) matches
+  // the client-side path so whichever fires second is a no-op.
+  try {
+    const { getAllRecentCachedListings } = await import('@/lib/marketplace/listingCache');
+    const { createNotification } = await import('@/lib/queueNotifications');
+    const { pushStreamEventBg } = await import('@/lib/userEventStream');
+    const active = (await getAllRecentCachedListings()).filter((l) => l.status === 'active');
+    const listingByToken = new Map(active.map((l) => [String(l.tokenId), l]));
+
+    for (const act of activities) {
+      if ((act.contractAddress ?? '').toLowerCase() !== bbb4) continue;
+      const from = (act.fromAddress ?? '').toLowerCase();
+      const to = (act.toAddress ?? '').toLowerCase();
+      const zero = '0x0000000000000000000000000000000000000000';
+      if (!from || !to || from === zero || to === zero) continue; // mint/burn — not a sale
+
+      // Instant My Teams refresh on both sides (sold team vanishes from the
+      // seller, appears for the buyer — no manual reload).
+      pushStreamEventBg(from, 'notification', { source: 'nft-transfer' });
+      pushStreamEventBg(to, 'notification', { source: 'nft-transfer' });
+
+      // BigInt: synthetic staging token ids exceed Number.MAX_SAFE_INTEGER.
+      let tokenId = '';
+      try { tokenId = act.erc721TokenId ? BigInt(act.erc721TokenId).toString() : ''; } catch { /* non-numeric id */ }
+      if (!tokenId) continue;
+
+      const listing = listingByToken.get(tokenId);
+      if (listing && (listing.offerer ?? '').toLowerCase() === from) {
+        await createNotification(from, {
+          type: 'sale_complete',
+          title: 'Your Team Was Sold!',
+          message: `Team #${tokenId} sold for $${Number(listing.priceUsd ?? 0).toFixed(2)}`,
+          link: `/marketplace/${tokenId}`,
+          dedupeKey: `sale-${tokenId}-${act.hash ?? eventId}`,
+          icon: 'bag',
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn('alchemy.webhook.sale_notify_failed', { eventId, err: err instanceof Error ? err.message : String(err) });
+  }
+
   return Response.json({ ok: true, walletsReconciled: ok, walletsFailed: failed });
 }
 

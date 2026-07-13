@@ -4,12 +4,44 @@ import { useRef, useCallback } from 'react';
 
 export function useDraftAudio() {
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Continuous, inaudible source. Browsers idle-suspend an AudioContext that
+  // has nothing scheduled (and suspend it outright when the tab is
+  // backgrounded). Keeping one near-silent source running keeps the context
+  // "warm" so countdown ticks + your-turn alerts still fire after the user has
+  // been away from the tab for a while. See AFK-sound bug.
+  const keepAliveRef = useRef<OscillatorNode | null>(null);
 
   const initAudio = useCallback(() => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      // Start the keep-warm source once, for the life of the context.
+      try {
+        const ctx = audioContextRef.current;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.0001; // -80 dB: inaudible
+        osc.frequency.value = 20;  // sub-audible
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        keepAliveRef.current = osc;
+      } catch {}
+    }
+    // Matches slotSounds/wheelSounds — a context that was suspended (tab
+    // backgrounded, autoplay policy) must be resumed or nothing plays.
+    if (audioContextRef.current.state === 'suspended') {
+      void audioContextRef.current.resume();
     }
     return audioContextRef.current;
+  }, []);
+
+  // Resume audio after the tab regains focus / the user interacts. Safe to call
+  // repeatedly; no-ops if the context is already running or not yet created.
+  const resumeAudio = useCallback(() => {
+    try {
+      const ctx = audioContextRef.current;
+      if (ctx && ctx.state === 'suspended') void ctx.resume();
+    } catch {}
   }, []);
 
   const playSpinningSound = useCallback(() => {
@@ -145,6 +177,7 @@ export function useDraftAudio() {
       if (!yourTurnAudioRef.current) {
         yourTurnAudioRef.current = new Audio('/your-turn.wav');
       }
+      yourTurnAudioRef.current.muted = false; // primeAudio may have left it muted
       yourTurnAudioRef.current.currentTime = 0;
       yourTurnAudioRef.current.play().catch(() => {});
     } catch {}
@@ -155,12 +188,46 @@ export function useDraftAudio() {
       if (!newPickAudioRef.current) {
         newPickAudioRef.current = new Audio('/new-turn.wav');
       }
+      newPickAudioRef.current.muted = false; // primeAudio may have left it muted
       newPickAudioRef.current.currentTime = 0;
       newPickAudioRef.current.play().catch(() => {});
     } catch {}
   }, []);
 
+  // iOS/Safari (esp. installed PWA) unlock: an HTMLAudioElement can only play
+  // programmatically AFTER it has been played once inside a real user gesture,
+  // and the Web Audio context can only be resumed from a gesture. The your-turn
+  // ding + countdown ticks fire on state changes (no tap), so without this they
+  // stay muted forever — only the pick-made sound, which fires right after the
+  // draft-button tap, happened to be unlocked. Call this from the FIRST tap in
+  // the draft room to unlock every draft sound at once. Idempotent + silent
+  // (each .wav is started muted, then immediately paused/reset).
+  const primeAudio = useCallback(() => {
+    try {
+      // Web Audio: create + resume within the gesture so ticks/alerts work.
+      initAudio();
+    } catch {}
+    try {
+      if (!yourTurnAudioRef.current) yourTurnAudioRef.current = new Audio('/your-turn.wav');
+      if (!newPickAudioRef.current) newPickAudioRef.current = new Audio('/new-turn.wav');
+      for (const el of [yourTurnAudioRef.current, newPickAudioRef.current]) {
+        el.muted = true;
+        const p = el.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => { el.pause(); el.currentTime = 0; el.muted = false; })
+           .catch(() => { el.muted = false; });
+        } else {
+          el.pause(); el.currentTime = 0; el.muted = false;
+        }
+      }
+    } catch {}
+  }, [initAudio]);
+
   const cleanup = useCallback(() => {
+    if (keepAliveRef.current) {
+      try { keepAliveRef.current.stop(); } catch {}
+      keepAliveRef.current = null;
+    }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -169,5 +236,5 @@ export function useDraftAudio() {
     newPickAudioRef.current = null;
   }, []);
 
-  return { playSpinningSound, playReelStop, playCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, cleanup };
+  return { playSpinningSound, playReelStop, playCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, resumeAudio, primeAudio, cleanup };
 }

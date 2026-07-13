@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { TeamPosition } from '@/types';
 import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
 import { DefaultSortToggle } from '@/components/rankings/DefaultSortToggle';
+import { DraftSectionLinks } from '@/components/layout/DraftSectionLinks';
 import { useAuth } from '@/hooks/useAuth';
 import { Rankings } from '@/utils/api';
 
@@ -56,7 +57,13 @@ function adaptRankingItem(item: GoRankingItem): TeamPosition {
     byeWeek,
     adp,
     adpChange: 0,
-    depthChart: [],
+    // Same player pool the draft-room board shows ("Players from team").
+    // Keep the API's order — the lead name is the projected weekly scorer.
+    depthChart: (item.stats?.playersFromTeam ?? []).map((name, i) => ({
+      name,
+      status: i === 0 ? ('starter' as const) : ('backup' as const),
+      projectedPoints: 0,
+    })),
   };
 }
 
@@ -75,11 +82,7 @@ export default function RankingsPage() {
   const [savingRankings, setSavingRankings] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [positionFilter, setPositionFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST'>('ALL');
-  // Kept for the unreachable upload modal — actual upload is disabled
-  // (applyUploadedRankings is demo-only). Prefixed with _ so lint
-  // doesn't flag it as unused while the modal stays in place for the
-  // dev to wire up later.
-  const _fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load rankings from the Go API. ReturnUserRankings auto-seeds from
   // global ADP when the user has no saved doc, so first-time users still
@@ -136,16 +139,17 @@ export default function RankingsPage() {
     if (!confirm('Reset rankings to ADP order? Your custom order will be lost.')) return;
     setResettingRankings(true);
     try {
-      // DELETE the saved doc on the Go side. Next GET auto-seeds from
-      // current ADP, which is exactly what we want for "reset to default."
-      await Rankings.removeRankings(walletAddress);
-      const fresh = await Rankings.getRankings(walletAddress);
-      const list = Array.isArray(fresh) ? (fresh as GoRankingItem[]) : [];
-      const adapted = [...list]
-        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-        .map(adaptRankingItem);
-      setRankings(adapted);
-      setSavedAt(Date.now());
+      // The Go API has no DELETE for rankings (returns 405), so "reset to
+      // current ADP" = re-sort the current list by its ADP and save THAT order.
+      // RANK is the list position, so this makes RANK match ADP exactly — which
+      // is the live default order. Slots with no ADP (0 / N/A) sink to the end.
+      const byAdp = [...rankings].sort((a, b) => {
+        const aa = a.adp > 0 ? a.adp : Number.MAX_SAFE_INTEGER;
+        const bb = b.adp > 0 ? b.adp : Number.MAX_SAFE_INTEGER;
+        return aa - bb;
+      });
+      setRankings(byAdp);
+      persistRankings(byAdp);
     } catch (err) {
       console.error('Failed to reset rankings:', err);
     } finally {
@@ -186,50 +190,42 @@ export default function RankingsPage() {
     persistRankings(newRankings);
   };
 
-  // CSV Download function
-  const downloadCSV = (includeProjections: boolean = true) => {
-    const headers = includeProjections
-      ? ['Rank', 'Team Position', 'BYE', 'ADP']
-      : ['Rank', 'Team Position'];
-
-    const rows = rankings.map((pos, index) => {
-      const baseRow = [
-        (index + 1).toString(),
-        `${pos.team} ${pos.position}`,
-      ];
-      if (includeProjections) {
-        baseRow.push(pos.byeWeek.toString());
-        baseRow.push(pos.adp.toString());
-      }
-      return baseRow;
-    });
-
+  // CSV Download — clean, editable, re-uploadable. Columns: Rank, Player
+  // (e.g. "CIN WR1"), Position (WR1/RB1/TE…), ADP. Edit the Rank column (or
+  // reorder rows) and re-upload to set your own order.
+  const downloadCSV = () => {
+    const headers = ['Rank', 'Player', 'Position', 'ADP'];
+    const rows = rankings.map((pos, index) => [
+      (index + 1).toString(),
+      `${pos.team} ${pos.position}`,
+      pos.position,
+      pos.adp.toString(),
+    ]);
     const csvContent = [headers, ...rows]
       .map(row => row.map(cell => `"${cell}"`).join(','))
       .join('\n');
-
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `banana-team-position-rankings-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `sbs-rankings-${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     setShowCsvMenu(false);
   };
 
   // CSV Upload handler
-  const _handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setUploadFileName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      const rows = text.split('\n').map(row =>
+      const rows = text.split(/\r?\n/).map(row =>
         row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())
       ).filter(row => row.some(cell => cell.length > 0));
       setUploadedData(rows);
@@ -239,8 +235,33 @@ export default function RankingsPage() {
     event.target.value = '';
   };
 
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Apply an uploaded CSV as the user's custom order. The order = the ROW ORDER
+  // of the file (top = #1) — that's what reordering rows in Excel/Numbers
+  // produces, and it also works if they re-sort by an edited Rank column. We
+  // read the team-position from a Player/Name column (e.g. "CIN WR1") to map
+  // each row to a slot. Slots missing from the file keep their place at the end.
   const applyUploadedRankings = () => {
-    alert('Team position rankings imported successfully! (Demo mode - no actual changes made)');
+    setUploadError(null);
+    if (!uploadedData || uploadedData.length < 2) { setUploadError('That file has no rows.'); return; }
+    const header = uploadedData[0].map(h => h.toLowerCase().trim());
+    const playerIdx = header.findIndex(h => h.includes('player') || h.includes('team position') || h === 'name' || h === 'slot');
+    const byKey = new Map(rankings.map(p => [playerIdFor(p).toUpperCase(), p]));
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toUpperCase().replace(' ', '-'); // "CIN WR1" -> "CIN-WR1"
+    const seen = new Set<string>();
+    const ordered: TeamPosition[] = [];
+    for (const r of uploadedData.slice(1)) {            // row order = rank order
+      const key = norm(playerIdx >= 0 ? r[playerIdx] : (r[1] ?? r[0] ?? ''));
+      const p = byKey.get(key);
+      if (p && !seen.has(key)) { ordered.push(p); seen.add(key); }
+    }
+    if (ordered.length === 0) {
+      setUploadError('Couldn’t match any rows. Keep the "Player" column (e.g. "CIN WR1") from the downloaded file.');
+      return;
+    }
+    for (const p of rankings) { const k = playerIdFor(p).toUpperCase(); if (!seen.has(k)) { ordered.push(p); seen.add(k); } }
+    setRankings(ordered);
+    persistRankings(ordered);
     setShowUploadModal(false);
     setUploadedData(null);
     setShowCsvMenu(false);
@@ -250,7 +271,10 @@ export default function RankingsPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       {/* Page Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">Rankings</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+          <h1 className="text-3xl font-bold text-text-primary">Rankings</h1>
+          <DraftSectionLinks active="rankings" />
+        </div>
         <p className="text-text-secondary">Draft team positions, not players. Each week you score the highest-scoring player at that position.</p>
       </div>
 
@@ -280,10 +304,11 @@ export default function RankingsPage() {
               disabled={resettingRankings}
               className="text-xs uppercase tracking-wider px-3 py-1.5 rounded-md text-text-muted hover:text-banana hover:bg-white/[0.04] border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
             >
-              Reset to defaults
+              Reset to current ADP
             </button>
           )}
         {/* CSV Upload/Download Button */}
+        <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleFileUpload} className="hidden" />
         <div className="relative">
           <Button
             size="sm"
@@ -310,9 +335,8 @@ export default function RankingsPage() {
               <div className="fixed inset-0 z-40" onClick={() => setShowCsvMenu(false)} />
               <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
                 <div className="p-2">
-                  <p className="text-xs text-white/40 uppercase tracking-wider px-3 py-2">Download</p>
                   <button
-                    onClick={() => downloadCSV(true)}
+                    onClick={downloadCSV}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white hover:bg-white/5 rounded-lg transition-colors"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
@@ -321,28 +345,25 @@ export default function RankingsPage() {
                       <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                     <div className="text-left">
-                      <div>Full Rankings</div>
-                      <div className="text-xs text-white/40">Team positions with projections</div>
+                      <div>Download rankings</div>
+                      <div className="text-xs text-white/40">Edit in Excel/Numbers, then re-upload</div>
                     </div>
                   </button>
                   <button
-                    onClick={() => downloadCSV(false)}
+                    onClick={() => { setShowCsvMenu(false); fileInputRef.current?.click(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white hover:bg-white/5 rounded-lg transition-colors"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="7 10 12 15 17 10"/>
-                      <line x1="12" y1="15" x2="12" y2="3"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                     <div className="text-left">
-                      <div>Basic Rankings</div>
-                      <div className="text-xs text-white/40">Team positions only</div>
+                      <div>Upload your rankings</div>
+                      <div className="text-xs text-white/40">Apply an edited CSV as your order</div>
                     </div>
                   </button>
                 </div>
-                {/* Upload section disabled — applyUploadedRankings is
-                    demo-mode only (just shows an alert). Re-enable once
-                    the upload actually persists to the Go API. */}
               </div>
             </>
           )}
@@ -592,6 +613,10 @@ export default function RankingsPage() {
               )}
             </div>
 
+            {uploadError && (
+              <p className="text-error text-sm">{uploadError}</p>
+            )}
+
             {/* Actions */}
             <div className="flex gap-3 pt-2">
               <Button
@@ -599,6 +624,7 @@ export default function RankingsPage() {
                 onClick={() => {
                   setShowUploadModal(false);
                   setUploadedData(null);
+                  setUploadError(null);
                 }}
                 className="flex-1"
               >
@@ -653,70 +679,32 @@ export default function RankingsPage() {
               </div>
             </div>
 
-            {/* Depth Chart Players */}
+            {/* Players from team — same pool the draft-room board shows. */}
             <div>
-              <h4 className="text-sm font-medium text-text-muted uppercase tracking-wider mb-1">Projected Scoring Order</h4>
-              <p className="text-text-muted text-xs mb-3">Ranked by projected points · You score the top performer each week</p>
+              <h4 className="text-sm font-medium text-text-muted uppercase tracking-wider mb-1">Players from team</h4>
+              <p className="text-text-muted text-xs mb-3">You score the top performer at this slot each week</p>
               <div className="space-y-2">
-                {(() => {
-                  // Sort by projected points, injured players at bottom
-                  const sorted = [...selectedPosition.depthChart].sort((a, b) => {
-                    if (a.status === 'injured' && b.status !== 'injured') return 1;
-                    if (b.status === 'injured' && a.status !== 'injured') return -1;
-                    return b.projectedPoints - a.projectedPoints;
-                  });
-                  // Get base position without number (WR1 -> WR, RB2 -> RB)
-                  const basePos = selectedPosition.position.replace(/[0-9]/g, '');
-                  // Track position number for non-injured
-                  let posRank = 0;
-
-                  return sorted.map((player, index) => {
-                    const isInjured = player.status === 'injured';
-                    if (!isInjured) posRank++;
-                    const projLabel = isInjured ? 'OUT' : `Proj ${basePos}${posRank}`;
-
-                    return (
-                      <div
-                        key={index}
-                        className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
-                          isInjured
-                            ? 'bg-red-500/10 border border-red-500/20 opacity-60'
-                            : posRank === 1
-                            ? 'bg-banana/10 border border-banana/20'
-                            : 'bg-bg-tertiary border border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isInjured
-                              ? 'bg-red-500/20 text-red-400'
-                              : posRank === 1
-                              ? 'bg-banana/20 text-banana'
-                              : 'bg-white/10 text-white/60'
-                          }`}>
-                            {isInjured ? '—' : posRank}
-                          </div>
-                          <div>
-                            <p className={`font-medium ${isInjured ? 'text-text-muted line-through' : 'text-text-primary'}`}>{player.name}</p>
-                            <p className={`text-xs font-medium ${
-                              isInjured
-                                ? 'text-red-400'
-                                : posRank === 1
-                                ? 'text-banana'
-                                : 'text-text-muted'
-                            }`}>
-                              {projLabel}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-medium ${isInjured ? 'text-text-muted' : 'text-text-primary'}`}>{player.projectedPoints.toFixed(1)}</p>
-                          <p className="text-xs text-text-muted">Proj Pts</p>
-                        </div>
+                {selectedPosition.depthChart.length === 0 ? (
+                  <p className="text-text-muted text-sm py-2">No players listed for this team yet.</p>
+                ) : (
+                  selectedPosition.depthChart.map((player, index) => (
+                    <div
+                      key={`${player.name}-${index}`}
+                      className={`flex items-center gap-3 p-4 rounded-xl transition-colors ${
+                        index === 0
+                          ? 'bg-banana/10 border border-banana/20'
+                          : 'bg-bg-tertiary border border-bg-elevated'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                        index === 0 ? 'bg-banana/20 text-banana' : 'bg-white/10 text-white/60'
+                      }`}>
+                        {index + 1}
                       </div>
-                    );
-                  });
-                })()}
+                      <p className={`font-medium ${index === 0 ? 'text-text-primary' : 'text-text-secondary'}`}>{player.name}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

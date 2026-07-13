@@ -9,7 +9,10 @@
 
 export const dynamic = 'force-dynamic';
 
+import { pushStreamEventBg } from '@/lib/userEventStream';
+
 import { NextResponse } from 'next/server';
+import { runInBackground } from '@/lib/serverBackground';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import {
@@ -63,8 +66,10 @@ export async function GET(
     };
 
     // Mark read on every GET — opening the thread counts as reading it.
+    // waitUntil-backed: a detached promise dies with the frozen lambda and
+    // the thread incorrectly stays unread.
     if (thread) {
-      void markThreadRead(user.walletAddress, otherWallet).catch(() => {});
+      runInBackground('dm.mark-read', markThreadRead(user.walletAddress, otherWallet));
     }
 
     return NextResponse.json({
@@ -110,6 +115,10 @@ export async function POST(
       recipientWallet: otherWallet,
       text,
     });
+    // Instant ping → recipient's inbox/thread/noti surfaces refetch in
+    // ~300ms instead of waiting out the 15s poll (Boris 2026-06-11:
+    // all chat must be realtime, both directions).
+    pushStreamEventBg(otherWallet.toLowerCase(), 'notification', { source: 'dm-message' });
     return NextResponse.json({ ok: true, thread, message });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';

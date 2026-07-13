@@ -1,9 +1,12 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { UserPopover } from '@/components/social/UserPopover';
 import type { ActivityEntry } from '@/hooks/useMarketplace';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 interface ActivityTabProps {
   myNfts: MarketplaceTeam[];
@@ -14,6 +17,8 @@ interface ActivityTabProps {
   cancellingTokenId: string | null;
   onCancel: (team: MarketplaceTeam) => void;
   onLoadMoreActivity: () => void;
+  activityScope: 'mine' | 'all';
+  onSetActivityScope: (scope: 'mine' | 'all') => void;
 }
 
 export function ActivityTab({
@@ -25,8 +30,50 @@ export function ActivityTab({
   cancellingTokenId,
   onCancel,
   onLoadMoreActivity,
+  activityScope,
+  onSetActivityScope,
 }: ActivityTabProps) {
   const activeListings = myNfts.filter(team => team.orderHash);
+
+  // Filter the transaction history by category. Sales = money moved (buy/sell/
+  // accepted offers); Listings = list/cancel; Offers = offers made. Client-side
+  // over the loaded page — "Load more" pulls additional history to filter over.
+  const [actFilter, setActFilter] = useState<'all' | 'sales' | 'listings' | 'offers'>('all');
+  const FILTER_TYPES: Record<'sales' | 'listings' | 'offers', ActivityEntry['type'][]> = {
+    sales: ['buy', 'sell', 'offer_accepted'],
+    listings: ['list', 'cancel'],
+    offers: ['offer_made'],
+  };
+  const shownActivities = actFilter === 'all'
+    ? activities
+    : activities.filter(a => FILTER_TYPES[actFilter].includes(a.type));
+
+  // Resolve the from/to wallet addresses to usernames so the feed reads
+  // "Boris → to Richard" instead of raw hex. Best-effort: any wallet without a
+  // username falls back to a short address. Fetch is guarded by `resolvedRef`
+  // (each wallet looked up once) so it never loops — Rule #0 safe.
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const resolvedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const wallets = Array.from(new Set(
+      activities.flatMap(a => [a.walletAddress, a.counterparty]).filter(Boolean) as string[],
+    )).map(w => w.toLowerCase());
+    const missing = wallets.filter(w => /^0x[0-9a-fA-F]{40}$/.test(w) && !resolvedRef.current.has(w));
+    if (missing.length === 0) return;
+    missing.forEach(w => resolvedRef.current.add(w)); // mark first → no refetch loop
+    let cancelled = false;
+    fetch(`/api/marketplace/resolve-users?wallets=${missing.join(',')}`)
+      .then(r => (r.ok ? r.json() : { names: {} }))
+      .then((d: { names?: Record<string, string> }) => { if (!cancelled && d.names) setNameMap(prev => ({ ...prev, ...d.names })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activities]);
+
+  const nameFor = (w?: string | null) => {
+    if (!w) return '';
+    const lw = w.toLowerCase();
+    return nameMap[lw] || bananaPlaceholderName(w);
+  };
 
   return (
     <div className="space-y-8">
@@ -93,7 +140,38 @@ export function ActivityTab({
       </div>
 
       <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
+            {/* Scope: just my transactions, or the whole marketplace's feed. */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
+              {([['mine', 'My Activity'], ['all', 'All Activity']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => onSetActivityScope(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${activityScope === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Look up any user's teams (by username or wallet). */}
+            <Link href="/u" className="text-xs font-semibold text-banana hover:brightness-110 transition-all">🔍 Look up a user</Link>
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
+              {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActFilter(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${actFilter === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {activityLoading && activities.length === 0 ? (
           <div className="space-y-3">
@@ -102,11 +180,13 @@ export function ActivityTab({
             ))}
           </div>
         ) : activities.length === 0 ? (
-          <p className="text-text-muted text-sm py-8 text-center">No transaction history yet. Buy, sell, or list a team to get started.</p>
+          <p className="text-text-muted text-sm py-8 text-center">{activityScope === 'all' ? 'No marketplace activity yet.' : 'No transaction history yet. Buy, sell, or list a team to get started.'}</p>
+        ) : shownActivities.length === 0 ? (
+          <p className="text-text-muted text-sm py-8 text-center">No {actFilter} in your loaded history — try “Load more” or another filter.</p>
         ) : (
           <>
             <div className="space-y-2">
-              {activities.map(activity => {
+              {shownActivities.map(activity => {
                 const typeConfig: Record<string, { label: string; icon: string; color: string }> = {
                   buy: { label: 'Bought', icon: '🛒', color: 'text-success' },
                   sell: { label: 'Sold', icon: '💵', color: 'text-banana' },
@@ -119,34 +199,44 @@ export function ActivityTab({
                 const timeAgo = formatTimeAgo(activity.timestamp);
 
                 return (
-                  <Link
+                  <div
                     key={activity.id}
-                    href={`/marketplace/${activity.tokenId}`}
-                    className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary hover:bg-bg-tertiary/50 transition-colors"
+                    className="flex items-center justify-between gap-2 p-3 rounded-xl bg-bg-primary border border-bg-tertiary hover:bg-bg-tertiary/50 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-bg-tertiary flex items-center justify-center text-base">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Link href={`/marketplace/${activity.tokenId}`} className="w-9 h-9 rounded-lg bg-bg-tertiary flex items-center justify-center text-base shrink-0">
                         {config.icon}
-                      </div>
-                      <div>
+                      </Link>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold ${config.color}`}>{config.label}</span>
-                          <span className="text-text-primary text-sm font-mono">{activity.teamName}</span>
+                          <Link href={`/marketplace/${activity.tokenId}`} className="text-text-primary text-sm font-mono hover:text-banana transition-colors truncate">{activity.teamName}</Link>
                         </div>
-                        {activity.counterparty && (
-                          <p className="text-text-muted text-[11px]">
-                            {activity.type === 'buy' ? 'from' : 'to'} {activity.counterparty.slice(0, 6)}...{activity.counterparty.slice(-4)}
-                          </p>
-                        )}
+                        {/* Both people shown (username when set, else short
+                            address). Tap → popover: Add Friend / Message / View
+                            teams. */}
+                        <p className="text-text-muted text-[11px] flex items-center gap-1 flex-wrap">
+                          <UserPopover walletAddress={activity.walletAddress} username={nameMap[activity.walletAddress.toLowerCase()]}>
+                            <span className="hover:text-banana transition-colors cursor-pointer">{nameFor(activity.walletAddress)}</span>
+                          </UserPopover>
+                          {activity.counterparty && (
+                            <>
+                              <span>{activity.type === 'buy' ? '← from' : (activity.type === 'sell' || activity.type === 'offer_accepted') ? '→ to' : '·'}</span>
+                              <UserPopover walletAddress={activity.counterparty} username={nameMap[activity.counterparty.toLowerCase()]}>
+                                <span className="hover:text-banana transition-colors cursor-pointer">{nameFor(activity.counterparty)}</span>
+                              </UserPopover>
+                            </>
+                          )}
+                        </p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                       {activity.price != null && (
                         <p className="text-text-primary font-mono text-sm font-medium">${activity.price.toFixed(2)}</p>
                       )}
                       <p className="text-text-muted text-[10px]">{timeAgo}</p>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

@@ -20,10 +20,11 @@ import { WithdrawalsPanel } from '@/components/admin/WithdrawalsPanel';
 import { OnrampAttemptsViewer } from '@/components/admin/OnrampAttemptsViewer';
 import { OfframpAttemptsViewer } from '@/components/admin/OfframpAttemptsViewer';
 import { PromosPanel } from '@/components/admin/PromosPanel';
+import { ContractTreasuryPanel } from '@/components/admin/ContractTreasuryPanel';
 import { SubTabBar, useSubTab, type SubTabItem } from '@/components/admin/SubTabBar';
 
-type MoneySub = 'withdrawals' | 'onramps' | 'offramps' | 'promos';
-const SUB_KEYS = ['withdrawals', 'onramps', 'offramps', 'promos'] as const;
+type MoneySub = 'withdrawals' | 'onramps' | 'offramps' | 'promos' | 'treasury';
+const SUB_KEYS = ['withdrawals', 'onramps', 'offramps', 'promos', 'treasury'] as const;
 
 export function MoneyTab({ enabled }: { enabled: boolean }) {
   const sub = useSubTab<MoneySub>(SUB_KEYS, 'withdrawals');
@@ -34,6 +35,7 @@ export function MoneyTab({ enabled }: { enabled: boolean }) {
     { key: 'onramps', label: 'Onramps', badge: counts.onramp },
     { key: 'offramps', label: 'Offramps', badge: counts.offramp },
     { key: 'promos', label: 'Promos' },
+    { key: 'treasury', label: 'Treasury' },
   ];
 
   return (
@@ -47,6 +49,7 @@ export function MoneyTab({ enabled }: { enabled: boolean }) {
       {sub === 'onramps' && <OnrampAttemptsViewer enabled={enabled} />}
       {sub === 'offramps' && <OfframpAttemptsViewer enabled={enabled} />}
       {sub === 'promos' && <PromosPanel enabled={enabled} />}
+      {sub === 'treasury' && <ContractTreasuryPanel enabled={enabled} />}
     </div>
   );
 }

@@ -7,7 +7,7 @@
 import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 function draftsApi() {
   return createHttpClient({
@@ -57,6 +57,8 @@ export interface ApiRosterPlayer {
 /** Backend shape from `GET /owner/{walletAddress}/draftToken/all`. */
 export interface ApiDraftToken {
   cardId: string;
+  /** Authoritative on-chain BBB4 token id (what OpenSea/metadata key on). */
+  realTokenId?: string;
   leagueId: string;
   leagueDisplayName?: string;
   roster?: {
@@ -77,14 +79,14 @@ export interface ApiDraftToken {
 }
 
 /**
- * The default display name shown when a user hasn't chosen one — an
- * on-brand `Banana #1234567` handle derived deterministically from the
- * wallet (7-digit space, ~9M values). Stable per user across devices
- * and sessions. See `bananaDefaultName` / `bananaNumberFromWallet` in
- * `utils/helpers.ts` for the hash + collision-math rationale.
+ * Instant stand-in shown for a user with no chosen name until the
+ * SERVER-ASSIGNED unique handle loads (useAuth adoptServerHandle →
+ * /api/users/display-batch). Neutral on purpose: the old wallet-hash
+ * "Banana#####" had only 90k values, two users could compute the SAME
+ * handle, and acting on one mis-routed an admin pass grant (2026-07-04).
  */
 export function defaultDisplayName(walletAddress: string): string {
-  return bananaDefaultName(normalizeWalletAddress(walletAddress));
+  return bananaPlaceholderName(normalizeWalletAddress(walletAddress));
 }
 
 /**
@@ -99,6 +101,7 @@ export function isPlaceholderName(name: string | undefined | null, walletAddress
   const t = name.trim();
   if (t === '') return true;
   if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
+  if (/^user-0x[0-9a-fA-F]/i.test(t)) return true; // seeded `User-0x…` placeholder (createUser)
   if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true; // raw / partially-truncated wallet
   if (/^0x[0-9a-fA-F]+\.[0-9a-fA-F]+$/.test(t)) return true; // truncated `0x709.a4e9` form
   if (t.toLowerCase() === normalizeWalletAddress(walletAddress).toLowerCase()) return true;
@@ -129,6 +132,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
     jackpotEntries: 0,
     hofEntries: 0,
     cardPurchaseCount: 0,
+    cardFeeCreditCents: 0,
     isVerified: true,
     createdAt: new Date().toISOString(),
   };
@@ -180,7 +184,7 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
   // League name = backend displayName ("BBB #N" → "League #N"), which uses
   // the GLOBAL FilledLeaguesCount that increments across both fast and slow
   // drafts. That's the number a user sees on the draft-results page header,
-  // on their NFT in OpenSea, and in the 764/800 counter on /standings.
+  // on their NFT in OpenSea, and in the 764/800 counter on /my-teams.
   //
   // The old workaround derived the number from the draftId trailing digits
   // (e.g. "2024-fast-draft-753" → "League #753"), but that's the per-type
@@ -283,6 +287,7 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
     user.jackpotEntries = balance.jackpotEntries;
     user.hofEntries = balance.hofEntries;
     user.cardPurchaseCount = balance.cardPurchaseCount;
+    user.cardFeeCreditCents = balance.cardFeeCreditCents;
     if (balance.nflTeam) user.nflTeam = balance.nflTeam;
   } else {
     // Balance endpoint unreachable — fall back to Go API token count for
@@ -301,6 +306,7 @@ interface BalanceCounters {
   hofEntries: number;
   draftPasses: number;
   cardPurchaseCount: number;
+  cardFeeCreditCents: number;
   nflTeam: string | null;
 }
 
@@ -317,6 +323,7 @@ async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCount
       hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,
       draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : 0,
       cardPurchaseCount: typeof data.cardPurchaseCount === 'number' ? data.cardPurchaseCount : 0,
+      cardFeeCreditCents: typeof data.cardFeeCreditCents === 'number' ? data.cardFeeCreditCents : 0,
       nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
     };
   } catch {
@@ -349,6 +356,7 @@ export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDra
   // Normalize underscore-prefixed fields → ApiDraftToken shape
   return rawTokens.map((t): ApiDraftToken => ({
     cardId: String(t._cardId ?? t.cardId ?? ''),
+    realTokenId: t.realTokenId != null ? String(t.realTokenId) : undefined,
     leagueId: String(t._leagueId ?? t.leagueId ?? ''),
     leagueDisplayName: String(t._leagueDisplayName ?? t.leagueDisplayName ?? ''),
     level: (t._level ?? t.level ?? 'Pro') as ApiDraftTokenLevel,
@@ -359,6 +367,38 @@ export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDra
     prizes: (t.prizes ?? undefined) as ApiDraftToken['prizes'],
     ...t, // Preserve any extra fields
   }));
+}
+
+/** Count PAID draft passes in a token list (passType === 'paid'). Used to
+ *  compute the user's banana ripeness — paid = USDC + card purchases + the
+ *  card-fee-credit bonus draft; free/promo passes are excluded. */
+export function countPaidPasses(tokens: ApiDraftToken[]): number {
+  return tokens.filter(t => String(t.passType ?? '').toLowerCase() === 'paid').length;
+}
+
+/** Fetch a wallet's total PAID draft passes from the Go API. */
+export async function fetchOwnerPaidPassCount(walletAddress: string): Promise<number> {
+  const tokens = await getOwnerDraftTokens(walletAddress);
+  return countPaidPasses(tokens);
+}
+
+/**
+ * Count PAID drafts that actually FILLED. A token only gets its leagueId once
+ * the draft hits 10/10 (the Go API binds token→league at fill, not at
+ * seat-taking), so "paid token with a leagueId" = a paid draft that filled.
+ * This is the ripeness metric: taking a seat in a filling draft counts for
+ * nothing until the draft really fills.
+ */
+export function countPaidDraftsFilled(tokens: ApiDraftToken[]): number {
+  return tokens.filter(
+    t => String(t.passType ?? '').toLowerCase() === 'paid' && !!t.leagueId,
+  ).length;
+}
+
+/** Fetch a wallet's PAID-drafts-FILLED count from the Go API. */
+export async function fetchOwnerPaidFilledCount(walletAddress: string): Promise<number> {
+  const tokens = await getOwnerDraftTokens(walletAddress);
+  return countPaidDraftsFilled(tokens);
 }
 
 /**
@@ -377,23 +417,13 @@ export async function getOwnerLeaguesFromDraftTokens(walletAddress: string): Pro
     return true;
   });
 
-  // Check draft completion status for each league via draft info API
-  const leagues = await Promise.all(
-    leagueTokens.map(async (token) => {
-      const league = mapDraftTokenToLeague(token);
-      // Check if the draft is actually complete (all 150 picks made)
-      try {
-        const { getDraftInfo } = await import('@/lib/draftApi');
-        const info = await getDraftInfo(token.leagueId);
-        league.status = info.pickNumber >= 150 ? 'completed' : 'active';
-      } catch {
-        // If draft info unavailable, fall back to roster-based detection
-      }
-      return league;
-    })
-  );
-
-  return leagues;
+  // Status (completed vs active) is derived from the roster already present
+  // on each token (mapDraftTokenToLeague: a full 15-pick roster = completed).
+  // We intentionally do NOT call getDraftInfo per league here — that was an
+  // N+1 (one extra API call per league, ~10 per page load) that Sentry flagged
+  // on /exposure, and it only re-derived the same completed/active answer the
+  // roster already gives us. One token fetch above is now the whole cost.
+  return leagueTokens.map(mapDraftTokenToLeague);
 }
 
 /**

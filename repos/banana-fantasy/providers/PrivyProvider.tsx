@@ -1,7 +1,7 @@
 'use client';
 
-import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase } from '@privy-io/react-auth';
-import { base } from 'viem/chains';
+import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase, useCreateWallet as useCreateWalletBase, useWallets as useWalletsBase } from '@privy-io/react-auth';
+import { base, optimism } from 'viem/chains';
 import React, { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 
 const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -28,6 +28,36 @@ export function useSafePrivy() {
     return usePrivyBase();
   } catch {
     return PRIVY_FALLBACK;
+  }
+}
+
+// Safe wrapper around useCreateWallet — used to force-create the embedded wallet
+// for new social users on mobile Safari, where Privy's createOnLogin auto-create
+// silently fails (the original mobile-signup bug). No-op when Privy isn't ready.
+const CREATE_WALLET_FALLBACK = { createWallet: async () => null } as unknown as ReturnType<typeof useCreateWalletBase>;
+export function useSafeCreateWallet() {
+  const available = usePrivyAvailable();
+  try {
+    if (!available) return CREATE_WALLET_FALLBACK;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useCreateWalletBase();
+  } catch {
+    return CREATE_WALLET_FALLBACK;
+  }
+}
+
+// Safe wrapper around useWallets — surfaces the embedded wallet (with a `ready`
+// flag) often before privy.user.linkedAccounts repopulates, so we can detect it
+// faster and know the exact moment it's safe to force-create one.
+const WALLETS_FALLBACK = { wallets: [], ready: false } as unknown as ReturnType<typeof useWalletsBase>;
+export function useSafeWallets() {
+  const available = usePrivyAvailable();
+  try {
+    if (!available) return WALLETS_FALLBACK;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useWalletsBase();
+  } catch {
+    return WALLETS_FALLBACK;
   }
 }
 
@@ -74,7 +104,10 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
           appId={appId}
           config={{
             defaultChain: base,
-            supportedChains: [base],
+            // Optimism is added ONLY so the NY on-ramp can fund USDC there (NY
+            // buyers can't get USDC-on-Base via MoonPay). defaultChain stays base,
+            // so non-NY users are completely unaffected — they never touch OP.
+            supportedChains: [base, optimism],
             appearance: {
               theme: 'dark',
               accentColor: '#f59e0b',
@@ -83,10 +116,23 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
               walletList: ['base_account', 'metamask', 'coinbase_wallet'],
             },
             loginMethodsAndOrder: {
-              primary: ['email', 'google', 'twitter', 'metamask', 'coinbase_wallet'],
+              // X (Twitter) is intentionally NOT a sign-up/login method (Boris
+              // 2026-06-20) — account creation with X is removed everywhere. X
+              // remains usable only for the promo's link/verify flow via
+              // privy.linkTwitter(). Coinbase Wallet is shown DIRECTLY (don't
+              // bury it under "More options"). That's exactly 4 primary methods,
+              // which also sits within Privy's soft cap (no mobile-render warning).
+              primary: ['email', 'google', 'metamask', 'coinbase_wallet'],
               overflow: [],
             },
             embeddedWallets: {
+              // Embedded (email/social) wallets sign SILENTLY — no Privy "Sign
+              // message" modal. Transactions were already silenced per-call
+              // (sendTransaction uiOptions: showWalletUIs:false); this extends that
+              // to SIGNATURES too, so the Seaport listing/offer order signs in the
+              // background and listing/offering is fully web2 for embedded users.
+              // External wallets (MetaMask/Coinbase) still use their own prompts.
+              showWalletUIs: false,
               ethereum: {
                 createOnLogin: 'users-without-wallets',
               },

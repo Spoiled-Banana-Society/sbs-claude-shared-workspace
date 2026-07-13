@@ -22,6 +22,7 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
   const data = query.data;
   const conversations = data?.conversations ?? [];
   const configured = data?.configured ?? true;
+  const authFailed = (data as { authFailed?: boolean } | undefined)?.authFailed ?? false;
 
   return (
     <div className="space-y-4">
@@ -51,6 +52,18 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
           </a>
         )}
       </div>
+
+      {authFailed && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-100 text-sm px-4 py-3 space-y-2">
+          <p className="font-semibold">Crisp token invalid — inbox can&apos;t load</p>
+          <p className="text-xs text-red-200/80">
+            Crisp rejected our API token (401 invalid_session). Regenerate it: Crisp Marketplace →
+            your plugin → copy the new identifier + key → update{' '}
+            <code className="bg-black/30 px-1.5 py-0.5 rounded">CRISP_IDENTIFIER</code> /{' '}
+            <code className="bg-black/30 px-1.5 py-0.5 rounded">CRISP_KEY</code> in Vercel → redeploy.
+          </p>
+        </div>
+      )}
 
       {!configured && (
         <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-100 text-sm px-4 py-3 space-y-2">
@@ -85,8 +98,11 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
         ) : (
           <ul className="divide-y divide-white/[0.04]">
             {conversations.map((c) => {
-              const unread = unreadCount(c.unread);
-              const name = c.nickname || c.email || 'Anonymous';
+              // Prefer the server-resolved signals (from our webhook log):
+              // displayName fixes the "Anonymous" gap, needsReply replaces the
+              // flaky per-operator unread counter. Fall back for safety.
+              const needsReply = c.needsReply ?? (unreadCount(c.unread) > 0);
+              const name = c.displayName || c.nickname || c.email || 'Anonymous';
               return (
                 <li key={c.session_id}>
                   <a
@@ -108,9 +124,9 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white truncate">{name}</span>
-                        {unread > 0 && (
-                          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-[#F3E216] text-black text-[10px] font-bold px-1.5">
-                            {unread}
+                        {needsReply && (
+                          <span className="inline-flex items-center rounded-full bg-[#F3E216] text-black text-[10px] font-bold px-1.5 h-[18px]">
+                            Needs reply
                           </span>
                         )}
                         {c.state === 'pending' && (

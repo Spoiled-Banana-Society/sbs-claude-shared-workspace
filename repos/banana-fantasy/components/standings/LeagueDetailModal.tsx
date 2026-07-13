@@ -4,9 +4,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getDraftSummary, getDraftInfo, type ApiDraftPick } from '@/lib/api/drafts';
 import { getOwnerDraftTokens } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
-import type { League } from '@/types';
+import type { League, Ripeness } from '@/types';
 import { LeagueChat } from '@/components/standings/LeagueChat';
 import { useAuth } from '@/hooks/useAuth';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { saveImageToDevice } from '@/lib/saveImage';
 
 export type ModalTab = 'roster' | 'board' | 'standings' | 'team' | 'chat';
 
@@ -15,6 +18,9 @@ interface LeagueDetailModalProps {
   initialTab: ModalTab;
   initialPlayer?: string;
   walletAddress: string;
+  /** The NEW obsidian team card image (from the marketplace index). Preferred
+   *  over the legacy Go `_imageUrl` so the Team tab shows the current card. */
+  imageUrl?: string | null;
   onClose: () => void;
 }
 
@@ -97,7 +103,7 @@ async function fetchRosters(draftId: string): Promise<Record<string, Record<stri
 const NUM_TEAMS = 10;
 const NUM_ROUNDS = 15;
 
-export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, onClose }: LeagueDetailModalProps) {
+export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, onClose }: LeagueDetailModalProps) {
   const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ModalTab>(initialTab);
   const [isClosing, setIsClosing] = useState(false);
@@ -110,6 +116,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [allRosters, setAllRosters] = useState<Record<string, PlayerRoster>>({});
   const [playerKeys, setPlayerKeys] = useState<string[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
+  const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const [rostersLoading, setRostersLoading] = useState(true);
 
   // Board state
@@ -117,7 +124,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [boardLoading, setBoardLoading] = useState(true);
 
   // Team state
-  const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  // Prefer the new obsidian image passed from the card; fall back to the Go
+  // `_imageUrl` only when we weren't given one.
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(imageUrl ?? null);
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [teamLoading, setTeamLoading] = useState(true);
 
@@ -264,7 +273,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
           );
           if (match) {
             const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
-            if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
+            // Only use the legacy Go image when the card didn't hand us the new
+            // obsidian one (the preferred, current card art).
+            if (!imageUrl && imgUrl && !imgUrl.includes('draft-token-image-default')) {
               setCardImageUrl(imgUrl);
             }
           }
@@ -278,13 +289,23 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     })();
   }, [cardFetchWallet, draftId]);
 
-  const getPlayerLabel = (key: string): string => {
-    const r = allRosters[key];
-    if (r?.pfpDisplayName) return r.pfpDisplayName;
-    if (key.startsWith('0x')) return truncateAddress(key);
-    if (key.startsWith('bot-')) return key.replace(/^bot-fast-\d+-/, 'Bot ');
-    return key;
-  };
+  // Resolve EVERY player wallet → real display name + pfp. Defaults are a
+  // banana name ("Banana" + 5 digits) and the plain banana avatar; a custom
+  // name/pfp wins if set. We never surface a raw 0x wallet anywhere in the UI.
+  const usersMap = useDraftRoomUsers(playerKeys);
+
+  interface ResolvedUser { name: string; imageUrl: string | null; equippedBadge: string | null; ripeness: Ripeness | null; }
+  const resolveUser = useCallback((key: string): ResolvedUser => {
+    if (key.startsWith('bot-')) {
+      return { name: key.replace(/^bot-fast-\d+-/, 'Bot '), imageUrl: null, equippedBadge: null, ripeness: null };
+    }
+    const u = usersMap[key.toLowerCase()];
+    const pfpName = allRosters[key]?.pfpDisplayName;
+    const name = u?.displayName || pfpName || (key.startsWith('0x') ? truncateAddress(key) : key);
+    return { name, imageUrl: u?.imageUrl ?? null, equippedBadge: u?.equippedBadge ?? null, ripeness: u?.ripeness ?? null };
+  }, [usersMap, allRosters]);
+
+  const getPlayerLabel = (key: string): string => resolveUser(key).name;
 
   const roster = allRosters[selectedPlayer];
 
@@ -298,10 +319,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       const totalPlayers = r
         ? POSITION_ORDER.reduce((sum, pos) => sum + (r[pos]?.length || 0), 0)
         : 0;
-      let displayName = key;
-      if (r?.pfpDisplayName) displayName = r.pfpDisplayName;
-      else if (key.startsWith('0x')) displayName = truncateAddress(key);
-      else if (key.startsWith('bot-')) displayName = key.replace(/^bot-fast-\d+-/, 'Bot ');
+      const displayName = resolveUser(key).name;
       const score = scoresByOwner[key];
       return {
         ownerKey: key,
@@ -321,7 +339,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       if (b.hasScores) return 1;
       return 0;
     });
-  }, [playerKeys, allRosters, walletAddress, scoresByOwner]);
+  }, [playerKeys, allRosters, walletAddress, scoresByOwner, resolveUser]);
 
   // Build board grid
   const { boardGrid, drafterOrder } = useMemo(() => {
@@ -357,27 +375,23 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const columnHeaders = useMemo(() => {
     if (drafterOrder.length > 0) {
       return drafterOrder.map(addr => {
-        if (!addr || !addr.startsWith('0x')) return addr || '?';
-        const key = Object.keys(allRosters).find(k => k.toLowerCase() === addr.toLowerCase());
-        if (key && allRosters[key]?.pfpDisplayName) return allRosters[key].pfpDisplayName;
-        return truncateAddress(addr);
+        if (!addr) return '?';
+        return resolveUser(addr).name;
       });
     }
     return Array.from({ length: NUM_TEAMS }, (_, i) => `Team ${i + 1}`);
-  }, [drafterOrder, allRosters]);
+  }, [drafterOrder, resolveUser]);
 
   const getPosition = (playerId: string): string => {
     const parts = playerId.split('-');
     return parts[parts.length - 1]?.replace(/[0-9]/g, '').toUpperCase() || '';
   };
 
-  // Download card
+  // Download card — shared fetch→blob helper (the old /api/save-card proxy
+  // rejects same-origin card URLs; see lib/saveImage.ts).
   const handleSaveCard = useCallback(() => {
     if (!cardImageUrl) return;
-    const a = document.createElement('a');
-    a.href = `/api/save-card?url=${encodeURIComponent(cardImageUrl)}`;
-    a.download = `${league.name}.png`;
-    a.click();
+    void saveImageToDevice(cardImageUrl, league.name);
   }, [cardImageUrl, league.name]);
 
   // Download roster image
@@ -477,8 +491,6 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const tabs: { id: ModalTab; label: string }[] = [
     { id: 'roster', label: 'Roster' },
     { id: 'board', label: 'Board' },
-    { id: 'standings', label: 'Standings' },
-    { id: 'team', label: 'Team' },
     { id: 'chat', label: 'Chat' },
   ];
 
@@ -510,9 +522,10 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
               </span>
             </div>
             {isPlayerDetail && roster && (
-              <p className="text-white/40 text-xs mt-0.5">
-                {roster.pfpDisplayName || (selectedPlayer.startsWith('0x') ? truncateAddress(selectedPlayer) : selectedPlayer)}
-              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <AvatarWithBadge imageUrl={resolveUser(selectedPlayer).imageUrl} alt={resolveUser(selectedPlayer).name} size={18} showBadge={false} useNextImage={false} />
+                <p className="text-white/50 text-xs">{getPlayerLabel(selectedPlayer)}</p>
+              </div>
             )}
           </div>
           <button
@@ -660,19 +673,50 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                 </div>
               ) : roster ? (
                 <>
-                  {/* Player selector */}
+                  {/* Player selector — pick any of the 10 teams to see their
+                      roster. Shows each owner's name + pfp, never a wallet. */}
                   {playerKeys.length > 1 && (
-                    <select
-                      value={selectedPlayer}
-                      onChange={(e) => setSelectedPlayer(e.target.value)}
-                      className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-4 py-2.5 text-white text-sm font-medium appearance-none cursor-pointer mb-4"
-                    >
-                      {playerKeys.map((key) => (
-                        <option key={key} value={key} className="bg-[#111118]">
-                          {getPlayerLabel(key)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setPlayerMenuOpen((o) => !o)}
+                        className="w-full flex items-center gap-2.5 bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2.5 text-white text-sm font-medium hover:bg-white/[0.09] transition-colors"
+                      >
+                        <AvatarWithBadge imageUrl={resolveUser(selectedPlayer).imageUrl} alt={resolveUser(selectedPlayer).name} size={26} showBadge={false} useNextImage={false} />
+                        <span className="truncate flex-1 text-left">{getPlayerLabel(selectedPlayer)}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-white/40 transition-transform ${playerMenuOpen ? 'rotate-180' : ''}`}>
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      {playerMenuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setPlayerMenuOpen(false)} />
+                          <div className="absolute z-20 left-0 right-0 mt-1.5 max-h-72 overflow-y-auto bg-[#16161d] border border-white/[0.1] rounded-lg shadow-xl py-1">
+                            {playerKeys.map((key) => {
+                              const ru = resolveUser(key);
+                              const isSel = key === selectedPlayer;
+                              const isMe = key.toLowerCase() === walletAddress?.toLowerCase();
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => { setSelectedPlayer(key); setPlayerMenuOpen(false); }}
+                                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors ${isSel ? 'bg-white/[0.07] text-white' : 'text-white/70 hover:bg-white/[0.05]'}`}
+                                >
+                                  <AvatarWithBadge imageUrl={ru.imageUrl} alt={ru.name} size={26} showBadge={false} useNextImage={false} />
+                                  <span className="truncate flex-1">{ru.name}{isMe ? ' (You)' : ''}</span>
+                                  {isSel && (
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-shrink-0">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
 
                   {/* Header row */}
@@ -725,25 +769,44 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                 <div className="overflow-x-auto -mx-5 px-5 pb-2" style={{ maxWidth: 1200, margin: '0 auto' }}>
                   {/* Header row: drafter names */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', padding: '10px 0 0' }}>
-                    {columnHeaders.map((header, i) => (
-                      <div
-                        key={`heading-${i}`}
-                        style={{
-                          width: 100,
-                          marginTop: 10,
-                          padding: 5,
-                          textAlign: 'center',
-                          fontWeight: 'bold',
-                          fontSize: 12,
-                          color: i === userColumnIndex ? '#F3E216' : '#fff',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {header}
-                      </div>
-                    ))}
+                    {columnHeaders.map((header, i) => {
+                      // pfp + badge per drafter, exactly like the draft-room board.
+                      const addr = drafterOrder[i];
+                      const ru = addr ? resolveUser(addr) : null;
+                      return (
+                        <div
+                          key={`heading-${i}`}
+                          style={{
+                            width: 100,
+                            marginTop: 10,
+                            padding: 5,
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            fontSize: 12,
+                            color: i === userColumnIndex ? '#F3E216' : '#fff',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          {ru && (
+                            <AvatarWithBadge
+                              imageUrl={ru.imageUrl || '/banana-profile.png'}
+                              alt={header}
+                              size={32}
+                              equippedBadge={ru.equippedBadge}
+                              ripeness={ru.ripeness}
+                              useNextImage={false}
+                            />
+                          )}
+                          <div style={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {header}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Grid rows */}

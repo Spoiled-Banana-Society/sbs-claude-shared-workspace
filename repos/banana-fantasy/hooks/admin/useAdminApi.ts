@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 
@@ -17,8 +17,12 @@ export interface AdminUser {
   id: string;
   walletAddress: string;
   username: string | null;
+  /** Server-assigned unique default-handle number ("Banana"+bananaNumber). */
+  bananaNumber?: number | null;
   email: string | null;
   createdAt: string | null;
+  isReturningPlayer: boolean;
+  returningVia: string | null;
   blueCheckVerified: boolean;
   banned: boolean;
   freeDrafts: number;
@@ -115,9 +119,14 @@ async function adminFetch<T>(
   url: string,
   getHeaders: () => Promise<HeadersInit>,
   init?: RequestInit,
+  // Client abort budget. Defaults to 20s — right for the dashboard's fast
+  // read calls. Slow on-chain writes (grant-drafts mints an NFT on Base and
+  // waits up to 60s for the receipt) pass a longer budget so the button waits
+  // for the mint instead of falsely erroring at 20s while the server finishes.
+  timeoutMs = 20_000,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const headers = await getHeaders();
@@ -144,7 +153,7 @@ async function adminFetch<T>(
   } catch (err) {
     if (err instanceof AdminApiError) throw err;
     if ((err as Error).name === 'AbortError') {
-      throw new AdminApiError('Request timed out after 20s', 504);
+      throw new AdminApiError(`Request timed out after ${Math.round(timeoutMs / 1000)}s`, 504);
     }
     throw new AdminApiError((err as Error).message || 'Network error', 0);
   } finally {
@@ -186,6 +195,8 @@ export function useAdminDrafts(enabled: boolean) {
   });
 }
 
+export type DraftHealth = 'completed' | 'drafting' | 'filling' | 'frozen' | 'unknown';
+
 export interface ManageDraftRow {
   id: string;
   displayName: string | null;
@@ -197,6 +208,10 @@ export interface ManageDraftRow {
   startDate: string | null;
   endDate: string | null;
   isLocked: boolean;
+  health: DraftHealth;
+  pickNumber: number | null;
+  roundNum: number | null;
+  stalledMinutes: number | null;
 }
 
 interface ManageDraftsResponse {
@@ -865,6 +880,11 @@ export interface CrispConversationEntry {
   created_at: number;
   waiting_since?: number;
   url: string;
+  // Resolved server-side from our own Crisp webhook log: the best display name
+  // (falls back to nickname/email/Anonymous) and whether the LAST message was
+  // from the user (so it still needs a reply). Optional for backward-compat.
+  displayName?: string;
+  needsReply?: boolean;
 }
 
 export interface SupportResponse {
@@ -913,7 +933,7 @@ export function useGrantDrafts() {
       adminFetch<GrantDraftsResponse>('/api/admin/grant-drafts', getHeaders, {
         method: 'POST',
         body: JSON.stringify(input),
-      }),
+      }, 90_000), // wait for the on-chain mint (up to ~60s) instead of false-erroring at 20s
     onSuccess: (data) => {
       // Optimistically patch the cached users rows if we know the target
       qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
@@ -952,6 +972,42 @@ export function useBanUser() {
         };
       });
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+    },
+  });
+}
+
+export interface MarkPaidBatchResult {
+  paid: string[];
+  unmatched: { key: string; wallet: string; expectedUsd: number; foundUsd: number }[];
+  skipped: { id: string; reason: string }[];
+  failed: { id: string; error: string }[];
+  txStatus: string;
+  requestId?: string;
+}
+
+/**
+ * Verified batch settlement: one Gnosis batch tx hash + the approved
+ * withdrawal ids. Server proves each payout on-chain before marking
+ * paid; unverified ones stay approved and come back as `unmatched`.
+ */
+export function useMarkPaidBatch() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<MarkPaidBatchResult, AdminApiError, { txHash: string; withdrawalIds: string[] }>({
+    mutationFn: ({ txHash, withdrawalIds }) =>
+      adminFetch<MarkPaidBatchResult>(
+        '/api/admin/withdrawals/mark-paid-batch',
+        getHeaders,
+        {
+          method: 'POST',
+          body: JSON.stringify({ txHash, withdrawalIds }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'withdrawals'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'offramp-attempts'] });
     },
   });
 }
@@ -1045,10 +1101,13 @@ export function useGrantPrize() {
 
 export interface ResetUserInput {
   userId: string;
+  /** 'promos' = balance-safe (clears only promo-gating flags). Omit for full reset. */
+  scope?: 'all' | 'promos';
 }
 export interface ResetUserResponse {
   success: boolean;
   userId: string;
+  scope?: 'all' | 'promos';
   before: Record<string, number>;
   requestId?: string;
 }
@@ -1062,16 +1121,20 @@ export function useResetUser() {
         body: JSON.stringify(input),
       }),
     onSuccess: (data) => {
-      qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          users: prev.users.map((u) =>
-            u.id === data.userId ? { ...u, freeDrafts: 0, wheelSpins: 0 } : u,
-          ),
-        };
-      });
+      // Promo-scope reset leaves balances intact — don't zero them in the cache.
+      if (data.scope !== 'promos') {
+        qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            users: prev.users.map((u) =>
+              u.id === data.userId ? { ...u, freeDrafts: 0, wheelSpins: 0 } : u,
+            ),
+          };
+        });
+      }
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'user-lookup'] });
     },
   });
 }
@@ -1097,6 +1160,79 @@ export function useRecoverDraftCard() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+    },
+  });
+}
+
+/* ────────── BBB3 holders (returning-user cross-check) ────────── */
+
+export interface Bbb3HolderRow {
+  wallet: string;
+  hasAccount: boolean;
+  username?: string | null;
+  banned?: boolean;
+  firstPurchaseBonusGranted?: boolean;
+  source: 'snapshot' | 'allowlist';
+}
+export interface Bbb3HoldersResponse {
+  contract: string;
+  count: number;
+  snapshotCount: number;
+  allowlistCount: number;
+  loggedIn: number;
+  snapshotAt: string | null;
+  holders: Bbb3HolderRow[];
+}
+
+export function useBbb3Holders(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<Bbb3HoldersResponse>({
+    queryKey: ['admin', 'bbb3-holders'],
+    enabled,
+    staleTime: 5 * 60_000,
+    queryFn: () => adminFetch<Bbb3HoldersResponse>('/api/admin/bbb3-holders', getHeaders),
+  });
+}
+
+/**
+ * Lowercased Set of every wallet treated as returning (BBB3 snapshot ∪ manual
+ * allowlist). Used to label users New/Returning across the admin. Returns an
+ * empty set until the snapshot loads.
+ */
+export function useReturningWalletSet(enabled: boolean): { set: Set<string>; loading: boolean } {
+  const q = useBbb3Holders(enabled);
+  const set = useMemo(
+    () => new Set((q.data?.holders ?? []).map((h) => h.wallet.toLowerCase())),
+    [q.data],
+  );
+  return { set, loading: q.isLoading };
+}
+
+export function useRefreshBbb3Holders() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<Bbb3HoldersResponse, AdminApiError, void>({
+    mutationFn: () =>
+      adminFetch<Bbb3HoldersResponse>('/api/admin/bbb3-holders', getHeaders, { method: 'POST' }),
+    onSuccess: (data) => {
+      qc.setQueryData(['admin', 'bbb3-holders'], data);
+    },
+  });
+}
+
+/* ────────── Simulate first-purchase unlock (testing) ────────── */
+
+export function useSimulateUnlock() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; userId: string }, AdminApiError, { userId: string }>({
+    mutationFn: (input) =>
+      adminFetch<{ success: boolean; userId: string }>('/api/admin/simulate-unlock', getHeaders, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'user-lookup'] });
     },
   });
 }

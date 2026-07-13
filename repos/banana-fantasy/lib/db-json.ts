@@ -96,6 +96,7 @@ function getOrCreateUser(db: DbSchema, userId: string): User {
     jackpotEntries: 0,
     hofEntries: 0,
     cardPurchaseCount: 0,
+    cardFeeCreditCents: 0,
     isVerified: false,
     createdAt: todayDate(),
   };
@@ -201,12 +202,13 @@ export async function claimPromo(userId: string, promoId: string) {
 
     if (spinsAdded <= 0) throw new ApiError(400, 'Nothing to claim');
 
-    // Buy-bonus gives free draft passes, other promos give wheel spins.
+    // Buy-bonus in 'draft' mode gives free draft passes; in 'spin' mode it
+    // gives wheel spins like every other promo (July 4th 2026 config).
     let freeDraftsAdded = 0;
-    if (promo.type === 'buy-bonus') {
+    if (promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = spinsAdded * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
       user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
-      spinsAdded = 0; // No wheel spins for buy-bonus
+      spinsAdded = 0; // No wheel spins for buy-bonus draft mode
     } else {
       user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
     }
@@ -459,8 +461,11 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       }
     }
 
-    // Update promo progress for buy-bonus promo.
-    const buyBonusPromo = promos.find((p) => p.type === 'buy-bonus');
+    // Update promo progress for buy-bonus promo (skipped while the promo is
+    // disabled — July 4th run ended 2026-07-06).
+    const buyBonusPromo = API_CONFIG.promos.buyBonus.enabled
+      ? promos.find((p) => p.type === 'buy-bonus')
+      : undefined;
     if (buyBonusPromo) {
       const max = buyBonusPromo.progressMax || 2;
       const current = buyBonusPromo.progressCurrent || 0;
@@ -470,7 +475,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       if (newlyEarned > 0) {
         buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + newlyEarned;
         recalcPromoClaimable(buyBonusPromo);
-        freeDraftsAdded = newlyEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+        if (API_CONFIG.promos.buyBonus.reward === 'draft') {
+          freeDraftsAdded = newlyEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+        }
       }
     }
 

@@ -8,6 +8,7 @@ interface DraftTabsProps {
   activeTab: DraftTab;
   onTabChange: (tab: DraftTab) => void;
   queueCount?: number;
+  chatUnread?: number;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
 }
@@ -20,9 +21,12 @@ const TABS: { key: DraftTab; label: string }[] = [
   { key: 'chat', label: 'Chat' },
 ];
 
-export function DraftTabs({ activeTab, onTabChange, queueCount = 0, sidebarOpen, onToggleSidebar }: DraftTabsProps) {
+export function DraftTabs({ activeTab, onTabChange, queueCount = 0, chatUnread = 0, sidebarOpen, onToggleSidebar }: DraftTabsProps) {
+  // sticky left-0: if any tab's content ever overflows horizontally and the
+  // parent scroll container pans, the tab row stays pinned to the viewport
+  // instead of scrolling off-screen with the content.
   return (
-    <div className="relative flex items-center justify-center gap-4 md:gap-10 py-3 font-primary uppercase font-bold" style={{ backgroundColor: '#000' }}>
+    <div className="sticky left-0 z-10 flex items-center justify-center gap-4 md:gap-10 py-3 font-primary uppercase font-bold" style={{ backgroundColor: '#000' }}>
       {TABS.map(tab => (
         <button
           key={tab.key}
@@ -35,6 +39,15 @@ export function DraftTabs({ activeTab, onTabChange, queueCount = 0, sidebarOpen,
         >
           {tab.label}
           {tab.key === 'queue' && queueCount > 0 ? ` (${queueCount})` : ''}
+          {/* Unread-message badge — small, calm grey (not alarm-red) so it
+              signals "something's here" without pulling focus from the draft.
+              Only on the Chat tab, only when there are unread messages, and it
+              never shows while you're already viewing chat. */}
+          {tab.key === 'chat' && chatUnread > 0 && activeTab !== 'chat' && (
+            <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-white/15 text-white/80 text-[10px] font-semibold leading-none align-middle">
+              {chatUnread > 9 ? '9+' : chatUnread}
+            </span>
+          )}
         </button>
       ))}
       {onToggleSidebar && (

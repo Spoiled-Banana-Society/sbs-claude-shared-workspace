@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { getPositionColorHex, positionFromPlayerId, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { PlayerData } from '@/lib/draftRoomConstants';
+import { SLOT_STATS_HISTORY } from '@/data/slot-stats-history';
 
 interface DraftPlayerListProps {
   availablePlayers: PlayerData[];
@@ -18,6 +19,10 @@ interface DraftPlayerListProps {
   userRankMap?: Map<string, number>;
   /** Override stats (adp, byeWeek) for sort + display, same fallback. */
   userStatsMap?: Map<string, { rank?: number; adp?: number; byeWeek?: number }>;
+  /** The user's next two overall pick numbers — renders the small
+   *  "YOUR PICK · N" divider where each lands in the ADP order. Only shown
+   *  in the unfiltered ADP view, where its position is honest. */
+  upcomingUserPicks?: number[];
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -34,6 +39,7 @@ export function DraftPlayerList({
   sortPreference,
   userRankMap,
   userStatsMap,
+  upcomingUserPicks,
 }: DraftPlayerListProps) {
   const resolveRank = (player: PlayerData): number => {
     const custom = userRankMap?.get(player.playerId);
@@ -50,7 +56,17 @@ export function DraftPlayerList({
     if (typeof custom === 'number' && custom > 0) return custom;
     return player.byeWeek;
   };
-  const [filter, setFilter] = useState<PositionFilter>('ALL');
+  // Multi-select position filter: empty set = show all (the "ALL" chip).
+  // Toggling a position adds/removes it; ALL clears the set.
+  type Pos = Exclude<PositionFilter, 'ALL'>;
+  const [activePositions, setActivePositions] = useState<Set<Pos>>(new Set());
+  const togglePosition = (pos: Pos) =>
+    setActivePositions(prev => {
+      const next = new Set(prev);
+      if (next.has(pos)) next.delete(pos);
+      else next.add(pos);
+      return next;
+    });
   const [sortField, setSortFieldRaw] = useState<SortField>(sortPreference ?? 'adp');
   useEffect(() => {
     if (sortPreference && sortPreference !== sortField) {
@@ -78,9 +94,9 @@ export function DraftPlayerList({
       );
     }
 
-    // Apply position filter
-    if (filter !== 'ALL') {
-      players = players.filter(p => positionFromPlayerId(p.playerId) === filter);
+    // Apply position filter (multi-select — keep players in ANY selected position)
+    if (activePositions.size > 0) {
+      players = players.filter(p => activePositions.has(positionFromPlayerId(p.playerId) as Pos));
     }
 
     // Apply sort
@@ -95,7 +111,46 @@ export function DraftPlayerList({
 
     return players;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlayers, filter, sortField, searchQuery, userRankMap, userStatsMap]);
+  }, [availablePlayers, activePositions, sortField, searchQuery, userRankMap, userStatsMap]);
+
+  // "YOUR PICK · N" dividers. ADP shares the 1–150 overall-pick scale, so a
+  // divider sits before the first player whose sort value is past that pick —
+  // players above it will likely be gone by then. Only rendered in the full
+  // ADP-sorted view; any search/filter/RANK sort makes the position a lie.
+  // Back-to-back picks at the snake turn merge into one line.
+  const pickMarkersByIndex = useMemo(() => {
+    const markers = new Map<number, { label: string; faint: boolean }[]>();
+    if (!upcomingUserPicks || upcomingUserPicks.length === 0) return markers;
+    if (sortField !== 'adp' || searchQuery.trim() || activePositions.size > 0) return markers;
+
+    // Same fallback chain as the sort comparator, so the divider can never
+    // land out of order with the rows around it.
+    const sortValue = (p: PlayerData) => resolveAdp(p) || resolveRank(p);
+    const indexFor = (pick: number) => filteredPlayers.findIndex(p => sortValue(p) >= pick);
+
+    const [first, second] = upcomingUserPicks;
+    const firstIdx = indexFor(first);
+    if (second === first + 1) {
+      if (firstIdx >= 0) {
+        markers.set(firstIdx, [{ label: `Your picks · ${first} & ${second}`, faint: false }]);
+      }
+      return markers;
+    }
+    if (firstIdx >= 0) {
+      markers.set(firstIdx, [{ label: `Your pick · ${first}`, faint: false }]);
+    }
+    if (typeof second === 'number') {
+      const secondIdx = indexFor(second);
+      if (secondIdx >= 0) {
+        markers.set(secondIdx, [
+          ...(markers.get(secondIdx) ?? []),
+          { label: `Pick ${second}`, faint: true },
+        ]);
+      }
+    }
+    return markers;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredPlayers, upcomingUserPicks, sortField, searchQuery, activePositions]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
@@ -192,13 +247,13 @@ export function DraftPlayerList({
                 {/* Position filter buttons */}
                 {POSITION_FILTERS.map(pos => {
                   const posColor = pos !== 'ALL' ? (POSITION_COLORS[pos] || '#888') : '#555';
-                  const isActive = filter === pos;
+                  const isActive = pos !== 'ALL' && activePositions.has(pos as Pos);
 
                   if (pos === 'ALL') {
                     return (
                       <button
                         key={pos}
-                        onClick={() => setFilter(pos)}
+                        onClick={() => setActivePositions(new Set())}
                         style={{
                           flex: 1,
                           display: 'flex',
@@ -207,7 +262,7 @@ export function DraftPlayerList({
                           alignItems: 'center',
                           height: 32,
                           borderRadius: 5,
-                          background: '#555',
+                          background: activePositions.size === 0 ? '#555' : '#1a1a1a',
                           fontSize: 12,
                           fontWeight: 'bold',
                           color: '#fff',
@@ -223,7 +278,7 @@ export function DraftPlayerList({
                   return (
                     <button
                       key={pos}
-                      onClick={() => setFilter(pos)}
+                      onClick={() => togglePosition(pos as Pos)}
                       style={{
                         flex: 1,
                         display: 'flex',
@@ -304,13 +359,38 @@ export function DraftPlayerList({
 
       {/* Player List */}
       <div className="flex-1 overflow-y-auto flex flex-col items-center">
-        {filteredPlayers.map(player => {
+        {filteredPlayers.map((player, playerIdx) => {
           const queued = isInQueue(player.playerId);
           const expanded = expandedPlayer === player.playerId;
           const hexColor = getPositionColorHex(player.position);
 
           return (
-            <div key={player.playerId} style={{ maxWidth: 900, width: '100%', margin: '2px auto' }}>
+            <React.Fragment key={player.playerId}>
+              {pickMarkersByIndex.get(playerIdx)?.map(marker => (
+                <div
+                  key={marker.label}
+                  style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '5px 8px', textAlign: 'center' }}
+                >
+                  <span
+                    style={{
+                      // block + own line-height: inline text here baseline-aligns
+                      // against the div's 16px strut, which reads as extra space
+                      // above the label ("uneven vertical spacing" report 7/11)
+                      display: 'block',
+                      lineHeight: 1,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                      color: marker.faint ? 'rgba(253,224,71,0.45)' : '#fde047',
+                    }}
+                  >
+                    {marker.label}
+                  </span>
+                </div>
+              ))}
+              <div style={{ maxWidth: 900, width: '100%', margin: '2px auto' }}>
               <button
                 onClick={() => setExpandedPlayer(expanded ? null : player.playerId)}
                 className="w-full text-left flex items-center transition-all"
@@ -435,9 +515,51 @@ export function DraftPlayerList({
                       {queued ? 'Unqueue' : 'Queue'}
                     </button>
                   </div>
+
+                  {/* Slot history — what this team-position slot actually
+                      scored the past 3 seasons (weeks 1-17, SBS scoring).
+                      Four equal centered columns; rank is within the same
+                      slot group only (WR1 vs WR1s, RB2 vs RB2s). */}
+                  {SLOT_STATS_HISTORY[player.playerId] && (
+                    <div style={{ width: 304, maxWidth: '95%', paddingBottom: 14 }}>
+                      <div style={{ display: 'flex', paddingBottom: 4 }}>
+                        <div style={{ flex: 1 }} />
+                        <div style={{ flex: 1, textAlign: 'center', color: '#555', fontSize: 9, fontWeight: 'bold', letterSpacing: 1 }}>
+                          AVG / WK
+                        </div>
+                        <div style={{ flex: 1, textAlign: 'center', color: '#555', fontSize: 9, fontWeight: 'bold', letterSpacing: 1 }}>
+                          TOTAL
+                        </div>
+                        <div style={{ flex: 1, textAlign: 'center', color: '#555', fontSize: 9, fontWeight: 'bold', letterSpacing: 1 }}>
+                          RANK
+                        </div>
+                      </div>
+                      {['2025', '2024', '2023'].map(season => {
+                        const s = SLOT_STATS_HISTORY[player.playerId][season];
+                        if (!s) return null;
+                        return (
+                          <div key={season} style={{ display: 'flex', alignItems: 'baseline', padding: '7px 0', borderTop: '1px solid #16161c' }}>
+                            <div style={{ flex: 1, textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: '#9ca3af' }}>
+                              {season}
+                            </div>
+                            <div style={{ flex: 1, textAlign: 'center', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                              {s.avg}
+                            </div>
+                            <div style={{ flex: 1, textAlign: 'center', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                              {s.total}
+                            </div>
+                            <div style={{ flex: 1, textAlign: 'center', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                              {s.rank}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+              </div>
+            </React.Fragment>
           );
         })}
 

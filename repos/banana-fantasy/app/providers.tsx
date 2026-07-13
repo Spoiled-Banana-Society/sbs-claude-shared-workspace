@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { PrivyProvider } from '@/providers/PrivyProvider';
+import { PrivyProvider, useSafePrivy as usePrivy } from '@/providers/PrivyProvider';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ReduxProvider } from '@/redux/provider';
@@ -10,27 +12,24 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { Header } from '@/components/layout/Header';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { EditProfileModal } from '@/components/modals/EditProfileModal';
+import { FirstPurchasePromoModal } from '@/components/modals/FirstPurchasePromoModal';
 import { OnboardingTutorial } from '@/components/onboarding/OnboardingTutorial';
 import { CrispChat } from '@/components/CrispChat';
-import { SupportChatButton } from '@/components/SupportChatButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
-import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
-import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
+import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
-
-// Context to expose triggerOptIn to any component in the tree
-type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
-const NotifContext = createContext<NotifContextType>({ triggerOptIn: () => {} });
-export const useNotifOptIn = () => useContext(NotifContext);
+import { SocialNotifier } from '@/components/social/SocialNotifier';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
+  const privy = usePrivy();
   // Attribute client logs to the logged-in wallet so inspect-debug-logs
   // can filter by user.
   React.useEffect(() => {
@@ -41,12 +40,32 @@ function AppContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     installGlobalErrorHandlers();
   }, []);
+
+  // iOS installed PWAs suspend the realtime websocket when backgrounded and
+  // don't reliably revive it on foreground — so notifications/promos stop
+  // arriving live (they dump minutes later). Force a fresh connection every
+  // time the app is foregrounded so real-time resumes immediately. The
+  // per-hook focus-refetches then pull the latest the instant you look.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') wakeRealtime(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, []);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
-  const isDraftRoom = pathname === '/draft-room';
+  // Full-bleed routes that render their own chrome (no global app header):
+  // the draft room, and the pre-launch / countdown landing.
+  const isDraftRoom = pathname === '/draft-room' || pathname === '/test-prelaunch';
+  // App-wide "where did I just come from" recorder. Runs as a parent effect
+  // (after the page's own effects), so any page can read getLastPath() on mount
+  // to see the route it arrived from. Powers the marketplace scroll-restore.
+  useEffect(() => { if (pathname) recordPath(pathname); }, [pathname]);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const notif = useNotificationOptIn();
   // Real-time push from RTDB — primary source for badge unlocks +
   // promo events (toast + bell within ~100ms). Mounted app-wide so any
   // page sees the unlock the moment it happens server-side.
@@ -63,33 +82,54 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!showLoginModal) return;
+    // Signal-only alarm: if the login prompt fires while Privy STILL reports
+    // authenticated, the user is actually logged in and this is the auth-blink
+    // bug (spurious login modal) — not a real logged-out user. Surface it to
+    // the admin feed so a recurrence is caught. (Replaces the chatty authblink
+    // diagnostic; the debounce fix should keep this silent.)
+    if (privy?.authenticated) {
+      reportClientError({
+        source: LOG_SOURCES.auth.SPURIOUS_LOGIN_MODAL,
+        message: 'Login modal triggered while Privy authenticated (auth-blink)',
+        route: pathname ?? undefined,
+        actor: user?.walletAddress ?? undefined,
+      });
+    }
     login();
     setShowLoginModal(false);
-  }, [showLoginModal, login, setShowLoginModal]);
+  }, [showLoginModal, login, setShowLoginModal, privy, pathname, user?.walletAddress]);
 
   const handleShowTutorial = () => {
     setShowTutorial(true);
   };
 
   return (
-    <NotifContext.Provider value={{ triggerOptIn: notif.triggerOptIn }}>
       <div className="min-h-screen bg-bg-primary">
         {!isDraftRoom && <Header onEditProfile={() => setShowEditProfile(true)} onShowTutorial={handleShowTutorial} />}
-        <main className="pb-16 md:pb-0">{children}</main>
+        <main className="pb-20 md:pb-0">{children}</main>
         {!isDraftRoom && <MobileTabBar />}
         <EditProfileModal isOpen={showEditProfile} onClose={() => setShowEditProfile(false)} />
-        {showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
-        {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
+        {/* NEVER show the onboarding tutorial in the draft room (or the prelaunch
+            landing) — a new user who buys + joins a draft fast still has
+            showOnboarding=true, which used to render the full-screen tutorial on
+            top of the live draft. Gate it on !isDraftRoom like the header/tab bar. */}
+        {!isDraftRoom && showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
+        {!isDraftRoom && showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
         <CrispChat />
-        {!isDraftRoom && <SupportChatButton />}
-        <NotificationOptIn
-          show={notif.showPrompt}
-          isLoading={notif.isLoading}
-          onAccept={notif.acceptOptIn}
-          onDismiss={notif.dismissOptIn}
-        />
+        {/* Fires in-app notis for new friend requests / messages. Renders
+            nothing; runs app-wide incl. the draft room. */}
+        <SocialNotifier />
+        {/* First-purchase popup — opens DURING the "Generating your Digital
+            Team" screen (Boris 2026-07-13: users are guaranteed to be watching
+            it). Mounted UNCONDITIONALLY: the live unlock event fires at
+            isDraftClosed (only ever for a CLOSED draft), so rendering in-room
+            on that path can never cover live picking; the reload-safe
+            fallback path still renders outside the room only. Once per
+            account, ×/outside-click/Maybe-later all dismiss. */}
+        <FirstPurchasePromoModal />
+        {/* The floating "Chat with us" launcher was removed — the only entry
+            point is now "Chat with us" in the profile dropdown. */}
       </div>
-    </NotifContext.Provider>
   );
 }
 

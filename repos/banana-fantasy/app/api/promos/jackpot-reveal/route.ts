@@ -24,9 +24,55 @@ export async function GET(req: Request) {
     const draftId = url.searchParams.get('draftId');
     if (!draftId) throw new ApiError(400, 'draftId required');
 
+    // v2 (2026-06-10): if a recorded DRAW exists for this draft, return it —
+    // paid-entrant labels + the actual winner + seed basis, so the modal
+    // replays the exact draw (provably fair) instead of generic slots.
+    if (isFirestoreConfigured()) {
+      try {
+        const drawSnap = await getAdminFirestore().collection('jackpot_draws').doc(draftId).get();
+        const d = drawSnap.data() as {
+          pending?: boolean;
+          eligible?: { wallet: string; name: string; idx: number; slot?: number }[];
+          winnerWallet?: string | null;
+          winnerName?: string | null;
+          reward?: number;
+          seedBasis?: string;
+          vrfPeriod?: number | null;
+          saltHash?: string | null;
+          receiptTxHash?: string | null;
+        } | undefined;
+        if (drawSnap.exists && d && d.pending === false && Array.isArray(d.eligible) && d.eligible.length > 0) {
+          const labels = d.eligible.map((e) => e.name || `${e.wallet.slice(0, 6)}…${e.wallet.slice(-4)}`);
+          // Rich entries: real draft slot + wallet so the client can
+          // live-resolve names/pfps (default-or-edited) and label tiles
+          // with the slots people actually had in the room.
+          const entries = d.eligible.map((e, i) => ({
+            wallet: e.wallet,
+            name: e.name || `${e.wallet.slice(0, 6)}…${e.wallet.slice(-4)}`,
+            slot: typeof e.slot === 'number' && e.slot > 0 ? e.slot : i + 1,
+          }));
+          const winnerIdx = d.eligible.findIndex((e) => e.wallet === d.winnerWallet);
+          return json({
+            labels,
+            entries,
+            draw: {
+              seed: `jp-draw:${draftId}`,
+              winnerIdx: winnerIdx >= 0 ? winnerIdx : null,
+              winnerName: d.winnerName ?? null,
+              reward: d.reward ?? 0,
+              seedBasis: d.seedBasis ?? '',
+              vrfPeriod: d.vrfPeriod ?? null,
+              saltHash: d.saltHash ?? null,
+              receiptTxHash: d.receiptTxHash ?? null,
+            },
+          });
+        }
+      } catch { /* fall through to legacy labels */ }
+    }
+
     const apiBase = (
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
       process.env.STAGING_DRAFTS_API_URL ||
-      process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
       'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
     ).replace(/\/$/, '');
 

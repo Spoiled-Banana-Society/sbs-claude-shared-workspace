@@ -1,16 +1,21 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { getDraftInfo } from '@/lib/api/drafts';
 import { getOwnerDraftTokens, isPlaceholderName } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { CardImage } from '@/components/draft/CardImage';
+import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
+import { teamNoFromToken } from '@/lib/teamCardData';
+import { buildOgCardUrl } from '@/lib/nftCard';
+import { saveImageToDevice } from '@/lib/saveImage';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -98,12 +103,51 @@ export default function DraftResultsPage() {
   const { user } = useAuth();
   const walletAddress = user?.walletAddress ?? '';
 
+  // New-user first-purchase gate. Landing on this roster page means the draft is
+  // FINISHED and the user is OUTSIDE the draft room — the correct moment for the
+  // gate (it used to fire when a draft merely FILLED, which pinged too early).
+  // We tell the server this draft finished; when it was the user's LAST free
+  // draft, the server unlocks the promo and the popup/notification/banner fire
+  // (globally, so they follow the user if they navigate away from here).
+  // Fires once per draft (flag set only on success so a failure retries next
+  // visit); the server also dedups per draftId, so a re-visit is harmless.
+  // Deps are stable scalars only — no Privy-derived callback — so this can't
+  // render-loop (see shared-workspace CLAUDE.md Rule #0).
+  useEffect(() => {
+    if (!draftId) return;
+    const userId = user?.id || walletAddress?.toLowerCase();
+    if (!userId) return;
+    const firedKey = `fp-finished:${draftId}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    void fetch('/api/promos/first-purchase-finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, draftId }),
+    })
+      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .catch(() => { /* best-effort — retries on next visit */ });
+  }, [draftId, user?.id, walletAddress]);
+
   const [allRosters, setAllRosters] = useState<Record<string, PlayerRoster>>({});
   const [playerKeys, setPlayerKeys] = useState<string[]>([]);
+  // Live identity (edited name/pfp/badge if set, on-brand Banana default
+  // otherwise) — the SAME source the in-draft roster uses, so names + avatars
+  // match across the draft room and this results page. Keyed by lowercase
+  // wallet; SWR-like with internal polling (safe re: render-loop rule — input
+  // is the stable playerKeys state array).
+  const usersMap = useDraftRoomUsers(playerKeys);
   const [selectedPlayer, setSelectedPlayer] = useState('');
-  const [draftLevel, setDraftLevel] = useState('Pro');
+  // '' = type not yet known. Render NEUTRAL (not pro/purple) until the
+  // authoritative Firestore Level loads, so a jackpot/HOF draft never flashes
+  // as Pro. Was `useState('Pro')` — that default made every jackpot/HOF results
+  // screen show purple because the Go `/state/info` endpoint doesn't carry the
+  // type (see the level fetch below + /api/drafts/status).
+  const [draftLevel, setDraftLevel] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [cardImages, setCardImages] = useState<Record<string, { imageUrl: string; cardId: string }>>({});
+  // wallet → authoritative on-chain BBB4 token id (realTokenId). Captured
+  // independently of the backend image so the NFT-image write can fire promptly.
+  const [realTokenIds, setRealTokenIds] = useState<Record<string, string>>({});
   // ownerId → 1-indexed pick position in the draft order. Renders as the
   // "Pick #N" badge in the header + share image. Falls back to nothing when
   // we couldn't resolve the draft order (e.g., very old draft missing info).
@@ -127,8 +171,34 @@ export default function DraftResultsPage() {
     };
   }, []);
 
+  // Instant card: the generating screen handed us the card URL via
+  // sessionStorage (and preloaded the image), so seed it immediately instead of
+  // waiting on the token fetch. The full fetch below still runs and fills in the
+  // real cardId; this just makes the image appear the moment the page opens.
+  useEffect(() => {
+    if (!draftId || !walletAddress) return;
+    try {
+      const handoff = sessionStorage.getItem(`sbs-draftcard:${draftId}`);
+      if (handoff) {
+        const key = walletAddress.toLowerCase();
+        setCardImages((prev) => (prev[key] ? prev : { ...prev, [key]: { imageUrl: handoff, cardId: '' } }));
+      }
+    } catch { /* ignore */ }
+  }, [draftId, walletAddress]);
+
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
+
+    // Authoritative draft type. The Go `/state/info` endpoint (getDraftInfo)
+    // does NOT return the level, so it can never tell us jackpot vs pro — the
+    // real type lives on the Firestore draft doc `Level` (stamped at the
+    // slot-machine reveal, long before this screen). Firestore-only route so it
+    // resolves fast — before the team card / badge paint — and only set it when
+    // known (leaves draftLevel '' → neutral, never a wrong 'Pro' flash).
+    fetch(`/api/drafts/${encodeURIComponent(draftId)}/level`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => { if (s?.level) setDraftLevel(String(s.level)); })
+      .catch(() => {});
 
     (async () => {
       try {
@@ -146,7 +216,8 @@ export default function DraftResultsPage() {
         // Draft info
         if (infoRes.status === 'fulfilled') {
           const info = infoRes.value as Record<string, unknown>;
-          setDraftLevel(String(info.draftLevel ?? info.level ?? info.draftType ?? 'Pro'));
+          // Level intentionally NOT read from info here — /state/info never
+          // carries it; the authoritative Firestore Level is fetched above.
           const name = String(info.displayName ?? '');
           if (name) setDisplayName(name);
 
@@ -174,8 +245,11 @@ export default function DraftResultsPage() {
             if (match) {
               const imgUrl = String(match._imageUrl ?? match.imageUrl ?? '');
               const cId = String(match.cardId || match._cardId || '');
+              const rtid = String(match.realTokenId ?? '');
+              const owk = walletAddress.toLowerCase();
+              if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[owk] === rtid ? prev : { ...prev, [owk]: rtid }));
               if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
-                setCardImages(prev => ({ ...prev, [walletAddress.toLowerCase()]: { imageUrl: imgUrl, cardId: cId } }));
+                setCardImages(prev => ({ ...prev, [owk]: { imageUrl: imgUrl, cardId: cId } }));
               }
               const tokenName = String(match.leagueDisplayName || match._leagueDisplayName || '');
               if (tokenName) setDisplayName(prev => prev || tokenName);
@@ -221,20 +295,15 @@ export default function DraftResultsPage() {
   // for future UI (e.g. "Pick #5" alongside the team identity).
   void pickPositionByOwner[selectedPlayer.toLowerCase()];
 
-  // "Team #N" is the user's BBB4 NFT token ID (sequential 1-800 per
-  // season). For legacy cards minted via test paths that used a Unix-ms
-  // timestamp as the id, render nothing — there is no meaningful "team
-  // number" for those, and showing a 13-digit number is worse than
-  // showing nothing. Real onchain tokenIds won't exceed ~100k for years.
-  const teamNumber = (() => {
-    if (!cardId) return '';
-    // Legacy `staging-X-N` ids: keep just the suffix.
-    const candidate = cardId.includes('-') ? (cardId.split('-').pop() ?? '') : cardId;
-    if (!candidate || !/^\d+$/.test(candidate)) return '';
-    const n = Number(candidate);
-    if (!Number.isFinite(n) || n <= 0 || n > 100_000) return '';
-    return String(n);
-  })();
+  // "Team #N" is the user's BBB4 NFT token ID. Resolve it the ONE canonical way
+  // (realTokenId preferred, else the cardId suffix) via the shared helper so the
+  // header, the card, and the downloadable image all show the IDENTICAL number —
+  // previously the header used the cardId suffix while the card used realTokenId,
+  // which could be two different numbers. Legacy ms-timestamp ids (>100k) → ''.
+  const teamNumber = teamNoFromToken({
+    realTokenId: realTokenIds[selectedPlayer.toLowerCase()],
+    cardId,
+  });
 
   // Fetch card image for selected player on demand
   useEffect(() => {
@@ -253,6 +322,8 @@ export default function DraftResultsPage() {
         if (match) {
           const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
           const cId = String(match.cardId || (match as Record<string, unknown>)._cardId || '');
+          const rtid = String((match as Record<string, unknown>).realTokenId ?? '');
+          if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[key] === rtid ? prev : { ...prev, [key]: rtid }));
           if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
             setCardImages(prev => ({ ...prev, [key]: { imageUrl: imgUrl, cardId: cId } }));
           }
@@ -261,17 +332,69 @@ export default function DraftResultsPage() {
     })();
   }, [selectedPlayer, draftId, fetchedPlayers]);
 
+  // Poll for the card while it's still missing. Covers the case where the user
+  // clicks through from the "Draft Complete" screen before card generation
+  // finished — instead of having to refresh, the card pops in on its own the
+  // moment the backend has it. Self-limiting: the effect early-returns (no
+  // interval started) as soon as a real card exists for the selected player,
+  // and is hard-capped at ~30s of attempts so it can never become a runaway
+  // fetch loop (Rule #0). Deps are stable scalars only (no Privy-derived
+  // callbacks), so it fires once per state change, not once per render.
+  useEffect(() => {
+    if (!selectedPlayer || !draftId) return;
+    if (cardImageUrl) return; // already have it — nothing to wait for
+    const key = selectedPlayer.toLowerCase();
+
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10; // ~30s at 3s spacing, matching DraftComplete
+
+    const check = async () => {
+      attempts += 1;
+      try {
+        const tokens = await getOwnerDraftTokens(selectedPlayer);
+        if (cancelled) return;
+        const match = tokens.find(
+          (t: Record<string, unknown>) => String(t.leagueId || t._leagueId || '').toLowerCase() === draftId.toLowerCase()
+        );
+        if (match) {
+          const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
+          const cId = String(match.cardId || (match as Record<string, unknown>)._cardId || '');
+          const rtid = String((match as Record<string, unknown>).realTokenId ?? '');
+          if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[key] === rtid ? prev : { ...prev, [key]: rtid }));
+          if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
+            // Found it — write to state. cardImageUrl flips truthy, this effect
+            // re-runs and early-returns, and the cleanup below clears the timer.
+            setCardImages(prev => ({ ...prev, [key]: { imageUrl: imgUrl, cardId: cId } }));
+            return;
+          }
+        }
+      } catch { /* silent — keep trying until the cap */ }
+      if (!cancelled && attempts >= MAX_ATTEMPTS) clearInterval(id);
+    };
+
+    const id = setInterval(check, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [selectedPlayer, draftId, cardImageUrl]);
+
   // Get display name for a player key
   const getPlayerLabel = (key: string): string => {
     const r = allRosters[key];
+    // The viewer's OWN team reads "My Team" — same as the in-draft roster shows
+    // for yourself — instead of your own Banana #/handle.
+    if (walletAddress && key.toLowerCase() === walletAddress.toLowerCase()) return 'My Team';
     // Real wallets: prefer a user-chosen displayName; otherwise the on-brand
     // Banana #N handle (NOT the raw wallet — that's what was leaking when
     // the backend's PFP.DisplayName defaults to ownerId on new accounts).
     if (key.startsWith('0x')) {
+      // Prefer the LIVE resolved name (picks up a freshly-edited username), then
+      // the results-API PFP name, then the on-brand Banana default. Never the wallet.
+      const live = usersMap[key.toLowerCase()]?.displayName;
+      if (live && !isPlaceholderName(live, key)) return live;
       if (r?.pfpDisplayName && !isPlaceholderName(r.pfpDisplayName, key)) {
         return r.pfpDisplayName;
       }
-      return bananaDefaultName(key);
+      return bananaPlaceholderName(key);
     }
     // Bots — clean up the timestamp prefix.
     if (key.startsWith('bot-')) return key.replace(/^bot-fast-\d+-/, 'Bot ');
@@ -338,8 +461,11 @@ export default function DraftResultsPage() {
           parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
           parts.push({ text: `Team #${teamNumber}`, color: '#ffffff' });
         }
-        parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
-        parts.push({ text: draftLevel, color: levelColor });
+        // Only show the type once known — never stamp a default 'Pro' on the card.
+        if (draftLevel) {
+          parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
+          parts.push({ text: draftLevel, color: levelColor });
+        }
 
         // Measure total width
         const totalTextW = parts.reduce((w, p) => w + ctx.measureText(p.text).width, 0);
@@ -467,19 +593,49 @@ export default function DraftResultsPage() {
     setTimeout(() => setRosterSaved(false), 2000);
   }, [generateRosterImage, title]);
 
-  // Save card image — direct download, no share sheet
+  // Save card image — fetch→blob→download via the shared helper (mobile gets
+  // the native share sheet). The old /api/save-card proxy rejected our
+  // same-origin /api/og/team-card URL, so it "downloaded" a JSON error named
+  // .png that failed to save on desktop and mobile.
   const [saved, setSaved] = useState(false);
-  const handleSave = useCallback(async () => {
-    if (!cardImageUrl) return;
+  const handleSave = useCallback(async (url: string) => {
+    if (!url) return;
+    const ok = await saveImageToDevice(url, title);
+    if (ok) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  }, [title]);
 
-    const proxyUrl = `/api/save-card?url=${encodeURIComponent(cardImageUrl)}`;
-    const a = document.createElement('a');
-    a.href = proxyUrl;
-    a.download = `${title}.png`;
-    a.click();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }, [title, cardImageUrl]);
+  // Point this token's NFT image (OpenSea / marketplace / X) at the obsidian team
+  // card, once per token, for the OWNER's own team. Fire-and-forget; deps are
+  // stable scalars + a synchronous ref guard so it can't render-loop (Rule #0).
+  const nftImgFiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!walletAddress || selectedPlayer.toLowerCase() !== walletAddress.toLowerCase()) return;
+    // Key on the on-chain realTokenId — the id OpenSea / our metadata endpoint use.
+    const tokenId = realTokenIds[selectedPlayer.toLowerCase()] || '';
+    if (!/^\d+$/.test(tokenId)) return;
+    if (nftImgFiredRef.current.has(tokenId)) return;
+    const r = allRosters[selectedPlayer];
+    if (!r) return;
+    const players = POSITION_ORDER
+      .flatMap((pos) => r[pos] || [])
+      .sort((a, b) => a.pickNum - b.pickNum)
+      .map((p) => {
+        const [tm, ps] = p.playerId.split('-');
+        return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
+      });
+    if (players.length === 0) return;
+    const tier: CardTier = /jackpot/i.test(draftLevel) ? 'jackpot' : /hof|hall of fame/i.test(draftLevel) ? 'hof' : 'pro';
+    const leagueNo = title.replace(/\D/g, '');
+    nftImgFiredRef.current.add(tokenId);
+    void fetch('/api/nft/card-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenId, tier, passNo: tokenId, teamNo: tokenId, leagueNo, players }),
+    }).catch(() => { nftImgFiredRef.current.delete(tokenId); });
+  }, [walletAddress, selectedPlayer, draftLevel, realTokenIds, allRosters, title]);
 
   // ─── Loading ───
   if (isLoading) {
@@ -487,7 +643,7 @@ export default function DraftResultsPage() {
       <div className="min-h-screen bg-[#0a0a0f] px-4 py-10">
         <div className="w-full lg:w-[900px] mx-auto space-y-6 text-center">
           <Skeleton width={160} height={24} className="mx-auto" />
-          <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
+          <Skeleton width={300} height={420} className="mx-auto rounded-2xl" />
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} width="100%" height={32} className="rounded-lg" />
@@ -518,6 +674,29 @@ export default function DraftResultsPage() {
     );
   }
 
+  // Build the obsidian team card from the selected roster (instant, no image wait).
+  const cardTier: CardTier = /jackpot/i.test(draftLevel)
+    ? 'jackpot'
+    : /hof|hall of fame/i.test(draftLevel)
+      ? 'hof'
+      : 'pro';
+  const cardPlayers = POSITION_ORDER
+    .flatMap((pos) => roster[pos] || [])
+    .sort((a, b) => a.pickNum - b.pickNum)
+    .map((p) => {
+      const [tm, ps] = p.playerId.split('-');
+      return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
+    });
+  // Team identity for the card: TEAM # = the SAME unified teamNumber the header
+  // uses (realTokenId preferred, else cardId suffix), LEAGUE # = numeric league
+  // id from the title. One source → header, card, and download never disagree.
+  const cardTeamNo = teamNumber;
+  const leagueNumber = title.replace(/\D/g, '');
+  // The 1080x1350 (X-safe) NFT image for download/share (team card has no pass #).
+  const ogImageUrl = cardPlayers.length > 0
+    ? buildOgCardUrl({ tier: cardTier, players: cardPlayers, teamNo: cardTeamNo, leagueNo: leagueNumber })
+    : '';
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] px-4 py-8">
       <div className="w-full lg:w-[900px] mx-auto">
@@ -535,27 +714,32 @@ export default function DraftResultsPage() {
                 Team #{teamNumber}
               </span>
             )}
-            {teamNumber && <span className="text-white/10 text-xs">·</span>}
-            <span
-              className="text-sm font-semibold"
-              style={{
-                color: draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
-              }}
-            >
-              {draftLevel}
-            </span>
+            {/* Only render the type badge once the authoritative level is known
+                — no default 'Pro' flash for jackpot/HOF drafts. */}
+            {draftLevel && (
+              <>
+                {teamNumber && <span className="text-white/10 text-xs">·</span>}
+                <span
+                  className="text-sm font-semibold"
+                  style={{
+                    color: draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
+                  }}
+                >
+                  {draftLevel}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* NFT Card Image + Save */}
-        {cardImageUrl && (
-          <div className="text-center mb-6">
-            <CardImage
-              src={cardImageUrl}
-              className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl"
-            />
+        {/* The obsidian team NFT card — rendered from roster data (instant) + download. */}
+        <div className="text-center mb-6">
+          <div className="flex justify-center">
+            <TeamCardObsidian tier={cardTier} players={cardPlayers} teamNumber={cardTeamNo} leagueNumber={leagueNumber} width={300} />
+          </div>
+          {ogImageUrl && (
             <button
-              onClick={handleSave}
+              onClick={() => handleSave(ogImageUrl)}
               className="mt-3 p-2 text-white/30 hover:text-white/70 transition-colors"
               aria-label="Download card"
             >
@@ -571,8 +755,23 @@ export default function DraftResultsPage() {
                 </svg>
               )}
             </button>
+          )}
+        </div>
+
+        {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
+        <Link
+          href="/marketplace?tab=sell"
+          className="block mb-6 rounded-2xl px-4 py-3.5 relative overflow-hidden border border-[#F3E216]/25 bg-gradient-to-br from-[#F3E216]/10 to-purple-500/10 hover:border-[#F3E216]/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#F3E216]/15 flex items-center justify-center text-lg flex-shrink-0">🛒</div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-bold text-sm">Sell your team. Buy other teams.</p>
+              <p className="text-white/55 text-xs mt-0.5">All season on our Marketplace</p>
+            </div>
+            <span className="text-[#F3E216] text-xl font-bold leading-none">›</span>
           </div>
-        )}
+        </Link>
 
         {/* Player Selector Dropdown */}
         {playerKeys.length > 1 && (
@@ -593,17 +792,25 @@ export default function DraftResultsPage() {
 
         {/* Profile + Position Counts Header (old prod style) */}
         <div className="text-center mb-4">
-          {/* Profile photo — use auth profile pic for current user, PFP from rosters for others */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={
-              (selectedPlayer.toLowerCase() === walletAddress.toLowerCase() && user?.profilePicture)
-                ? user.profilePicture
-                : roster.pfpImageUrl || '/banana-profile.png'
-            }
-            alt="Profile"
-            className="w-10 h-10 rounded-full border border-white/20 mx-auto mb-2 bg-white/5 object-cover"
-          />
+          {/* Profile photo — auth pic for the current user, else the live
+              resolved pfp (usersMap) then results-API PFP, then banana default.
+              AvatarWithBadge so it shows the equipped badge/ripeness and never
+              blanks — same component the in-draft roster uses. */}
+          <div className="flex justify-center mb-2">
+            <AvatarWithBadge
+              imageUrl={
+                (selectedPlayer.toLowerCase() === walletAddress.toLowerCase() && user?.profilePicture)
+                  ? user.profilePicture
+                  : (usersMap[selectedPlayer.toLowerCase()]?.imageUrl || roster.pfpImageUrl || '/banana-profile.png')
+              }
+              alt="Profile"
+              size={40}
+              equippedBadge={usersMap[selectedPlayer.toLowerCase()]?.equippedBadge}
+              ripeness={usersMap[selectedPlayer.toLowerCase()]?.ripeness}
+              useNextImage={false}
+              className=""
+            />
+          </div>
           <p className="text-white font-bold text-lg mb-3">
             {getPlayerLabel(selectedPlayer)}
           </p>

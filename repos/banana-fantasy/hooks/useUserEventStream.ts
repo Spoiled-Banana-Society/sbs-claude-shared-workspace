@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/components/ui/Toast';
-import { pushNotification } from '@/components/NotificationCenter';
 import { subscribeUserEvents, type UserStreamEvent } from '@/lib/api/firebase';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
+import { markLocalSurface } from '@/lib/localSurfaceDedupe';
 
 /**
  * Real-time user event stream — primary surface for badge unlocks +
@@ -32,7 +30,6 @@ import { BADGE_BY_ID } from '@/lib/badges/catalog';
  */
 
 const STREAM_SEEN_PREFIX = 'sbs-stream-seen';
-const FRESHNESS_WINDOW_MS = 5 * 60_000; // events older than this are silently absorbed (initial-load history)
 const MAX_SEEN_IDS_RETAINED = 500;       // cap localStorage growth
 
 function seenKey(userId: string) {
@@ -94,7 +91,8 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       return;
     }
     case 'promo-new-user': {
-      surfaces.showToast('Welcome bonus ready — claim your free spin', '/promos');
+      // No start-of-session toast for new users (Boris): the welcome lands as a
+      // bell notification only — no transient popup the moment they sign in.
       surfaces.pushNotif(
         'Welcome bonus ready!',
         'Your new-user free spin is waiting on the promos page.',
@@ -145,30 +143,91 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       );
       return;
     }
-    case 'promo-daily-drafts': {
-      surfaces.showToast('4 Drafts Daily complete — free spin earned!', '/promos');
+    case 'promo-card-free-draft': {
+      const count = event.awardedCount ?? 1;
+      surfaces.showToast(
+        count === 1
+          ? 'You earned a Draft Pass — your card fees covered it!'
+          : `You earned ${count} Draft Passes — your card fees covered them!`,
+        '/drafting',
+      );
       surfaces.pushNotif(
-        'Daily promo complete!',
-        'You finished 4 drafts today — claim your free spin.',
+        count === 1 ? 'Draft Pass earned' : `${count} Draft Passes earned`,
+        count === 1
+          ? 'Your card fees added up to $25 — a Draft Pass is on us. Tap to play.'
+          : `Your card fees earned you ${count} Draft Passes — on us. Tap to play.`,
+        '/drafting',
+        `promo-card-free-draft-${event.eventId}`,
+      );
+      return;
+    }
+    case 'promo-daily-drafts': {
+      surfaces.showToast('4 Drafts in 24 Hours complete — free spin earned!', '/promos');
+      surfaces.pushNotif(
+        '4 Drafts in 24 Hours complete!',
+        'You finished 4 paid drafts in time — claim your free spin.',
         '/promos',
         `promo-daily-${event.eventId}`,
       );
       return;
     }
-    case 'referral-milestone': {
-      // Friend identity is NOT in the event payload — it lives in
-      // authenticated /api/promos. The toast/bell copy is intentionally
-      // generic; users open /promos to see which friend triggered it.
-      const milestoneLabel =
-        event.milestone === 'verified' ? 'verified their X account' :
-        event.milestone === 'bought1' ? 'bought their first draft' :
-        event.milestone === 'bought10' ? 'bought 10 drafts' :
-        'hit a milestone';
-      surfaces.showToast(`A referred friend ${milestoneLabel} — free spin earned!`, '/promos');
-      surfaces.pushNotif(
-        'Referral free spin!',
-        `A friend you referred ${milestoneLabel}. Claim your free spin.`,
+    case 'promo-first-purchase': {
+      const count = event.awardedCount ?? 1;
+      surfaces.showToast(
+        count === 1 ? 'First purchase — free spin earned!' : `First purchase — ${count} free spins earned!`,
         '/promos',
+      );
+      surfaces.pushNotif(
+        'First purchase free spins!',
+        count === 1
+          ? 'Your first purchase earned a free spin — claim it now.'
+          : `Your first purchase earned ${count} free spins — claim them now.`,
+        '/promos',
+        `promo-first-purchase-${event.eventId}`,
+      );
+      return;
+    }
+    case 'first-purchase-unlocked': {
+      // The new-user finished their welcome-wheel winnings. Surface the
+      // first-purchase promo via the persistent bell notification + the home
+      // banner + promo box (the latter two from the unlocked state; the
+      // CustomEvent below drives the banner's live un-dismiss when the user is
+      // on the home page). No toast and no modal — the modal was too abrupt and
+      // the toast wasn't landing reliably during the post-draft loading beat, so
+      // we roll with the bell + banner + box.
+      // (pushNotif is a no-op — the real bell copy lives server-side in
+      // lib/eventNotifications.ts: "Win up to $1,000 in Drafts".)
+      surfaces.pushNotif(
+        'Win up to $1,000 in Drafts',
+        'Buy 1 Draft Pass → 2 Free Spins. $50 in Drafts guaranteed.',
+        '/buy-drafts',
+        `first-purchase-unlocked-${event.eventId}`,
+      );
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sbs-first-purchase-unlocked'));
+      }
+      return;
+    }
+    case 'referral-milestone': {
+      // Only emitted for the 'verified' milestone — verifying pays the REFERRER
+      // nothing (informational). Their Free Spin comes ONLY when the friend buys
+      // a Draft Pass (that fires a separate named bell). So no "claim" here.
+      if (event.milestone === 'verified') {
+        surfaces.showToast('A friend you referred verified their X and took their spin.', '/promos?promo=3');
+        surfaces.pushNotif(
+          'Your referral is in!',
+          "A friend you referred verified their X and took their spin. You'll earn a Free Spin when they buy a Draft Pass.",
+          '/promos?promo=3',
+          `referral-verified-${event.eventId}`,
+        );
+        return;
+      }
+      // Defensive fallback (mints normally fire the named bell, not this event).
+      surfaces.showToast('A friend you referred bought a Draft Pass — claim your Free Spin!', '/promos?promo=3');
+      surfaces.pushNotif(
+        'Referral Free Spin!',
+        'A friend you referred bought a Draft Pass — claim your Free Spin.',
+        '/promos?promo=3',
         `referral-${event.eventId}`,
       );
       return;
@@ -182,47 +241,60 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
 }
 
 export function useUserEventStream() {
-  const { user, isLoggedIn } = useAuth();
-  const { show } = useToast();
-  const pathname = usePathname();
-  // Latest pathname in a ref so the (rarely-rebuilt) subscription
-  // closure reads the current route without re-subscribing on every nav.
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
+  const { walletAddress } = useAuth();
+  // Toasts removed site-wide 2026-07-10 (Boris): bells are the only
+  // promo/event surface. This hook still subscribes to keep the seen-ledger
+  // and side-effects (e.g. the first-purchase-unlocked CustomEvent) alive.
 
   useEffect(() => {
-    if (!isLoggedIn || !user?.id) return;
-    const userId = user.id.toLowerCase();
+    // Subscribe by WALLET ADDRESS (not user.id). user.id is the wallet only
+    // when the backend lookup succeeds; on fallback it's the Privy DID, which
+    // the server never writes events to → toasts silently break on that device.
+    // walletAddress is always the wallet the server keys events by (same as the
+    // bell, which is why the bell is reliable).
+    if (!walletAddress) return;
+    const userId = walletAddress.toLowerCase();
+    // Only toast events that fire AFTER we subscribe (genuinely LIVE). On
+    // subscribe, onChildAdded replays the last N existing children (limitToLast)
+    // — those fired before now, so `event.timestamp < subscribedAt` and we skip
+    // them. This kills the "replay noise" that made toasts feel random (a toast
+    // for something that happened 20s ago, mixed with live ones). 3s grace
+    // absorbs minor client/server clock skew (observed deliveries are ~10-300ms).
+    const subscribedAt = Date.now() - 3000;
 
     const unsub = subscribeUserEvents(userId, (event) => {
       // Dedup: every event has a stable eventId; ignore if already shown.
       const seen = readSeen(userId);
-      if (seen.has(event.eventId)) return;
+      const isSeen = seen.has(event.eventId);
+      // "Replayed history" = fired before we subscribed. Skip (no toast) but
+      // still mark seen so we never reconsider it.
+      const replayed = (event.timestamp ?? 0) < subscribedAt;
+      const stale = replayed;
 
-      // Freshness: on initial subscribe, onChildAdded fires for ALL
-      // existing children. Without this filter we'd re-celebrate every
-      // historical event every time the user opens the app. 5min keeps
-      // the window forgiving for slow network / late deliveries.
-      const ageMs = Date.now() - (event.timestamp ?? 0);
-      if (Number.isFinite(ageMs) && ageMs > FRESHNESS_WINDOW_MS) {
+      if (isSeen) return;
+
+      // Live-only: skip replayed history (fired before subscribe).
+      if (stale) {
         addSeen(userId, event.eventId); // mark seen so we don't re-check next mount
         return;
       }
 
-      const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
-
       const surfaces: Surfaces = {
-        showToast: (message, link) => {
-          if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
-          show({
-            level: 'success',
-            message,
-            ...(link ? { action: { label: 'View', onClick: () => { window.location.href = link; } } } : {}),
-          });
+        // No-op since 2026-07-10 (Boris): NO toasts anywhere on the site —
+        // bells are the only promo/event surface. The persistent bell is
+        // created SERVER-SIDE in pushStreamEvent (lib/userEventStream.ts →
+        // createNotification), account-synced across devices. Keeping this a
+        // no-op (like pushNotif below) avoids touching every renderEvent case;
+        // this hook still drives side-effects like the first-purchase
+        // CustomEvent and seen-tracking.
+        showToast: () => {
+          markLocalSurface(event.type);
         },
-        pushNotif: (title, message, link, dedupeKey) => {
-          pushNotification({ type: 'promo', title, message, link, dedupeKey });
-        },
+        // No-op: the persistent bell entry is now created SERVER-SIDE in
+        // pushStreamEvent (lib/userEventStream.ts → createNotification), so
+        // it's account-synced across devices. (renderEvent still calls
+        // pushNotif; keeping it a no-op avoids touching every case.)
+        pushNotif: () => {},
       };
 
       renderEvent(event, surfaces);
@@ -232,5 +304,5 @@ export function useUserEventStream() {
     return () => {
       try { unsub(); } catch { /* ignore */ }
     };
-  }, [isLoggedIn, user?.id, show]);
+  }, [walletAddress]);
 }

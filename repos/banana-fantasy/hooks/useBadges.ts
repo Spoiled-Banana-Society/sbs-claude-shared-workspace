@@ -5,15 +5,18 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { fetchJson } from '@/lib/appApiClient';
-import type { Badge } from '@/types';
+import type { Badge, Ripeness } from '@/types';
 
 interface BadgesResponse {
   catalog: Badge[];
   unlocked: { id: string; unlockedAt: string | null }[];
   equipped: string | null;
+  /** The user's current ripeness tier (for the "Your Banana" section + the
+   *  default banana color). Populated by /api/badges. */
+  ripeness?: Ripeness | null;
 }
 
-const FALLBACK: BadgesResponse = { catalog: [], unlocked: [], equipped: null };
+const FALLBACK: BadgesResponse = { catalog: [], unlocked: [], equipped: null, ripeness: null };
 
 /**
  * Read + manage the current user's badges. Returns the full catalog
@@ -35,7 +38,7 @@ export function useBadges(opts?: { userId?: string }) {
       signal,
       query: userId ? { userId } : {},
     }),
-    { fallbackData: FALLBACK },
+    { fallbackData: FALLBACK, persist: true },
   );
 
   const equipBadge = useCallback(async (badgeId: string | null) => {
@@ -79,6 +82,7 @@ export function useBadges(opts?: { userId?: string }) {
     catalog: swr.data.catalog,
     unlockedIds: unlockedSet,
     equipped,
+    ripeness: swr.data.ripeness ?? null,
     isLoading: swr.isLoading,
     refresh: swr.mutate,
     equipBadge,

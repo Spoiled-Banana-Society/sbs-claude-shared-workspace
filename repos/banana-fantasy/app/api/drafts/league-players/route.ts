@@ -4,6 +4,24 @@ import { getAdminApp } from '@/lib/firebaseAdmin';
 const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
+// Env-driven so prod reads its OWN RTDB. Staging keeps this exact URL when
+// NEXT_PUBLIC_DATABASE_URL is unset, so staging is unchanged. Trailing slash
+// stripped so `${RTDB_URL}/drafts/...` is always well-formed.
+const RTDB_URL = (process.env.NEXT_PUBLIC_DATABASE_URL
+  || 'https://sbs-staging-env-default-rtdb.firebaseio.com').replace(/\/$/, '');
+
+/** Normalize the server's draft-type strings (human or short code) → the UI
+ *  short code. Returns undefined for anything unrecognized so callers keep
+ *  their existing value instead of clobbering it with a bad type. */
+function normalizeDraftType(v: unknown): 'pro' | 'hof' | 'jackpot' | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim().toLowerCase();
+  if (s === 'jackpot') return 'jackpot';
+  if (s === 'hof' || s === 'hall of fame') return 'hof';
+  if (s === 'pro') return 'pro';
+  return undefined;
+}
+
 /**
  * GET /api/drafts/league-players?draftId=xxx
  *
@@ -38,6 +56,8 @@ export async function GET(req: NextRequest) {
   let pickLength: number | undefined;
   let currentDrafter: string | undefined;
   let currentPickNumber: number | undefined;
+  let draftStartTime: number | undefined;
+  let draftType: 'pro' | 'hof' | 'jackpot' | undefined;
 
   // Step 1 — read realTimeDraftInfo from RTDB for the rich timer + drafter
   // fields. This is the source the draft-room uses in-tab; proxying it here
@@ -45,7 +65,7 @@ export async function GET(req: NextRequest) {
   try {
     const app = getAdminApp();
     const token = await app.options.credential?.getAccessToken();
-    const infoUrl = `https://sbs-staging-env-default-rtdb.firebaseio.com/drafts/${encodeURIComponent(draftId)}/realTimeDraftInfo.json`;
+    const infoUrl = `${RTDB_URL}/drafts/${encodeURIComponent(draftId)}/realTimeDraftInfo.json`;
     const res = await fetch(`${infoUrl}?access_token=${token?.access_token}`, { cache: 'no-store' });
     if (res.ok) {
       const val = await res.json();
@@ -54,6 +74,17 @@ export async function GET(req: NextRequest) {
         pickLength = typeof val.pickLength === 'number' ? val.pickLength : undefined;
         currentDrafter = typeof val.currentDrafter === 'string' ? val.currentDrafter : undefined;
         currentPickNumber = typeof val.currentPickNumber === 'number' ? val.currentPickNumber : undefined;
+        // Server's authoritative draft-start time (Unix seconds), set at fill.
+        // Drives the reveal animation off ONE clock so every device shows the
+        // same fill→reveal→type→drafting at the same wall-clock second — instead
+        // of each device timing the reveal from its own local "saw it fill" anchor.
+        draftStartTime = typeof val.draftStartTime === 'number' ? val.draftStartTime : undefined;
+        // Draft type, stamped onto realTimeDraftInfo at fill by the Go API.
+        // Normalize the server's human strings / short codes → pro|hof|jackpot
+        // so the drafting-page list reads the SAME authoritative type the draft
+        // room reads off this exact node — no per-device derivation drift, and
+        // it's correct even if the deferred per-card Level write hasn't landed.
+        draftType = normalizeDraftType(val.type);
         rtdbOk = true;
         // realTimeDraftInfo only exists after draft has started — by definition 10 players.
         rtdbPlayers = 10;
@@ -65,7 +96,7 @@ export async function GET(req: NextRequest) {
 
     // Step 1b — if realTimeDraftInfo was absent (filling phase), read numPlayers separately.
     if (rtdbPlayers === 0 && rtdbOk) {
-      const numUrl = `https://sbs-staging-env-default-rtdb.firebaseio.com/drafts/${encodeURIComponent(draftId)}/numPlayers.json`;
+      const numUrl = `${RTDB_URL}/drafts/${encodeURIComponent(draftId)}/numPlayers.json`;
       const numRes = await fetch(`${numUrl}?access_token=${token?.access_token}`, { cache: 'no-store' });
       if (numRes.ok) {
         const numVal = await numRes.json();
@@ -116,5 +147,7 @@ export async function GET(req: NextRequest) {
     pickLength,
     currentDrafter,
     currentPickNumber,
+    draftStartTime,
+    type: draftType,
   });
 }

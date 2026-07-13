@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { VerificationModal } from './VerificationModal';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
-const RETURNING_USER_KEY = 'banana-fantasy-cashout-returning';
+// NOTE: "returning cashout user" is now account-synced (useSyncedFlag below).
+// ACTIVE_TX_KEY stays per-device — it's transient in-flight recovery state.
 const ACTIVE_TX_KEY = 'banana-fantasy-cashout-active-tx';
 
 interface CashOutModalProps {
@@ -141,7 +143,7 @@ export function CashOutModal({
   onVerified,
 }: CashOutModalProps) {
   const privy = usePrivy();
-  const { login: triggerLogin, logout: triggerLogout } = useAuth();
+  const { login: triggerLogin, logout: triggerLogout, isEmbeddedWallet } = useAuth();
   const [step, setStep] = useState<Step>('intro');
   // True when our backend rejected the request because the Privy access token
   // was missing or invalid. Switches the error UI from "Try Again" to a
@@ -157,6 +159,12 @@ export function CashOutModal({
   const [selectedMethod, setSelectedMethod] = useState<SelectableMethod | null>(null);
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
   const [isReturning, setIsReturning] = useState(false);
+  // Account-synced: a user who has cashed out before skips the intro on any device.
+  const [cashoutReturning, setCashoutReturning] = useSyncedFlag<boolean>('cashoutReturning', false);
+  // Read inside the open-effect via a ref so the flag loading async doesn't
+  // re-run the effect (which would reset the modal's in-progress state).
+  const cashoutReturningRef = useRef(cashoutReturning);
+  cashoutReturningRef.current = cashoutReturning;
   const [showVerification, setShowVerification] = useState<'basic' | 'kyc' | null>(null);
   const [timeline, setTimeline] = useState<TimelineStep[] | null>(null);
   const [pollVersion, setPollVersion] = useState(0);
@@ -192,8 +200,7 @@ export function CashOutModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const returning =
-      typeof window !== 'undefined' && localStorage.getItem(RETURNING_USER_KEY) === '1';
+    const returning = cashoutReturningRef.current;
     setIsReturning(returning);
     setErrorMessage(null);
     setQuotes(null);
@@ -433,11 +440,7 @@ export function CashOutModal({
         return;
       }
 
-      try {
-        localStorage.setItem(RETURNING_USER_KEY, '1');
-      } catch {
-        /* ignore */
-      }
+      setCashoutReturning(true);
       rememberActiveTx({
         partnerUserId: userId || walletAddress.toLowerCase(),
         amount: parsedAmount,
@@ -642,6 +645,14 @@ export function CashOutModal({
   // ---- quotes ----
   if (step === 'quotes' && quotes) {
     const usdcReceived = parsedAmount;
+    // When Coinbase returns no usable payout method (almost always because the
+    // amount is below its cash-out minimum), there's nothing to pick — show a
+    // clear reason instead of a dead, disabled "Continue" button.
+    // Show every payout option Coinbase returns as available (bank + Coinbase
+    // balance + crypto). Default selection still prefers bank.
+    const availableQuotes = quotes.filter((q) => q.available);
+    const availableCount = availableQuotes.length;
+    const renderedQuotes = availableQuotes;
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
@@ -653,12 +664,7 @@ export function CashOutModal({
           <div>
             <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
             <div className="space-y-2">
-              {quotes
-                // Only render methods that returned a successful quote.
-                // Coinbase rejects unsupported (country, asset, payment-method)
-                // combos with available:false — hiding them keeps the UI
-                // clean instead of surfacing raw "InvalidRequest" errors.
-                .filter((q) => q.available)
+              {renderedQuotes
                 .map((q) => {
                   const fee = q.totalFee ?? 0;
                   const isFree = fee < 0.01;
@@ -705,6 +711,10 @@ export function CashOutModal({
                   );
                 })}
 
+              {/* "Keep as USDC" sends to an external wallet — only meaningful for
+                  users who manage their own wallet. Hidden when no onSwitchToUsdc
+                  handler is passed (embedded/web2 users → bank cash-out only). */}
+              {onSwitchToUsdc && (
               <button
                 type="button"
                 onClick={() => setSelectedMethod('USDC')}
@@ -735,23 +745,41 @@ export function CashOutModal({
                   </div>
                 </div>
               </button>
+              )}
+
+              {availableCount === 0 && (
+                <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5">
+                  <p className="text-warning text-sm font-medium">This amount is too small to cash out</p>
+                  <p className="text-text-muted text-xs mt-1">
+                    Coinbase has a small minimum for bank cash-outs. Your balance will be cashable once it&apos;s a bit higher.
+                  </p>
+                </div>
+              )}
+
             </div>
           </div>
 
-          <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
-            <span className="text-text-primary font-medium">FYI:</span> rates above include
-            Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
-          </div>
+          {/* Only relevant when more than one option is shown (the "rates above"
+              comparison + the "extra" fast-rails fee note). With a single option
+              (No extra fee) it's confusing noise, so hide it. */}
+          {renderedQuotes.length > 1 && (
+            <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
+              <span className="text-text-primary font-medium">FYI:</span> rates above include
+              Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
+            </div>
+          )}
 
-          <button
-            onClick={proceedFromQuotes}
-            disabled={!selectedMethod}
-            className={`w-full py-4 rounded-xl font-bold text-base transition-all ${
-              selectedMethod ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
-            }`}
-          >
-            {selectedMethod === 'USDC' ? 'Continue with USDC' : 'Continue to Coinbase'}
-          </button>
+          {availableCount > 0 && (
+            <button
+              onClick={proceedFromQuotes}
+              disabled={!selectedMethod}
+              className={`w-full py-4 rounded-xl font-bold text-base transition-all ${
+                selectedMethod ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+              }`}
+            >
+              {selectedMethod === 'USDC' ? 'Continue with USDC' : 'Continue to Coinbase'}
+            </button>
+          )}
 
           <button onClick={() => setStep('amount')} className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors">
             ← Change amount
@@ -822,10 +850,14 @@ export function CashOutModal({
               <li>• Sign in or create your Coinbase account</li>
               <li>• Verify ID and link your payout method (first time only)</li>
               <li>• Tap <strong>Cash out now</strong> to confirm the amount</li>
-              <li>
-                • Your wallet (MetaMask / Coinbase Wallet) will pop up to approve sending USDC. Tap{' '}
-                <strong>Sign / Confirm</strong> in your wallet to finish.
-              </li>
+              {isEmbeddedWallet ? (
+                <li>• That&apos;s it — your cash is on its way. Nothing else to approve.</li>
+              ) : (
+                <li>
+                  • Your wallet (MetaMask / Coinbase Wallet) will pop up to approve sending USDC. Tap{' '}
+                  <strong>Sign / Confirm</strong> in your wallet to finish.
+                </li>
+              )}
             </ul>
           </div>
 

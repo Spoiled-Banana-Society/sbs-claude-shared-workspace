@@ -1,0 +1,10 @@
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import fs from 'node:fs';
+const saJson = JSON.parse(fs.readFileSync('/Users/borisvagner/.gcp/sbs-staging-env-key.json', 'utf-8'));
+initializeApp({ credential: cert(saJson) });
+const db = getFirestore();
+const idx = await db.collection('marketplace_index').doc('305').get();
+console.log('index token 305:', idx.exists ? JSON.stringify({ status: idx.get('status'), league: idx.get('leagueNumber'), image: String(idx.get('image') ?? '').slice(0, 60) + '…' }) : 'MISSING');
+const p = await db.collection('v2_users').doc('0xeab34d772d0fc63cd89b58772de0c1cfaebdc7d4').collection('promos').doc('2').get();
+console.log('slot-10 pick-10:', JSON.stringify({ claimCount: p.get('claimCount'), history: (p.get('modalContent')?.pick10History ?? []).map(h => h.draftName) }));

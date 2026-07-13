@@ -29,6 +29,7 @@ const seedUser1: User = {
   jackpotEntries: 0,
   hofEntries: 0,
   cardPurchaseCount: 0,
+  cardFeeCreditCents: 0,
   isVerified: true,
   createdAt: '2025-09-01',
 };
@@ -69,12 +70,34 @@ const seedContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
+    examplePaidDrafts: 5000,
     prizeBreakdown: [
-      { place: '1st', amount: 25000 },
-      { place: '2nd', amount: 15000 },
-      { place: '3rd', amount: 10000 },
-      { place: '4th-10th', amount: 5000 },
-      { place: '11th-50th', amount: 500 },
+      // Championship finals — $48,630
+      { place: '1st', amount: 25000, section: 'Finals' },
+      { place: '2nd', amount: 6000, section: 'Finals' },
+      { place: '3rd', amount: 3500, section: 'Finals' },
+      { place: '4th', amount: 2100, section: 'Finals' },
+      { place: '5th', amount: 1600, section: 'Finals' },
+      { place: '6th', amount: 1330, section: 'Finals' },
+      { place: '7th', amount: 1130, section: 'Finals' },
+      { place: '8th', amount: 960, section: 'Finals' },
+      { place: '9th', amount: 810, section: 'Finals' },
+      { place: '10th', amount: 700, section: 'Finals' },
+      { place: '11th–25th', amount: 200, note: 'each', section: 'Finals' },
+      { place: '26th–50th', amount: 100, note: 'each', section: 'Finals' },
+      // Weekly prizes — top 5 each week, Weeks 1–14 (~$6,370 total, trimmed from 2nd–7th)
+      { place: '1st', amount: 250, note: 'each week', section: 'Weekly (Weeks 1–14)' },
+      { place: '2nd', amount: 100, note: 'each week', section: 'Weekly (Weeks 1–14)' },
+      { place: '3rd', amount: 50, note: 'each week', section: 'Weekly (Weeks 1–14)' },
+      { place: '4th', amount: 35, note: 'each week', section: 'Weekly (Weeks 1–14)' },
+      { place: '5th', amount: 20, note: 'each week', section: 'Weekly (Weeks 1–14)' },
+      // Per-league prizes — $40,000 (scale with number of leagues)
+      { place: 'Regular-Season League Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      { place: 'Playoff Round 1 Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      // Hall of Fame track — $5,000
+      { place: 'HOF 1st', amount: 3000, section: 'Hall of Fame' },
+      { place: 'HOF 2nd', amount: 1200, section: 'Hall of Fame' },
+      { place: 'HOF 3rd', amount: 800, section: 'Hall of Fame' },
     ],
   },
   {
@@ -206,25 +229,29 @@ const seedPromos: Promo[] = [
   {
     id: '2',
     type: 'pick-10',
-    title: 'Pick 10 → FREE SPIN',
-    description: 'Get the 10th pick for a spin',
+    title: 'Pick 6 & 10 → FREE SPINS',
+    description: 'Every Spin wins up to 20 Free Drafts',
     ctaText: 'Draft Now',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
+    // No NEW ribbon (Boris 2026-07-06 — Pick 6 & 10 is a standing promo, not new).
+    // promoFilter also force-clears isNew for 'pick-10' so existing seeded docs
+    // drop the ribbon too; keeping this false for freshly-seeded docs.
+    isNew: false,
     progressCurrent: 0,
     progressMax: 1,
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Get Pick 10 Get a SPIN',
+      title: 'Pick 6 & 10 → Free Spins',
       explanation:
-        'When you get the 10th pick in any draft you earn a free Banana Wheel spin. This can happen multiple times - each Pick 10 earns you a spin!',
-      totalPick10s: 8,
-      pick10History: [
-        { date: '2026-01-15', draftName: 'League #1042', status: 'claim' },
-        { date: '2026-01-14', draftName: 'League #892', status: 'claim' },
-        { date: '2026-01-12', draftName: 'League #756', status: 'claimed' },
-      ],
+        '• Hit Pick 10 in any draft → Free Banana Spin.\n• When the Jackpot is hit, Pick 6 unlocks — Pick 6 and Pick 10 each win a Free Spin until the batch ends.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
+      // Per-user state — starts empty. Real Pick 10s are appended by
+      // recordPick10 on actual paid drafts. (Previously this carried 3 fake
+      // demo rows incl. 2 'claim' entries, which were cloned into every real
+      // user's doc and let them claim 2 spins they never earned.)
+      totalPick10s: 0,
+      pick10History: [],
     },
   },
   {
@@ -240,15 +267,15 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.',
+        '• Share your unique referral link with friends.\n• You earn a Free Banana Spin at each milestone as your friend buys draft passes: their 1st pass, 4 total, and 10 total — up to 3 Spins per friend.\n• Your friend must also verify their X account and spin their Free Banana Spin.\n• NEW players only — returning players from previous seasons don’t count and won’t appear here.\n• One account per person — more than one account makes you ineligible to win prizes.\n• Real players only: referrals must actually play fantasy football. Farming free spins with fake invites makes BOTH you and your referral ineligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
       referralLink: 'https://banana-fantasy-sbs.vercel.app?ref=BANANA-CK99-2026',
       referralRewards: [
-        { milestone: 'Friend Verifies & Claims Free Spin', reward: '1 Free Spin' },
-        { milestone: 'Friend buys 1 draft', reward: '1 Free Spin' },
-        { milestone: 'Friend buys 10 drafts', reward: '1 Free Spin' },
+        { milestone: 'Friend buys their 1st draft pass', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend reaches 4 passes total', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend reaches 10 passes total', reward: '1 Free Banana Spin' },
       ],
       referralHistory: [],
     },
@@ -266,7 +293,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Tweet Engagement Rewards',
       explanation:
-        'Engage with the SBS launch tweet (like, repost, or meaningful reply) to earn a Banana Wheel spin. Claims are one-time per campaign and reviewed for abuse prevention.',
+        '• Engage with the SBS launch tweet (like, repost, or meaningful reply) to earn a Free Banana Spin.\n• Claims are one-time per campaign and reviewed for abuse prevention.',
       additionalRules: 'One reward per user per campaign. Low-quality spam engagement may be denied.',
       twitterConnected: false,
     },
@@ -275,24 +302,50 @@ const seedPromos: Promo[] = [
     id: '6',
     type: 'new-user',
     title: 'New User → FREE SPIN',
-    description: 'Connect Twitter to claim',
+    description: 'Connect your X to claim your free spin',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
+    // NEW ribbon (Boris 2026-07-12). Display-only; promoFilter force-sets it
+    // for 'new-user' so already-seeded accounts get the ribbon too.
+    isNew: true,
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'New User Bonus SPIN',
+      title: 'New User → FREE SPIN',
       explanation:
-        'Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.',
+        '• Verify your account by connecting your X to claim your Free Banana Spin.\n• Then spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
+      additionalRules: '',
       twitterConnected: false,
+    },
+  },
+  {
+    id: '11',
+    type: 'first-purchase',
+    title: 'First Purchase → WIN UP TO 40 FREE DRAFTS',
+    description: 'Every Pass = 2 Free Spins · Buy 1 → 2 Free Drafts GTD, up to 40 Free Drafts ($1,000 in Drafts)',
+    ctaText: 'Buy Drafts',
+    ctaLink: '/buy-drafts',
+    backgroundColor: '#2a2a35',
+    // NEW ribbon since 2026-07-06. This seed carries the NEW-PLAYER variant
+    // (2026-07-10: every pass = 2 spins, $1K framing); RETURNING players get
+    // the classic copy + classic rate overlaid server-side in getPromos /
+    // _incrementMintPromosInTx. isNew is display-only (self-ping removed).
+    // promoFilter also force-sets isNew for 'first-purchase'.
+    isNew: true,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Every Pass = 2 Free Spins — win up to 40 Free Drafts ($1,000 in Drafts)',
+      explanation:
+        '• Every Draft Pass you buy = 2 Free Spins — no cap.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
     },
   },
   {
     id: '1',
     type: 'daily-drafts',
-    title: '4 Drafts Daily → FREE SPIN',
-    description: 'Complete 4 drafts today for a spin',
+    title: '4 Drafts in 24 Hours → FREE SPIN',
+    description: 'Complete 4 paid drafts in 24 hours for a Free Spin',
     ctaText: 'Start Drafting',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
@@ -301,9 +354,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: '4 Drafts Daily → FREE SPIN',
+      title: '4 Drafts in 24 Hours → FREE SPIN',
       explanation:
-        'Complete 4 drafts within 24 hours to earn a free Banana Wheel spin. Your 24-hour timer starts when you begin your first draft. Once you complete 4 drafts, your progress and timer reset so you can earn another spin!',
+        '• Get into 4 paid drafts within 24 hours to earn a Free Banana Spin.\n• A draft counts as soon as it fills — not when it finishes.\n• Your 24-hour clock starts the moment your first paid draft fills.\n• Hit 4 in time and the clock resets instantly for a fresh run — no limit, every 4 paid drafts earns another Spin.\n• If 24 hours pass before you reach 4, your progress toward the spin resets to 0 and the clock restarts when your next paid draft fills.\n• Paid drafts only.',
     },
   },
   {
@@ -320,28 +373,31 @@ const seedPromos: Promo[] = [
     claimCount: 0,
     modalContent: {
       title: 'Buy 10 → FREE SPIN',
-      explanation:
-        'Purchase 10 draft passes to earn a Banana Wheel spin. This keeps stacking - buy 20 passes and get 2 spins or 30 passes for 3 spins and so on!',
+      explanation: 'For every 10 drafts purchased, you get a Free Banana Spin.',
       totalMinted: 0,
     },
   },
   {
     id: '7',
     type: 'buy-bonus',
-    title: 'Buy 2 → 1 Free',
-    description: 'Limited time offer!',
+    title: 'Buy 2 → FREE SPIN',
+    description: 'July 4th Weekend only!',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
+    // Visual NEW ribbon (big featured treatment while FEATURED_PROMO_TYPE =
+    // 'buy-bonus'). SAFE again as of 2026-07-03: the isNew client self-ping
+    // was deleted (double-bell fix) — the flag is display-only now; the launch
+    // announcement stays broadcast-only.
     isNew: true,
     claimable: false,
     claimCount: 0,
     progressCurrent: 0,
     progressMax: 2,
     modalContent: {
-      title: 'Buy 2 → 1 Free Draft',
+      title: '🇺🇸 July 4th: Buy 2 → FREE SPIN',
       explanation:
-        'For a limited time purchase 2 draft passes and receive 1 additional free draft pass! This offer applies to every 2 passes purchased.',
+        '• July 4th Weekend special: every 2 draft passes purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• No limit — buy 4 passes, earn 2 spins.\n• This weekend only!',
     },
   },
   {
@@ -359,9 +415,8 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Share Big Wins → FREE SPIN',
       explanation:
-        'Share your Jackpot, HOF, or 5+ draft wins on X. Every 3 verified shares earns you a free Banana Wheel spin. Small wins can still be shared for bragging rights but don\'t count toward the free spin.',
-      additionalRules:
-        'You need to link your X account in your profile. After tweeting, it may take up to a minute for us to verify. Each spin can only be shared once.',
+        '• Share your Jackpot, HOF, or 5+ draft wins on X.\n• Every 3 verified shares earns you a Free Banana Spin.\n• Small wins can still be shared for bragging rights but don\'t count toward the Spin.\n• Link your X account in your profile first — verification can take up to a minute after tweeting.',
+      additionalRules: '',
     },
   },
   {
@@ -370,14 +425,14 @@ const seedPromos: Promo[] = [
     title: 'Jackpot Hit → FREE SPIN',
     description: 'Win a Jackpot draft for a bonus',
     ctaText: 'View Drafts',
-    ctaLink: '/standings',
+    ctaLink: '/my-teams',
     backgroundColor: '#2a2a35',
     progressCurrent: 0,
     progressMax: 1,
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
       explanation:
-        '• 1 Jackpot draft in every 100 drafts\n\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 free spins\n\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 free spins\n\n• Cycle resets after every 100 drafts\n\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!',
+        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• Cycle resets after every 100 drafts\n• Winner drawn from VRF randomness sealed on-chain before the draft exists — every draw posts an instant on-chain receipt\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
       jackpotHistory: [],
     },
   },
@@ -387,7 +442,7 @@ const seedPromos: Promo[] = [
     title: 'Founder Draft → FREE SPIN',
     description: 'Join a draft with the founder for a free spin',
     ctaText: 'View Drafts',
-    ctaLink: '/standings',
+    ctaLink: '/my-teams',
     backgroundColor: '#2a2a35',
     progressCurrent: 0,
     progressMax: 1,
@@ -396,25 +451,8 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Founder Draft → FREE SPIN',
       explanation:
-        '• Founder Draft happens every week at the same time\n\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 free spin to claim\n\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
+        '• Founder Draft happens every week at the same time\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n• Every drafter in the Founder Draft earns 1 Free Banana Spin to claim\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
       founderHistory: [],
-    },
-  },
-  {
-    id: 'pwa-install-promo',
-    type: 'add-to-home-screen',
-    title: 'Install SBS — Win 5 Free Spins',
-    description: 'Add to your home screen within 48hrs. 1 random winner gets 5 free spins!',
-    ctaText: 'Install',
-    ctaLink: '#',
-    backgroundColor: '#1a1a2e',
-    claimable: false,
-    isNew: true,
-    timerEndTime: '',
-    modalContent: {
-      title: 'Install SBS — Win Free Spins',
-      explanation:
-        'Add Banana Fantasy to your home screen for a chance to win 5 free spins. 1 random winner chosen after the timer ends.',
     },
   },
 ];

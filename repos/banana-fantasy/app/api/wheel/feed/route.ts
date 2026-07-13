@@ -19,7 +19,9 @@ import { logger } from '@/lib/logger';
  * no reason to batch them.
  */
 export async function GET(req: Request) {
-  const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
+  // Read route polled by the wheel page — general limit (60/min), not the
+  // tight spin bucket, so polling doesn't eat the user's spin budget.
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
     const url = new URL(req.url);

@@ -239,6 +239,15 @@ async function readIdentity(wallet: string) {
       hofEntries: typeof d.hofEntries === 'number' ? d.hofEntries : 0,
       cardPurchaseCount:
         typeof d.cardPurchaseCount === 'number' ? d.cardPurchaseCount : 0,
+      cardFeeCreditCents:
+        typeof d.cardFeeCreditCents === 'number' ? d.cardFeeCreditCents : 0,
+    },
+    // First-purchase / wheel promo gating flags — so the admin can verify the
+    // flow state (and that "Reset promo flags" worked) at a glance.
+    promoState: {
+      firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
+      hasSpunWheel: !!d.hasSpunWheel,
     },
     // Money — pulled from the Go owner endpoint. Boris's ask: "do they
     // have money in their account or card all their txns their history."
@@ -379,8 +388,7 @@ interface TeamRow {
 async function readUserTeams(wallet: string, gameweek: string): Promise<TeamRow[] | null> {
   const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
   const base =
-    process.env.NEXT_PUBLIC_DRAFTS_API_URL
-    || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
     || process.env.STAGING_DRAFTS_API_URL
     || STAGING_FALLBACK;
 

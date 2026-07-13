@@ -3,23 +3,34 @@
 import React, { useState, useEffect } from 'react';
 import { POSITION_COLORS, ALL_POSITIONS } from '@/lib/draftRoomConstants';
 import type { PositionRoster, DraftPick } from '@/lib/draftRoomConstants';
-import type { DraftPlayer } from '@/hooks/useDraftEngine';
+import type { DraftPlayer, PlayerStat } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { getTruncatedAccountName } from '@/utils/helpers';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 interface DraftRosterProps {
   draftOrder: DraftPlayer[];
   rosters: Record<string, PositionRoster>;
   picks: DraftPick[];
+  /** Live ADP/bye/rank per player from the engine (server source). Preferred
+   *  over the static ALL_POSITIONS so the roster tab never shows a stale ADP. */
+  playerStatsById?: Record<string, PlayerStat>;
   userDraftPosition: number;
   initialPlayer?: string; // Pre-select a specific player's roster
   userProfilePicture?: string;
   userName?: string;
   userEquippedBadge?: string | null;
+  userRipeness?: import('@/types').Ripeness | null;
+  /** Live wallet→identity map (edited name/pfp/badge if set, on-brand Banana
+   *  default otherwise) — same source the team-switcher tabs use. Lets OTHER
+   *  teams in the dropdown/header show their real name + pfp instead of a bare
+   *  Banana # default. Purely cosmetic; never affects roster/pick data. */
+  usersMap?: DraftRoomUsersMap;
 }
 
 const POSITION_KEYS: (keyof PositionRoster)[] = ['QB', 'RB', 'WR', 'TE', 'DST'];
 
-export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge }: DraftRosterProps) {
+export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness, usersMap }: DraftRosterProps) {
   const [selectedPlayer, setSelectedPlayer] = useState(
     initialPlayer || draftOrder[userDraftPosition]?.name || draftOrder[0]?.name || ''
   );
@@ -31,15 +42,23 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
 
   const roster = rosters[selectedPlayer];
 
+  // Resolve a drafter's live identity (edited name/pfp/badge if set, else the
+  // on-brand Banana default) from the shared usersMap — same source the
+  // team-switcher tabs use. Self is handled separately (Your Team + own pfp).
+  const userFor = (wallet?: string) => (wallet ? usersMap?.[wallet.toLowerCase()] : undefined);
+
   // Find the display name for the selected player
   const selectedDraftPlayer = draftOrder.find(p => p.name === selectedPlayer);
-  const rawName = selectedDraftPlayer?.isYou && userName
+  const selectedUser = !selectedDraftPlayer?.isYou ? userFor(selectedDraftPlayer?.name || selectedPlayer) : undefined;
+  // Never surface a wallet: prefer the live resolved name (edited username when
+  // set), then any engine displayName, otherwise the on-brand Banana # default.
+  const displayName = selectedDraftPlayer?.isYou && userName
     ? userName
-    : selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer;
-  // Shorten wallet addresses: 0xd330...9362
-  const displayName = rawName.startsWith('0x') && rawName.length > 12
-    ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}`
-    : rawName;
+    : (selectedUser?.displayName
+        || getTruncatedAccountName(
+            selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer,
+            selectedDraftPlayer?.name || selectedPlayer,
+          ));
 
   // Count players per position
   const positionCounts: Record<string, number> = {};
@@ -53,7 +72,17 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
   };
 
   const getPlayerData = (playerId: string) => {
-    return ALL_POSITIONS.find(p => p.playerId === playerId);
+    const base = ALL_POSITIONS.find(p => p.playerId === playerId);
+    // Prefer LIVE server ADP/bye/rank (matches the board + results page); fall
+    // back to the static baseline only when the live map lacks this id.
+    const live = playerStatsById?.[playerId];
+    if (!live) return base;
+    return {
+      ...(base ?? { playerId, team: '', position: '', playersFromTeam: [] as string[] }),
+      adp: live.adp,
+      rank: live.rank,
+      byeWeek: live.byeWeek,
+    };
   };
 
   return (
@@ -71,10 +100,9 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
         }}
       >
         {draftOrder.map(p => {
-          const label = p.isYou ? 'Your Team' : p.displayName || p.name;
-          const shortLabel = label.startsWith('0x') && label.length > 12
-            ? `${label.slice(0, 6)}...${label.slice(-4)}`
-            : label;
+          const shortLabel = p.isYou
+            ? 'Your Team'
+            : (userFor(p.name)?.displayName || getTruncatedAccountName(p.displayName || p.name, p.name));
           return (
             <option key={p.id} value={p.name} className="bg-[#1a1a24] font-bold">
               {shortLabel}
@@ -91,17 +119,33 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
         {selectedDraftPlayer?.isYou ? (
           <div style={{ margin: '10px auto', display: 'flex', justifyContent: 'center' }}>
             <AvatarWithBadge
-              imageUrl={userProfilePicture || '/banana-profile.png'}
+              // Prefer your live auth pfp, then the same usersMap pfp everyone
+              // else resolves from (so "Your Team" never drops to the plain
+              // banana when the auth pic is momentarily empty), then default.
+              imageUrl={userProfilePicture || userFor(selectedDraftPlayer?.name)?.imageUrl || '/banana-profile.png'}
               alt="You"
               size={40}
               equippedBadge={userEquippedBadge}
+              ripeness={userRipeness}
               useNextImage={false}
-              className="border border-[#777]"
+              className=""
             />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src="/banana-profile.png" alt="Player" style={{ width: 40, height: 40, borderRadius: '50%', margin: '10px auto', border: '1px solid #777' }} />
+          // Other teams: live pfp + badge from usersMap (edited or on-brand
+          // Banana default), same as the team-switcher tabs. Falls back to the
+          // default banana when identity hasn't resolved yet.
+          <div style={{ margin: '10px auto', display: 'flex', justifyContent: 'center' }}>
+            <AvatarWithBadge
+              imageUrl={selectedUser?.imageUrl || '/banana-profile.png'}
+              alt={displayName || 'Player'}
+              size={40}
+              equippedBadge={selectedUser?.equippedBadge}
+              ripeness={selectedUser?.ripeness}
+              useNextImage={false}
+              className=""
+            />
+          </div>
         )}
 
         {/* Display name */}

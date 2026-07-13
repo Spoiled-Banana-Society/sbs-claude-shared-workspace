@@ -28,7 +28,50 @@ const nextConfig = {
         hostname: 'storage.googleapis.com',
         pathname: '/sbs-draft-token-images/**',
       },
+      {
+        // Uploaded user profile pictures. Without this, any avatar rendered via
+        // next/image (header/profile, useNextImage=true) 400s and falls back to
+        // the banana. The draft room uses a plain <img> so it's unaffected, but
+        // these surfaces need the bucket path whitelisted.
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+        pathname: '/sbs-staging-pfps/**',
+      },
+      {
+        // Our own /api/og/team-card obsidian card images (NFT card art).
+        protocol: 'https',
+        hostname: '*.vercel.app',
+        pathname: '/api/og/**',
+      },
+      {
+        // Same og card images when the build serves the custom launch domain
+        // (NEXT_PUBLIC_SITE_URL=https://sbsfantasy.com → og URLs point here).
+        // Without these the optimizer 400s every card → black marketplace tiles.
+        protocol: 'https',
+        hostname: 'sbsfantasy.com',
+        pathname: '/api/og/**',
+      },
+      {
+        // www + staging.sbsfantasy.com (same build, custom subdomains).
+        protocol: 'https',
+        hostname: '**.sbsfantasy.com',
+        pathname: '/api/og/**',
+      },
     ],
+  },
+  async redirects() {
+    return [
+      // Route renames — keep old URLs working for bookmarks / shared links and
+      // existing notification deep-links (query strings are preserved).
+      // /drafting → /draft and /my-teams → /teams (shorter, match the nav).
+      { source: '/drafting', destination: '/draft', permanent: false },
+      { source: '/my-teams', destination: '/teams', permanent: false },
+      // The Teams page was /standings → /my-teams → now /teams. Point the
+      // oldest alias straight at /teams so there's no double redirect.
+      { source: '/standings', destination: '/teams', permanent: false },
+      // The Prizes page moved from /prizes → /winnings (same reasoning).
+      { source: '/prizes', destination: '/winnings', permanent: false },
+    ];
   },
   async headers() {
     return [
@@ -64,7 +107,11 @@ export default withSentryConfig(nextConfig, {
   // Quieter build logs — Sentry's defaults are noisy. Errors still surface.
   silent: !process.env.CI,
   // Source maps need to be uploaded but NOT served publicly (privacy).
-  widenClientFileUpload: true,
+  // widenClientFileUpload uploads a BROADER set of source maps (prettier
+  // stack traces) at the cost of extra build memory/time. Disabled because
+  // the broadened pass was contributing to Vercel build OOM (SIGKILL).
+  // Core source maps are still uploaded — traces stay readable.
+  widenClientFileUpload: false,
   hideSourceMaps: true,
   disableLogger: true,
   // Tunnel Sentry client-side traffic through a Next route to bypass

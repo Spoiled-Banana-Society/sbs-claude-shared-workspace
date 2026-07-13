@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getLastPath, isTeamDetailPath } from '@/lib/navHistory';
 import { useFundWallet, useSendTransaction, useWallets } from '@privy-io/react-auth';
 import { useNotifications } from '@/components/NotificationCenter';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
@@ -11,19 +12,21 @@ import { BuyTab } from '@/app/components/marketplace/BuyTab';
 import { SellTab } from '@/app/components/marketplace/SellTab';
 import { SweepModal } from '@/app/components/marketplace/SweepModal';
 import { WatchlistTab } from '@/app/components/marketplace/WatchlistTab';
+import { OffersMadeTab } from '@/app/components/marketplace/OffersMadeTab';
 import { useAuth } from '@/hooks/useAuth';
-import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
+import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyMadeOffers, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isDraftingOpen } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
+import { friendlyTxError } from '@/lib/marketplace/txErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { Address } from 'viem';
 
-type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist';
-type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
+type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist' | 'offers';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type SweepStep = 'confirm' | 'processing' | 'complete';
@@ -64,7 +67,8 @@ export default function MarketplacePage() {
     if (selectedWallet.walletClientType === 'privy') {
       const receipt = await sendTransaction(
         txRequest,
-        { sponsor: true, uiOptions: { description: opts.description } },
+        // Embedded (web2) wallets sign silently — zero-friction buy/sell/offer.
+        { sponsor: true, uiOptions: { description: opts.description, showWalletUIs: false } },
       );
       const r = receipt as Record<string, unknown>;
       return { hash: String(r.hash ?? r.transactionHash ?? '') };
@@ -87,11 +91,56 @@ export default function MarketplacePage() {
     return { hash: tx.hash };
   }, [selectedWallet, sendTransaction]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('buy');
+  // Cancel one or many of the user's own offers in a SINGLE transaction (Seaport
+  // cancel takes an order array). Powers the My Offers tab's Cancel / Cancel All.
+  const handleCancelMadeOffers = useCallback(async (orderHashes: string[]): Promise<boolean> => {
+    if (!walletAddress || orderHashes.length === 0) return false;
+    try {
+      const res = await fetch('/api/marketplace/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHashes, type: 'offer' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Cancel failed' }));
+        throw new Error(err.error || `Cancel failed: ${res.status}`);
+      }
+      const tx = await res.json();
+      await sendTx(
+        { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: orderHashes.length > 1 ? `Cancel ${orderHashes.length} offers in one go — fees covered by SBS` : 'Cancel your offer — fees covered by SBS' },
+      );
+      // Mark each consumed so it stops showing during OpenSea's indexing lag.
+      for (const orderHash of orderHashes) {
+        void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash }) }).catch(() => {});
+      }
+      return true;
+    } catch (err) {
+      addNotification({ type: 'system', title: 'Cancel failed', message: friendlyTxError(err, 'Could not cancel your offers. Please try again.') });
+      return false;
+    }
+  }, [walletAddress, sendTx, addNotification]);
+
+  const [activeTab, setActiveTab] = useState<TabKey>('sell');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
   const [hofFilter] = useState(false);
   const [jackpotFilter] = useState(false);
   const [rosterFilter, setRosterFilter] = useState<string[]>([]);
+  const [leagueFilter, setLeagueFilter] = useState<number | null>(null);
+  const [teamFilter, setTeamFilter] = useState<number | null>(null);
+
+  // Searching by League # / Team # only makes sense across the whole collection
+  // — on the "Listed" tab (or JP/HOF/Top) a number search would silently return
+  // nothing unless that exact team happens to be listed. So entering a number
+  // auto-switches the view to "All Teams" so the result actually shows.
+  const searchLeague = useCallback((n: number | null) => {
+    setLeagueFilter(n);
+    if (n != null) setViewFilter('all');
+  }, []);
+  const searchTeam = useCallback((n: number | null) => {
+    setTeamFilter(n);
+    if (n != null) setViewFilter('all');
+  }, []);
   const [sortBy, setSortBy] = useState('price-low');
   const [selectedTeam, setSelectedTeam] = useState<MarketplaceTeam | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -118,16 +167,84 @@ export default function MarketplacePage() {
   const [cancellingTokenId, setCancellingTokenId] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
+  // Restore the tab + view from the URL ONCE on load, so a refresh/hard-refresh
+  // keeps you on the same page instead of bouncing to the default.
+  const didInitFromUrl = useRef(false);
   useEffect(() => {
+    if (didInitFromUrl.current) return;
+    didInitFromUrl.current = true;
     const tabParam = searchParams?.get('tab');
-    if (tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
+    if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist' || tabParam === 'offers') setActiveTab(tabParam);
+    const viewParam = searchParams?.get('view');
+    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'pro' || viewParam === 'jackpot' || viewParam === 'hof' || viewParam === 'passes') setViewFilter(viewParam);
   }, [searchParams]);
+
+  // Persist the current tab + view to the URL so a reload restores them.
+  useEffect(() => {
+    if (!didInitFromUrl.current) return;
+    const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+    params.set('tab', activeTab);
+    params.set('view', viewFilter);
+    router.replace(`/marketplace?${params.toString()}`, { scroll: false });
+    // searchParams intentionally omitted — only re-sync when tab/view change,
+    // else the router.replace below would re-fire this effect in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, viewFilter]);
+
+  // Live wheel-won JP/HOF passes in filling rounds — appear in Buy views the
+  // moment the wheel mints them, listed or not. Plain fetch, scalar-free deps
+  // (Rule #0). 5s poll (same cadence as the drafting page queue poll) so the
+  // "In draft lobby — X/10" count is live and a fill delists within seconds.
+  const [wheelPasses, setWheelPasses] = useState<MarketplaceTeam[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch('/api/marketplace/wheel-passes')
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (!cancelled && d?.passes) setWheelPasses(d.passes); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 5_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // Keep an OPEN buy modal's wheel-pass lobby count live: each 5s poll grafts
+  // the fresh X/10 onto selectedTeam (functional update — no extra deps).
+  useEffect(() => {
+    setSelectedTeam(prev => {
+      if (!prev?.fillingWheelLevel) return prev;
+      const wp = wheelPasses.find(p => p.tokenId === prev.tokenId);
+      if (!wp || wp.lobbyCount === prev.lobbyCount) return prev;
+      return { ...prev, lobbyCount: wp.lobbyCount };
+    });
+  }, [wheelPasses]);
+
+  // Live tab counts (drafted teams / Jackpot / HOF) from the backend index.
+  const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; pro?: number; jackpot?: number; hof?: number } | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/marketplace/stats')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d) setMarketplaceStats({ all: d.teams, pro: d.pro, jackpot: d.jackpot, hof: d.hof }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
     };
+  }, []);
+
+  // Bail out of a card buy that's stuck waiting on MoonPay funds (user backed
+  // out) — stops the funds-polling loop and closes the modal.
+  const cancelBuy = useCallback(() => {
+    cancelledRef.current = true;
+    setCardFlowStep('idle');
+    setBuyStep('confirm');
+    setShowBuyModal(false);
   }, []);
 
   const { data: collectionStats, isLoading: statsLoading } = useCollectionStats();
@@ -142,11 +259,17 @@ export default function MarketplacePage() {
   const currentSort = sortMap[sortBy] || sortMap['price-low'];
 
   const { data: listings, isLoading: listingsLoading, hasMore, loadMore, refetch: refetchListings } = useListings(currentSort.sort, currentSort.direction);
-  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts();
-  const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts } = useMyNfts(isLoggedIn ? walletAddress : null);
-  const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
+  // Jackpot/HOF are too rare to surface in a paged browse, so for those filters
+  // we ask the server to scan the whole collection by level and return the full
+  // set. Other views stay paged.
+  const collectionLevel = viewFilter === 'jackpot' ? 'jackpot' : viewFilter === 'hof' ? 'hof' : null;
+  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel, leagueFilter, teamFilter);
+  const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
+  const [activityScope, setActivityScope] = useState<'mine' | 'all'>('mine');
+  const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null, activityScope);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
   const { watchlist, watchlistSet, toggle: toggleWatchlist } = useWatchlist(isLoggedIn ? walletAddress : null);
+  const myMadeOffers = useMyMadeOffers(isLoggedIn ? walletAddress : null);
 
   const enrichedListings = useMemo(() => {
     if (!walletAddress || !user) return listings;
@@ -156,10 +279,34 @@ export default function MarketplacePage() {
   }, [listings, walletAddress, user]);
 
   const baseTeams = useMemo(() => {
-    if (viewFilter === 'all') return allNfts;
-    if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
+    // A League # filter is backend-sourced (allNfts = that league's teams). On
+    // the Listed tab it must still mean "listed", so intersect with active
+    // listings (orderHash present) — otherwise it leaked unlisted league teams
+    // into Listed. On the other tabs it shows the whole league.
+    // A Team # or League # filter is backend-sourced (allNfts = just those
+    // teams). On the Listed tab it must still mean "listed", so intersect with
+    // active listings; on other tabs show the filtered set as-is.
+    if (teamFilter != null || leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
+    // Wheel passes merge into browse views; a LISTED copy (price/orderHash)
+    // always wins over the queue-sourced one — but the queue copy carries the
+    // LIVE lobby count (5s poll), so graft that onto the listed copy too.
+    const withWheel = (teams: MarketplaceTeam[]) => {
+      const byId = new Map(wheelPasses.map(p => [p.tokenId, p]));
+      const merged = teams.map(t => {
+        const wp = byId.get(t.tokenId);
+        return wp ? { ...t, fillingWheelLevel: t.fillingWheelLevel ?? wp.fillingWheelLevel, lobbyCount: wp.lobbyCount } : t;
+      });
+      const have = new Set(teams.map(t => t.tokenId));
+      return merged.concat(wheelPasses.filter(p => !have.has(p.tokenId)));
+    };
+    // 'pro' reuses the fast paged full collection (like 'all') and filters out
+    // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).
+    if (viewFilter === 'passes') return withWheel(enrichedListings);
+    if (viewFilter === 'all') return withWheel(allNfts.concat(enrichedListings.filter(l => !allNfts.some(n => n.tokenId === l.tokenId))));
+    if (viewFilter === 'pro') return allNfts;
+    if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return withWheel(enrichedListings.concat(allNfts.filter(team => !team.orderHash)));
     return enrichedListings;
-  }, [viewFilter, enrichedListings, allNfts]);
+  }, [viewFilter, enrichedListings, allNfts, leagueFilter, teamFilter, wheelPasses]);
 
   // Closed list of valid filter chips: every roster slot seen across the
   // currently visible team set + bare team codes. Restricts the chip
@@ -177,9 +324,32 @@ export default function MarketplacePage() {
   }, [baseTeams]);
 
   const filteredTeams = useMemo(() => baseTeams.filter(team => {
-    if (viewFilter === 'jackpot' && !team.isJackpot) return false;
-    if (viewFilter === 'hof' && !team.isHof) return false;
-    if (viewFilter === 'top' && team.points <= 0) return false;
+    // Marketplace shows drafted TEAMS only — hide undrafted passes (no roster).
+    // A pass gains a roster once drafted, at which point it shows up as a team.
+    // EXCEPTION: an actively-LISTED pass (orderHash) is intentionally for sale —
+    // a wheel-won JP/HOF pass sellable while its draft fills. The server only
+    // lets wheel passes list, so "listed + no roster" is always a valid wheel
+    // pass that buyers must be able to see and purchase.
+    if (team.roster.length === 0 && !team.orderHash && !team.fillingWheelLevel) return false;
+    // Passes (anything without a drafted roster — wheel JP/HOF passes mid-fill,
+    // listed passes) live ONLY in the Passes tab. Every other view (Listed, All,
+    // Pro, Jackpot, HOF, Top) shows drafted TEAMS only. A pass becomes a team
+    // (gets a roster) when its draft fills, and then it shows in the tier views.
+    const isPass = team.roster.length === 0;
+    if (viewFilter === 'passes') {
+      if (!isPass) return false;
+    } else if (isPass) {
+      return false;
+    }
+    const isJp = team.isJackpot || team.fillingWheelLevel === 'jackpot';
+    const isHof = team.isHof || team.fillingWheelLevel === 'hof';
+    if (viewFilter === 'jackpot' && !isJp) return false;
+    if (viewFilter === 'hof' && !isHof) return false;
+    if (viewFilter === 'pro' && (isJp || isHof)) return false;
+    // Top Teams = only teams with real accrued points. Pre-season every team has
+    // 0/undefined points, so this empties Top Teams until games start (an
+    // undefined `points` must also be excluded — `undefined <= 0` is false).
+    if (viewFilter === 'top' && !(team.points > 0)) return false;
     if (viewFilter === 'listed' || viewFilter === 'all') {
       if (hofFilter && !team.isHof) return false;
       if (jackpotFilter && !team.isJackpot) return false;
@@ -256,6 +426,34 @@ export default function MarketplacePage() {
     });
   }, [requireLogin]);
 
+  // Scroll-position memory: open a team from anywhere in the grid, and pressing
+  // "Back to Marketplace" returns you to the exact spot you were scrolled to —
+  // but arriving fresh (nav menu, or coming back after leaving) starts at the top.
+  // We stash scrollY on card-open; the detail page's Back button "arms" the
+  // restore, so only an explicit return restores (see [tokenId]/page.tsx).
+  const navigateToTeam = useCallback((tokenId: string, suffix = '') => {
+    try { sessionStorage.setItem('mkt:scrollY', String(window.scrollY)); } catch { /* ignore */ }
+    router.push(`/marketplace/${tokenId}${suffix}`);
+  }, [router]);
+
+  useEffect(() => {
+    // Restore scroll ONLY when we arrived from a team page (works for the in-page
+    // "Back to Marketplace" link, the browser back arrow, and the swipe gesture
+    // alike). Arriving from anywhere else → start at the top.
+    const cameFromTeam = isTeamDetailPath(getLastPath());
+    if (!cameFromTeam) {
+      try { sessionStorage.removeItem('mkt:scrollY'); } catch { /* ignore */ }
+      return;
+    }
+    let y = 0;
+    try { y = Number(sessionStorage.getItem('mkt:scrollY') || '0'); sessionStorage.removeItem('mkt:scrollY'); } catch { /* ignore */ }
+    if (y > 0) {
+      // Cards paint instantly from the in-memory cache on back, so the page has
+      // its height — restore after a couple frames so layout has settled.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+    }
+  }, []);
+
   const openSellModal = useCallback((team: MarketplaceTeam) => {
     setSelectedTeam(team);
     setListPrice('');
@@ -275,13 +473,59 @@ export default function MarketplacePage() {
   const executeBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
 
-    const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
-    const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
-    const receipt = await sendTx(
-      { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { description: 'Purchase NFT — gas fees covered by SBS' },
-    );
-    const txHash = receipt.hash;
+    let txHash: string;
+    if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+      // External wallet (MetaMask, Coinbase, …): gasless relay. One free
+      // permit signature; the server pulls the USDC and fulfills the Seaport
+      // order with the NFT delivered straight to this wallet. No conduit
+      // approval and no ETH needed. The float price rounds UP a cent of
+      // headroom — the server only pulls the exact order total.
+      const { relayBuyExternal } = await import('@/lib/marketplace/relay');
+      const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6)) + 10_000n;
+      const receipt = await relayBuyExternal({
+        wallet: selectedWallet,
+        orderHash: selectedTeam.orderHash,
+        protocolAddress: selectedTeam.protocolAddress,
+        priceWei: priceUsdcWei,
+      });
+      txHash = receipt.hash;
+    } else {
+      // USDC-denominated Seaport orders pull the buyer's USDC THROUGH the OpenSea
+      // conduit, so the buyer must approve USDC for it before fulfilling. A
+      // first-time buyer has zero allowance → the fulfillment reverts. Check the
+      // allowance and approve once if it's short.
+      const { ethers } = await import('ethers');
+      const { USDC_BASE } = await import('@/lib/opensea');
+      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+      const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6));
+      const erc20 = new ethers.Interface([
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)',
+      ]);
+      const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+      const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
+      });
+      const allowanceJson = await allowanceRes.json();
+      const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
+      if (currentAllowance < priceUsdcWei) {
+        const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
+        await sendTx(
+          { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
+          { description: 'Approve USDC for your purchase', waitForReceipt: true },
+        );
+      }
+
+      const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+      const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
+      const receipt = await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Purchase NFT — gas fees covered by SBS' },
+      );
+      txHash = receipt.hash;
+    }
     logger.debug('[Marketplace] Buy tx:', txHash);
 
     if (selectedTeam.ownerAddress) {
@@ -291,6 +535,7 @@ export default function MarketplacePage() {
         teamName: selectedTeam.name,
         price: selectedTeam.price || 0,
         buyerWallet: walletAddress,
+        txHash: txHash ? String(txHash) : undefined,
       });
     }
 
@@ -307,11 +552,34 @@ export default function MarketplacePage() {
     });
 
     return txHash;
-  }, [addNotification, selectedTeam, sendTx, walletAddress]);
+  }, [addNotification, selectedTeam, sendTx, walletAddress, selectedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
     const price = selectedTeam.price || 0;
+
+    // Bought a still-filling wheel pass → move its queue slot to us (server
+    // verifies on-chain ownership) so the draft shows on our drafting page.
+    const reassignFillingPassIfNeeded = async () => {
+      if (!selectedTeam.fillingWheelLevel || !walletAddress) return;
+      try {
+        await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId: selectedTeam.tokenId, wallet: walletAddress }) });
+      } catch { /* best-effort */ }
+    };
+
+    // The purchase FULFILLS (consumes) the seller's order — but unlike a cancel,
+    // nothing told our listing cache it's dead, so the bought item kept showing
+    // "Listed $X" for the buyer. Mark it consumed (keyed by tokenId) + clear it
+    // locally so it reads as unlisted immediately.
+    const markListingConsumed = async () => {
+      try {
+        await fetch('/api/marketplace/listings/cancelled', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokenId: selectedTeam.tokenId, wallet: selectedTeam.ownerAddress || walletAddress }),
+        });
+      } catch { /* best-effort */ }
+      patchMyNftListing(selectedTeam.tokenId, null);
+    };
 
     if (paymentMethod === 'usdc') {
       setBuyStep('processing');
@@ -326,6 +594,8 @@ export default function MarketplacePage() {
         }
 
         await executeBuy();
+        await reassignFillingPassIfNeeded();
+        await markListingConsumed();
         setBuyStep('complete');
         setTimeout(() => {
           setShowBuyModal(false);
@@ -344,20 +614,21 @@ export default function MarketplacePage() {
           context: { tokenId: selectedTeam.tokenId, orderHash: selectedTeam.orderHash, price, paymentMethod: 'usdc' },
           stack: error instanceof Error ? error.stack : undefined,
         });
-        setTxError(error instanceof Error ? error.message : 'Transaction failed');
+        setTxError(friendlyTxError(error, 'Purchase failed. Please try again.'));
         setBuyStep('confirm');
       }
       return;
     }
 
     setTxError(null);
+    cancelledRef.current = false; // fresh attempt — clear any prior cancel
     setCardFlowStep('funding');
     setBuyStep('processing');
 
     try {
       const result = await fundWallet({
         address: walletAddress,
-        options: { chain: BASE_SEPOLIA, amount: String(price), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+        options: { chain: BASE_SEPOLIA, amount: String(price), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
       });
 
       if (result.status === 'cancelled') {
@@ -387,6 +658,8 @@ export default function MarketplacePage() {
 
       setCardFlowStep('buying');
       await executeBuy();
+      await reassignFillingPassIfNeeded();
+      await markListingConsumed();
       setBuyStep('complete');
       setCardFlowStep('idle');
       setTimeout(() => {
@@ -406,17 +679,26 @@ export default function MarketplacePage() {
         context: { tokenId: selectedTeam.tokenId, orderHash: selectedTeam.orderHash, price, paymentMethod: 'card', cardFlowStep },
         stack: error instanceof Error ? error.stack : undefined,
       });
-      setTxError(error instanceof Error ? error.message : 'Payment failed');
+      setTxError(friendlyTxError(error, 'Payment failed. Please try again.'));
       setBuyStep('confirm');
       setCardFlowStep('idle');
     }
-  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, walletAddress, cardFlowStep]);
+  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, patchMyNftListing, selectedTeam, walletAddress, cardFlowStep]);
 
   const handleList = useCallback(async () => {
     if (!selectedTeam || !walletAddress || !listPrice) return;
     setTxError(null);
 
-    if (selectedTeam.passType === 'free' && isDraftingOpen()) {
+    // A free pass can't be listed until it's drafted into a real team — but a
+    // drafted free team (hasBackendRecord) and a wheel-won pass that's still in a
+    // FILLING lobby ARE sellable. Mirror SellTab.canSellTeam + the server guard,
+    // otherwise the modal SellTab opened for those bounces back here and never lists.
+    if (
+      selectedTeam.passType === 'free' &&
+      isDraftingOpen() &&
+      !selectedTeam.fillingWheelLevel &&
+      selectedTeam.hasBackendRecord !== true
+    ) {
       setShowSellModal(false);
       setShowFreePassInfo('team');
       return;
@@ -451,6 +733,12 @@ export default function MarketplacePage() {
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
       if (!isApproved) {
+        if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+          // External wallet: we pay the gas — fund the exact shortfall
+          // before the approval tx (can't be signature-relayed on ERC-721).
+          const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+          await topUpGasIfNeeded('approve-nft');
+        }
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         const receipt = await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
@@ -473,8 +761,12 @@ export default function MarketplacePage() {
       setShowSellModal(false);
       setSuccessType('list');
       setShowSuccessModal(true);
+      // Reflect the listing immediately (OpenSea indexing lags a few seconds).
+      // Delay the reconciling refetch so a stale OpenSea read can't overwrite
+      // the optimistic patch back to the old state before it has indexed.
+      if (result.orderHash) patchMyNftListing(selectedTeam.tokenId, { orderHash: result.orderHash, price: parseFloat(listPrice) });
       refetchListings();
-      refetchMyNfts();
+      setTimeout(() => refetchMyNfts(), 12000);
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] List failed:', error);
@@ -485,9 +777,9 @@ export default function MarketplacePage() {
         context: { tokenId: selectedTeam.tokenId, listPrice, listDurationSeconds },
         stack: error instanceof Error ? error.stack : undefined,
       });
-      setTxError(error instanceof Error ? error.message : 'Failed to create listing');
+      setTxError(friendlyTxError(error, 'Couldn’t create the listing. Please try again.'));
     }
-  }, [addNotification, listPrice, listDurationSeconds, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
+  }, [addNotification, listPrice, listDurationSeconds, patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -506,15 +798,32 @@ export default function MarketplacePage() {
       }
 
       const tx = await response.json();
+      if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+        // External wallet: Seaport cancel must come from the lister, so we
+        // pay the gas by funding the exact shortfall first.
+        const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+        await topUpGasIfNeeded('cancel');
+      }
+      // Wait for the on-chain receipt before claiming success — a non-owner's
+      // cancel (or a stale order) reverts, and without waiting the UI would
+      // falsely log/show "cancelled" and refetch a still-active listing.
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Cancel your listing' },
+        { description: 'Cancel your listing', waitForReceipt: true },
       );
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
       logActivity({ type: 'cancel', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, orderHash: team.orderHash || null });
+      // Tell the listing cache it's delisted so every page reflects it instantly.
+      void fetch('/api/marketplace/listings/cancelled', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenId: team.tokenId, wallet: walletAddress }),
+      }).catch(() => {});
+      // Reflect the delist immediately, and delay the reconciling refetch so a
+      // stale OpenSea read (still showing it listed) can't overwrite the patch.
+      patchMyNftListing(team.tokenId, null);
       refetchListings();
-      refetchMyNfts();
+      setTimeout(() => refetchMyNfts(), 12000);
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] Cancel failed:', error);
@@ -525,12 +834,12 @@ export default function MarketplacePage() {
         context: { tokenId: team.tokenId, orderHash: team.orderHash },
         stack: error instanceof Error ? error.stack : undefined,
       });
-      setTxError(error instanceof Error ? error.message : 'Failed to cancel listing');
+      setTxError(friendlyTxError(error, 'Couldn’t cancel the listing. Please try again.'));
     } finally {
       setCancellingTokenId(null);
       setCancelConfirmTeam(null);
     }
-  }, [refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress]);
+  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress, selectedWallet]);
 
   const executeSweep = useCallback(async () => {
     if (sweepTeams.length === 0 || !walletAddress) return;
@@ -544,7 +853,7 @@ export default function MarketplacePage() {
       try {
         const result = await fundWallet({
           address: walletAddress,
-          options: { chain: BASE_SEPOLIA, amount: String(sweepTotal), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+          options: { chain: BASE_SEPOLIA, amount: String(sweepTotal), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
         });
         if (result.status === 'cancelled') {
           setSweepStep('confirm');
@@ -558,8 +867,32 @@ export default function MarketplacePage() {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
         if (cancelledRef.current) return;
+        // Funding poll ended — confirm the USDC actually arrived before buying.
+        // Otherwise every buy below would fail on-chain and the user would just
+        // see "N/N failed" with no hint that card funding timed out.
+        const fundedBalance = await getUsdcBalance(walletAddress as Address);
+        if (fundedBalance < requiredUsdc) {
+          setTxError("Your card payment hasn't arrived yet. The USDC may still be on the way — check your balance in a minute and run the sweep again.");
+          reportClientError({
+            source: LOG_SOURCES.marketplace.SWEEP_FUND_FAILED,
+            message: 'Sweep card funding poll timed out before USDC arrived',
+            route: 'marketplace',
+            actor: walletAddress,
+            context: { sweepTotal, requiredUsdc: requiredUsdc.toString(), fundedBalance: fundedBalance.toString() },
+          });
+          setSweepStep('confirm');
+          return;
+        }
       } catch (error) {
         console.error('[Sweep] Fund failed:', error);
+        // Money in flight (card funding for a multi-buy). Critical.
+        reportClientError({
+          source: LOG_SOURCES.marketplace.SWEEP_FUND_FAILED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'marketplace',
+          actor: walletAddress,
+          context: { sweepTotal, sweepPaymentMethod },
+        });
         setSweepStep('confirm');
         return;
       }
@@ -572,28 +905,88 @@ export default function MarketplacePage() {
           setSweepStep('confirm');
           return;
         }
-      } catch {
+      } catch (error) {
+        reportClientError({
+          source: LOG_SOURCES.marketplace.SWEEP_BALANCE_CHECK_FAILED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'marketplace',
+          actor: walletAddress,
+          context: { sweepTotal },
+        });
+        setSweepStep('confirm');
+        return;
+      }
+    }
+
+    // One-time USDC approval for the Seaport conduit, covering the whole sweep.
+    // On a fresh wallet the conduit has zero USDC allowance, so every buy below
+    // External wallets sweep through the gasless relay instead: one free
+    // permit signature per team, the server pays every drop of gas, and no
+    // conduit approval is ever needed.
+    const externalWallet = selectedWallet && selectedWallet.walletClientType !== 'privy' ? selectedWallet : null;
+
+    // would revert. Approve max once up front (gas-sponsored + invisible for
+    // embedded web2 wallets); after this it never re-prompts.
+    if (!externalWallet) {
+      try {
+        const { ethers } = await import('ethers');
+        const { USDC_BASE } = await import('@/lib/opensea');
+        const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+        const requiredUsdcWei = BigInt(Math.ceil(sweepTotal * 1e6));
+        const erc20 = new ethers.Interface([
+          'function allowance(address owner, address spender) view returns (uint256)',
+          'function approve(address spender, uint256 amount) returns (bool)',
+        ]);
+        const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+        const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
+        });
+        const allowanceJson = await allowanceRes.json();
+        const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
+        if (currentAllowance < requiredUsdcWei) {
+          const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
+          await sendTx(
+            { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
+            { description: 'Approve USDC for your purchases', waitForReceipt: true },
+          );
+        }
+      } catch (approveError) {
+        setTxError(friendlyTxError(approveError, 'Could not approve USDC for the purchase. Please try again.'));
         setSweepStep('confirm');
         return;
       }
     }
 
     const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+    const { relayBuyExternal } = await import('@/lib/marketplace/relay');
     for (const team of sweepTeams) {
       progress[team.tokenId] = 'processing';
       setSweepProgress({ ...progress });
 
       try {
         if (!team.orderHash || !team.protocolAddress) throw new Error('Missing order data');
-        const tx = await getFulfillmentTx(team.orderHash, walletAddress, team.protocolAddress);
-        const receipt = await sendTx(
-          { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-          { description: `Purchase ${team.name}` },
-        );
-        const txHash = receipt.hash;
+        let txHash: string;
+        if (externalWallet) {
+          const priceWei = BigInt(Math.ceil((team.price || 0) * 1e6)) + 10_000n;
+          const receipt = await relayBuyExternal({
+            wallet: externalWallet,
+            orderHash: team.orderHash,
+            protocolAddress: team.protocolAddress,
+            priceWei,
+          });
+          txHash = receipt.hash;
+        } else {
+          const tx = await getFulfillmentTx(team.orderHash, walletAddress, team.protocolAddress);
+          const receipt = await sendTx(
+            { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+            { description: `Purchase ${team.name}` },
+          );
+          txHash = receipt.hash;
+        }
 
         if (team.ownerAddress) {
-          notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress });
+          notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress, txHash: txHash ? String(txHash) : undefined });
         }
         logActivity({ type: 'buy', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, counterparty: team.ownerAddress || null, orderHash: team.orderHash || null, txHash: txHash ? String(txHash) : null });
         if (team.ownerAddress) {
@@ -618,6 +1011,7 @@ export default function MarketplacePage() {
         source: LOG_SOURCES.marketplace.SWEEP_TEAM_BUY_FAILED,
         message: `Sweep completed with ${failedTokenIds.length}/${sweepTeams.length} team buys failed`,
         route: 'marketplace',
+        actor: walletAddress,
         context: { failedTokenIds, totalTeams: sweepTeams.length, sweepPaymentMethod, sweepTotal },
       });
     }
@@ -626,7 +1020,7 @@ export default function MarketplacePage() {
     refetchListings();
     refetchMyNfts();
     refetchActivity();
-  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress]);
+  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress, selectedWallet]);
 
   const handleCancel = useCallback((team: MarketplaceTeam | null) => setCancelConfirmTeam(team), []);
 
@@ -661,6 +1055,7 @@ export default function MarketplacePage() {
           allNftsHasMore={allNftsHasMore}
           watchlistSet={watchlistSet}
           walletAddress={walletAddress}
+          myMadeOffers={myMadeOffers}
           lastSales={lastSales}
           leaderboardTeams={leaderboardTeams}
           showBuyModal={showBuyModal}
@@ -671,7 +1066,12 @@ export default function MarketplacePage() {
           txError={txError}
           userUsdcBalance={user?.usdcBalance}
           onSetViewFilter={setViewFilter}
+          viewCounts={{ ...marketplaceStats, passes: new Set(enrichedListings.filter(t => t.roster.length === 0).map(t => t.tokenId).concat(wheelPasses.map(p => p.tokenId))).size }}
           onSetRosterFilter={setRosterFilter}
+          leagueFilter={leagueFilter}
+          onSetLeagueFilter={searchLeague}
+          teamFilter={teamFilter}
+          onSetTeamFilter={searchTeam}
           onSetSortBy={setSortBy}
           onToggleSweepMode={() => requireLogin(() => setSweepMode(previous => {
             if (previous) setSweepSelected(new Set());
@@ -688,9 +1088,10 @@ export default function MarketplacePage() {
           onShare={handleShare}
           onOpenBuyModal={openBuyModal}
           onGoToSellTab={() => requireLogin(() => setActiveTab('sell'))}
-          onNavigateToTeam={(tokenId) => router.push(`/marketplace/${tokenId}`)}
-          onMakeOffer={(tokenId) => router.push(`/marketplace/${tokenId}?offer=true`)}
+          onNavigateToTeam={(tokenId) => navigateToTeam(tokenId)}
+          onMakeOffer={(tokenId) => navigateToTeam(tokenId, '?offer=true')}
           onCloseBuyModal={() => setShowBuyModal(false)}
+          onCancelBuy={cancelBuy}
           onSetPaymentMethod={setPaymentMethod}
           onHandleBuy={handleBuy}
         />
@@ -735,6 +1136,15 @@ export default function MarketplacePage() {
           cancellingTokenId={cancellingTokenId}
           onCancel={(team) => setCancelConfirmTeam(team)}
           onLoadMoreActivity={loadMoreActivity}
+          activityScope={activityScope}
+          onSetActivityScope={setActivityScope}
+        />
+      )}
+
+      {activeTab === 'offers' && (
+        <OffersMadeTab
+          walletAddress={isLoggedIn ? walletAddress : null}
+          onCancelOffers={handleCancelMadeOffers}
         />
       )}
 
@@ -743,10 +1153,14 @@ export default function MarketplacePage() {
           watchlist={watchlist}
           watchlistSet={watchlistSet}
           deduplicatedTeams={deduplicatedTeams}
+          walletAddress={walletAddress}
+          myMadeOffers={myMadeOffers}
           onBrowseTeams={() => setActiveTab('buy')}
-          onViewTeam={(tokenId) => router.push(`/marketplace/${tokenId}`)}
+          onViewTeam={(tokenId) => navigateToTeam(tokenId)}
           onToggleWatchlist={(tokenId, price) => toggleWatchlist(tokenId, price)}
           onOpenBuyModal={openBuyModal}
+          onMakeOffer={(tokenId) => navigateToTeam(tokenId, '?offer=true')}
+          onGoToSellTab={() => requireLogin(() => setActiveTab('sell'))}
           onViewAllTeams={() => {
             setViewFilter('all');
             setActiveTab('buy');
@@ -763,13 +1177,19 @@ export default function MarketplacePage() {
               </svg>
             </div>
             <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-            <p className="text-text-secondary text-sm mb-6">The team has been transferred to your wallet.</p>
+            <p className="text-text-secondary text-sm mb-6">
+              {selectedTeam.fillingWheelLevel
+                ? `${selectedTeam.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} pass transferred — your draft is filling.`
+                : 'The team has been transferred to your wallet.'}
+            </p>
+            {/* A still-filling wheel pass is a draft-in-progress, not a team yet —
+                send the buyer to their drafting lobby, not the team page. */}
             <Link
-              href={`/marketplace/${selectedTeam.tokenId}`}
+              href={selectedTeam.fillingWheelLevel ? '/drafting' : `/marketplace/${selectedTeam.tokenId}`}
               onClick={() => setShowSuccessModal(false)}
               className="w-full py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all block mb-3"
             >
-              View Your Team
+              {selectedTeam.fillingWheelLevel ? 'View Draft' : 'View Your Team'}
             </Link>
             <button onClick={() => setShowSuccessModal(false)} className="w-full py-3 border border-bg-tertiary text-text-secondary rounded-xl hover:bg-bg-tertiary transition-all text-sm">
               Back to Marketplace
@@ -811,17 +1231,37 @@ function Header({
   return (
     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary mb-2">Team Marketplace</h1>
-        <p className="text-text-secondary text-sm">Buy and sell BBB teams instantly. No external accounts needed.</p>
+        <h1 className="text-2xl font-bold text-text-primary mb-2">Marketplace</h1>
+        <p className="text-text-secondary text-sm">Buy and Sell teams all season.</p>
+        {/* Teams + Exposure — mirrors the Teams/Exposure page headers so the
+            three views feel like one section and you can hop back. */}
+        <div className="flex items-center gap-2 mt-3">
+          <Link
+            href="/teams"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Teams
+          </Link>
+          <Link
+            href="/exposure"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Exposure
+          </Link>
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
-          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} />
-          <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} />
-          <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} />
+      {/* Mobile: 2 tabs on top (Buy / Sell), 3 on the second line (My Offers /
+          Activity / Watchlist). A 6-col grid makes both rows fill edge to edge
+          (top = 2×3 cols, bottom = 3×2 cols). Desktop keeps the inline row. */}
+      <div className="flex items-center gap-3 w-full lg:w-auto">
+        <div className="grid grid-cols-6 gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:flex lg:flex-wrap lg:w-auto">
+          <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} className="col-span-3" />
+          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} className="col-span-3" />
+          <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} className="col-span-2" />
+          <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} className="col-span-2" />
           <button
             onClick={() => onChangeTab('watchlist')}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+            className={`col-span-2 lg:col-auto px-2 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
           >
             <svg className="w-3.5 h-3.5" fill={activeTab === 'watchlist' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -837,11 +1277,11 @@ function Header({
   );
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function TabButton({ active, label, onClick, className = '' }: { active: boolean; label: string; onClick: () => void; className?: string }) {
   return (
     <button
       onClick={onClick}
-      className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+      className={`${className} px-2 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-center transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
     >
       {label}
     </button>

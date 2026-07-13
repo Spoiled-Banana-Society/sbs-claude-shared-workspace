@@ -5,7 +5,17 @@ import { formatScore } from '@/lib/formatters';
 import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useLeagueDetail } from '@/hooks/useStandings';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName, bananaPlaceholderName } from '@/utils/helpers';
 import type { LeaderboardEntry } from '@/types';
+
+/** Owner wallet off a global-leaderboard row, whatever the Go API named it. */
+function rowWallet(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const o = entry as Record<string, unknown>;
+  const w = o.ownerWallet || o.walletAddress || o.cardId;
+  return typeof w === 'string' && w.startsWith('0x') ? w : null;
+}
 
 interface LeaderboardViewProps {
   gameweek: string;
@@ -39,7 +49,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
         signal,
         query: { gameweek, level, orderBy: sortField, limit: '200' },
       }),
-    { fallbackData: [] },
+    { fallbackData: [], persist: true },
   );
 
   // Client-side pagination
@@ -48,6 +58,13 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
     const start = page * PAGE_SIZE;
     return (entries || []).slice(start, start + PAGE_SIZE);
   }, [entries, page]);
+
+  // Resolve real profile names for the visible page (the global leaderboard
+  // can come back with a wallet in the name slot). Keyed by the page's wallets,
+  // so it only refetches when the page changes — no render loop. No-op if the
+  // backend rows carry no wallet field.
+  const pageWallets = useMemo(() => pageEntries.map(rowWallet).filter((w): w is string => !!w), [pageEntries]);
+  const pageUsers = useDraftRoomUsers(pageWallets);
 
   // League lookup — fetch specific league standings
   const { data: leagueStandings, isValidating: leagueLookupLoading } = useLeagueDetail(leagueLookup, gameweek);
@@ -60,7 +77,8 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
       const e = entry as Record<string, unknown>;
       return {
         rank: typeof e.rank === 'number' ? e.rank : idx + 1,
-        displayName: String(e.displayName || e.ownerWallet || e.cardId || '-').slice(0, 20),
+        // Real name if there is one; otherwise the "Banana #1234" default — never a wallet.
+        displayName: getTruncatedAccountName(String(e.displayName || ''), String(e.ownerWallet || e.cardId || '')) ?? '',
         ownerWallet: String(e.ownerWallet || e.cardId || ''),
         weeklyScore: Number(e.weeklyScore ?? e.weekScore ?? e.scoreWeek ?? 0),
         seasonScore: Number(e.seasonScore ?? e.scoreSeason ?? 0),
@@ -341,7 +359,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
                 {/* Player */}
                 <div className="min-w-0">
                   <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
-                    {entry.username}
+                    {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
                     {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
                   </p>
                   {entry.teamName && (

@@ -8,8 +8,9 @@ import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { fetchRecentErrors } from '@/lib/errorEvents';
-import { isTestNoiseError } from '@/lib/logSources';
+import { isSuppressedLogNoise } from '@/lib/logSources';
 import { listConversations } from '@/lib/crispApi';
+import { lastMessageBySession, conversationNeedsReply } from '@/lib/crispSupport';
 import { getRequestId } from '@/lib/requestId';
 import { logger } from '@/lib/logger';
 
@@ -64,7 +65,7 @@ const KYC_REVIEW_STATUSES = ['name_mismatch', 'dob_mismatch', 'blocked', 'error'
 const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /mint_failed/i,
   /transferFrom_failed/i,
-  /\.unhandled$/i,
+  /\.unhandled(\.|$)/i, // catches `global.unhandled.rejection` too, not just `*.unhandled`
   /admin_wallet_low_balance/i,
   /skim\.(transfer|withdraw)_failed/i,
   /alchemy\.webhook/i,
@@ -81,6 +82,27 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Frozen draft: pick clock expired, engine never advanced (the 2026-06-10
+  // freeze class). Fired by the health-canary stall watchdog.
+  /^draft\.stalled_no_advance/i,
+  // Draft money + blocking gaps (Phase 1 coverage). Note: `^ws\.` does NOT
+  // match `draft.ws.*`, and `autopick_failed` does NOT match
+  // `autopick_submit_failed` — so these are listed explicitly.
+  /^draft\.leave/i,
+  /^draft\.join_refund/i,
+  /^draft\.autopick_submit_failed/i,
+  /^draft\.ws\.message_parse_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
+  // Promo gaps (Phase 2). `^promo\.claim\.` doesn't cover these.
+  /^promo\.founder_draft\./i,
+  /^promo\.raffle\./i,
+  /^promo\.draft_complete\./i,
+  // Money/prizes/marketplace gaps (Phase 3). `prizes.withdrawal` was already
+  // critical-tier but had no notify pattern.
+  /^prizes\.(withdrawal|cumulative_increment|offramp_audit)/i,
+  /^marketplace\.(sweep_fund|sweep_team|cancel)/i,
+  // Auth/profile gaps (Phase 4). privy.fetch_user.error already matched above.
+  /^auth\.(twitter|username|login|spurious_login)/i,
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise
@@ -137,7 +159,7 @@ export async function GET(req: Request) {
       drafts,
     ] = await Promise.all([
       countSupport(),
-      countErrors(since.logs ?? 0),
+      countErrors(db, since.logs ?? 0),
       countSentryUnresolved(since.logs ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
@@ -171,11 +193,18 @@ export async function GET(req: Request) {
 
 async function countSupport(): Promise<number> {
   try {
-    const { conversations } = await listConversations({ filterUnread: true });
-    return conversations.reduce((sum, c) => {
-      const unread = typeof c.unread === 'number' ? c.unread : (c.unread?.operator ?? 0);
-      return sum + (unread > 0 ? 1 : 0);
-    }, 0);
+    // SAME signal as the Support list (lib/crispSupport) so the sidebar badge
+    // and the Unread list can never disagree: count conversations where the
+    // user spoke last (still awaiting our reply), not Crisp's flaky unread
+    // counter. Fetch all and filter in-code rather than filter_unread.
+    const [{ conversations }, lastBySession] = await Promise.all([
+      listConversations({}),
+      lastMessageBySession(),
+    ]);
+    return conversations.reduce(
+      (sum, c) => sum + (conversationNeedsReply(c, lastBySession.get(c.session_id)) ? 1 : 0),
+      0,
+    );
   } catch { return 0; }
 }
 
@@ -193,27 +222,71 @@ async function countSentryUnresolved(since: number): Promise<number> {
       cache: 'no-store',
     });
     if (!res.ok) return 0;
-    const raw = (await res.json()) as Array<{ lastSeen?: string }>;
+    const raw = (await res.json()) as Array<{ lastSeen?: string; level?: string }>;
     return raw.filter((r) => {
+      // Only count ACTUAL bugs — drop Sentry "performance issues" (info/debug
+      // level, e.g. the N+1-on-/admin noise). Matches the sentry-issues feed.
+      const lvl = (r.level ?? 'error').toLowerCase();
+      if (lvl === 'info' || lvl === 'debug') return false;
       const t = r.lastSeen ? new Date(r.lastSeen).getTime() : 0;
       return t > since;
     }).length;
   } catch { return 0; }
 }
 
-async function countErrors(since: number): Promise<number> {
+// Group-key logic — MUST match the Logs feed (components/admin/LogsTab.tsx
+// normalize() + groupErrors `${source}|${message.slice(0,140)}`) and the
+// resolved-marker hash (app/api/admin/error-resolved/route.ts hashGroupKey),
+// so the badge can exclude the SAME fixed groups the feed hides. Keep in sync.
+function normalizeForGroup(s: string | undefined): string {
+  return (s ?? '')
+    .replace(/0x[0-9a-fA-F]+/g, '0x*')
+    .replace(/\b[0-9a-f-]{16,}\b/gi, '*')
+    .replace(/\d+(\.\d+)?/g, '#')
+    .trim();
+}
+function hashGroupKey(groupKey: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < groupKey.length; i += 1) {
+    h ^= groupKey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+async function countErrors(db: Firestore, since: number): Promise<number> {
   try {
-    const records = await fetchRecentErrors(500);
+    // Errors the admin already marked fixed live in adminResolvedErrors (keyed
+    // by hashGroupKey). The Logs feed HIDES them — the badge must too, or it
+    // shows a count while the feed says "all clear" (it was counting fixed
+    // errors: 158 of 162 recent important errors were resolved-but-still-badged).
+    const [records, resolvedSnap] = await Promise.all([
+      fetchRecentErrors(500),
+      db.collection('adminResolvedErrors').get(),
+    ]);
+    // hash → fix time (ms), or null for legacy resolutions without a timestamp.
+    const resolvedAt = new Map<string, number | null>();
+    for (const d of resolvedSnap.docs) {
+      const at = (d.data() as { at?: { toMillis?: () => number } } | undefined)?.at;
+      resolvedAt.set(d.id, at && typeof at.toMillis === 'function' ? at.toMillis() : null);
+    }
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
-      // Automated-test traffic (fake draft ids / wallets) is real 500s
-      // but not user-facing — never badge it.
-      if (isTestNoiseError(r)) return false;
+      // Automated-test traffic (fake draft ids / wallets) AND expected
+      // operational noise (e.g. filling-draft state reads) are real but not
+      // actionable — never badge them.
+      if (isSuppressedLogNoise(r)) return false;
       // Only "important" errors (real bugs / user-money / ops issues)
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.
-      return isImportantError(r.source);
+      if (!isImportantError(r.source)) return false;
+      // Skip groups the admin marked fixed — UNLESS they've recurred since the
+      // fix (recurrence-aware, matches the Logs feed + dashboard).
+      const gk = `${normalizeForGroup(r.source)}|${normalizeForGroup(r.message).slice(0, 140)}`;
+      const fixedAt = resolvedAt.get(hashGroupKey(gk));
+      if (fixedAt !== undefined && (fixedAt === null || t <= fixedAt)) return false;
+      return true;
     }).length;
   } catch { return 0; }
 }
@@ -338,13 +411,15 @@ async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<
     // or genuinely abandoned (no badge needed, admin can scan manually).
     const LOOKBACK = 20;
     const ids: string[] = [];
-    for (let n = Math.max(1, liveCount - LOOKBACK); n <= liveCount; n++) {
-      ids.push(`2024-fast-draft-${n}`);
-      ids.push(`2025-fast-draft-${n}`);
+    // Floor at 0: after a clean-slate reset the first draft is slot 0.
+    // Dynamic year window (not hardcoded 2024/2025 — would go stale).
+    const cy = new Date().getUTCFullYear();
+    const years = [cy + 1, cy, cy - 1, cy - 2].map(String);
+    for (let n = Math.max(0, liveCount - LOOKBACK); n <= liveCount; n++) {
+      for (const y of years) ids.push(`${y}-fast-draft-${n}`);
     }
-    for (let n = Math.max(1, slowCount - LOOKBACK); n <= slowCount; n++) {
-      ids.push(`2024-slow-draft-${n}`);
-      ids.push(`2025-slow-draft-${n}`);
+    for (let n = Math.max(0, slowCount - LOOKBACK); n <= slowCount; n++) {
+      for (const y of years) ids.push(`${y}-slow-draft-${n}`);
     }
 
     // Use RTDB realTimeDraftInfo as the freshness check. We hit

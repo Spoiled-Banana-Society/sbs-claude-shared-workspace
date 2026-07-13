@@ -11,7 +11,9 @@ import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
-import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { recountFromInventory } from '@/lib/passLedger';
+import { buildActivityEventDoc } from '@/lib/activityEvents';
 
 const USERS_COLLECTION = 'v2_users';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -115,11 +117,21 @@ export async function POST(req: Request) {
         txHash,
         reason: `admin_grant:${actorWallet}`,
       });
+      // Register into the Go engine as REAL spendable free tokens (awaited),
+      // so the granted pass is actually usable. Collision-proof on the engine
+      // side, so reused ids no longer drop the token.
+      try {
+        await registerMintedTokens(targetWallet, mintedTokenIds, 'free');
+      } catch (e) {
+        logger.warn('admin.grant_drafts.register_go_api_failed', { requestId, target: userDocId, err: (e as Error).message });
+      }
     }
 
-    // Atomic Firestore commit: counter increment + pass_granted activity
-    // event in a single transaction. Either both land or neither does, so
-    // the admin "before/after" log and the user-facing count always agree.
+    // Recount freeDrafts from the wallet's REAL spendable inventory — a mirror,
+    // not a blind increment — with the pass_granted activity event in the same
+    // transaction. If on-chain mint wasn't configured (no token created), the
+    // count simply doesn't move: we never grant a phantom pass that the draft
+    // engine can't honor.
     let newFreeDrafts = beforeFreeDrafts;
     if (count > 0) {
       const activityDoc = await buildActivityEventDoc({
@@ -135,19 +147,14 @@ export async function POST(req: Request) {
           mintedOnChain: mintOnChain,
         },
       });
-
-      newFreeDrafts = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(userRef);
-        const current = (snap.exists ? (snap.data()?.freeDrafts as number | undefined) : undefined) ?? 0;
-        const next = Math.max(0, current) + count;
-        tx.set(
-          userRef,
-          { walletAddress: targetWallet, freeDrafts: next },
-          { merge: true },
-        );
-        addActivityEventToTx(tx, activityDoc);
-        return next;
-      });
+      const counts = await recountFromInventory(targetWallet, activityDoc);
+      newFreeDrafts = counts.freeDrafts;
+      await userRef.set({ walletAddress: targetWallet }, { merge: true });
+      if (!mintOnChain) {
+        logger.warn('admin.grant_drafts.no_onchain_mint_counter_unchanged', {
+          requestId, target: userDocId, count,
+        });
+      }
     } else {
       // 0-count case: just ensure the wallet field is set, no counter change.
       await userRef.set({ walletAddress: targetWallet }, { merge: true });
@@ -167,12 +174,15 @@ export async function POST(req: Request) {
     });
 
     try {
-      const title = count > 0 ? 'Free Drafts Granted!' : 'Drafts Adjusted';
-      const message = mintOnChain
-        ? `We just minted ${count} free draft pass NFT${count !== 1 ? 's' : ''} to your wallet.`
-        : count > 0
-          ? `You received ${count} free draft${count !== 1 ? 's' : ''}. You now have ${newFreeDrafts} total.`
-          : `An admin adjusted your free drafts by ${count}. You now have ${newFreeDrafts} total.`;
+      // Plain "Draft Pass" language for EVERY user (web2 + web3) — never any
+      // mint / NFT / crypto / wallet jargon. Singular vs plural on count.
+      const isOne = count === 1;
+      const title = count > 0
+        ? `Free Draft ${isOne ? 'Pass' : 'Passes'} Granted`
+        : 'Draft Passes Adjusted';
+      const message = count > 0
+        ? `The SBS Team sent you ${isOne ? 'a Free Draft Pass' : `${count} Free Draft Passes`} to your account.`
+        : `An admin adjusted your Draft Passes by ${count}. You now have ${newFreeDrafts} total.`;
       await db.collection('marketplace_notifications').add({
         wallet: targetWallet,
         type: 'promo',

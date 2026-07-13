@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { isDraftingOpen } from '@/lib/draftTypes';
@@ -12,14 +13,18 @@ import type { DraftState } from '@/lib/draftStore';
 import type { ApiDraftToken } from '@/lib/api/owner';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
+import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -37,16 +42,39 @@ function isDraftInfoUpdateMessage(data: DraftingPageSocketMessage): data is Extr
   return data.type === 'draft_info_update';
 }
 
+// Lobby live-row websocket is RETIRED (2026-06-26). The lobby's pick number,
+// clock, your-turn state and type reveal are fully driven by the RTDB push
+// (subscribeRealTimeDraftInfo) — the authoritative, monotonic source the draft
+// room itself reads. The WS path only ever DEFERRED to RTDB and could write
+// stale values; worse, opening the socket woke the retired WS draft server's
+// per-pick timer, which auto-picked into Firestore-only (no RTDB write) and
+// desynced live drafts → freeze. Flag kept so the dead block can be deleted in a
+// follow-up. Flip true ONLY to resurrect the old path. (`as boolean` keeps the
+// type wide so the guarded block below isn't flagged unreachable.)
+const LOBBY_WS_ENABLED = false as boolean;
+
 function getSnakeDrafterIndex(pickNumber: number): number {
   const round = Math.ceil(pickNumber / 10);
   const posInRound = (pickNumber - 1) % 10;
   return round % 2 === 1 ? posInRound : 9 - posInRound;
 }
 
+// Snake-draft "picks away": how many picks until the seat at `userIndex` is up,
+// given the current pick number. Shared by the poll and the realtime push so
+// both compute it identically. Returns 0 if it's the seat's turn now or unknown.
+function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 10): number {
+  if (userIndex < 0 || !Number.isFinite(pickNumber)) return 0;
+  const totalPicks = drafterCount * 15;
+  for (let i = 1; i <= totalPicks - pickNumber + 1; i++) {
+    if (getSnakeDrafterIndex(pickNumber + i) === userIndex) return i;
+  }
+  return 0;
+}
+
 function computeTurnsFromServer(
   info: draftApi.DraftInfoResponse,
   walletAddress: string,
-): { turnsUntilUserPick: number; isUserTurn: boolean; pickEndTimestamp: number | undefined } {
+): { turnsUntilUserPick: number; isUserTurn: boolean; pickEndTimestamp: number | undefined; userIndex: number } {
   const wallet = walletAddress.toLowerCase();
   const currentDrafter = (info.currentDrafter || '').toLowerCase();
   const isUserTurn = wallet !== '' && wallet === currentDrafter;
@@ -55,21 +83,15 @@ function computeTurnsFromServer(
     entry => entry.ownerId.toLowerCase() === wallet,
   );
 
-  let turnsUntilUserPick = 0;
-  if (!isUserTurn && userIndex >= 0) {
-    const totalPicks = (info.draftOrder.length || 10) * 15;
-    for (let i = 1; i <= totalPicks - info.pickNumber + 1; i++) {
-      if (getSnakeDrafterIndex(info.pickNumber + i) === userIndex) {
-        turnsUntilUserPick = i;
-        break;
-      }
-    }
-  }
+  const turnsUntilUserPick = isUserTurn
+    ? 0
+    : picksAwayForSeat(info.pickNumber, userIndex, info.draftOrder.length || 10);
 
   return {
     turnsUntilUserPick,
     isUserTurn,
     pickEndTimestamp: info.currentPickEndTime || undefined,
+    userIndex,
   };
 }
 
@@ -108,7 +130,7 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function useDraftingPageState() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified, isBalanceLoaded } = useAuth();
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
@@ -135,18 +157,33 @@ export function useDraftingPageState() {
     return filterAndSortVisiblePromos(rawPromos, {
       isBB3Holder,
       newUserPromoClaimed,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+      flagsKnown: isBalanceLoaded,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
         return true;
       },
+      isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, user?.walletAddress]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
+  // Manual-only browsing (auto-rotate removed 2026-06-09): promos never
+  // advance on their own. The list is already sorted by the shared home-page
+  // rules (claimable first, then closest to claim — lib/promoFilter.ts), so
+  // the first card is always the actionable one; dots/arrows browse the rest.
   const [promoIndex, setPromoIndex] = useState(0);
-  const [promoAutoRotate, setPromoAutoRotate] = useState(true);
   const [showEntryFlow, setShowEntryFlow] = useState(false);
+  // True while the join network call is in flight after the user confirms
+  // entry — drives the branded "Joining lobby…" overlay. Cleared on failure;
+  // on success the page navigates away (drafting page unmounts) so it just
+  // fades out with the route change.
+  // Single shared entry flow (join-before-navigate + "Joining lobby" overlay).
+  // Lives in useEnterDraft so the home page and this page use the exact same
+  // implementation — no divergence, no glitch creeping back via one copy.
+  const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -170,6 +207,11 @@ export function useDraftingPageState() {
     }
   });
   const [queueDrafts, setQueueDrafts] = useState<Draft[]>([]);
+  // Go draftIds of wheel-pass queue rounds the user is NOT a member of (e.g. a
+  // pass they sold while it was filling — the queue slot moved to the buyer). The
+  // live queue is authoritative, so these are filtered out of the lobby and
+  // blocked at the draft room, clearing any stale localStorage row that lingers.
+  const [foreignQueueDraftIds, setForeignQueueDraftIds] = useState<Set<string>>(new Set());
   const [creatingQueueDraft, setCreatingQueueDraft] = useState<string | null>(null);
 
   useEffect(() => {
@@ -186,6 +228,7 @@ export function useDraftingPageState() {
       fetchJson<Record<string, DraftQueue>>('/api/queues')
         .then(async (queues) => {
           const drafts: Draft[] = [];
+          const foreign = new Set<string>();
           let totalRounds = 0;
 
           for (const q of Object.values(queues)) {
@@ -200,7 +243,13 @@ export function useDraftingPageState() {
               );
 
               logger.debug('[Queue]', q.type, 'round', r.roundId, ':', isMember ? 'MATCH' : 'no match', 'wallets:', memberWallets.join(','));
-              if (!isMember) continue;
+              if (!isMember) {
+                // A wheel-pass round that isn't ours (e.g. we sold the pass and
+                // the slot moved to the buyer). Record its draftId so the lobby
+                // hides any stale cached row for it and the draft room blocks us.
+                if (r.draftId) foreign.add(String(r.draftId));
+                continue;
+              }
 
               drafts.push({
                 id: `queue-${q.type}-${r.roundId}`,
@@ -263,9 +312,25 @@ export function useDraftingPageState() {
 
           logger.debug('[Queue] Found', drafts.length, 'matching queue drafts out of', totalRounds, 'total rounds');
           setQueueDrafts(drafts);
+          setForeignQueueDraftIds(foreign);
+          // Permanently drop any cached local row for a slot that's no longer
+          // ours. Guarded on existence so we don't re-notify listeners every poll.
+          if (foreign.size) {
+            const stored = draftStore.getActiveDrafts();
+            for (const did of foreign) {
+              if (stored.some(d => d.id === did)) draftStore.removeDraft(did);
+            }
+          }
         })
         .catch((e) => {
           console.error('[Queue] Poll failed:', e);
+          // 5s poll — reportClientError's per-source throttle dedupes the spam.
+          reportClientError({
+            source: LOG_SOURCES.draft.QUEUE_POLL_FAILED,
+            message: e instanceof Error ? e.message : String(e),
+            route: 'drafting',
+            actor: user?.walletAddress,
+          });
         });
     };
 
@@ -362,66 +427,14 @@ export function useDraftingPageState() {
     router.push(buildDraftRoomUrl(draft));
   };
 
-  const enterDraftWithPassType = async (passType: 'paid' | 'free', speed: 'fast' | 'slow' = 'fast') => {
-    if (!user?.walletAddress) return;
-
-    const beforePaid = user.draftPasses || 0;
-    const beforeFree = user.freeDrafts || 0;
-
-    // Optimistic local update so the header ticks down on click. Rolled
-    // back below if the backend rejects.
-    if (passType === 'paid') {
-      updateUser({ draftPasses: Math.max(0, beforePaid - 1) });
-    } else {
-      updateUser({ freeDrafts: Math.max(0, beforeFree - 1) });
-    }
-
-    // Backend gate: Firestore is the authoritative source. If the
-    // decrement fails (counter already at 0, even if local state showed
-    // otherwise), abort the join — user genuinely has no passes. The
-    // Go API still has its own ledger; without this gate a stale UI
-    // could let someone enter a draft they shouldn't.
-    let decremented = false;
-    try {
-      const res = await fetch('/api/owner/use-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      });
-      const body = await res.json().catch(() => ({}));
-      decremented = res.ok && !!body?.decremented;
-    } catch {
-      // Network failure — roll back and tell the user. Don't navigate
-      // because we can't confirm the backend got the decrement.
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      alert('Network error. Please try again.');
-      return;
-    }
-
-    if (!decremented) {
-      // Backend says no spendable passes. Rollback optimistic update and
-      // re-sync from Firestore so the header reflects truth.
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      void refreshBalance();
-      alert('No draft passes available. Your balance has been refreshed.');
-      return;
-    }
-
-    const params = new URLSearchParams({
-      speed,
-      mode: 'live',
-      wallet: user.walletAddress,
-      passType,
-    });
-    router.push(`/draft-room?${params.toString()}`);
-  };
-
   const handleEnterDraft = () => {
     if (!isDraftingOpen()) {
       alert('Drafting is closed for the season.');
       return;
     }
     if (!isLoggedIn) {
+      // If this fires while you're actually logged in, the auth-blink alarm
+      // (auth.spurious_login_modal in providers.tsx) catches it signal-only.
       setShowLoginModal(true);
       return;
     }
@@ -492,13 +505,18 @@ export function useDraftingPageState() {
         // numPlayers === 10 means the backend has created the draft state
         // (via /state/info fallback), so the draft has actually started.
         const stateResults = await Promise.all(
-          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean }> => {
+          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number }> => {
             try {
               const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}`);
               if (!res.ok) return { players: 1, isDrafting: false };
               const data = await res.json();
               const numPlayers = Number(data.numPlayers) || 0;
-              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10 };
+              // Server draft-start time (Unix s → ms) — present once the draft
+              // fills. Lets the row run the reveal off the server clock from the
+              // very first load, even on a device that never witnessed the fill.
+              const dst = typeof data.draftStartTime === 'number' && data.draftStartTime > 0
+                ? data.draftStartTime * 1000 : undefined;
+              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst };
             } catch {
               return { players: 1, isDrafting: false };
             }
@@ -507,18 +525,20 @@ export function useDraftingPageState() {
         if (cancelled) return;
 
         const mapped: Draft[] = activeTokens.map((t, i) => {
-          const { players, isDrafting } = stateResults[i];
+          const { players, isDrafting, draftStartTimeMs } = stateResults[i];
           const draftSpeed: 'fast' | 'slow' = t.leagueId.includes('-slow-') ? 'slow' : 'fast';
-          // Type is only known after the draft fills and the backend classifies
-          // it (slot-machine reveal). While filling, the token still reports
-          // level: "Pro" by default — use null to mark unrevealed so the UI
-          // shows "Unrevealed" instead of lying "PRO ✓ Verified".
+          // Type value is set once the draft is full; the DISPLAY gating ("show
+          // the type vs 'Revealing…'") is owned by getLiveState's phase + DraftRow
+          // (which keeps "Revealing…" until the reveal countdown drops below 37s).
+          // So we don't null the type here — that would wrongly hide it during the
+          // final reveal seconds.
           let type: Draft['type'];
           if (t.level === 'Jackpot') type = 'jackpot';
           else if (t.level === 'Hall of Fame') type = 'hof';
           else type = isDrafting ? 'pro' : null;
           return {
             id: t.leagueId || t.cardId,
+            draftStartTimeMs,
             // Trust the backend's displayName (sourced from doc.DisplayName).
             // Never fall back to slot-id-derived "League #N" — the slot
             // counter drifts from the global league number, so that fallback
@@ -605,6 +625,10 @@ export function useDraftingPageState() {
               draftSpeed: d.draftSpeed,
               players: d.players,
               draftType: d.type,
+              // Server reveal clock — refresh it so a row that just filled starts
+              // running the reveal off draftStartTime immediately (drives the
+              // server-clock branch in getLiveState).
+              ...(d.draftStartTimeMs != null ? { draftStartTimeMs: d.draftStartTimeMs } : {}),
               ...(needsWalletStamp ? { liveWalletAddress: currentWallet } : {}),
               ...(needsCardId ? { cardId: d.cardId } : {}),
             });
@@ -650,15 +674,20 @@ export function useDraftingPageState() {
 
     void loadLiveDrafts();
     // Re-poll every 5s so a leave on another device clears this one within
-    // ~5s instead of needing a manual refresh. Also re-poll on tab focus —
-    // common case is user switches back from phone to laptop.
+    // ~5s instead of needing a manual refresh. Also re-poll on tab focus AND
+    // visibilitychange — mobile returning from the app switcher/background
+    // fires visibilitychange (NOT focus), which is why the page showed a
+    // stale cached phase ("randomizing…") for ~10s after coming back.
     const interval = setInterval(() => { void loadLiveDrafts(); }, 5000);
     const onFocus = () => { void loadLiveDrafts(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void loadLiveDrafts(); };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [hiddenDraftIds, explicitlyClearedIds, isLive, user]);
 
@@ -737,6 +766,126 @@ export function useDraftingPageState() {
   // when the rtdb.subscribe/unsubscribe loop showed up with no
   // rtdb.event ever firing.
   const liveDraftIdsKey = liveDraftIdsForDisplayName.join(',');
+
+  // Live draft TYPE on /draft rows — instant RTDB push, the SAME source the
+  // draft room reads (drafts/{id}/realTimeDraftInfo/type). The Go API stamps it
+  // at fill, so the list row's PRO/HOF/JACKPOT flips the moment the type is
+  // known, in lockstep with the room and identical across devices — no poll.
+  // (DraftRow still gates the visual reveal behind the slot animation, so
+  // writing the value early during filling never spoils the reveal.) Uses the
+  // all-live key so the subscription survives the fill→drafting transition.
+  useEffect(() => {
+    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
+    if (ids.length === 0) return;
+    const unsubs = ids.map((draftId) =>
+      subscribeDraftType(draftId, (type) => {
+        const existing = draftStore.getDraft(draftId);
+        // Don't clobber a wheel-won draft's known specialType, and skip the
+        // write if it already matches (avoids needless store churn/renders).
+        if (existing?.specialType) return;
+        if (existing?.type === type && existing?.draftType === type) return;
+        draftStore.updateDraft(draftId, { type, draftType: type });
+      }),
+    );
+    return () => {
+      for (const unsub of unsubs) {
+        try { unsub(); } catch { /* ignore */ }
+      }
+    };
+  }, [liveDraftIdsKey]);
+
+  // Live PICK PROGRESS on /draft rows — instant RTDB push (pick #, whose-turn,
+  // countdown, "N picks away") off the SAME realTimeDraftInfo node the draft
+  // room reads. A first attempt at this flickered because it dual-wrote with the
+  // 3s poll and could read a stale reused-id node. This version is SAFE:
+  //   • Stale-node reject: only trust a snapshot whose draftStartTime matches the
+  //     row's known start (≤5s) — a reused-id's leftover state can't drive it.
+  //   • Monotonic: the pick number can only move FORWARD; a snapshot behind the
+  //     stored pick is ignored. So push + poll can never fight backward → no
+  //     flicker (the poll above has the matching forward-only guard).
+  //   • No completion-removal / phase writes here — the poll owns completion and
+  //     getLiveState owns the reveal phase; this only refreshes the live pick
+  //     fields, computing "N picks away" from the cached userSeat (snake math).
+  useEffect(() => {
+    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
+    if (ids.length === 0) return;
+    const wallet = user?.walletAddress?.toLowerCase();
+    const unsubs = ids.map((draftId) =>
+      subscribeRealTimeDraftInfo(draftId, (info) => {
+        if (!info) return;
+        const pickNumber = typeof info.pickNumber === 'number' ? info.pickNumber : 0;
+        // Load the reveal clock from THIS fast RTDB push even during the reveal
+        // window (pickNumber 0), so getLiveState's server-clock branch fires
+        // immediately and the type can't leak as "filling 10/10" before the
+        // clock arrives via the slower league-players fetch (the mobile/refresh
+        // "PRO before reveal" bug). Future-only guard: a just-filled draft's
+        // start is ~60s out, so accept future/just-now values and REJECT a
+        // stale reused-id PAST value. An already-started draft (past start) is
+        // unaffected — it's driven by the pickNumber>=1 path below + the
+        // enginePickNumber short-circuit, so this never replays its reveal.
+        const revealStartMs = typeof info.draftStartTime === 'number' && info.draftStartTime > 0
+          ? info.draftStartTime * 1000 : 0;
+        if (revealStartMs && revealStartMs > Date.now() - 3000) {
+          const ex = draftStore.getDraft(draftId);
+          if (ex && ex.draftStartTimeMs !== revealStartMs) {
+            draftStore.updateDraft(draftId, { draftStartTimeMs: revealStartMs });
+          }
+        }
+        if (pickNumber < 1) return; // not drafting yet — reveal flow owns the row (clock set above)
+        const existing = draftStore.getDraft(draftId);
+        if (!existing) return;
+
+        // Reject a STALE reused-id node: trust this snapshot only if its start
+        // time matches the row's known draftStartTime. Without a known start we
+        // can't verify it, so skip (the poll still drives the row).
+        const snapStartMs = typeof info.draftStartTime === 'number' ? info.draftStartTime * 1000 : 0;
+        if (!existing.draftStartTimeMs || !snapStartMs || Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+
+        // Monotonic: ignore a snapshot that's behind what we already show.
+        if (typeof existing.enginePickNumber === 'number' && pickNumber < existing.enginePickNumber) return;
+
+        // NOTE: we intentionally do NOT bail when the draft room is open on this
+        // device. This RTDB push is the SAME authoritative source the room reads,
+        // and the monotonic guard above makes it forward-only — so letting it
+        // through keeps the lobby's pick number in lockstep with the room (it was
+        // lagging a few seconds when the room was open, because the slow poll/WS
+        // paths defer to the room). The poll + WS paths still defer (they can
+        // write stale values); only this fast, monotonic push drives the row live.
+
+        const isYourTurn = !!wallet
+          && typeof info.currentDrafter === 'string'
+          && info.currentDrafter.toLowerCase() === wallet;
+        const seat = typeof existing.userSeat === 'number' ? existing.userSeat : -1;
+        const patch: Partial<DraftState> = {
+          enginePickNumber: pickNumber,
+          isYourTurn,
+        };
+        // Only set "N picks away" when we can compute it (your turn → 0, or a
+        // known seat). If the seat hasn't been cached by the poll yet, leave
+        // currentPick to the poll so we never flash a wrong "Picks complete".
+        if (isYourTurn) patch.currentPick = 0;
+        else if (seat >= 0) patch.currentPick = picksAwayForSeat(pickNumber, seat);
+        if (typeof info.pickEndTime === 'number' && info.pickEndTime > 0) {
+          patch.pickEndTimestamp = info.pickEndTime;
+          patch.timeRemaining = isYourTurn
+            ? Math.max(0, Math.ceil(info.pickEndTime - Date.now() / 1000))
+            : undefined;
+        }
+        // DIAGNOSTIC: capture when the lobby applies a FORWARD pick from the RTDB
+        // push, so we can confirm it now flips in lockstep with the room (it was
+        // ~2s late, waiting on the 3s poll while the room held the heartbeat).
+        if (pickNumber !== existing.enginePickNumber) {
+          clientLog('lobby-pick', 'rtdb.applied', { draftId, pickNumber, prev: existing.enginePickNumber ?? null });
+        }
+        draftStore.updateDraft(draftId, patch);
+      }),
+    );
+    return () => {
+      for (const unsub of unsubs) {
+        try { unsub(); } catch { /* ignore */ }
+      }
+    };
+  }, [liveDraftIdsKey, user?.walletAddress]);
 
   useEffect(() => {
     const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
@@ -840,18 +989,23 @@ export function useDraftingPageState() {
           const draftOwnedByUser = draft.liveWalletAddress
             && draft.liveWalletAddress.toLowerCase() === currentWallet;
 
-          if (isFull && user?.id && isPaid && draftOwnedByUser) {
+          // Fire draft-complete for EVERY pass type (not just paid). The
+          // server credits paid drafts to daily-drafts as before, and routes
+          // free/jackpot/HOF drafts to the first-purchase popup gate only —
+          // existing promo logic is unchanged (the free branch earns no
+          // daily-drafts credit). pick10 stays paid-only below.
+          if (isFull && user?.id && draftOwnedByUser) {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
               localStorage.setItem(trackedKey, '1');
               fetch('/api/promos/draft-complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, draftId: draft.id }),
+                body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
               }).catch(() => {});
             }
 
-            if (info.draftOrder && draft.liveWalletAddress) {
+            if (isPaid && info.draftOrder && draft.liveWalletAddress) {
               const userIdx = info.draftOrder.findIndex(
                 (e: { ownerId: string }) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
               );
@@ -862,7 +1016,7 @@ export function useDraftingPageState() {
                   fetch('/api/promos/pick10', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName }),
+                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
                   }).catch(() => {});
                 }
               }
@@ -870,7 +1024,7 @@ export function useDraftingPageState() {
           }
 
           if (hasDraftStarted) {
-            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp } =
+            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
               computeTurnsFromServer(info, draft.liveWalletAddress!);
 
             const totalPicks = (info.draftOrder?.length || 10) * 15;
@@ -885,12 +1039,21 @@ export function useDraftingPageState() {
             // RTDB `realTimeDraftInfo.pickEndTime`. Authoritative source —
             // overrides any stale value from a previous draft-room write.
             let rtdbPickEnd: number | undefined;
+            let rtdbType: 'pro' | 'hof' | 'jackpot' | undefined;
             try {
               const lpRes = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(draft.id)}`);
               if (lpRes.ok) {
                 const lpData = await lpRes.json();
                 if (typeof lpData.pickEndTime === 'number' && lpData.pickEndTime > 0) {
                   rtdbPickEnd = lpData.pickEndTime;
+                }
+                // Authoritative draft type off the SAME RTDB node the draft room
+                // reads. Stamped synchronously at fill, so it's correct even if
+                // the deferred per-card Level write lagged/failed — this is what
+                // keeps the list row's PRO/HOF/JACKPOT in lockstep with the room
+                // and identical across devices.
+                if (lpData.type === 'pro' || lpData.type === 'hof' || lpData.type === 'jackpot') {
+                  rtdbType = lpData.type;
                 }
               }
             } catch { /* ignore — fall back to prior computation */ }
@@ -907,14 +1070,27 @@ export function useDraftingPageState() {
               return false;
             })();
 
+            // Monotonic guard: the realtime RTDB push (below) is the primary,
+            // instant source for pick #/turn/countdown. The pick number only ever
+            // moves FORWARD, so if this 3s-poll snapshot is BEHIND what the push
+            // already wrote, its pick fields are stale — don't let them overwrite
+            // the live ones (that dual-writer fight is what made the row flicker
+            // between rounds before). userSeat (static) + status/type still write.
+            const pollPickStale = typeof fresh.enginePickNumber === 'number'
+              && info.pickNumber < fresh.enginePickNumber;
             const patch: Partial<DraftState> = {
-              currentPick: turnsUntilUserPick,
-              isYourTurn: isUserTurn,
-              pickEndTimestamp: effectivePickEnd,
-              timeRemaining: isUserTurn && effectivePickEnd
-                ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
-                : undefined,
-              enginePickNumber: info.pickNumber,
+              // Cache the user's seat so the realtime push can compute "N picks
+              // away" instantly without re-fetching the draft order.
+              ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
+              ...(pollPickStale ? {} : {
+                currentPick: turnsUntilUserPick,
+                isYourTurn: isUserTurn,
+                pickEndTimestamp: effectivePickEnd,
+                timeRemaining: isUserTurn && effectivePickEnd
+                  ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
+                  : undefined,
+                enginePickNumber: info.pickNumber,
+              }),
             };
 
             if (animStillRunning) {
@@ -933,16 +1109,25 @@ export function useDraftingPageState() {
                 status: 'drafting',
                 phase: 'drafting',
                 players: 10,
-                type: fresh.type || fresh.draftType || null,
-                draftType: fresh.draftType || fresh.type || null,
+                // Prefer the authoritative RTDB type (same source as the room);
+                // fall back to whatever's already stored so a transient RTDB
+                // miss never blanks a known type.
+                type: rtdbType || fresh.type || fresh.draftType || null,
+                draftType: rtdbType || fresh.draftType || fresh.type || null,
                 randomizingStartedAt: undefined,
                 preSpinStartedAt: undefined,
               });
             }
           } else if (isFull) {
-            const patch: Partial<DraftState> = { players: 10 };
+            // Reused-slot hygiene: the backend reports this draft as
+            // full-but-not-started (pickNumber 0), so any enginePickNumber left
+            // in the store is STALE from this slot's PREVIOUS draft. Clear it so
+            // getLiveState's pick short-circuit can't flash the type pre-reveal.
+            const patch: Partial<DraftState> = { players: 10, enginePickNumber: 0 };
 
             if (info.draftStartTime) {
+              // Authoritative reveal clock for getLiveState's server-clock branch.
+              patch.draftStartTimeMs = info.draftStartTime * 1000;
               const serverPreSpin = info.draftStartTime * 1000 - 60000;
               if (!fresh.preSpinStartedAt) {
                 if (fresh.randomizingStartedAt) {
@@ -994,7 +1179,11 @@ export function useDraftingPageState() {
       }, 500);
     };
 
+    // visibilitychange too — mobile returning from background fires it (not
+    // focus); without it the cached phase rendered stale for ~10s.
+    const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
     intervalId = setInterval(() => {
       void syncLiveDrafts();
     }, 3000);
@@ -1002,6 +1191,7 @@ export function useDraftingPageState() {
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
       if (focusTimeout) clearTimeout(focusTimeout);
       if (intervalId) clearInterval(intervalId);
     };
@@ -1009,13 +1199,45 @@ export function useDraftingPageState() {
 
   const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
 
+  // Privy access token for the WS auth gate, via the ref pattern (Rule #0:
+  // privy-derived callbacks must never enter effect deps). The Go WS server
+  // verifies this JWT before upgrading — these lobby connections were
+  // rejected 401 on EVERY attempt since auth was added because no token was
+  // ever sent; the page silently fell back to polling and nobody noticed.
+  const privyForWs = usePrivy();
+  const getWsTokenRef = useRef(privyForWs.getAccessToken);
+  getWsTokenRef.current = privyForWs.getAccessToken;
+
   useEffect(() => {
+    // Disabled (2026-06-26): never open lobby sockets — see LOBBY_WS_ENABLED note
+    // at top of file. Real-time lives in the RTDB push above; this socket only
+    // added stale data + woke the retired WS server's rogue auto-pick timer.
+    // Defensively close any straggler from a prior session, then bail.
+    {
+      const stale = wsConnectionsRef.current;
+      stale.forEach((ws) => { try { ws.close(); } catch { /* ignore */ } });
+      stale.clear();
+    }
+    if (!LOBBY_WS_ENABLED) return;
     if (!isLive || !user?.walletAddress) return;
 
     const wallet = user.walletAddress.trim().toLowerCase();
     const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 
-    const syncConnections = () => {
+    let syncInFlight = false;
+    const syncConnections = async () => {
+      // Re-entrancy guard: the token fetch awaits, and an overlapping 3s tick
+      // could double-connect the same draft.
+      if (syncInFlight) return;
+      syncInFlight = true;
+      try {
+        await syncConnectionsInner();
+      } finally {
+        syncInFlight = false;
+      }
+    };
+
+    const syncConnectionsInner = async () => {
       // WS connections are opened with the current wallet as the `address` param
       // — stale connections from a prior wallet would auth against the wrong
       // user and leak events into the wrong account. Scope by current wallet
@@ -1041,13 +1263,25 @@ export function useDraftingPageState() {
         }
       });
 
+      // Fetch the Privy token ONCE per sync (same token for every draft).
+      // Without it the server 401s the upgrade and we silently lose live
+      // updates; on fetch failure we still attempt token-less (= today's
+      // behavior: rejected → the 3s poll keeps the page fresh).
+      let wsToken: string | null = null;
+      if (draftingDrafts.some((d) => !conns.has(d.id))) {
+        try {
+          wsToken = (await getWsTokenRef.current?.()) ?? null;
+        } catch { /* token-less attempt below; poll remains the fallback */ }
+      }
+
       for (const draft of draftingDrafts) {
         if (conns.has(draft.id)) continue;
 
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
         if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
 
-        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}`;
+        const tokenParam = wsToken ? `&token=${encodeURIComponent(wsToken)}` : '';
+        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}${tokenParam}`;
         const ws = new WebSocket(url);
         conns.set(draft.id, ws);
 
@@ -1122,8 +1356,8 @@ export function useDraftingPageState() {
       }
     };
 
-    syncConnections();
-    const interval = setInterval(syncConnections, 3000);
+    void syncConnections();
+    const interval = setInterval(() => { void syncConnections(); }, 3000);
 
     return () => {
       clearInterval(interval);
@@ -1188,9 +1422,12 @@ export function useDraftingPageState() {
     });
 
     return [...remainingBase, ...mergedQueueDrafts].filter(
-      d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed',
+      d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed'
+        // Hide wheel-pass drafts whose slot now belongs to someone else (sold).
+        && !foreignQueueDraftIds.has(d.id)
+        && !(d.queueDraftId && foreignQueueDraftIds.has(d.queueDraftId)),
     );
-  }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
+  }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, foreignQueueDraftIds, user?.walletAddress]);
 
   // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
   // → 804). Within the same speed/year the slot counter increments per
@@ -1296,6 +1533,46 @@ export function useDraftingPageState() {
     const timers = getBarTimers();
     const timerStart = timers.get(draft.id);
 
+    // ── Server-clock reveal (authoritative + cross-device) ──────────────
+    // The server's draftStartTime (= fill + 60s, stamped FRESH on every fill)
+    // is the single source of truth for whether a draft has started. We check
+    // it FIRST — before the enginePickNumber short-circuit below — because on a
+    // REUSED slot id the store can still carry a stale enginePickNumber from
+    // this slot's PREVIOUS draft. If the fresh clock says we're still in the
+    // fill→reveal window (secs > 0), that leftover pick number is provably
+    // stale and must NOT force "drafting" (the "PRO before reveal" bug: the
+    // stale pick made getLiveState skip every reveal phase and show the type
+    // instantly). When the clock is known, derive the ENTIRE
+    // fill→reveal→drafting sequence from it so every device (and a fresh page
+    // load) shows the SAME phase at the SAME wall-clock second:
+    // 3s randomize bar → 15s slot-reveal countdown → draft-starting countdown
+    // (DraftRow flips "Revealing…" → the type once that countdown drops < 37s).
+    // Wheel specials keep their own pre-spin flow (handled below).
+    if (!draft.specialType && draft.draftStartTimeMs && (draft.players ?? 0) >= 10) {
+      const secs = (draft.draftStartTimeMs - now) / 1000; // seconds until drafting
+      if (secs <= 0) {
+        return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
+      }
+      const sinceFill = 60 - secs;
+      if (sinceFill < 3) {
+        return { displayPhase: 'randomizing', playerCount: 10, countdown: null, randomizingProgress: 0.99 * Math.pow(Math.max(0, sinceFill) / 3, 0.6), isFilling: false };
+      }
+      if (secs > 45) {
+        return { displayPhase: 'pre-spin-countdown', playerCount: 10, countdown: Math.max(0, Math.ceil(secs - 45)), randomizingProgress: null, isFilling: false };
+      }
+      return { displayPhase: 'draft-starting', playerCount: 10, countdown: Math.max(0, Math.ceil(secs)), randomizingProgress: null, isFilling: false };
+    }
+
+    // Authoritative "already drafting" short-circuit (FALLBACK — only when no
+    // server clock is available above): if the engine reports a real pick in
+    // progress, the draft is live — show drafting and NEVER replay the
+    // randomize/reveal intro. A returning or late-loading client would
+    // otherwise fabricate "Revealing…" off cached/`now` anchors for a draft
+    // that already started (the bug behind a card stuck on "Revealing…" ~2s).
+    if ((draft.enginePickNumber ?? 0) > 0) {
+      return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
+    }
+
     if (timerStart && !draft.preSpinStartedAt) {
       const elapsed = now - timerStart;
       if (elapsed < 3000) {
@@ -1351,10 +1628,15 @@ export function useDraftingPageState() {
     if (!draft.preSpinStartedAt && !draft.randomizingStartedAt && (draft.status === 'filling' || draft.phase === 'filling')) {
       const count = Math.min(10, draft.players || 1);
       if (count >= 10) {
-        if (!timers.has(draft.id)) timers.set(draft.id, now);
-        const tStart = timers.get(draft.id)!;
-        const t = Math.min(1, (now - tStart) / 3000);
-        return { displayPhase: 'randomizing', playerCount: 10, countdown: null, randomizingProgress: 0.99 * Math.pow(t, 0.6), isFilling: false };
+        // 10/10 but no authoritative server clock (draftStartTimeMs) or real
+        // randomize anchor yet. DON'T fabricate a "Revealing…" bar from `now` —
+        // a returning/late-loading client (cached "filling" 10/10) would wrongly
+        // replay the reveal for a draft that already started. Show an honest
+        // 10/10; the server-clock branch above owns randomize→reveal→drafting
+        // the instant draftStartTimeMs lands (≈1s after a genuine live fill, as
+        // it's fetched together with the player count), and the drafting branch
+        // takes over once the backend reports the draft as started.
+        return { displayPhase: 'filling', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: true };
       }
       return { displayPhase: 'filling', playerCount: count, countdown: null, randomizingProgress: null, isFilling: true };
     }
@@ -1365,13 +1647,8 @@ export function useDraftingPageState() {
     return { displayPhase: 'drafting', playerCount: draft.players, countdown: null, randomizingProgress: null, isFilling: false };
   };
 
-  useEffect(() => {
-    if (!promoAutoRotate || promoCount === 0) return;
-    const interval = setInterval(() => {
-      setPromoIndex(prev => (prev + 1) % promoCount);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [promoAutoRotate, promoCount]);
+  // (Auto-rotate timer removed 2026-06-09 — promos on this page are
+  // browse-on-click only, matching the home-page carousel.)
 
   useEffect(() => {
     if (promoCount === 0) {
@@ -1409,17 +1686,43 @@ export function useDraftingPageState() {
       const userId = user.id || user.walletAddress;
       const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
       try {
-        await fetch('/api/owner/refund-pass', {
+        const refundRes = await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
+          // reason:'leave' → server fires the admin "new user left the lobby"
+          // ping (a join-failure refund omits it, so it never mis-pings).
+          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId, reason: 'leave' }),
         });
+        if (!refundRes.ok) {
+          // Money path: user left but the pass refund didn't land. Critical.
+          reportClientError({
+            source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+            message: `Leave refund returned ${refundRes.status}`,
+            route: 'drafting',
+            actor: user.walletAddress,
+            context: { leagueId: exitingDraft.id, passType, tokenId: storedDraft?.cardId || exitingDraft.cardId, status: refundRes.status },
+          });
+        }
         await refreshBalance();
       } catch (err) {
         console.warn('[Leave] Refund pass failed:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'drafting',
+          actor: user.walletAddress,
+          context: { leagueId: exitingDraft.id, passType, network: true },
+        });
       }
     } catch (err) {
       console.error('Failed to leave draft:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.LEAVE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'drafting',
+        actor: user.walletAddress,
+        context: { leagueId: exitingDraft.id },
+      });
     } finally {
       setExitingDraft(null);
     }
@@ -1489,6 +1792,9 @@ export function useDraftingPageState() {
     claimSuccess,
     promoIndex,
     showEntryFlow,
+    joiningLobby,
+    joinError,
+    clearJoinError,
     showContestDetails,
     infoTopic,
     handleEnterDraft,
@@ -1502,7 +1808,6 @@ export function useDraftingPageState() {
     setShowBuyPasses,
     setSelectedPromo,
     setPromoIndex,
-    setPromoAutoRotate,
     setShowEntryFlow,
     setShowContestDetails,
     setInfoTopic,

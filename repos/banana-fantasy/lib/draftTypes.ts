@@ -10,6 +10,14 @@ export function isDraftingOpen(): boolean {
   return Date.now() < DRAFTING_CLOSES_AT.getTime();
 }
 
+// The season — and any real scoring (rank / weekly / season points) — begins at
+// NFL kickoff, the same moment drafting closes. Before that there are no games,
+// so any rank/score values on a pass are placeholder/seed data and must NOT be
+// shown. Gate every score display on this. Self-resolves at kickoff; no flag flip.
+export function hasSeasonStarted(): boolean {
+  return Date.now() >= DRAFTING_CLOSES_AT.getTime();
+}
+
 export const DRAFT_TYPE_COLORS = {
   jackpot: {
     primary: '#ef4444',

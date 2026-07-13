@@ -1,17 +1,26 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
-import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
-import { getTeamForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
+import { BBB4_CONTRACT } from '@/lib/opensea';
+import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { getCollectionListings } from '@/lib/marketplace/collectionListings';
+import { getOnchainOwner } from '@/lib/onchain/ownerOf';
+import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
+import { getTeamForToken, getOwnerForToken, teamDataToTraits, type NftTrait } from '@/lib/marketplace/teamData';
+import { resolveTokenImage } from '@/lib/nftCardServer';
+import { getUserDisplayBatch } from '@/lib/db';
+import type { Ripeness } from '@/types';
 
 export const dynamic = 'force-dynamic';
-
-const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
 /**
  * GET /api/marketplace/nft/[tokenId]
  *
- * Returns full NFT metadata (name, image, traits) for a single BBB4 token.
+ * Full data for a single BBB4 token — DATA from our backend, OWNERSHIP from the
+ * chain (Alchemy/RPC). OpenSea is NOT a data source here; it's only the order
+ * layer (the active-listing overlay for price). This makes the detail page
+ * instant + correct in real time, instead of waiting on OpenSea's metadata lag.
  */
 export async function GET(
   req: Request,
@@ -21,101 +30,82 @@ export async function GET(
   if (rateLimited) return rateLimited;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
-    }
-
     const { tokenId } = params;
     if (!tokenId) return jsonError('Missing tokenId', 400);
 
-    const res = await fetch(
-      `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${tokenId}`,
-      {
-        headers: {
-          accept: 'application/json',
-          'x-api-key': OPENSEA_API_KEY,
-        },
-        next: { revalidate: 60 },
-      },
-    );
+    // Viewing wallet — a fallback owner hint for a freshly drafted team whose
+    // on-chain owner read hasn't propagated yet (the viewer is its owner).
+    const ownerHint = new URL(req.url).searchParams.get('owner');
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('[marketplace/nft] OpenSea error:', res.status, text);
-      return jsonError('Failed to fetch NFT', res.status >= 500 ? 502 : res.status);
-    }
+    // OWNERSHIP from the chain; never OpenSea (which lags minutes behind a sale).
+    const onchainOwner = await getOnchainOwner(tokenId);
+    const owner = onchainOwner ?? ownerHint ?? (await getOwnerForToken(tokenId)) ?? null;
 
-    const data = await res.json();
-    const nft = data.nft ?? data;
-
-    // Also fetch active listing for this token (if any)
-    let listing = null;
+    // Active listing (the order layer): shared 15s OpenSea listings cache,
+    // reconciled with our own cache so a just-created/cancelled listing is right.
+    let listing: unknown = (await getCollectionListings()).get(tokenId) ?? null;
     try {
-      const listingsRes = await fetch(
-        `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-        {
-          headers: {
-            accept: 'application/json',
-            'x-api-key': OPENSEA_API_KEY,
-          },
-          cache: 'no-store',
-        },
-      );
-      if (listingsRes.ok) {
-        const listingsData = await listingsRes.json();
-        // Find the listing matching this tokenId
-        listing = (listingsData.listings ?? []).find((l: { protocol_data: { parameters: { offer: Array<{ itemType: number; identifierOrCriteria: string }> } } }) => {
-          const nftOffer = l.protocol_data.parameters.offer.find(
-            (o: { itemType: number }) => o.itemType === 2 || o.itemType === 3,
-          );
-          return nftOffer?.identifierOrCriteria === tokenId;
-        }) ?? null;
-      }
-    } catch {
-      // Silent — listing data is optional
-    }
-
-    // Get owner from the NFT data already fetched above
-    const owner = nft.owners?.[0]?.address ?? null;
-
-    // Enrich owner with SBS profile + inject team data from our backend
-    let ownerName: string | null = null;
-    let ownerPfp: string | null = null;
-    let traits: NftTrait[] = Array.isArray(nft.traits) ? nft.traits : [];
-    let team: TeamData | null = null;
-
-    if (owner) {
-      const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-        || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-      try {
-        const profileRes = await fetch(`${DRAFTS_API}/owner/${owner.toLowerCase()}`, {
-          signal: AbortSignal.timeout(2500),
-        });
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          if (profile?.pfp?.displayName) ownerName = profile.pfp.displayName;
-          if (profile?.pfp?.imageUrl) ownerPfp = profile.pfp.imageUrl;
+      const rec = (await getRecentCachedListings([tokenId])).get(tokenId);
+      if (rec) {
+        if (rec.status === 'cancelled') listing = null;
+        else if (rec.status === 'active' && !listing) {
+          listing = {
+            order_hash: rec.orderHash,
+            protocol_address: rec.protocolAddress,
+            price: { current: { value: String(Math.round(rec.priceUsd * 1e6)), decimals: 6 } },
+            protocol_data: { parameters: { offerer: rec.offerer, endTime: rec.endTimeSec ?? undefined } },
+          };
         }
-      } catch { /* enrichment optional */ }
-    }
+      }
+    } catch { /* listing cache is best-effort */ }
 
-    team = await getTeamForToken(tokenId, owner);
-    if (team) {
-      traits = mergeTraits(traits, teamDataToTraits(team));
-    }
+    // Owner identity + team data + image, all from our backend, in parallel.
+    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const ownerLc = owner ? owner.toLowerCase() : null;
+    const [profile, displays, teamResult, trades, ogImage] = await Promise.all([
+      ownerLc
+        ? fetch(`${DRAFTS_API}/owner/${ownerLc}`, { signal: AbortSignal.timeout(2500) })
+            .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        : Promise.resolve(null),
+      ownerLc ? getUserDisplayBatch([ownerLc]).catch(() => ({})) : Promise.resolve({}),
+      getTeamForToken(tokenId, owner).catch(() => null),
+      owner ? getWalletTrades(owner).catch(() => null) : Promise.resolve(null),
+      resolveTokenImage(tokenId, owner).catch(() => ''),
+    ]);
 
-    // SBS team card image (when available) wins over OpenSea's default
-    // banana placeholder. OpenSea image is kept as ultimate fallback.
-    const teamImage = team?.imageUrl ?? '';
+    // Owner display identity: custom username → legacy Go name → permanent
+    // "Banana{N}" handle. Badge: only an EQUIPPED badge (no default).
+    const v2 = ownerLc ? (displays as Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }>)[ownerLc] : null;
+    // A Go name equal to the wallet's own hash default is the app's old
+    // auto-sync echo, not a chosen name — treat like a placeholder.
+    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc && (!ownerLc || profile.pfp.displayName !== bananaDefaultName(ownerLc)) ? profile.pfp.displayName : null;
+    // SERVER-assigned unique handle (assigned on first sight by
+    // getUserDisplayBatch above) — never the colliding wallet hash.
+    const bananaName = ownerLc ? (v2?.bananaNumber != null ? `Banana${v2.bananaNumber}` : bananaPlaceholderName(ownerLc)) : null;
+    const ownerName = v2?.username || goName || bananaName;
+    const ownerPfp = v2?.profilePicture || profile?.pfp?.imageUrl || null;
+    const ownerBadge = v2?.equippedBadge ?? null;
+    const ownerRipeness = v2?.ripeness ?? null;
+    const team = teamResult;
+    const traits: NftTrait[] = team ? teamDataToTraits(team) : [];
+    const pricePaid = trades ? (trades.paidByToken.get(String(tokenId)) ?? null) : null;
+
     return json({
-      ...nft,
+      identifier: tokenId,
+      contract: BBB4_CONTRACT,
+      token_standard: 'erc721',
       traits,
-      name: nft.name || team?.leagueDisplayName || null,
-      image_url: teamImage || nft.image_url,
-      display_image_url: teamImage || nft.display_image_url,
+      name: team?.leagueDisplayName || `#${tokenId}`,
+      image_url: ogImage,
+      display_image_url: ogImage,
+      owners: owner ? [{ address: owner, quantity: 1, quantity_string: '1' }] : [],
       owner,
       ownerName,
       ownerPfp,
+      ownerBadge,
+      ownerRipeness,
+      pricePaid,
       team,
       listing,
     });

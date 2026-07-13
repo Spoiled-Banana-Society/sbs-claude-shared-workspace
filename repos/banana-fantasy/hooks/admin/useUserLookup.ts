@@ -111,6 +111,13 @@ export interface UserLookupIdentity {
     jackpotEntries: number;
     hofEntries: number;
     cardPurchaseCount: number;
+    cardFeeCreditCents: number;
+  };
+  /** First-purchase / wheel promo gating flags — for verifying flow state. */
+  promoState?: {
+    firstPurchaseBonusGranted: boolean;
+    firstPurchasePromoUnlocked: boolean;
+    hasSpunWheel: boolean;
   };
   /** Money sourced from the Go owner endpoint (separate from passes/entries
    *  which mirror in Firestore). credits = $-denominated prize money the

@@ -27,6 +27,7 @@ export const LOG_AREAS = [
   'prizes',
   'notifications',
   'admin',
+  'audit',
   'backend',
   'global',
   'other',
@@ -41,15 +42,54 @@ export type LogArea = (typeof LOG_AREAS)[number];
  */
 export const LOG_SOURCES = {
   draft: {
+    // A live draft's pick clock expired minutes ago and the pick never
+    // advanced — the engine's auto-pick chain died (e.g. the 2026-06-10
+    // freeze: transient Firestore DeadlineExceeded mid-pick, no retry, no
+    // watchdog). Fired by the health-canary stall watchdog. CRITICAL: a
+    // frozen draft strands 10 paying players.
+    STALLED_NO_ADVANCE: 'draft.stalled_no_advance',
     WS_TOKEN_FETCH_FAILED: 'draft.ws.token_fetch_failed',
     WS_MESSAGE_PARSE_FAILED: 'draft.ws.message_parse_failed',
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
+    // The pre-draft countdown reached 0 before the live engine finished loading
+    // (backgrounded-tab / cold-backend race). We now WAIT on the live loader and
+    // show the "Reconnecting…" screen instead of starting a fake local bot draft.
+    // This makes a previously-invisible race measurable. Info/warning severity —
+    // recoverable, no data loss (server owns the picks).
+    LIVE_WAIT_AT_START: 'draft.live_wait_at_start',
+    // Money paths: a draft pass was spent but the refund (on join-fail or leave)
+    // didn't land → user is down a pass with no trace. Critical.
+    LEAVE_REFUND_FAILED: 'draft.leave_refund_failed',
+    JOIN_REFUND_FAILED: 'draft.join_refund_failed',
+    // Leaving a draft failed server-side (Go still has the user in the league).
+    LEAVE_FAILED: 'draft.leave_failed',
+    // Queue / special-draft (jackpot/HOF) creation + fill pipeline.
+    QUEUE_CREATE_FAILED: 'draft.queue.create_draft_failed',
+    QUEUE_FILL_BOTS_FAILED: 'draft.queue.fill_bots_failed',
+    QUEUE_MINT_FAILED: 'draft.queue.mint_failed',
+    QUEUE_STATE_NOT_READY: 'draft.queue.state_not_ready',
+    QUEUE_POLL_FAILED: 'draft.queue_poll_failed',
+    // The "Joining lobby" overlay → draft-room hand-off took abnormally long
+    // (blank/flash between leaving /drafting and the lobby painting). Warning
+    // severity (not critical) — cosmetic, recoverable — but visible in admin so
+    // we can actually SEE the join glitch when it happens instead of guessing.
+    JOIN_HANDOFF_SLOW: 'draft.join_handoff_slow',
+    // The filling lobby was skipped/left right after a fresh join — the
+    // "saw 'Joining lobby' for a second then wasn't in the filling draft"
+    // glitch. Fires regardless of hand-off speed (the SLOW threshold above
+    // misses the fast-flash case). Context captures WHICH cause it was:
+    // fellToLocal (live join dropped to local), or left filling early with
+    // playerCount<10 (a real skip) vs ==10 (legit fast fill). Warning.
+    JOIN_LOBBY_GLITCH: 'draft.join_lobby_glitch',
     PICK_SUBMIT_UNHANDLED: 'draft.pick_submit_unhandled_error',
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',
     AIRPLANE_TRACE: 'draft.airplane.trace',
+    // Post-draft generating screen — timing trace (was the card ready instantly?
+    // how long was the animation shown before routing to the roster?).
+    COMPLETE_TRACE: 'draft.complete.trace',
     PREFERENCES_LOAD_FAILED: 'draft.preferences_load_failed',
     SORT_PERSIST_FAILED: 'draft.sort_preference_persist_failed',
     RANKINGS_REFRESH_FAILED: 'draft.rankings_refresh_failed',
@@ -71,12 +111,45 @@ export const LOG_SOURCES = {
     ADMIN_WALLET_UNAVAILABLE: 'payment.admin_wallet_unavailable',
     MINT_FAILED: 'card-mint.mint_failed',
     WRONG_NETWORK: 'payment.wrong_network',
+    // Best-effort analytics beacon (MoonPay popup) + the post-purchase USDC
+    // balance poll. Warning, not notify — recoverable / informational.
+    MOONPAY_SESSION_BEACON_FAILED: 'payment.moonpay.session_beacon_failed',
+    USDC_BALANCE_POLL_FAILED: 'payment.usdc.balance_poll_failed',
+    // Card-fee credit → free draft. Successes are logger.info (console/structured
+    // only — NOT the critical feed, which is error-level). REWARD_GRANT_FAILED is
+    // logger.error → critical via the ^payment\. pattern (user is owed a draft).
+    PURCHASE_COMPLETED: 'payment.card.purchase_completed',
+    FEE_CREDITED: 'payment.card.fee_credited',
+    REWARD_GRANTED: 'payment.card.reward_granted',
+    REWARD_GRANT_FAILED: 'payment.card.reward_grant_failed',
+    REWARD_DUPLICATE_SKIPPED: 'payment.card.reward_duplicate_skipped',
+    CHECKOUT_CANCELLED: 'payment.card.checkout_cancelled',
+    // Gasless marketplace relay (external wallets). Successes are info-level;
+    // RELAY_REFUND_FAILED means a buyer is owed USDC → error → critical feed.
+    RELAY_BUY_COMPLETED: 'payment.marketplace.relay_buy_completed',
+    RELAY_REFUND_FAILED: 'payment.marketplace.relay_refund_failed',
+    GAS_TOPUP_SENT: 'payment.marketplace.gas_topup_sent',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',
     CLAIM_FAILED: 'promo.claim.failed',
     JP_REVEAL_FAILED: 'promo.jp_reveal_failed',
     TWEET_VERIFY_FAILED: 'promo.tweet_verify_failed',
+    // Promo credit at risk — founder-draft join not recorded. Critical.
+    FOUNDER_DRAFT_FAILED: 'promo.founder_draft.failed',
+    // PWA raffle: a draw/award lost (critical) or a notify send failed (warn).
+    RAFFLE_RESULT_FAILED: 'promo.raffle.result_failed',
+    RAFFLE_NOTIFY_FAILED: 'promo.raffle.notify_failed',
+    // Draft-complete promo crediting + the exposure recompute it triggers.
+    DRAFT_COMPLETE_FAILED: 'promo.draft_complete.failed',
+    EXPOSURE_RECOMPUTE_FAILED: 'promo.exposure_recompute_failed',
+    // Promo credit REFUSED: no pass stamp for this draft AND the caller is not in
+    // the draft's authoritative roster → a forged/unowned draftId. Anti-abuse
+    // signal; expected ~0 for real users (a real player is always in the roster).
+    PARTICIPATION_DENIED: 'promo.participation_denied',
+    // Promo participation couldn't be verified (roster read failed) — credited on
+    // the client value rather than punish a real user. Watch for spikes.
+    PARTICIPATION_UNVERIFIED: 'promo.participation_unverified',
   },
   marketplace: {
     BUY_EXECUTION_FAILED: 'marketplace.buy_execution_failed',
@@ -87,6 +160,17 @@ export const LOG_SOURCES = {
     SWEEP_TEAM_BUY_FAILED: 'marketplace.sweep_team_buy_failed',
     OFFER_ACCEPT_FAILED: 'marketplace.offer_accept_failed',
     OFFER_CREATE_FAILED: 'marketplace.offer_create_failed',
+    // Sweep (multi-buy): card-funding failure = money in flight (critical);
+    // balance-check failure is recoverable (warn). Cancel-offer on detail page.
+    SWEEP_FUND_FAILED: 'marketplace.sweep_fund_failed',
+    SWEEP_BALANCE_CHECK_FAILED: 'marketplace.sweep_balance_check_failed',
+    CANCEL_OFFER_FAILED: 'marketplace.cancel_offer_failed',
+    // Post-draft: push an OpenSea metadata refresh for all 10 freshly-drafted
+    // teams so the revealed roster/card art shows on OpenSea + the marketplace.
+    REFRESH_DRAFT_FAILED: 'marketplace.refresh_draft_failed',
+    // Saving the team-card image to the user's device failed (roster page /
+    // league modal download button).
+    CARD_SAVE_FAILED: 'marketplace.card_save_failed',
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',
@@ -101,6 +185,20 @@ export const LOG_SOURCES = {
     WALLET_CONNECT_TIMEOUT: 'auth.wallet_connect_timeout',
     WALLET_CONNECT_FAILED: 'auth.wallet_connect_failed',
     WALLET_CONNECT_ABANDONED: 'auth.wallet_connect_abandoned',
+    // Social-login wallet resolution via the Privy User API. When this fails,
+    // social-login users lose their wallet downstream (the May incident).
+    // Already notify-matched by /privy\.fetch_user\.error/i.
+    PRIVY_USER_API_FAILED: 'auth.privy.fetch_user.error',
+    // Twitter/X verify Firestore write + username claim + client login.
+    TWITTER_VERIFY_FAILED: 'auth.twitter.verify_write_failed',
+    USERNAME_CLAIM_FAILED: 'auth.username.claim_failed',
+    LOGIN_FAILED: 'auth.login_failed',
+    LINK_TWITTER_FAILED: 'auth.link_twitter_failed',
+    // Quiet, signal-only alarm for the "login modal pops while you're actually
+    // logged in" blink. Fires ONLY when the login prompt triggers while Privy
+    // still reports authenticated (the contradiction = the bug) — replaces the
+    // chatty `authblink` diagnostic. Badges so a recurrence is visible.
+    SPURIOUS_LOGIN_MODAL: 'auth.spurious_login_modal',
   },
   kyc: {
     DIDIT_API_FAILED: 'kyc.didit_api_failed',
@@ -113,6 +211,17 @@ export const LOG_SOURCES = {
   prizes: {
     WITHDRAWAL_API_FAILED: 'prizes.withdrawal_api_failed',
     ELIGIBILITY_FETCH_FAILED: 'prizes.eligibility_fetch_failed',
+    // Withdraw-all side effects: KYC cumulative total + offramp audit trail.
+    // Warn (the withdrawal itself succeeded; these are bookkeeping) but notify.
+    CUMULATIVE_INCREMENT_FAILED: 'prizes.cumulative_increment_failed',
+    OFFRAMP_AUDIT_FAILED: 'prizes.offramp_audit_failed',
+    FETCH_FAILED: 'prizes.fetch_failed',
+    // Withdraw-all could not commit the 'processing' lock on the selected
+    // prizes. Critical: the double-withdrawal guard relies on this lock.
+    MARK_PROCESSING_FAILED: 'prizes.mark_processing_failed',
+    // Admin pay route refused to settle a withdrawal whose prizes were
+    // already paid by a DIFFERENT withdrawal — a blocked double-payout.
+    DOUBLE_PAYOUT_BLOCKED: 'prizes.double_payout_blocked',
   },
   profile: {
     ACTIVITY_FETCH_FAILED: 'profile.activity_fetch_failed',
@@ -205,6 +314,12 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.pick_submit/i,
   /^draft\.autopick_submit/i,
   /^draft\.phase_check_failed/i,
+  /^draft\.leave_refund_failed/i,
+  /^draft\.join_refund_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
+  /^promo\.founder_draft\.failed/i,
+  /^promo\.raffle\.result_failed/i,
+  /^marketplace\.sweep_fund_failed/i,
   // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
@@ -225,6 +340,19 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^notifications\.config\.secret_missing/i,
   // ── A page genuinely crashed to the error screen for the user ──
   /^global\.react\.boundary/i,
+  // ── State-integrity audits (proactive): a money/fairness invariant is
+  //    violated in the data BEFORE a user trips on it. See lib/audits/. ──
+  /^audit\.passes\.over/i,      // counter > real spendable tokens → user blocked at join
+  /^audit\.passes\.duplicate/i, // two ledger records for ONE on-chain token → inflated pass count
+  /^audit\.passes\.drafted_still_spendable/i, // a drafted/used pass still counted/usable → "pass came back"
+  /^audit\.balance\.negative/i, // negative money/pass counter → corruption
+  /^prizes\.double_payout_blocked/i, // admin pay refused — a prize was already paid by another withdrawal
+  /^prizes\.mark_processing_failed/i, // withdraw-all couldn't set the processing lock → double-withdraw window open
+  // ── LIVE endpoint canaries (lib/audits/canary.ts): a critical route's contract
+  //    silently broke. These catch the #12-class silent regression in minutes. ──
+  /^audit\.promo\.recording_down/i,       // promo routes 401'ing tokenless calls → ALL promo recording broken NOW
+  /^audit\.security\.withdraw_auth_open/i, // withdraw route accepted a tokenless call → auth guard regressed (money path)
+  /^audit\.cron\.stopped/i,               // a critical cron went dark → the safety net it powers is down
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a
@@ -238,6 +366,14 @@ const LOW_PATTERNS: RegExp[] = [
   /^draft\.firebase_rtdb_permission_denied/i,// usually a stale ruleset hit on a since-removed field
   /^draft\.sort_preference_persist_failed/i, // user prefs; reverts on next reload
   /^draft\.preferences_load_failed/i,        // defaults apply if load fails
+  // audit "under" = wallet has MORE real tokens than the counter shows — the
+  // SAFE direction (user can't be blocked by it). Informational, not a fire.
+  // The DANGEROUS direction (audit.passes.over) stays CRITICAL above.
+  /^audit\.passes\.under/i,
+  // Background "last active" telemetry write occasionally times out
+  // (DEADLINE_EXCEEDED). Non-user-facing; the next heartbeat retries. Visible
+  // in Low if it ever becomes a pattern, but it shouldn't page anyone.
+  /^user\.activity\.touch_failed/i,
 ];
 
 /** Triage tier for an error source — drives the admin Logs sections. */
@@ -246,6 +382,24 @@ export function logSeverity(source: string | undefined | null): LogSeverity {
   if (CRITICAL_PATTERNS.some((p) => p.test(source))) return 'critical';
   if (LOW_PATTERNS.some((p) => p.test(source))) return 'low';
   return 'warning';
+}
+
+/* ── Cost-smart policy (never drops a real fire) ───────────────────
+ * Tunes how aggressively each tier is throttled (client) and sampled
+ * (ingest), so a noisy LOW source can't become a Firestore/Sentry
+ * write-storm — while CRITICAL is never throttled or sampled.
+ *   - throttleMs: client per-source dedupe window in reportClientError
+ *   - ingestSampleRate: fraction of events the ingest route keeps (1 = all)
+ */
+export const SEVERITY_POLICY: Record<LogSeverity, { throttleMs: number; ingestSampleRate: number }> = {
+  critical: { throttleMs: 0,        ingestSampleRate: 1 },    // every distinct critical, always
+  warning:  { throttleMs: 120_000,  ingestSampleRate: 1 },    // 2-min dedupe, keep all
+  low:      { throttleMs: 600_000,  ingestSampleRate: 0.1 },  // 10-min dedupe, keep 1 in 10
+};
+
+/** Cost-smart throttle window for a source's tier (client-side dedupe). */
+export function throttleMsForSource(source: string | undefined | null): number {
+  return SEVERITY_POLICY[logSeverity(source)].throttleMs;
 }
 
 /* ── Test-traffic detection ────────────────────────────────────── */
@@ -272,6 +426,49 @@ export function isTestNoiseError(e: {
     e.context ? JSON.stringify(e.context) : '',
   ].join(' ');
   return TEST_MARKERS.test(hay);
+}
+
+/* ── Benign operational noise (expected, non-actionable) ───────────
+ * UNLIKE test noise, this is REAL production traffic — it's just expected
+ * control flow the code already handles gracefully, so it should never alarm
+ * in the admin feed or the badge. Only add a pattern here after confirming a
+ * genuine failure of the SAME subsystem surfaces through a DIFFERENT, still-
+ * visible error (so suppressing this can't hide a real problem). */
+const BENIGN_OPERATIONAL_NOISE: RegExp[] = [
+  // Filling-draft state reads: a draft's state/* docs (info, summary,
+  // playerState, rosters, draftQueues) are only created when the lobby FILLS
+  // to 10. Reads while it's still filling return a NotFound the caller falls
+  // back on — not a problem. A real "state vanished on an ACTIVE draft"
+  // surfaces via the pick engine (ProcessNewPick / wrong-owner) errors, which
+  // are NOT matched here, so this can never hide a freeze.
+  /code = NotFound[\s\S]*?\/drafts\/[^"]*?\/state\//i,
+];
+
+export function isBenignOperationalNoise(e: {
+  source?: string;
+  route?: string;
+  message?: string;
+  context?: Record<string, unknown>;
+}): boolean {
+  const hay = [
+    e.source ?? '',
+    e.route ?? '',
+    e.message ?? '',
+    e.context ? JSON.stringify(e.context) : '',
+  ].join(' ');
+  return BENIGN_OPERATIONAL_NOISE.some((p) => p.test(hay));
+}
+
+/** Either kind of suppressed noise — test traffic OR expected operational
+ *  noise. Use this anywhere we hide events from the actionable feed/badge. */
+export function isSuppressedLogNoise(e: {
+  source?: string;
+  route?: string;
+  message?: string;
+  actor?: string;
+  context?: Record<string, unknown>;
+}): boolean {
+  return isTestNoiseError(e) || isBenignOperationalNoise(e);
 }
 
 // Source dot-prefixes that don't equal their area name.
@@ -315,6 +512,10 @@ const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
     text: 'The user gave up on a wallet connection that was stuck.' },
   { pattern: /wallet_connect_failed/i,
     text: 'A wallet connection failed before completing.' },
+  { pattern: /owed_pass_unfulfilled/i,
+    text: 'URGENT: auto-recovery for an owed pass GAVE UP after 8 retries — the user PAID but never got their pass and the cron has stopped trying. Act now: 1) check the admin wallet (BBB4 owner) has enough ETH on Base for gas — out-of-gas is the usual cause; 2) re-grant via admin grant-drafts; 3) the record is in failed_mints with needsManual=true (look up by failedMintId / userId in the log context).' },
+  { pattern: /reward_grant_failed/i,
+    text: 'A card-fee reward draft failed to mint after the user crossed $25 in card fees — their credit was already consumed, so they are owed a free draft. Re-grant it via admin grant-drafts and see the failed_mints record (source: card_reward).' },
   { pattern: /mint_failed|card-mint/i,
     text: 'A pass mint failed — the user may have been charged. Worth checking.' },
   { pattern: /permit|signature|personal_sign|user rejected|user denied/i,

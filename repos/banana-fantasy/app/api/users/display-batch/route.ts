@@ -4,11 +4,13 @@ export const runtime = 'nodejs';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { getUserDisplayBatch } from '@/lib/db';
+import { getUserDisplayBatch, healUserPfpFromLegacy } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import type { Ripeness } from '@/types';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 
 const MAX_BATCH = 30;
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 // Server-side fetches must explicitly target the staging Go API. The
 // shared `getDraftsApiUrl()` reads `isStagingMode()` which is window-only
@@ -27,21 +29,41 @@ interface OwnerResponse {
 }
 
 async function fetchGoApiPfp(wallet: string): Promise<OwnerPfp | null> {
-  try {
-    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const body = (await res.json()) as OwnerResponse;
-    return body.pfp ?? null;
-  } catch (err) {
-    logger.warn('users.display-batch.go-api-failed', { wallet, err });
-    return null;
+  // Edited PFPs live in the Go API owner record (NOT v2_users.profilePicture),
+  // so this call is what surfaces a user's custom avatar in the draft room. A
+  // single transient failure (flaky phone network, brief Go API hiccup) used to
+  // silently null the PFP — and because the batch still returns 200, the outer
+  // hook's retry never recovered it, so the avatar fell back to the banana for
+  // the whole load (Boris's PFP missing on mobile / sometimes desktop). Retry
+  // transient failures here, with a per-attempt timeout so one slow call can't
+  // stall the whole batch.
+  const MAX = 3;
+  for (let attempt = 0; attempt < MAX; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store', signal: ctrl.signal });
+      if (res.ok) {
+        const body = (await res.json()) as OwnerResponse;
+        return body.pfp ?? null;
+      }
+      // non-OK (e.g. 5xx / 429) → treat as transient, fall through to retry
+    } catch (err) {
+      if (attempt === MAX - 1) logger.warn('users.display-batch.go-api-failed', { wallet, err });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < MAX - 1) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
   }
+  return null;
 }
 
 interface UserDisplay {
   displayName: string | null;
   imageUrl: string | null;
   equippedBadge: string | null;
+  /** Ripeness tier — colors the user's default banana badge. */
+  ripeness: Ripeness | null;
 }
 
 /**
@@ -90,9 +112,19 @@ export async function POST(req: Request) {
     const goApiResults = await Promise.all(needsGoApi.map(async w => {
       const pfp = await fetchGoApiPfp(w);
       const dn = pfp?.displayName?.trim();
+      const imageUrl = pfp?.imageUrl || null;
+      // Heal-on-read: cache this legacy Go-API pfp into v2_users so the NEXT
+      // load reads it from Firestore (fast/reliable) instead of re-hitting the
+      // flaky Go API every time — the root cause of avatars flickering back to
+      // the banana. Awaited (not fire-and-forget) so the write finishes inside
+      // this serverless request; a post-response promise isn't guaranteed to
+      // run on Vercel. try/catch so a heal failure never breaks the batch.
+      if (imageUrl) {
+        try { await healUserPfpFromLegacy(w, imageUrl); } catch { /* next load retries Go API */ }
+      }
       return [w, {
         displayName: dn && dn.toLowerCase() !== w ? dn : null,
-        imageUrl: pfp?.imageUrl || null,
+        imageUrl,
       }] as const;
     }));
     const goApiData = Object.fromEntries(goApiResults);
@@ -100,10 +132,33 @@ export async function POST(req: Request) {
     const out: Record<string, UserDisplay> = {};
     for (const w of realWallets) {
       const v = v2[w];
+      // Order: real username → legacy Go-API name → the SERVER-ASSIGNED
+      // banana handle (v2_users.bananaNumber — unique counter, assigned on
+      // first sight by getUserDisplayBatch above). NOT the wallet-hash
+      // derivation: its 90k space let two users share one "Banana#####",
+      // which mis-routed an admin pass grant on 2026-07-04. The header now
+      // adopts THIS value at login (useAuth adoptServerHandle), so a user's
+      // default still reads identically everywhere — Boris's 2026-06-11
+      // referral-row/header mismatch stays fixed, at the correct source.
+      // Neutral placeholder only if assignment transiently failed.
+      const bananaName = v?.bananaNumber != null ? `Banana${v.bananaNumber}` : bananaPlaceholderName(w);
+      // A freshly-seeded user gets the internal placeholder username
+      // `User-<first6>` (db-firestore createUser). That's junk, never a display
+      // name — reject it (exactly like the admin/activity/jackpot routes do) so
+      // it falls through to the legacy Go name or the canonical Banana<last5>
+      // default. Without this guard the draft room shows "User-0xebc6" instead
+      // of "Banana12345"/the edited team name.
+      const realUsername = v?.username && !v.username.startsWith('User-') ? v.username : null;
+      const goName = goApiData[w]?.displayName;
+      // Go displayName carrying the wallet's own HASH default is the app's
+      // former auto-sync echo (updateUser mirrored the invented name), not a
+      // chosen name — treat it as junk so the unique server number wins.
+      const realGoName = goName && !goName.startsWith('User-') && goName !== bananaDefaultName(w) ? goName : null;
       out[w] = {
-        displayName: v?.username || goApiData[w]?.displayName || null,
+        displayName: realUsername || realGoName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
         equippedBadge: v?.equippedBadge ?? null,
+        ripeness: v?.ripeness ?? null,
       };
     }
 

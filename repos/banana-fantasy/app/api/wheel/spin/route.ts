@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateNonce, generateSeed, pickWeighted } from '@/lib/rng';
-import { getWheelConfig } from '@/lib/wheelConfigFirestore';
+import { wheelSegments, WHEEL_SEGMENT_ANGLE } from '@/lib/wheelConfig';
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
@@ -15,7 +15,12 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
-import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
+import { recountFromInventory } from '@/lib/passLedger';
+import { unlockBadge } from '@/lib/db';
+import { claimSpinIndex, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { deriveSpinOutcome } from '@/lib/wheelMerkle';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
@@ -183,20 +188,28 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
 
-    const { segments, segmentAngle } = await getWheelConfig();
+    // Single source of truth: the hardcoded prize table (same one the client
+    // wheel renders and period Merkle trees are derived from). The old
+    // Firestore `config/wheel` override was removed 2026-06-12 — a DB edit
+    // could silently diverge live odds from the period commitment.
+    const segments = wheelSegments;
+    const segmentAngle = WHEEL_SEGMENT_ANGLE;
     const seed = generateSeed();
     const nonce = generateNonce();
 
-    // Allow forced results in staging — check multiple env signals
-    const allowForcedResult =
-      process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging' ||
-      process.env.VERCEL_ENV === 'preview' ||
-      (process.env.VERCEL_URL || '').includes('banana-fantasy') ||
-      process.env.NODE_ENV === 'development';
+    // forceWheel is ADMIN-ONLY: it bypasses the VRF period and mints real
+    // prizes, so only allowlisted wallets may use it. The old env-sniffing
+    // gate (VERCEL_URL contains 'banana-fantasy') was effectively always-on
+    // for this project — any user who knew the URL param could force a jackpot.
+    const { isWalletAdmin } = await import('@/lib/adminAllowlist');
+    const allowForcedResult = isWalletAdmin(userId) || process.env.NODE_ENV === 'development';
     const forceResult =
       allowForcedResult && typeof body.forceResult === 'string' ? body.forceResult : null;
     let segment: typeof segments[number];
     let index: number;
+    // For the VRF-period path: the segment we derived BEFORE the tx, so the tx's
+    // atomic claim can assert it landed on the same outcome (concurrent-spin guard).
+    let peekedSegmentId: string | null = null;
 
     // If a VRF + Merkle period is currently active, claim a spin index inside
     // the same transaction that decrements `wheelSpins`. The outcome is
@@ -228,9 +241,20 @@ export async function POST(req: Request) {
         seed,
       ));
     } else {
-      // Outcome derived inside the user-balance transaction below.
-      segment = segments[0];
-      index = 0;
+      // Period path: derive the REAL deterministic outcome NOW. deriveSpinOutcome
+      // is pure (salt + vrf + spinIndex → segment), so the prize, the wheel's
+      // landing angle, the free-draft credit, the on-chain mint, AND the activity
+      // feed below are all built from the ACTUAL result — not a "1 Draft"
+      // placeholder (the bug that made every period spin pay 1 Draft). The
+      // transaction below atomically CLAIMS this same spinIndex and re-derives
+      // the identical outcome; it asserts they match (rare concurrent-spin guard).
+      if (!currentPeriod!.salt || !currentPeriod!.vrfRandomness) {
+        throw new ApiError(500, `Wheel period ${currentPeriod!.periodNumber} missing salt/vrf`);
+      }
+      const peek = deriveSpinOutcome(currentPeriod!.salt, currentPeriod!.vrfRandomness, currentPeriod!.spinCount);
+      segment = peek.segment;
+      index = peek.segmentIndex;
+      peekedSegmentId = peek.segment.id;
     }
 
     const segmentCenter = index * segmentAngle + segmentAngle / 2;
@@ -251,6 +275,16 @@ export async function POST(req: Request) {
         ? segment.prizeValue
         : 0;
     const mintOnChain = isAdminMintConfigured() && draftPassCount > 0;
+
+    // A Jackpot/HOF wheel win. When the feature flag is ON we mint a REAL pass
+    // NFT for it (marked JP/HOF + wheel-origin) so the prize is a sellable asset,
+    // instead of only bumping the wallet-keyed queue counter. Flag OFF → legacy
+    // counter/queue path is untouched.
+    const jphofKind: 'jackpot' | 'hof' | null =
+      segment.prizeType === 'custom' && segment.prizeValue === 'jackpot' ? 'jackpot'
+      : segment.prizeType === 'custom' && segment.prizeValue === 'hof' ? 'hof'
+      : null;
+    const mintJpHof = isWheelJpHofPassEnabled() && isAdminMintConfigured() && jphofKind !== null;
 
     // Pre-build the spin_won activity doc OUTSIDE the transaction (Firestore
     // forbids new reads after writes inside a transaction). On-chain mint
@@ -287,6 +321,14 @@ export async function POST(req: Request) {
       // chosen above.
       if (usePeriod && currentPeriod) {
         const claim = await claimSpinIndex(currentPeriod.periodNumber, tx);
+        // The pre-tx peek built prize/angle/free-drafts/mint/activity from this
+        // exact outcome. The atomic claim MUST land on the same one. A mismatch
+        // means a concurrent spin took this index first → fail safe: throw so the
+        // whole tx rolls back (no spin consumed, no wrong award) and the user
+        // re-spins. On staging this effectively never happens (one spinner).
+        if (peekedSegmentId !== null && claim.segmentId !== peekedSegmentId) {
+          throw new ApiError(409, 'Spin slot was just taken — please spin again.');
+        }
         spinIndexInPeriod = claim.spinIndex;
         periodNumber = currentPeriod.periodNumber;
         const found = segments.find((s) => s.id === claim.segmentId);
@@ -328,16 +370,35 @@ export async function POST(req: Request) {
       const currentJp = Math.max(0, (userData?.jackpotEntries as number | undefined) ?? 0);
       const currentHof = Math.max(0, (userData?.hofEntries as number | undefined) ?? 0);
 
-      const balanceUpdate: Record<string, number> = {
+      const balanceUpdate: Record<string, number | boolean> = {
         wheelSpins: Math.max(0, currentSpins - 1),
+        // Mark that the user has now spun at least once — hides the first-time
+        // "what's a spin?" explainer on promo cards going forward.
+        hasSpunWheel: true,
       };
+      // Tally every wheel winning (free drafts + jackpot/HOF entries) the user
+      // must still FINISH before we surface the first-purchase promo popup.
+      let winningsWon = 0;
       if (draftPassCount > 0) {
         balanceUpdate.freeDrafts = currentFree + draftPassCount;
+        winningsWon += draftPassCount;
       }
-      if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-        balanceUpdate.jackpotEntries = currentJp + 1;
-      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-        balanceUpdate.hofEntries = currentHof + 1;
+      // When minting a real JP/HOF pass (flag ON), the NFT is the entry — don't
+      // also bump the wallet-keyed counter (that's the legacy queue path). The
+      // win still counts toward the first-purchase promo gate (winningsWon).
+      if (jphofKind === 'jackpot') {
+        if (!mintJpHof) balanceUpdate.jackpotEntries = currentJp + 1;
+        winningsWon += 1;
+      } else if (jphofKind === 'hof') {
+        if (!mintJpHof) balanceUpdate.hofEntries = currentHof + 1;
+        winningsWon += 1;
+      }
+      // First-purchase popup gate counter. Only matters pre-purchase — skip
+      // once they've bought or already unlocked it. Decremented as each won
+      // draft completes (recordDraftCompletion → the winnings gate).
+      if (winningsWon > 0 && !userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
+        const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
+        balanceUpdate.pendingWheelWinnings = currentPending + winningsWon;
       }
       tx.set(userRef, balanceUpdate, { merge: true });
 
@@ -352,6 +413,26 @@ export async function POST(req: Request) {
     // the frontend polls via refreshBalanceUntil to catch up. Awaiting
     // any of this inline made the wheel wait ~10s before spinning.
     waitUntil((async () => {
+      // NOTE: the win's bell notification is NOT fired here. The wheel page
+      // pushes it client-side at the exact moment the wheel stops
+      // (app/banana-wheel/page.tsx onSpinComplete → pushNotification →
+      // server-persisted + cross-device ping) — server-firing it here either
+      // spoils the reveal (too early) or lags it (delay guessing), and doing
+      // both double-notified. One source, perfect timing.
+
+      // Club badge for a Jackpot/HOF wheel WIN — participation/achievement badge
+      // (Boris 2026-07-01): winning a JP/HOF draft pass on the wheel unlocks the
+      // matching club, same as being in a JP/HOF draft. `unlockBadge` (not
+      // silent) fires its own "Badge unlocked" bell + toast; idempotent, so it
+      // never double-bells and is safe alongside the later queue-draft-filled
+      // unlock. This is a SEPARATE celebratory bell from the win reveal (which
+      // the wheel page still fires client-side), so it doesn't spoil the spin.
+      if (jphofKind === 'jackpot') {
+        await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackpot', spinId }).catch(() => {});
+      } else if (jphofKind === 'hof') {
+        await unlockBadge(userId, 'hof-club', { source: 'wheel-hof', spinId }).catch(() => {});
+      }
+
       let mintTxHash: string | undefined;
       let mintedTokenIds: string[] = [];
 
@@ -367,6 +448,15 @@ export async function POST(req: Request) {
             txHash: mintTxHash,
             reason: `wheel_spin:${spinId}`,
           });
+          // Register into the Go engine as REAL spendable free tokens, typed
+          // `free`. Collision-proof on the engine side. The freeDrafts counter
+          // is recounted from inventory below, so it ends up reflecting what
+          // actually registered rather than the optimistic spin-tx credit.
+          try {
+            await registerMintedTokens(userId, mintedTokenIds, 'free');
+          } catch (e) {
+            logger.warn('wheel.spin.register_go_api_failed', { spinId, userId, err: (e as Error).message });
+          }
           logger.info('wheel.spin.mint_ok', { spinId, userId, count: draftPassCount, txHash: mintTxHash, tokenIds: mintedTokenIds });
         } catch (mintErr) {
           logger.error('wheel.spin.mint_failed', { spinId, userId, count: draftPassCount, err: mintErr });
@@ -386,17 +476,107 @@ export async function POST(req: Request) {
         }
       }
 
-      try {
-        const { unlockBadge } = await import('@/lib/db');
-        await unlockBadge(userId.toLowerCase(), 'first-spin', { spinId }).catch(() => {});
-        if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-          await unlockBadge(userId.toLowerCase(), 'spin-jackpot', { spinId }).catch(() => {});
-        } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-          await unlockBadge(userId.toLowerCase(), 'spin-hof', { spinId }).catch(() => {});
+      // JP/HOF wheel win → mint ONE real pass NFT, marked with its known level so
+      // the marketplace can treat it as a JP/HOF pass before any league reveal.
+      // Flag-gated; the legacy counter/queue path runs instead when OFF.
+      if (mintJpHof && jphofKind) {
+        try {
+          const res = await reserveTokensToWallet({ to: userId, count: 1 });
+          await recordPassOrigins({
+            tokenIds: res.tokenIds,
+            origin: 'spin_reward',
+            ownerAtMint: userId,
+            txHash: res.txHash,
+            reason: `wheel_spin:${spinId}`,
+            level: jphofKind,
+          });
+          try {
+            await registerMintedTokens(userId, res.tokenIds, 'free');
+          } catch (e) {
+            logger.warn('wheel.spin.jphof_register_go_api_failed', { spinId, userId, err: (e as Error).message });
+          }
+          // Stamp the special LEVEL on the spendable-pool doc so this wheel pass
+          // is LOCKED to its own special draft: the Go engine's selectTokensByType
+          // and our countSpendableTokens both skip HOF/Jackpot-level tokens, so it
+          // can never be spent to enter a regular fast/slow main-lobby draft (the
+          // bug that let a HOF wheel pass be drafted into a normal league). It
+          // stays sellable while the round is filling. A fresh wheel mint never
+          // collides, so the validDraftTokens doc id is the on-chain tokenId.
+          try {
+            const specialLevel = jphofKind === 'jackpot' ? 'Jackpot' : 'Hall of Fame';
+            await Promise.all(
+              res.tokenIds.map((tid) =>
+                db
+                  .collection('owners').doc(userId.toLowerCase())
+                  .collection('validDraftTokens').doc(String(tid))
+                  .set({ Level: specialLevel }, { merge: true }),
+              ),
+            );
+          } catch (e) {
+            logger.warn('wheel.spin.jphof_level_stamp_failed', { spinId, userId, kind: jphofKind, err: (e as Error).message });
+          }
+          // Queue the pass by its tokenId so it enters a filling JP/HOF round,
+          // then seat the winner in the round's REAL Go league right away —
+          // the first winner's win creates the league (the lobby exists from
+          // minute one), later winners join it, and the 10th join starts the
+          // draft exactly like a regular draft filling. A sale-while-filling
+          // hands the seat to the buyer via the swap endpoint.
+          const jphofTokenId = res.tokenIds[0];
+          if (jphofTokenId) {
+            try {
+              const { joinQueueWithToken } = await import('@/lib/db');
+              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+              if (joinedRoundId !== null) {
+                const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+                await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);
+              }
+            } catch (qErr) {
+              logger.warn('wheel.spin.jphof_queue_failed', { spinId, userId, err: (qErr as Error).message });
+            }
+            // Ask OpenSea to re-pull metadata now that the pass is queued — its
+            // metadata route now emits the JP/HOF Level trait while filling, so
+            // a refresh makes it show under OpenSea's Level filter immediately.
+            try {
+              const { refreshOpenSeaTokens } = await import('@/lib/opensea');
+              await refreshOpenSeaTokens([jphofTokenId]);
+            } catch { /* refresh is best-effort; OpenSea re-pulls on its own too */ }
+          }
+          logger.info('wheel.spin.jphof_mint_ok', { spinId, userId, kind: jphofKind, txHash: res.txHash, tokenIds: res.tokenIds });
+        } catch (mintErr) {
+          logger.error('wheel.spin.jphof_mint_failed', { spinId, userId, kind: jphofKind, err: mintErr });
+          try {
+            await db.collection('failed_mints').doc(`${spinId}-jphof`).set({
+              spinId,
+              userId,
+              count: 1,
+              kind: jphofKind,
+              reason: `wheel_spin:${spinId}`,
+              error: (mintErr as Error)?.message ?? String(mintErr),
+              createdAt: FieldValue.serverTimestamp(),
+              retryable: true,
+            });
+          } catch (logErr) {
+            logger.error('wheel.spin.jphof_failed_mint_record_error', { spinId, err: logErr });
+          }
         }
-      } catch (badgeErr) {
-        logger.warn('wheel.spin.badge_unlock_failed', { spinId, err: (badgeErr as Error).message });
       }
+
+      // Reconcile freeDrafts to the wallet's REAL spendable inventory now the
+      // mint + registration have settled. The spin tx credited freeDrafts
+      // optimistically for instant feedback; this corrects it to the truth — a
+      // failed mint has its phantom credit removed, a successful one confirmed.
+      if (draftPassCount > 0) {
+        try {
+          await recountFromInventory(userId);
+        } catch (e) {
+          logger.warn('wheel.spin.recount_failed', { spinId, userId, err: (e as Error).message });
+        }
+      }
+
+      // NOTE: NO club badge unlock at spin time (Boris 2026-06-10). Winning
+      // a JP/HOF draft on the wheel unlocks the club badge when that queue
+      // DRAFT FILLS — fired by the draft-filled webhook (queue-draft-filled
+      // source), not here.
 
       if (mintOnChain && mintedTokenIds.length > 0) {
         await logActivityEvent({
@@ -433,45 +613,39 @@ export async function POST(req: Request) {
         });
       }
 
-      if (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof')) {
+      // Legacy wallet-keyed queue. Skipped when we minted a real pass (flag ON) —
+      // step 2 binds the queue to that NFT instead.
+      if (jphofKind && !mintJpHof) {
         try {
           const { joinQueue } = await import('@/lib/db');
-          await joinQueue(userId, segment.prizeValue as 'jackpot' | 'hof');
-          logger.debug(`[wheel/spin] Auto-queued ${userId} for ${segment.prizeValue}`);
+          const { joinedRoundIds } = await joinQueue(userId, jphofKind);
+          logger.debug(`[wheel/spin] Auto-queued ${userId} for ${jphofKind}`);
+          const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+          for (const rid of joinedRoundIds) {
+            await ensureSpecialDraftSeat(jphofKind, rid, userId);
+          }
         } catch (qErr) {
           logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
         }
       }
     })());
 
-    // V2 verification payload: if this spin was assigned by an active
-    // wheel-proof period, attach the Merkle proof so the client can verify
-    // it against the on-chain root immediately. Generation rebuilds the
-    // tree from stored leaves (~10-20ms for 10k leaves) — cheap enough to
-    // do per-spin without caching.
-    let proof: { periodNumber: number; spinIndex: number; leaf: string; path: string[]; root: string } | null = null;
-    if (periodNumber !== null && spinIndexInPeriod !== null) {
-      try {
-        const p = await generateSpinProof(periodNumber, spinIndexInPeriod);
-        proof = {
-          periodNumber,
-          spinIndex: spinIndexInPeriod,
-          leaf: p.leaf,
-          path: p.proof,
-          root: p.root,
-        };
-      } catch (proofErr) {
-        logger.warn('wheel.spin.proof_generation_failed', {
-          spinId,
-          periodNumber,
-          spinIndex: spinIndexInPeriod,
-          err: (proofErr as Error).message,
-        });
-      }
-    }
-
+    // The RESULT is already fully determined (claimSpinIndex derived it from the
+    // period's salt+VRF+spinIndex — one small doc read + one hash). That's all
+    // the wheel needs to spin to the right segment, so we return IMMEDIATELY.
+    //
+    // We deliberately do NOT build the Merkle proof here: generateSpinProof
+    // loads EVERY leaf in the period and rebuilds the whole tree. At 10k leaves
+    // that was ~15ms (invisible); at a 100k-spin season period it's a ~7MB read
+    // + 100k-leaf rebuild ≈ 3s — on EVERY spin, blocking the response. The wheel
+    // free-spins until this returns, so it dragged the spin out to ~5s AND let
+    // the balance-reveal freeze expire mid-spin (counter updating before the
+    // wheel landed). The proof is only needed for the "Verified ✓" badge, which
+    // the client now fetches lazily AFTER the wheel lands via
+    // GET /api/wheel/proof/{spinId} — off the critical path. periodNumber +
+    // spinIndex are returned so the client knows the spin is verifiable.
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain, proof },
+      { spinId, result: segment.id, prize, angle, mintOnChain, periodNumber, spinIndex: spinIndexInPeriod },
       200,
     );
   } catch (err) {

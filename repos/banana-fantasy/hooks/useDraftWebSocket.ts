@@ -107,7 +107,7 @@ export interface UseDraftWebSocketReturn {
 
 // ==================== CONSTANTS ====================
 
-const DEFAULT_SERVER_URL = 'wss://sbs-drafts-server-w5wydprnbq-uc.a.run.app';
+const DEFAULT_SERVER_URL = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app'; // staging WS — never prod
 const MAX_BACKOFF_MS = 30_000;
 const INITIAL_BACKOFF_MS = 1_000;
 const PING_INTERVAL_MS = 30_000;
@@ -206,18 +206,28 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     let token: string | null = null;
     const tokenFn = getTokenRef.current;
     if (tokenFn) {
-      try {
-        token = await tokenFn();
-      } catch (err) {
-        console.warn('[ws] failed to get access token:', err);
-        reportClientError({
-          source: LOG_SOURCES.draft.WS_TOKEN_FETCH_FAILED,
-          message: err instanceof Error ? err.message : String(err),
-          route: 'draft-room',
-          actor: walletAddress,
-          context: { draftName },
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+      // Retry the token fetch up to 3 times (300ms apart) — a momentary Privy
+      // blink used to make us connect TOKEN-LESS, the server 401'd the
+      // upgrade, and the room silently ran on slow polling for the whole
+      // session. One hiccup shouldn't cost the user their live updates.
+      for (let attempt = 1; attempt <= 3 && !token && mountedRef.current; attempt++) {
+        try {
+          token = await tokenFn();
+        } catch (err) {
+          if (attempt === 3) {
+            console.warn('[ws] failed to get access token after 3 attempts:', err);
+            reportClientError({
+              source: LOG_SOURCES.draft.WS_TOKEN_FETCH_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletAddress,
+              context: { draftName, attempts: 3 },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          } else {
+            await new Promise((r) => setTimeout(r, 300));
+          }
+        }
       }
     }
     if (!mountedRef.current) return;
@@ -283,13 +293,27 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
             break;
         }
       } catch (err) {
-        // Ignore non-JSON messages (e.g. pong frames)
+        // Ignore non-JSON messages (e.g. pong/heartbeat frames) — keep the
+        // CLI breadcrumb for all of them.
         clientLog('draft#', 'ws_message_parse_failed', {
           source: LOG_SOURCES.draft.WS_MESSAGE_PARSE_FAILED,
           draftName,
           error: err instanceof Error ? err.message : String(err),
           raw: typeof event.data === 'string' ? event.data.slice(0, 120) : typeof event.data,
         });
+        // Only surface to the admin feed when the frame LOOKED like an intended
+        // JSON message (starts with { or [) but failed to parse — i.e. a real
+        // malformed draft message, not a benign pong frame. (throttled 60s/source)
+        const raw = typeof event.data === 'string' ? event.data.trimStart() : '';
+        if (raw.startsWith('{') || raw.startsWith('[')) {
+          reportClientError({
+            source: LOG_SOURCES.draft.WS_MESSAGE_PARSE_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletAddress,
+            context: { draftName, raw: raw.slice(0, 200) },
+          });
+        }
       }
     };
 

@@ -26,6 +26,7 @@
 import { useMemo, useState } from 'react';
 import { useUsersAggregate, type AggregateUser } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 /**
  * Avatar — three-tier fallback, in this order:
@@ -70,6 +71,12 @@ const WEEK_MS = 7 * 24 * 3600 * 1000;
 const FORTNIGHT_MS = 14 * 24 * 3600 * 1000;
 const lastActiveMs = (u: AggregateUser) => (u.lastActiveAt ? Date.parse(u.lastActiveAt) : 0);
 
+// NET drafts: entries minus leaves. A leave refunds the pass, and users who
+// bounce (enter → leave → re-enter) log an `entered` event each time — the
+// gross count read as "4 drafts" for someone who only ever held 2 passes
+// (Bucsfan, 2026-07-03). Net = drafts they're actually in / completed.
+const netDrafts = (u: AggregateUser) => Math.max(0, u.activity.draftsEntered - u.activity.draftsLeft);
+
 const FILTERS: { key: FilterKey; label: string; predicate: (u: AggregateUser) => boolean }[] = [
   { key: 'all', label: 'All', predicate: () => true },
   {
@@ -109,7 +116,7 @@ const FILTERS: { key: FilterKey; label: string; predicate: (u: AggregateUser) =>
 
 const SORTS: { key: SortKey; label: string; pick: (u: AggregateUser) => number }[] = [
   { key: 'spend', label: 'Spend', pick: (u) => u.activity.spendUsd },
-  { key: 'drafts', label: 'Drafts', pick: (u) => u.activity.draftsEntered },
+  { key: 'drafts', label: 'Drafts', pick: (u) => netDrafts(u) },
   { key: 'spins', label: 'Spins', pick: (u) => u.activity.spinsWon },
   { key: 'promos', label: 'Promos', pick: (u) => u.activity.promosClaimed },
   { key: 'last_active', label: 'Last active', pick: lastActiveMs },
@@ -269,15 +276,13 @@ export function UsersTableBox({ enabled }: Props) {
                 const inLimbo = u.promos.pendingTypes.length;
                 // Name resolution order:
                 //   1. displayName the user chose on the Profile page
-                //   2. auto-generated username (e.g. "BananaKing99",
-                //      "User-0x01aB")
-                //   3. derived default "Banana #XXXX" using the last 4
-                //      hex chars of the wallet — so older accounts that
-                //      have neither field still get a recognizable
-                //      label instead of duplicating the wallet on both
-                //      lines of the cell.
-                const fallback = `Banana #${u.wallet.slice(-4).toUpperCase()}`;
-                const name = u.displayName || u.username || fallback;
+                //   2. real username (the API rejects 'User-…' placeholders
+                //      and wallet-string usernames)
+                //   3. the CANONICAL wallet-derived default — the exact same
+                //      Banana##### the user sees about themselves everywhere
+                //      on the site (never a homemade variant, so admin and
+                //      product can't disagree about someone's name).
+                const name = u.displayName || u.username || bananaPlaceholderName(u.wallet);
                 const nameIsFallback = !u.displayName && !u.username;
                 return (
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
@@ -285,12 +290,20 @@ export function UsersTableBox({ enabled }: Props) {
                       <div className="flex items-center gap-2.5">
                         <Avatar src={u.avatar} />
                         <div className="min-w-0">
-                          <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-400 italic' : 'text-white'}`} title={name}>{name}</p>
+                          {/* Default banana names render as REAL names (white) —
+                              they ARE the user's name. Subtle gray only, no
+                              italic, to still hint "hasn't customized yet". */}
+                          <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-300' : 'text-white'}`} title={name}>{name}</p>
                           <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
                         </div>
                       </div>
                     </td>
-                    <td className={`py-2 text-right ${u.activity.draftsEntered > 0 ? 'text-blue-300' : 'text-gray-600'}`}>{u.activity.draftsEntered}</td>
+                    <td
+                      className={`py-2 text-right ${netDrafts(u) > 0 ? 'text-blue-300' : 'text-gray-600'}`}
+                      title={u.activity.draftsLeft > 0 ? `${u.activity.draftsEntered} entered · ${u.activity.draftsLeft} left` : undefined}
+                    >
+                      {netDrafts(u)}
+                    </td>
                     <td className={`py-2 text-right ${u.activity.passesBought > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{u.activity.passesBought}</td>
                     <td className={`py-2 text-right ${u.activity.spendUsd > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>
                       {u.activity.spendUsd > 0 ? `$${Math.round(u.activity.spendUsd).toLocaleString()}` : '—'}
@@ -313,8 +326,23 @@ export function UsersTableBox({ enabled }: Props) {
                     >
                       {timeAgo(u.lastActiveAt)}
                     </td>
-                    <td className="px-5 py-2 text-right text-[11px] text-gray-500">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
+                    {/* Exact signup stamp — date on top, time beneath (Boris
+                        2026-07-03: "stamp the exact time and date they created
+                        the account"). Full locale string on hover. */}
+                    <td
+                      className="px-5 py-2 text-right text-[11px] text-gray-500 whitespace-nowrap"
+                      title={u.createdAt ? new Date(u.createdAt).toLocaleString() : undefined}
+                    >
+                      {u.createdAt ? (
+                        <>
+                          <span className="block leading-tight">
+                            {new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                          </span>
+                          <span className="block leading-tight text-[10px] text-gray-600">
+                            {new Date(u.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </>
+                      ) : '—'}
                     </td>
                   </tr>
                 );

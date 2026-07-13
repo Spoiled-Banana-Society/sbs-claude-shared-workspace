@@ -5,10 +5,56 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
-import { isDraftingOpen } from '@/lib/draftTypes';
+import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
+import { FounderTeamBadge } from '@/components/marketplace/FounderTeamBadge';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 type SuccessType = 'buy' | 'sell' | 'list';
+
+// Sort order for "Sell Your Teams", per product:
+//   0. Drafted teams you CAN sell        (has roster, not a free pass mid-season)
+//   1. Drafted teams you CAN'T sell yet  (free team, drafting still open)
+//   2. Draft passes you CAN sell         (unused paid pass)
+//   3. Draft passes you CAN'T sell yet   (free pass, drafting still open)
+// A "team" = has a backend roster record; otherwise it's an unused draft pass.
+// "Can't sell" = a free pass/team while drafting is still open.
+function sellTierRank(team: MarketplaceTeam): number {
+  const isTeam = team.hasBackendRecord === true;
+  // A wheel-won JP/HOF pass that's still filling is sellable even though it's free
+  // (the slot follows the NFT, so a sale hands the draft to the buyer). It waives
+  // the normal free-pass listing block until its draft fills.
+  const fillingWheelPass = !!team.fillingWheelLevel;
+  // The free-entry lock applies ONLY to an undrafted free PASS. A DRAFTED team
+  // (hasBackendRecord === true) is a real team — sellable regardless of whether
+  // it was entered with a free or paid pass. So a drafted team is never blocked.
+  const blocked = !fillingWheelPass && !isTeam && team.passType === 'free' && isDraftingOpen();
+  if (isTeam && !blocked) return 0;
+  if (isTeam && blocked) return 1;
+  if (!isTeam && !blocked) return 2;
+  return 3;
+}
+
+/** Can this team/pass be listed right now? (Free passes are locked until the season
+ *  starts — EXCEPT a wheel-won JP/HOF pass while its draft is still filling.) */
+function canSellTeam(team: MarketplaceTeam): boolean {
+  if (team.fillingWheelLevel) return true;
+  // A DRAFTED team (has a backend roster record) is a real team, not a pass —
+  // always sellable, even one entered with a FREE pass. Only an UNDRAFTED free
+  // PASS is locked (you can't sell a free draft pass). This is why a free-draft
+  // team like League #11 must show + be listable on My Teams.
+  if (team.hasBackendRecord === true) return true;
+  return !(team.passType === 'free' && isDraftingOpen());
+}
+
+// A drafted team's roster is EMPTY while its draft is in progress and only
+// populates once the draft completes. (A finished team's marketplace roster is
+// ~12 display slots, not the raw 15 best-ball picks — so check for ANY roster,
+// not a count of 15.) Empty roster + a backend record = still drafting.
+function draftInProgress(team: MarketplaceTeam): boolean {
+  return team.hasBackendRecord === true && (team.roster?.length ?? 0) === 0;
+}
 
 interface SellTabProps {
   myNfts: MarketplaceTeam[];
@@ -63,119 +109,205 @@ export function SellTab({
   onExecuteCancel,
   onCloseSuccessModal,
 }: SellTabProps) {
+  // Team # / League # search (Boris 2026-06-10) — same instant client-side
+  // filter style as the Buy tab's inputs. Team # = token id; league # comes
+  // from the marketplace index overlay.
+  const [teamSearch, setTeamSearch] = useState('');
+  const [leagueSearch, setLeagueSearch] = useState('');
+  // Which of my teams came from a Founder Draft (one batched check).
+  const founderTeamIds = useFounderTeams(
+    myNfts.map(t => ({ tokenId: t.tokenId, owner: t.ownerAddress, leagueId: t.leagueId })),
+  );
+  // Inventory view toggle. DEFAULT = drafted TEAMS (the thing people actually
+  // sell). Passes live behind toggles, split paid vs free, plus an All view.
+  // A "pass" = an NFT with no backend roster record (hasBackendRecord === false);
+  // a "team" = a drafted roster record. Once a pass is drafted it gains a roster
+  // record → hasBackendRecord flips true → it shows up in the default Teams view
+  // automatically. No special wiring needed for that transition.
+  // Only DRAFTED TEAMS are sellable/shown here — undrafted passes are never listed
+  // (a pass becomes a team once drafted: it gains a backend roster record, so
+  // hasBackendRecord flips true and it appears). No view toggle.
+  // ...plus wheel-won JP/HOF passes that are still filling — those are sellable
+  // now (until their draft fills), so surface them even without a roster record.
+  const searched = myNfts.filter(t =>
+    (!teamSearch || String(t.tokenId) === teamSearch.trim()) &&
+    (!leagueSearch || String(t.leagueNumber ?? '') === leagueSearch.trim()),
+  );
+  const inView = searched.filter(t => t.hasBackendRecord !== false || t.fillingWheelLevel != null);
+
+  // Tier first, then NEWEST first (highest token id) within a tier, so the team
+  // you just drafted sits at the very top.
+  const byTierThenNewest = (a: typeof myNfts[number], b: typeof myNfts[number]) =>
+    (sellTierRank(a) - sellTierRank(b)) || ((Number(b.tokenId) || 0) - (Number(a.tokenId) || 0));
+  const sellable = inView.filter(canSellTeam).sort(byTierThenNewest);
+  const unsellable = inView.filter(t => !canSellTeam(t)).sort(byTierThenNewest);
+  // Unsellable teams (free entries pre-season) are never listed here — they're
+  // not actionable on the Sell tab. The empty-state line below explains why.
+  const fullList = sellable;
+  // Cap rendered rows so a whale's hundreds of identical passes don't jank the
+  // page. Teams are few so they're effectively never capped.
+  const RENDER_CAP = 60;
+  const visibleNfts = fullList.slice(0, RENDER_CAP);
+  const hiddenCount = fullList.length - visibleNfts.length;
+
   return (
     <>
       <div>
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
-          <h3 className="text-lg font-semibold text-text-primary mb-2">Sell Your Teams</h3>
-          <p className="text-text-secondary text-sm mb-6">List any of your BBB teams for sale. Set your price and buyers can purchase instantly.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <h3 className="text-lg font-semibold text-text-primary">Sell Your Teams</h3>
+            {/* Equal-width inputs that stay inside the card on mobile (2-col
+                grid), fixed compact widths on desktop. */}
+            <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:w-auto">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={teamSearch}
+                onChange={(e) => setTeamSearch(e.target.value)}
+                placeholder="Team #"
+                className="w-full sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                value={leagueSearch}
+                onChange={(e) => setLeagueSearch(e.target.value)}
+                placeholder="League #"
+                className="w-full sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          </div>
+          <p className="text-text-secondary text-sm mb-6">List any of your teams for sale. Set your price and buyers can purchase instantly.</p>
 
           {myNftsLoading ? (
-            <div className="space-y-4">
-              {[...Array(2)].map((_, index) => (
-                <div key={index} className="bg-bg-primary border border-bg-tertiary rounded-xl p-4 animate-pulse">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-bg-tertiary" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-bg-tertiary rounded w-32" />
-                      <div className="h-3 bg-bg-tertiary rounded w-48" />
-                    </div>
-                    <div className="h-10 bg-bg-tertiary rounded w-28" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              {[...Array(3)].map((_, index) => (
+                <div key={index} className="bg-[#0d0d12] border border-bg-tertiary rounded-2xl overflow-hidden animate-pulse">
+                  <div className="aspect-[3/4] bg-bg-tertiary/40" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-5 bg-bg-tertiary rounded w-28" />
+                    <div className="h-3 bg-bg-tertiary rounded w-20" />
+                    <div className="h-10 bg-bg-tertiary rounded-xl w-full" />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="grid gap-4">
-              {myNfts
-                // Hide orphan stage-mint NFTs (no SBS backend record, not a free pass).
-                // Production can't produce this state — it's leftover from staging test mints.
-                .filter(team => !(team.hasBackendRecord === false && team.passType !== 'free'))
-                .sort((a, b) => {
-                  // Free draft passes go last; everything else keeps existing order.
-                  const aFree = a.passType === 'free' ? 1 : 0;
-                  const bFree = b.passType === 'free' ? 1 : 0;
-                  return aFree - bFree;
-                })
-                .map(team => (
+            // Same 3-up big-card grid as the Buy sections.
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              {visibleNfts.map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
-                  className={`bg-bg-primary border rounded-xl p-4 flex items-center justify-between transition-all hover:-translate-y-0.5 hover:border-bg-elevated ${team.isHof ? 'border-hof/30' : 'border-bg-tertiary'}`}
+                  className={`group relative block bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg ${team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
                 >
-                  <div className="flex items-center gap-4">
-                    {team.imageUrl ? (
-                      <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
-                    ) : (
-                      <SbsPassThumb
-                        label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`}
-                        size={56}
-                        roster={team.roster}
-                      />
-                    )}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-text-primary font-semibold font-mono">{team.name}</h4>
-                        {team.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[9px] font-bold rounded">HOF</span>}
-                        {team.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[9px] font-bold rounded">JP</span>}
-                        {team.hasBackendRecord === false && team.passType !== 'free' && (
-                          <span
-                            className="px-2 py-0.5 bg-white/5 text-white/40 text-[9px] font-bold rounded uppercase tracking-wide"
-                            title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
-                          >
-                            Stage Mint
-                          </span>
-                        )}
+                  <div className="relative aspect-[4/5] bg-[#0d0d12]">
+                    {draftInProgress(team) ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
+                        <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={64} height={64} className="object-contain opacity-80" />
+                        <span className="text-text-muted text-xs">Drafting…</span>
                       </div>
-                      <p className="text-text-muted text-xs">
-                        {team.rank > 0 ? `Rank #${team.rank} • ` : ''}
-                        {team.points > 0 ? `${team.points.toLocaleString()} pts` : `Token #${team.tokenId}`}
-                        {team.playoffOdds > 0 ? ` • ${team.playoffOdds}% playoffs` : ''}
-                      </p>
+                    ) : team.fillingWheelLevel ? (
+                      // Wheel-won JP/HOF pass: render the tier-styled pass art (gold
+                      // HOF / red Jackpot) instead of the generic grey pass image.
+                      <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                    ) : team.imageUrl ? (
+                      <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center"><SbsPassThumb label={`#${team.tokenId}`} size={160} roster={team.roster} /></div>
+                    )}
+
+                    {/* level badge (top-left) */}
+                    <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+                      {team.fillingWheelLevel ? (
+                        // Wheel-won JP/HOF pass still filling. Its NFT metadata isn't
+                        // stamped JP/HOF until the draft reveals, so team.isHof/isJackpot
+                        // are still false here — drive the badge off the known wheel
+                        // level so it never wrongly falls back to "PRO".
+                        <span
+                          className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}
+                          title="Wheel-won pass — the only sellable draft pass on SBS. Sell it any time before the draft fills; once it fills, the seat is yours for good (team listable after the season)."
+                        >
+                          {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
+                        </span>
+                      ) : team.isJackpot ? (
+                        <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
+                      ) : team.isHof ? (
+                        <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
+                      ) : (
+                        <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
+                      )}
+                      {founderTeamIds.has(team.tokenId) && <FounderTeamBadge />}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
-                    <a
-                      href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${team.tokenId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="text-text-muted hover:text-text-primary text-xs underline-offset-4 hover:underline"
-                      title="View on OpenSea"
-                    >
-                      OpenSea ↗
-                    </a>
-                    <SellTabOfferBadge tokenId={team.tokenId} />
-                    {team.orderHash ? (
-                      <>
-                        <span className="text-sm text-green-400 font-medium">Listed at ${team.price?.toFixed(2)}</span>
+
+                  {/* Footer below the card — info + action sit on their own row so
+                      the action button never covers the roster numbers on the card
+                      art (gives the card breathing room). */}
+                  <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+                    <div className="min-w-0">
+                      <p className="font-mono font-semibold text-sm text-text-primary truncate">
+                        {team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : `Team #${team.tokenId}`}
+                      </p>
+                      <p className={`font-mono text-[10.5px] truncate ${team.fillingWheelLevel ? (team.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof') : 'text-text-muted'}`}>
+                        {team.fillingWheelLevel
+                          ? `From wheel · Filling${typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}`
+                          : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
+                      </p>
+                      {/* Best offer — only for LISTED teams; fetching offers per
+                          card for every owned team flooded the rate limiter. */}
+                      {team.orderHash && <SellTabOfferBadge tokenId={team.tokenId} />}
+                    </div>
+                    <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      {team.orderHash ? (
                         <button
                           onClick={e => { e.preventDefault(); onHandleCancel(team); }}
                           disabled={cancellingTokenId === team.tokenId}
-                          className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-red-500/50 text-red-400 hover:bg-red-500/15 transition-all disabled:opacity-50"
                         >
-                          {cancellingTokenId === team.tokenId ? 'Cancelling...' : 'Delist'}
+                          {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
                         </button>
-                      </>
-                    ) : team.passType === 'free' && isDraftingOpen() ? (
-                      <button
-                        onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
-                        className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
-                      >
-                        Listable Once Season Starts
-                      </button>
-                    ) : (
-                      <button
-                        onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
-                        className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-banana text-black hover:brightness-110"
-                      >
-                        List for Sale
-                      </button>
-                    )}
+                      ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel && team.hasBackendRecord !== true ? (
+                        // Only an UNDRAFTED free PASS is locked until the season.
+                        // A drafted free TEAM (hasBackendRecord) falls through to
+                        // "List for Sale" — it's a real, sellable team.
+                        <button
+                          onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-white/15 text-white/50 transition-all"
+                        >
+                          Season Soon
+                        </button>
+                      ) : draftInProgress(team) ? (
+                        <span className="px-4 py-2 rounded-xl text-xs font-bold border border-white/15 text-white/45 cursor-default">Drafting…</span>
+                      ) : (
+                        <button
+                          onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                        >
+                          List for Sale
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </Link>
                 ))}
             </div>
+          )}
+
+          {!myNftsLoading && (teamSearch || leagueSearch) && fullList.length === 0 && myNfts.length > 0 && (
+            <p className="text-text-muted text-sm text-center py-6">
+              No teams match your search.
+            </p>
+          )}
+
+          {!myNftsLoading && !(teamSearch || leagueSearch) && sellable.length === 0 && unsellable.length > 0 && (
+            <p className="text-text-muted text-sm text-center py-6">
+              Nothing you can list right now — your teams/passes are free entries, listable once the season starts.
+            </p>
+          )}
+
+          {!myNftsLoading && hiddenCount > 0 && (
+            <p className="text-text-muted text-xs text-center mt-3">Showing {visibleNfts.length} of {fullList.length}.</p>
           )}
 
           {txError && !showSellModal && (
@@ -235,7 +367,7 @@ export function SellTab({
                     </div>
                   </div>
                   <Link
-                    href={`/marketplace/${offer.tokenId}`}
+                    href={`/marketplace/${offer.tokenId}?review=offers`}
                     className="px-4 py-2 bg-success text-white text-xs font-semibold rounded-xl hover:brightness-110 transition-all"
                   >
                     Review
@@ -244,15 +376,6 @@ export function SellTab({
               ))}
             </div>
           )}
-        </div>
-
-        <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Selling Tips</h3>
-          <div className="space-y-4">
-            <TipRow number="1" title="Price competitively" description="Check similar teams to set a fair price. Jackpot and HOF teams command premiums." />
-            <TipRow number="2" title="Highlight your perks" description="Jackpot teams that win their league skip to finals. HOF teams compete for bonus prizes. Buyers pay more for these." />
-            <TipRow number="3" title="Low fees" description="Only a 1% OpenSea fee. No hidden charges — SBS takes zero cut." />
-          </div>
         </div>
       </div>
 
@@ -300,10 +423,10 @@ export function SellTab({
                   <SbsPassThumb label={selectedTeam.name?.startsWith('BBB') ? selectedTeam.name.replace('BBB ', '') : `#${selectedTeam.tokenId}`} size={56} />
                 )}
                 <div>
-                  <h3 className="text-text-primary font-semibold font-mono">{selectedTeam.name}</h3>
+                  <h3 className="text-text-primary font-semibold font-mono">Team #{selectedTeam.tokenId}</h3>
                   <p className="text-text-muted text-xs">
-                    {selectedTeam.rank > 0 ? `Rank #${selectedTeam.rank} • ` : ''}
-                    {selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : `Token #${selectedTeam.tokenId}`}
+                    {hasSeasonStarted() && selectedTeam.rank >= 1 && selectedTeam.rank <= 10 ? `Rank #${selectedTeam.rank} • ` : ''}
+                    {hasSeasonStarted() && selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : selectedTeam.leagueNumber != null ? `League #${selectedTeam.leagueNumber}` : `Token #${selectedTeam.tokenId}`}
                   </p>
                 </div>
               </div>
@@ -441,21 +564,7 @@ export function SellTab({
 function SellTabOfferBadge({ tokenId }: { tokenId: string }) {
   const { bestOffer } = useNftOffers(tokenId);
   if (!bestOffer) return null;
-  return <span className="text-xs text-banana font-mono font-medium">Best offer: ${bestOffer.amount.toFixed(2)}</span>;
-}
-
-function TipRow({ number, title, description }: { number: string; title: string; description: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-6 h-6 rounded-full bg-banana/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <span className="text-banana text-xs font-bold">{number}</span>
-      </div>
-      <div>
-        <h4 className="text-text-primary font-medium text-sm">{title}</h4>
-        <p className="text-text-secondary text-xs">{description}</p>
-      </div>
-    </div>
-  );
+  return <p className="mt-0.5 text-[10.5px] text-text-muted font-mono">Best offer <span className="text-banana font-semibold">${bestOffer.amount.toFixed(2)}</span></p>;
 }
 
 const HOUR = 60 * 60;

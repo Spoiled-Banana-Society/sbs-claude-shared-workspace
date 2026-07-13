@@ -4,9 +4,15 @@ import type React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
+import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
+import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
+import { FounderTeamBadge } from '@/components/marketplace/FounderTeamBadge';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
+import { useAuth } from '@/hooks/useAuth';
 
-type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type CardFlowStep = 'idle' | 'funding' | 'waiting' | 'buying';
@@ -27,6 +33,8 @@ interface BuyTabProps {
   allNftsHasMore: boolean;
   watchlistSet: Set<string>;
   walletAddress: string | null;
+  /** tokenId → USD of the viewer's own live offer — shows "Your offer $X" on the card. */
+  myMadeOffers?: Record<string, number>;
   lastSales: Record<string, { price: number; timestamp: string }>;
   leaderboardTeams: MarketplaceTeam[];
   showBuyModal: boolean;
@@ -37,7 +45,12 @@ interface BuyTabProps {
   txError: string | null;
   userUsdcBalance?: number | null;
   onSetViewFilter: (filter: ViewFilter) => void;
+  viewCounts?: { all?: number; pro?: number; jackpot?: number; hof?: number; passes?: number };
   onSetRosterFilter: (chips: string[]) => void;
+  leagueFilter: number | null;
+  onSetLeagueFilter: (n: number | null) => void;
+  teamFilter: number | null;
+  onSetTeamFilter: (n: number | null) => void;
   onSetSortBy: (value: string) => void;
   onToggleSweepMode: () => void;
   onToggleSweepSelect: (tokenId: string) => void;
@@ -51,13 +64,12 @@ interface BuyTabProps {
   onNavigateToTeam: (tokenId: string) => void;
   onMakeOffer: (tokenId: string) => void;
   onCloseBuyModal: () => void;
+  onCancelBuy: () => void;
   onSetPaymentMethod: (method: PaymentMethod) => void;
   onHandleBuy: () => void;
 }
 
 export function BuyTab({
-  collectionStats,
-  statsLoading,
   viewFilter,
   rosterFilter,
   rosterFilterOptions,
@@ -71,7 +83,7 @@ export function BuyTab({
   allNftsHasMore,
   watchlistSet,
   walletAddress,
-  lastSales,
+  myMadeOffers,
   leaderboardTeams,
   showBuyModal,
   selectedTeam,
@@ -81,7 +93,12 @@ export function BuyTab({
   txError,
   userUsdcBalance,
   onSetViewFilter,
+  viewCounts,
   onSetRosterFilter,
+  leagueFilter,
+  onSetLeagueFilter,
+  teamFilter,
+  onSetTeamFilter,
   onSetSortBy,
   onToggleSweepMode,
   onToggleSweepSelect,
@@ -89,119 +106,104 @@ export function BuyTab({
   onOpenSweepModal,
   onLoadMore,
   onToggleWatchlist,
-  onShare,
   onOpenBuyModal,
   onGoToSellTab,
   onNavigateToTeam,
   onMakeOffer,
   onCloseBuyModal,
+  onCancelBuy,
   onSetPaymentMethod,
   onHandleBuy,
 }: BuyTabProps) {
-  const isTeamsLoading = viewFilter === 'all' || viewFilter === 'top' || viewFilter === 'jackpot' || viewFilter === 'hof'
+  // Web2 (embedded) users pay from their in-app balance — label it "Balance",
+  // not "USDC" (crypto jargon). Web3 users keep "USDC".
+  const { isEmbeddedWallet } = useAuth();
+  const isTeamsLoading = viewFilter === 'all' || viewFilter === 'top' || viewFilter === 'pro' || viewFilter === 'jackpot' || viewFilter === 'hof'
     ? allNftsLoading
     : listingsLoading;
   const canLoadMore = (viewFilter === 'listed' && hasMore && !listingsLoading) || (viewFilter !== 'listed' && allNftsHasMore && !allNftsLoading);
   const sweepTeams = deduplicatedTeams.filter(team => sweepSelected.has(team.tokenId) && team.price != null);
+  // Which of the shown teams came from a Founder Draft (one batched check).
+  const founderTeamIds = useFounderTeams(
+    deduplicatedTeams.map(t => ({ tokenId: t.tokenId, owner: t.ownerAddress, leagueId: t.leagueId })),
+  );
   const sweepTotal = sweepTeams.reduce((sum, team) => sum + (team.price || 0), 0);
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {statsLoading || !collectionStats ? (
-          <>
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-          </>
-        ) : (
-          <>
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Total Volume"
-              value={collectionStats.totalVolume > 0 ? `$${collectionStats.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '$0'}
-              detail={collectionStats.weeklyVolumeChange != null ? `${Math.abs(collectionStats.weeklyVolumeChange).toFixed(1)}% this week` : null}
-              detailClassName={collectionStats.weeklyVolumeChange != null && collectionStats.weeklyVolumeChange >= 0 ? 'text-success' : 'text-error'}
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-success/20"
-              label="Teams Listed"
-              value={collectionStats.totalListed.toLocaleString()}
-              detail={`${collectionStats.numOwners.toLocaleString()} owners`}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Floor Price"
-              value={collectionStats.floorPrice > 0 ? `$${collectionStats.floorPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--'}
-              detail={collectionStats.floorPriceSymbol}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-hof/20"
-              label="Total Sales"
-              value={collectionStats.totalSales.toLocaleString()}
-              detail={`Avg $${collectionStats.averagePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-hof" fill="currentColor" viewBox="0 0 24 24">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
-              )}
-            />
-          </>
-        )}
-      </div>
-
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
+          {/* Type filters wrap to rows on mobile (no horizontal scrolling). On
+              phones we drop the enclosing pill so the half-empty second row
+              doesn't read as a big empty box — just clean wrapping chips. The
+              desktop segmented pill returns at lg. */}
+          {/* Mobile: even 4-top / 3-bottom grid (12-col so both rows fill edge
+              to edge — no half-empty trailing row). Desktop: the segmented pill. */}
+          <div className="grid grid-cols-12 gap-1.5 lg:flex lg:flex-wrap lg:gap-1 lg:bg-bg-secondary lg:p-1 lg:rounded-xl lg:border lg:border-bg-tertiary w-full lg:w-auto">
             {([
-              { key: 'listed', label: 'Listed' },
-              { key: 'all', label: 'All Teams' },
-              { key: 'top', label: 'Top Teams' },
-              { key: 'jackpot', label: 'Jackpot' },
-              { key: 'hof', label: 'HOF' },
-            ] as const).map(filter => (
-              <button
-                key={filter.key}
-                onClick={() => onSetViewFilter(filter.key)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                {filter.label}
-              </button>
-            ))}
+                { key: 'listed', label: 'Listed', count: undefined },
+                { key: 'all', label: 'All Teams', count: viewCounts?.all },
+                { key: 'top', label: 'Top Teams', count: undefined },
+                { key: 'pro', label: 'Pro', count: viewCounts?.pro },
+                { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
+                { key: 'hof', label: 'HOF', count: viewCounts?.hof },
+                { key: 'passes', label: 'Passes', count: viewCounts?.passes },
+              ] as const).map((filter, idx) => (
+                <button
+                  key={filter.key}
+                  onClick={() => onSetViewFilter(filter.key)}
+                  className={`${idx < 4 ? 'col-span-3' : 'col-span-4'} px-2 sm:px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap text-center transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {filter.label}
+                  {typeof filter.count === 'number' && filter.count > 0 && (
+                    <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
+                      {filter.count.toLocaleString()}
+                    </sup>
+                  )}
+                </button>
+              ))}
           </div>
 
+          {/* Roster search + League#/Team# grouped together, with the roster box
+              kept compact so they all sit on one tidy row with room to breathe
+              before the filter tabs. */}
           <MultiChipSearch
             chips={rosterFilter}
             onChange={onSetRosterFilter}
             options={rosterFilterOptions}
-            placeholder="Type a roster slot (e.g. KC QB)"
-            className="w-72"
+            placeholder="Roster slot (e.g. KC QB)"
+            className="w-full sm:w-52"
           />
+
+          {/* League # / Team # filters — sit right next to the roster search. */}
+          <div className="flex gap-2 w-full sm:w-auto">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={leagueFilter ?? ''}
+              onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="League #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <input
+              type="number"
+              inputMode="numeric"
+              value={teamFilter ?? ''}
+              onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Team #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Look up any user's teams (by username or wallet). */}
+          <Link
+            href="/u"
+            className="px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 bg-bg-secondary border border-bg-tertiary text-text-secondary hover:text-text-primary whitespace-nowrap"
+          >
+            🔍 Look up a user
+          </Link>
           <button
             onClick={onToggleSweepMode}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${sweepMode ? 'bg-banana text-black' : 'bg-bg-secondary border border-bg-tertiary text-text-secondary hover:text-text-primary'}`}
@@ -220,9 +222,6 @@ export function BuyTab({
           >
             <option value="price-low">Price: Low to High</option>
             <option value="price-high">Price: High to Low</option>
-            <option value="rank">Best Rank</option>
-            <option value="points">Most Points</option>
-            <option value="playoffs">Playoff Odds</option>
           </select>
         </div>
       </div>
@@ -235,10 +234,12 @@ export function BuyTab({
         <div className="text-center py-16 mb-12">
           <div className="text-4xl mb-4">🍌</div>
           <h3 className="text-text-primary font-semibold text-lg mb-2">
-            {viewFilter === 'listed' ? 'No Listings Found' : 'No Teams Found'}
+            {viewFilter === 'listed' ? 'No Listings Found' : viewFilter === 'passes' ? 'No Passes for Sale' : 'No Teams Found'}
           </h3>
           <p className="text-text-secondary text-sm">
-            {viewFilter === 'jackpot'
+            {viewFilter === 'passes'
+              ? 'No Jackpot or HOF draft passes are listed right now. Wheel winners can sell their wheel draft passes here while the draft fills.'
+              : viewFilter === 'jackpot'
               ? 'No Jackpot teams found. These are rare — 1 in 100 paid drafts, plus wheel wins.'
               : viewFilter === 'hof'
                 ? 'No Hall of Fame teams found in this view.'
@@ -251,186 +252,155 @@ export function BuyTab({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-12">
-          {deduplicatedTeams.map(team => (
+          {deduplicatedTeams.map((team, idx) => (
             <div
               key={`${team.id}-${team.orderHash}`}
               onClick={() => {
                 if (sweepMode && team.price != null) onToggleSweepSelect(team.tokenId);
                 else onNavigateToTeam(team.tokenId);
               }}
-              className={`bg-bg-secondary border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+              className={`group relative bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : (team.isJackpot || team.fillingWheelLevel === 'jackpot') ? 'border-error/30 hover:shadow-error/20' : (team.isHof || team.fillingWheelLevel === 'hof') ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
             >
-              <div className="relative h-80 bg-gradient-to-br from-bg-tertiary to-bg-secondary flex items-center justify-center">
-                {team.imageUrl ? (
-                  <Image src={team.imageUrl} alt={team.name} width={230} height={300} className="rounded-2xl shadow-lg" />
+              <div className="relative aspect-[4/5] bg-[#0d0d12]">
+                {team.fillingWheelLevel ? (
+                  // Wheel-won JP/HOF pass listed while filling: gold/red tier art.
+                  <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" priority={idx < 6} />
+                ) : team.imageUrl ? (
+                  <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" priority={idx < 6} />
                 ) : (
-                  <FallbackPassSvg gradientId={`passGrad-${team.id}`} />
+                  <div className="absolute inset-0 flex items-center justify-center"><FallbackPassSvg gradientId={`passGrad-${team.id}`} /></div>
                 )}
 
-                <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
-                  <button
-                    onClick={event => onShare(team, event)}
-                    className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 transition-colors"
-                    title="Share on X"
-                  >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                  </button>
+                <div className="absolute top-5 right-3 flex flex-col gap-3 z-10">
                   <button
                     onClick={event => {
                       event.stopPropagation();
                       event.preventDefault();
                       onToggleWatchlist(team.tokenId, team.price);
                     }}
-                    className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition-colors"
+                    className="flex items-center justify-center transition-transform hover:scale-110"
+                    title="Add to watchlist"
                   >
-                    <svg className={`w-3.5 h-3.5 ${watchlistSet.has(team.tokenId) ? 'text-red-500' : 'text-white'}`} fill={watchlistSet.has(team.tokenId) ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className={`w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${watchlistSet.has(team.tokenId) ? 'text-red-500' : 'text-white/85 hover:text-white'}`} fill={watchlistSet.has(team.tokenId) ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={async event => {
+                      event.stopPropagation();
+                      event.preventDefault();
+                      if (!team.imageUrl) return;
+                      try {
+                        const res = await fetch(team.imageUrl);
+                        const blob = await res.blob();
+                        const objUrl = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = objUrl;
+                        a.download = `SBS-Team-${team.tokenId}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(objUrl);
+                      } catch { /* ignore download failure */ }
+                    }}
+                    className="flex items-center justify-center transition-transform hover:scale-110"
+                    title="Download card"
+                  >
+                    <svg className="w-5 h-5 text-white/85 hover:text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
                     </svg>
                   </button>
                 </div>
 
-                <div className="absolute top-3 left-3">
-                  {team.isJackpot ? (
+                <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+                  {team.fillingWheelLevel ? (
+                    // Wheel-won pass still filling: its NFT metadata isn't stamped
+                    // JP/HOF yet, so drive the badge off the known wheel level.
+                    // The X/10 is live (5s poll) — buyers see exactly how close
+                    // the draft is to locking.
+                    <span className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}>
+                      {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
+                    </span>
+                  ) : team.isJackpot ? (
                     <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                   ) : team.isHof ? (
-                    <span className="px-3 py-1 bg-gradient-to-r from-hof to-pink-600 text-white text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                      HOF
-                    </span>
+                    <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
                   ) : (
                     <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
                   )}
+                  {team.rank >= 1 && team.rank <= 10 && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/60'}`}>#{team.rank}</span>
+                  )}
+                  {founderTeamIds.has(team.tokenId) && <FounderTeamBadge />}
                 </div>
+
               </div>
 
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-text-primary font-mono truncate">{team.name}</h3>
-                      {team.rank > 0 && (
-                        <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/50'}`}>
-                          #{team.rank}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {team.ownerPfp ? (
-                        <Image src={team.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
-                      ) : (
-                        <div className="w-5 h-5 rounded-full bg-bg-tertiary flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px]">🍌</span>
-                        </div>
-                      )}
-                      <p className="text-text-muted text-xs">{team.owner}</p>
-                    </div>
-                  </div>
+              {/* Footer below the card — price/name + action on their own row so
+                  the button never covers the card's roster numbers (matches the
+                  Sell tab). */}
+              <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+                <div className="min-w-0">
+                  {team.price != null ? (
+                    <>
+                      <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      {/* Keep the Team # visible alongside the price (don't let the
+                          listing price replace it), plus pts/League # for context. */}
+                      <p className="font-mono text-[10.5px] text-text-muted truncate">
+                        {team.name}
+                        {hasSeasonStarted() && team.points > 0
+                          ? ` · ${team.points.toLocaleString()} pts`
+                          : team.leagueNumber != null ? ` · League #${team.leagueNumber}` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : team.name}</p>
+                      <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'From wheel · filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
+                    </>
+                  )}
+                  {myMadeOffers?.[team.tokenId] != null && (
+                    <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
+                      Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  )}
                 </div>
-
-                {(team.points > 0 || team.weeklyAvg > 0 || team.rank > 0) && (
-                  <div className={`grid ${team.rank > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 bg-bg-primary rounded-xl mb-4`}>
-                    {team.rank > 0 && (
-                      <div className="text-center">
-                        <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                        <p className={`font-mono text-sm font-semibold ${team.rank <= 3 ? 'text-banana' : 'text-text-primary'}`}>{team.rank}/{10}</p>
-                      </div>
-                    )}
-                    <div className="text-center">
-                      <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season</p>
-                      <p className="font-mono text-sm font-semibold text-text-primary">{team.points.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Weekly</p>
-                      <p className="font-mono text-sm font-semibold text-success">{team.weeklyAvg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    {team.price != null ? (
-                      <>
-                        <p className="text-text-muted text-[10px] mb-0.5">Price</p>
-                        <p className="text-text-primary font-mono text-lg font-bold">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                        {lastSales[team.tokenId] && <p className="text-text-muted text-[10px] font-mono">Last sale: ${lastSales[team.tokenId].price.toFixed(2)}</p>}
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-text-muted text-xs">Not listed</p>
-                        {lastSales[team.tokenId] && <p className="text-text-muted text-[10px] font-mono">Last sale: ${lastSales[team.tokenId].price.toFixed(2)}</p>}
-                      </>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {sweepMode && team.price != null ? (
-                      <button
-                        onClick={event => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          onToggleSweepSelect(team.tokenId);
-                        }}
-                        className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-bg-tertiary hover:border-text-muted'}`}
-                      >
-                        {sweepSelected.has(team.tokenId) && (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-                    ) : walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
-                      team.price != null ? (
-                        <span className="text-text-muted text-xs">You</span>
-                      ) : (
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                            onGoToSellTab();
-                          }}
-                          className="px-5 py-2 bg-banana text-black text-xs font-semibold rounded-xl hover:brightness-110 transition-all"
-                        >
-                          List
-                        </button>
-                      )
-                    ) : team.price != null ? (
-                      <>
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                            onMakeOffer(team.tokenId);
-                          }}
-                          className="text-banana text-xs font-medium hover:underline"
-                        >
-                          Make Offer
-                        </button>
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            onOpenBuyModal(team);
-                          }}
-                          className="px-6 py-2.5 bg-banana text-black text-sm font-semibold rounded-xl hover:brightness-110 transition-all"
-                        >
-                          Buy Now
-                        </button>
-                      </>
+                <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  {sweepMode && team.price != null ? (
+                    <button
+                      onClick={event => { event.stopPropagation(); event.preventDefault(); onToggleSweepSelect(team.tokenId); }}
+                      className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-white/30 hover:border-white'}`}
+                    >
+                      {sweepSelected.has(team.tokenId) && (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
+                      )}
+                    </button>
+                  ) : walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
+                    team.price != null ? (
+                      <span className="text-text-muted text-xs font-bold px-3 py-2">You</span>
                     ) : (
                       <button
-                        onClick={event => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          onMakeOffer(team.tokenId);
-                        }}
-                        className="px-5 py-2.5 border border-banana text-banana text-sm font-semibold rounded-xl hover:bg-banana/10 transition-all"
+                        onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
+                        className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
                       >
-                        Make Offer
+                        List
                       </button>
-                    )}
-                  </div>
+                    )
+                  ) : team.price != null ? (
+                    <button
+                      onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                    >
+                      Buy Now
+                    </button>
+                  ) : (
+                    <button
+                      onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                    >
+                      Make Offer
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -449,14 +419,16 @@ export function BuyTab({
         </div>
       )}
 
-      {leaderboardTeams.length > 0 && (
+      {/* Hidden pre-season — relies on rank/points/playoff stats that don't exist yet.
+          Re-enable by removing the `false &&` once the season has real standings. */}
+      {false && leaderboardTeams.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xl font-bold text-text-primary flex items-center gap-3">
               <span className="text-2xl">🏆</span>
               Top Performing Teams for Sale
             </h2>
-            <Link href="/standings" className="text-banana hover:underline text-sm font-medium transition-colors">
+            <Link href="/teams" className="text-banana hover:underline text-sm font-medium transition-colors">
               View Full Standings
             </Link>
           </div>
@@ -487,7 +459,7 @@ export function BuyTab({
                   )}
                   <div>
                     <h4 className="text-text-primary font-medium text-sm font-mono">{team.name}</h4>
-                    <span className="text-text-muted text-xs">{team.owner}</span>
+                    <span className="text-text-muted text-xs">{team.leagueNumber != null ? `League #${team.leagueNumber}` : team.owner}</span>
                   </div>
                   {(team.isHof || team.isJackpot) && (
                     <div className="flex gap-1">
@@ -527,29 +499,33 @@ export function BuyTab({
         </div>
       )}
 
-      <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Why Trade Teams?</h3>
-        <div className="grid md:grid-cols-3 gap-6">
-          <InfoCard
-            icon={<svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-            iconClassName="bg-banana/20"
-            title="Recoup Your Investment"
-            description="Bad draft? Sell your team and get back some of your entry fee."
-          />
-          <InfoCard
-            icon={<svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
-            iconClassName="bg-success/20"
-            title="Buy Contenders"
-            description="Skip the draft and buy a team already performing well mid-season."
-          />
-          <InfoCard
-            icon={<span className="text-error font-bold text-sm">JP</span>}
-            iconClassName="bg-error/20"
-            title="Get Jackpot Access"
-            description="Buy a Jackpot team or unused Jackpot pass. Win the league and you skip straight to finals."
-          />
+      {/* "Why Trade Teams?" hidden per Richard 2026-06-07 — restore by removing the `false &&`
+          (pending confirmation from Boris on the section). */}
+      {false && (
+        <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Why Trade Teams?</h3>
+          <div className="grid md:grid-cols-3 gap-6">
+            <InfoCard
+              icon={<svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+              iconClassName="bg-banana/20"
+              title="Recoup Your Investment"
+              description="Bad draft? Sell your team and get back some of your entry fee."
+            />
+            <InfoCard
+              icon={<svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
+              iconClassName="bg-success/20"
+              title="Buy Contenders"
+              description="Skip the draft and buy a team already performing well mid-season."
+            />
+            <InfoCard
+              icon={<span className="text-error font-bold text-sm">JP</span>}
+              iconClassName="bg-error/20"
+              title="Get Jackpot Access"
+              description="Buy a Jackpot team or unused Jackpot pass. Win the league and you skip straight to finals."
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {sweepMode && sweepSelected.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-bg-secondary/95 backdrop-blur-md border-t border-bg-tertiary px-4 sm:px-8 py-4">
@@ -576,9 +552,24 @@ export function BuyTab({
       {showBuyModal && selectedTeam && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => buyStep === 'confirm' && onCloseBuyModal()}
+          onClick={() => {
+            if (buyStep === 'confirm') onCloseBuyModal();
+            // Stuck waiting on MoonPay funds → tapping the backdrop bails out.
+            else if (buyStep === 'processing' && cardFlowStep !== 'buying') onCancelBuy();
+          }}
         >
-          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md" onClick={event => event.stopPropagation()}>
+          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative" onClick={event => event.stopPropagation()}>
+            {/* Escape hatch while waiting on card funds (can't cancel mid-purchase). */}
+            {buyStep === 'processing' && cardFlowStep !== 'buying' && (
+              <button
+                type="button"
+                onClick={onCancelBuy}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {buyStep === 'confirm' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">
@@ -607,12 +598,12 @@ export function BuyTab({
                       <div className="flex gap-2 mt-1">
                         {selectedTeam.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[10px] font-bold rounded">JACKPOT</span>}
                         {selectedTeam.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[10px] font-bold rounded">HOF</span>}
-                        {selectedTeam.rank > 0 && <span className="text-text-muted text-xs">Rank #{selectedTeam.rank}</span>}
+                        {selectedTeam.rank >= 1 && selectedTeam.rank <= 10 && <span className="text-text-muted text-xs">Rank #{selectedTeam.rank}</span>}
                       </div>
                     </div>
                   </div>
 
-                  {(selectedTeam.points > 0 || selectedTeam.weeklyAvg > 0) && (
+                  {hasSeasonStarted() && (
                     <div className="grid grid-cols-3 gap-3 p-4 bg-bg-primary rounded-xl mb-4">
                       <StatSummary label="Points" value={selectedTeam.points.toLocaleString()} />
                       <StatSummary label="Wk Avg" value={String(selectedTeam.weeklyAvg)} valueClassName="text-success" />
@@ -620,7 +611,22 @@ export function BuyTab({
                     </div>
                   )}
 
-                  {(selectedTeam.isJackpot || selectedTeam.isHof) && (
+                  {selectedTeam.fillingWheelLevel ? (
+                    <div className={`p-4 rounded-xl mb-4 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'bg-error/10 border border-error/30' : 'bg-hof/10 border border-hof/30'}`}>
+                      <p className={`text-sm font-medium mb-1.5 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof'}`}>
+                        {selectedTeam.fillingWheelLevel === 'jackpot'
+                          ? '🎰 Guaranteed seat in a Jackpot draft (from the Wheel)'
+                          : '🏛️ Guaranteed seat in a HOF draft (from the Wheel)'}
+                      </p>
+                      <p className="text-text-secondary text-xs leading-relaxed">
+                        {typeof selectedTeam.lobbyCount === 'number' ? `${selectedTeam.lobbyCount}/10 in the draft lobby — starts automatically at 10. ` : 'Starts automatically when 10 wheel winners join. '}
+                        Slow draft, 8 hours per pick. The seat is yours the moment you buy; it locks for good when the draft fills.
+                        {selectedTeam.fillingWheelLevel === 'jackpot'
+                          ? ' Win the league and skip straight to the Finals.'
+                          : ' Compete for added prizes on top of the regular ones.'}
+                      </p>
+                    </div>
+                  ) : (selectedTeam.isJackpot || selectedTeam.isHof) && (
                     <div className={`p-4 rounded-xl mb-4 ${selectedTeam.isJackpot ? 'bg-error/10 border border-error/30' : 'bg-hof/10 border border-hof/30'}`}>
                       <p className={`text-sm font-medium ${selectedTeam.isJackpot ? 'text-error' : 'text-hof'}`}>
                         {selectedTeam.isJackpot
@@ -632,39 +638,13 @@ export function BuyTab({
 
                   <div className="mb-4">
                     <label className="block text-text-secondary text-sm mb-3">Payment Method</label>
-                    <div className="grid gap-3 grid-cols-2">
-                      <button
-                        onClick={() => onSetPaymentMethod('card')}
-                        className={`p-4 rounded-xl border-2 transition-all ${paymentMethod === 'card' ? 'border-banana bg-banana/10' : 'border-bg-tertiary hover:border-bg-elevated'}`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <svg className="w-6 h-4" viewBox="0 0 24 16" fill="none">
-                            <rect width="24" height="16" rx="2" fill="#1A1F71" />
-                            <path d="M9.5 10.5L10.5 5.5H12L11 10.5H9.5Z" fill="white" />
-                            <path d="M15.5 5.5C15 5.5 14.5 5.7 14.3 6L12 10.5H13.7L14 9.7H16L16.2 10.5H17.7L16.5 5.5H15.5ZM14.5 8.5L15.2 6.7L15.6 8.5H14.5Z" fill="white" />
-                            <path d="M8 5.5L6 10.5H7.5L7.8 9.5H9.5L9.8 10.5H11.3L9.3 5.5H8ZM8 8.3L8.5 6.7L9 8.3H8Z" fill="white" />
-                          </svg>
-                          <svg className="w-8 h-5" viewBox="0 0 32 20" fill="none">
-                            <rect width="32" height="20" rx="2" fill="#EB001B" />
-                            <circle cx="12" cy="10" r="6" fill="#EB001B" />
-                            <circle cx="20" cy="10" r="6" fill="#F79E1B" />
-                            <path d="M16 5.5C17.5 6.7 18.5 8.2 18.5 10C18.5 11.8 17.5 13.3 16 14.5C14.5 13.3 13.5 11.8 13.5 10C13.5 8.2 14.5 6.7 16 5.5Z" fill="#FF5F00" />
-                          </svg>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</span>
-                        <p className="text-text-muted text-[10px] mt-1">Powered by MoonPay</p>
-                      </button>
-                      <button
-                        onClick={() => onSetPaymentMethod('usdc')}
-                        className={`p-4 rounded-xl border-2 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/10' : 'border-bg-tertiary hover:border-bg-elevated'}`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <span className="text-lg font-bold text-text-primary">$</span>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</span>
-                        {userUsdcBalance != null && <p className="text-text-muted text-[10px] mt-1">Balance: ${userUsdcBalance.toFixed(2)}</p>}
-                      </button>
-                    </div>
+                    <PaymentMethodSquares
+                      value={paymentMethod}
+                      onChange={onSetPaymentMethod}
+                      isEmbeddedWallet={isEmbeddedWallet}
+                      usdcBalance={userUsdcBalance}
+                      requiredAmount={selectedTeam?.price ?? 0}
+                    />
                   </div>
 
                   {txError && (
@@ -711,11 +691,11 @@ export function BuyTab({
                         Pay ${((selectedTeam.price || 0) * 1.03).toFixed(2)}
                       </>
                     ) : (
-                      <>Pay ${((selectedTeam.price || 0) + 0.01).toFixed(2)} USDC</>
+                      <>Pay ${((selectedTeam.price || 0) + 0.01).toFixed(2)}{isEmbeddedWallet ? '' : ' USDC'}</>
                     )}
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
-                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'USDC payment on Base network'}
+                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'Paid with your balance'}
                   </p>
                 </div>
               </>
@@ -736,8 +716,8 @@ export function BuyTab({
                       ? 'Complete your payment in the MoonPay window...'
                       : cardFlowStep === 'waiting'
                         ? 'Your funds are on the way. This may take a moment...'
-                        : 'Completing your purchase on Base...'
-                    : 'Completing your purchase on Base...'}
+                        : 'Completing your purchase...'
+                    : 'Completing your purchase...'}
                 </p>
                 {paymentMethod === 'card' && cardFlowStep !== 'idle' && (
                   <div className="mt-6 space-y-2 text-left max-w-[240px] mx-auto">
@@ -782,7 +762,7 @@ export function BuyTab({
                   </svg>
                 </div>
                 <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-                <p className="text-text-secondary text-sm">{selectedTeam.name} is now yours</p>
+                <p className="text-text-secondary text-sm">{selectedTeam.fillingWheelLevel ? `Your ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} draft is filling` : `${selectedTeam.name} is now yours`}</p>
               </div>
             )}
           </div>
@@ -813,46 +793,6 @@ function CardSkeleton() {
   );
 }
 
-function StatSkeleton() {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 animate-pulse">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-bg-tertiary" />
-        <div className="h-3 bg-bg-tertiary rounded w-20" />
-      </div>
-      <div className="h-7 bg-bg-tertiary rounded w-24 mb-1" />
-      <div className="h-3 bg-bg-tertiary rounded w-32" />
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  iconClassName,
-  label,
-  value,
-  detail,
-  detailClassName,
-}: {
-  icon: React.ReactNode;
-  iconClassName: string;
-  label: string;
-  value: string;
-  detail: string | null;
-  detailClassName: string;
-}) {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
-      <div className="flex items-center gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconClassName}`}>{icon}</div>
-        <span className="text-text-muted text-xs uppercase tracking-wider">{label}</span>
-      </div>
-      <div className="text-2xl font-bold text-text-primary font-mono">{value}</div>
-      {detail && <div className={`text-xs mt-1 ${detailClassName}`}>{detail}</div>}
-    </div>
-  );
-}
-
 function InfoCard({
   icon,
   iconClassName,
@@ -873,7 +813,7 @@ function InfoCard({
   );
 }
 
-function FallbackPassSvg({ gradientId }: { gradientId: string }) {
+export function FallbackPassSvg({ gradientId }: { gradientId: string }) {
   return (
     <div className="flex items-center justify-center">
       <svg width="160" height="100" viewBox="0 0 160 100" className="drop-shadow-lg">

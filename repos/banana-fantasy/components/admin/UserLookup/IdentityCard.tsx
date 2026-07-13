@@ -77,9 +77,12 @@ function timeAgo(v: string | null) {
 export function IdentityCard({
   identity,
   walletShort,
+  returning,
 }: {
   identity: UserLookupIdentity | null;
   walletShort: string;
+  /** True if this wallet is a returning (BBB3) player — snapshot ∪ allowlist. */
+  returning?: boolean;
 }) {
   if (!identity) {
     return (
@@ -154,6 +157,16 @@ export function IdentityCard({
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">
+          <span
+            className={`rounded-md px-2 py-0.5 ring-1 ${
+              returning
+                ? 'bg-[#F3E216]/10 text-[#F3E216] ring-[#F3E216]/30'
+                : 'bg-gray-700/40 text-gray-300 ring-gray-600'
+            }`}
+            title={returning ? 'Held BBB3 last year (or allowlisted) — treated as returning' : 'No BBB3 — treated as a new user'}
+          >
+            {returning ? 'Returning (BBB3)' : 'New user'}
+          </span>
           {identity.banned && (
             <span className="rounded-md bg-red-500/15 px-2 py-0.5 font-semibold text-red-300 ring-1 ring-red-500/30">
               BANNED
@@ -183,11 +196,22 @@ export function IdentityCard({
         <Stat label="Spins left" value={identity.balance.wheelSpins} />
         <Stat label="JP entries left" value={identity.balance.jackpotEntries} />
         <Stat label="HOF entries left" value={identity.balance.hofEntries} />
-        <Stat label="Card purchases" value={identity.balance.cardPurchaseCount} />
+        <Stat label="Card fee credit" value={`$${((identity.balance.cardFeeCreditCents || 0) / 100).toFixed(2)}`} />
       </dl>
       <p className="mt-2 text-[10px] text-gray-500">
         Counters above are current balances (decrement when used). Lifetime totals — spins done, promos claimed, draft entries, etc. — live in the Activity section below.
       </p>
+
+      {/* Promo flow state — so you can verify what the first-purchase/wheel flow
+          looks like for this user (and that "Reset promo flags" cleared it). */}
+      {identity.promoState && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="text-gray-500 uppercase tracking-wider text-[10px]">Promo state</span>
+          <Flag on={identity.promoState.firstPurchaseBonusGranted} label="first purchase made" off="first purchase pending" />
+          <Flag on={identity.promoState.firstPurchasePromoUnlocked} label="FP unlocked (free drafts done)" off="FP not unlocked yet" />
+          <Flag on={identity.promoState.hasSpunWheel} label="has spun wheel" off="never spun" />
+        </div>
+      )}
 
       {/* Account money — credits sitting on the Go side that haven't
           been withdrawn yet. Renders only when there's money in the
@@ -275,6 +299,20 @@ function ActivityPill({ lastActiveAt }: { lastActiveAt: string | null }) {
   return (
     <span className={`rounded-md px-2 py-0.5 ring-1 ${cls}`} title={fmtDate(lastActiveAt)}>
       {label}
+    </span>
+  );
+}
+
+function Flag({ on, label, off }: { on: boolean; label: string; off: string }) {
+  return (
+    <span
+      className={`rounded-md px-2 py-0.5 ring-1 ${
+        on
+          ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30'
+          : 'bg-gray-700/40 text-gray-400 ring-gray-600'
+      }`}
+    >
+      {on ? `✓ ${label}` : off}
     </span>
   );
 }

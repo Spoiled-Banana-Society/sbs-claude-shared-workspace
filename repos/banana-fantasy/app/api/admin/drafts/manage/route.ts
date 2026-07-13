@@ -21,9 +21,29 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
+
+// Matches lib/audits/draftStallCanary.ts — a draft whose pick clock expired
+// more than this long ago (and isn't complete) is FROZEN, not just slow.
+const STALL_GRACE_MS = 3 * 60 * 1000;
+
+// Health tells the admin at a glance whether a draft is safe to delete:
+//   completed → finished, do NOT delete/refund
+//   filling   → still waiting for players (normal)
+//   drafting  → actively drafting, clock healthy (normal)
+//   frozen    → started, not complete, clock expired >3m ago → safe to delete
+//   unknown   → no live state to judge (e.g. full but never started) → inspect
+type DraftHealth = 'completed' | 'drafting' | 'filling' | 'frozen' | 'unknown';
+
+interface RealTimeDraftInfo {
+  pickNumber?: number;
+  roundNum?: number;
+  pickEndTime?: number; // unix seconds
+  isDraftComplete?: boolean;
+  isDraftClosed?: boolean;
+}
 
 interface ManageDraftRow {
   id: string;
@@ -36,6 +56,11 @@ interface ManageDraftRow {
   startDate: string | null;
   endDate: string | null;
   isLocked: boolean;
+  health: DraftHealth;
+  pickNumber: number | null;
+  roundNum: number | null;
+  /** Minutes the pick clock has been expired (only set when frozen). */
+  stalledMinutes: number | null;
 }
 
 const TRACKER_DOC_ID = 'draftTracker';
@@ -85,10 +110,13 @@ export async function GET(req: Request) {
     const query = normalize(searchParams.get('query'));
 
     const db = getAdminFirestore();
+    const rtdb = getAdminDatabase();
+    const nowMs = Date.now();
     const snap = await db.collection('drafts').get();
 
-    // Walk each draft, pulling cards subcollection in parallel so the UI can
-    // see who's in each draft without N+1 from the client side.
+    // Walk each draft, pulling cards subcollection + live RTDB draft state in
+    // parallel so the UI can see who's in each draft AND whether it's healthy
+    // / frozen / completed — without N+1 from the client side.
     const rows: ManageDraftRow[] = await Promise.all(
       snap.docs
         .filter((doc) => doc.id !== TRACKER_DOC_ID)
@@ -110,17 +138,58 @@ export async function GET(req: Request) {
             }
           }
 
+          const numPlayers = Number(data.NumPlayers ?? owners.length ?? 0);
+          const maxPlayers = Number(data.MaxPlayers ?? 10);
+          const status = (data.Status as string | undefined) ?? null;
+          const completedByDoc = status?.toLowerCase() === 'completed' || !!data.EndDate;
+
+          // Live engine state (RTDB) is the source of truth for frozen vs healthy.
+          let health: DraftHealth = 'unknown';
+          let pickNumber: number | null = null;
+          let roundNum: number | null = null;
+          let stalledMinutes: number | null = null;
+          try {
+            const infoSnap = rtdb ? await rtdb.ref(`drafts/${doc.id}/realTimeDraftInfo`).get() : null;
+            const info = (infoSnap?.val() ?? null) as RealTimeDraftInfo | null;
+            if (info) {
+              pickNumber = typeof info.pickNumber === 'number' ? info.pickNumber : null;
+              roundNum = typeof info.roundNum === 'number' ? info.roundNum : null;
+              if (info.isDraftComplete || info.isDraftClosed || completedByDoc) {
+                health = 'completed';
+              } else if (info.pickEndTime && (info.pickNumber ?? 0) >= 1) {
+                const stalledMs = nowMs - info.pickEndTime * 1000;
+                if (stalledMs >= STALL_GRACE_MS) {
+                  health = 'frozen';
+                  stalledMinutes = Math.round(stalledMs / 60000);
+                } else {
+                  health = 'drafting';
+                }
+              } else {
+                health = 'drafting';
+              }
+            } else {
+              // No live draft state — still filling, finished, or full-but-never-started.
+              health = completedByDoc ? 'completed' : numPlayers < maxPlayers ? 'filling' : 'unknown';
+            }
+          } catch {
+            health = completedByDoc ? 'completed' : 'unknown';
+          }
+
           return {
             id: doc.id,
             displayName: (data.DisplayName as string | undefined) ?? null,
-            status: (data.Status as string | undefined) ?? null,
+            status,
             draftType: (data.DraftType as string | undefined) ?? null,
-            numPlayers: Number(data.NumPlayers ?? owners.length ?? 0),
-            maxPlayers: Number(data.MaxPlayers ?? 10),
+            numPlayers,
+            maxPlayers,
             owners,
             startDate: (data.StartDate as string | undefined) ?? null,
             endDate: (data.EndDate as string | undefined) ?? null,
             isLocked: Boolean(data.IsLocked ?? false),
+            health,
+            pickNumber,
+            roundNum,
+            stalledMinutes,
           };
         }),
     );

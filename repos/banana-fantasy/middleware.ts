@@ -3,12 +3,18 @@ import type { NextRequest } from 'next/server';
 
 /**
  * Next.js Edge Middleware — runs before every request.
- * Handles: CORS preflight, origin validation, request size limits for API routes.
+ * Handles: pre-launch gate (countdown wall), CORS preflight, origin
+ * validation, request size limits for API routes.
  */
 
 const ALLOWED_ORIGINS = [
-  'https://sbsfantasy.com',
-  'https://www.sbsfantasy.com',
+  // Apex + ANY sbsfantasy.com subdomain (www, staging, the launch domain, etc.).
+  // Without staging.sbsfantasy.com here, every POST /api/* from the staging
+  // domain was 403'd at the middleware before reaching the route — which broke
+  // returning-check (firstLoginAt + bells), the username claim, metadata, etc.
+  // for users on that domain (GETs were unaffected: browsers omit the Origin
+  // header on same-origin GETs, so the seed still ran).
+  /^https:\/\/([a-z0-9-]+\.)?sbsfantasy\.com$/,
   /^https:\/\/.*\.vercel\.app$/,
   'http://localhost:3000',
   'http://localhost:3001',
@@ -21,6 +27,126 @@ const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB — default for typical JSON paylo
 // 5 MB matches Vercel's serverless function request limit, gives headroom.
 const FILE_UPLOAD_MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB
 const FILE_UPLOAD_PATHS = ['/api/verify/submit'];
+
+// ── Pre-launch gate ─────────────────────────────────────────────────────
+// When PRELAUNCH_MODE === 'true', the public sees ONLY the countdown
+// (/coming-soon) no matter what URL they hit; the API is fully sealed.
+// The team gets in via /enter?key=<PRELAUNCH_BYPASS_KEY>, which drops a
+// preview cookie and bounces back to a clean URL showing the real app.
+// /exit clears it. When the flag is off (default), this is a no-op and the
+// app behaves exactly as before.
+const PRELAUNCH_COOKIE = 'sbs_preview';
+const COMING_SOON_PATH = '/coming-soon';
+
+function handlePrelaunch(req: NextRequest): NextResponse | null {
+  if (process.env.PRELAUNCH_MODE !== 'true') return null; // gate off → no-op
+
+  const { pathname } = req.nextUrl;
+  const bypassKey = process.env.PRELAUNCH_BYPASS_KEY;
+
+  // Secret entry: correct key → set preview cookie, bounce to clean root.
+  // Wrong/missing key reveals nothing — just the countdown.
+  if (pathname === '/enter') {
+    const key = req.nextUrl.searchParams.get('key');
+    if (bypassKey && key === bypassKey) {
+      const res = NextResponse.redirect(new URL('/', req.url));
+      res.cookies.set(PRELAUNCH_COOKIE, '1', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+      });
+      return res;
+    }
+    return NextResponse.rewrite(new URL(COMING_SOON_PATH, req.url));
+  }
+
+  // Secret exit: clear preview, bounce to clean root (now showing countdown).
+  if (pathname === '/exit') {
+    const res = NextResponse.redirect(new URL('/', req.url));
+    res.cookies.delete(PRELAUNCH_COOKIE);
+    return res;
+  }
+
+  // Team preview holders → let everything through to the real app.
+  if (req.cookies.get(PRELAUNCH_COOKIE)?.value === '1') return null;
+
+  // Card / OG images are PUBLIC by design — OpenSea, X/social previews, and
+  // Next.js's own <Image> optimizer all fetch them server-side with NO preview
+  // cookie. Gating them 404s every team card across the marketplace (Sell/Buy),
+  // My Teams, and elsewhere. They expose no private app data, so always allow.
+  if (pathname.startsWith('/api/og/')) return NextResponse.next();
+
+  // NFT token metadata + card images are PUBLIC by design: OpenSea, wallets, and
+  // marketplace indexers fetch tokenURI (`/api/nft/metadata/<id>`) and the card
+  // art server-side with NO preview cookie. Sealing them blanks EVERY NFT image
+  // on OpenSea (caught 2026-06-22: the first minted Draft Pass showed no image —
+  // metadata 404'd cookieless). They expose only public NFT data (name, image,
+  // attributes), exactly like `/api/og/`, so always allow.
+  if (pathname.startsWith('/api/nft/')) return NextResponse.next();
+
+  // The "draft is filling" Discord/Twitter bot polls /api/bot/league for the
+  // current open drafts (player counts only — no private data) server-side with
+  // NO preview cookie, exactly like /api/og/. Sealing it 404s the bot and the
+  // fill alerts go silent. Read-only + public-safe, so always allow.
+  if (pathname.startsWith('/api/bot/')) return NextResponse.next();
+
+  // Webhook callbacks are PUBLIC endpoints (Alchemy on-chain transfers, Persona
+  // KYC) that external services POST to with NO cookie — but each route VERIFIES
+  // ITS OWN HMAC SIGNATURE and rejects anything unsigned (confirmed 2026-06-22:
+  // persona uses PERSONA_WEBHOOK_SECRET, alchemy uses x-alchemy-signature). So the
+  // wall is not their security; sealing them just drops legit signed events.
+  // Allow them through to their own auth, same as /api/og/.
+  if (pathname.startsWith('/api/webhooks/')) return NextResponse.next();
+
+  // Crisp support webhook — Crisp's servers POST cookieless when the SBS team
+  // replies (and on new visitor messages), which fires the "SBS team replied"
+  // bell via createNotification. It lives at /api/crisp/webhook (NOT under
+  // /api/webhooks/), so the seal was 404'ing it → support-reply bells silently
+  // stopped the moment PRELAUNCH_MODE went on (worked fine before the wall). The
+  // route verifies its OWN HMAC (x-crisp-signature vs CRISP_WEBHOOK_SECRET), so
+  // the wall is not its security — allow it, same as the other webhooks.
+  if (pathname.startsWith('/api/crisp/')) return NextResponse.next();
+
+  // More cookieless external webhooks that self-verify (caught 2026-06-22 auditing
+  // what the wall silently blocks). Exact paths so sibling routes stay sealed:
+  //  • Didit KYC results → /api/verify/webhook (verifies DIDIT_WEBHOOK_SECRET /
+  //    X-Signature-V2). Sealed = verification status never updates.
+  //  • Telegram bot updates → /api/notifications/telegram/webhook (account-linking
+  //    /start token is itself the secret). Sealed = Telegram linking can't complete.
+  if (pathname === '/api/verify/webhook') return NextResponse.next();
+  if (pathname === '/api/notifications/telegram/webhook') return NextResponse.next();
+
+  // Internal server-to-server callers authenticate via a shared secret, NOT
+  // the preview cookie — the public prelaunch seal must let them through or
+  // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
+  // (filled + on-the-clock, fast + slow) died the moment PRELAUNCH_MODE flipped
+  // on, because the onDraftFilled / onPickAdvance Cloud Functions POST with no
+  // cookie. Vercel crons are cookieless too. These routes still run their OWN
+  // in-route auth, so allowing them past the seal exposes nothing.
+  if (pathname.startsWith('/api/')) {
+    const internalSecret = process.env.NOTIFICATIONS_INTERNAL_SECRET;
+    const cronSecret = process.env.CRON_SECRET;
+    const authedInternal =
+      !!internalSecret && req.headers.get('x-internal-secret') === internalSecret;
+    const authedCron =
+      (!!cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`) ||
+      !!req.headers.get('x-vercel-cron');
+    if (authedInternal || authedCron) return null; // proceed to normal /api handling
+  }
+
+  // Public: the rest of the API is fully sealed (nothing to probe).
+  if (pathname.startsWith('/api/')) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+
+  // Public: the countdown route renders normally...
+  if (pathname === COMING_SOON_PATH) return NextResponse.next();
+
+  // ...and every other path shows the countdown, URL kept clean (rewrite).
+  return NextResponse.rewrite(new URL(COMING_SOON_PATH, req.url));
+}
 
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true;
@@ -42,9 +168,13 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 export function middleware(req: NextRequest) {
+  // Pre-launch gate runs first, for every path.
+  const gated = handlePrelaunch(req);
+  if (gated) return gated;
+
   const { pathname } = req.nextUrl;
 
-  // Only apply to API routes
+  // Beyond the gate, the rest only applies to API routes.
   if (!pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
@@ -87,5 +217,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  // Match every route (so the gate can cover pages + API) EXCEPT Next.js
+  // internals and static files (anything with a "." — e.g. /sbs-logo.png),
+  // so the countdown's own assets always load.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };

@@ -32,6 +32,7 @@
  * remain as fallbacks.
  */
 
+import { waitUntil } from '@vercel/functions';
 import { getAdminDatabase, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -42,19 +43,41 @@ export type StreamEventType =
   | 'promo-buy-10'
   | 'promo-daily-drafts'
   | 'promo-new-user'
-  | 'referral-milestone';
+  | 'promo-first-purchase'
+  | 'first-purchase-unlocked'
+  | 'referral-milestone'
+  | 'promo-card-free-draft'
+  // Content-less "a new persisted notification exists — refetch the bell"
+  // ping. Fired by createNotification (lib/queueNotifications.ts) so the
+  // server-backed notification inbox updates in ~100ms across every device.
+  | 'notification';
 
 export interface StreamEventPayload {
   /** Draft id (Pick 10, Jackpot Hit). */
   draftId?: string;
+  /** Draft slot that earned the Pick promo (6, 9 or 10). */
+  slot?: number;
   /** Badge id (badge-unlock only). */
   badgeId?: string;
   /** Referral milestone name. */
-  milestone?: 'verified' | 'bought1' | 'bought10';
+  milestone?: 'verified' | 'bought1' | 'bought4' | 'bought10';
+  /** Referral milestones batch (one purchase can cross several). */
+  milestones?: string[];
   /** Diagnostic label for where the event was fired from. */
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
+  /**
+   * For the `'notification'` ping: the bell entry's content, so receiving
+   * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
+   * (generic copy — no balances/PII), same bar as the rest of this payload.
+   */
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
+  notifIcon?: string;
 }
 
 /**
@@ -93,11 +116,55 @@ export async function pushStreamEvent(
     };
     await ref.push(event);
     logger.info('stream.push.ok', { userId, type });
+
+    // Persist a server-backed bell notification for content-bearing events
+    // so the notification inbox is account-synced across every device. The
+    // content-less `'notification'` type is the refetch ping itself — skip it
+    // to avoid recursion. Dynamic imports break the circular dep
+    // (queueNotifications imports pushStreamEvent). Best-effort.
+    if (type !== 'notification') {
+      try {
+        const { eventNotificationContent } = await import('./eventNotifications');
+        const content = eventNotificationContent(userId.toLowerCase(), type, payload);
+        if (content) {
+          const { createNotification } = await import('./queueNotifications');
+          await createNotification(userId, content);
+        }
+      } catch (persistErr) {
+        logger.warn('stream.persist.failed', {
+          userId,
+          type,
+          err: persistErr instanceof Error ? persistErr.message : String(persistErr),
+        });
+      }
+    }
   } catch (err) {
     logger.warn('stream.push.failed', {
       userId,
       type,
       err: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+/**
+ * Fire-and-forget pushStreamEvent that SURVIVES the response. A bare
+ * `void pushStreamEvent(...)` detaches the promise — on Vercel the lambda
+ * freezes the moment the response is sent, so the RTDB ping (and the
+ * persisted bell notification it dual-writes) lands late or never. That was
+ * the "toast didn't show / noti took 5s" bug: the instant ping died with the
+ * lambda and devices only caught up on the next bell poll. `waitUntil` keeps
+ * the function alive until the push completes without delaying the response.
+ */
+export function pushStreamEventBg(
+  userId: string,
+  type: StreamEventType,
+  payload: StreamEventPayload = {},
+): void {
+  const p = pushStreamEvent(userId, type, payload);
+  try {
+    waitUntil(p);
+  } catch {
+    // No Vercel request context (local dev / scripts) — promise runs detached.
   }
 }

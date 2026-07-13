@@ -17,10 +17,14 @@ import { keccak256, type Hex } from 'viem';
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { wheelSegments } from '@/lib/wheelConfig';
+import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
 import { buildMerkleTree, deriveSpinOutcome, getMerkleProof, leafHash, type MerkleTree } from '@/lib/wheelMerkle';
 
-export const MAX_SPINS_PER_PERIOD = 10_000;
+// One period is sized to cover the WHOLE contest (Boris 2026-06-12: the wheel
+// is final and we want a single season-long commitment, not rolling batches).
+// If spins ever DO hit the cap, the keeper cron auto-rolls to the next period
+// with zero downtime — that's the built-in emergency overflow.
+export const MAX_SPINS_PER_PERIOD = 100_000;
 const PERIODS_COLLECTION = 'wheel_periods';
 const SYSTEM_CONFIG = 'system_config';
 const WHEEL_STATE_DOC = 'wheelPeriodState';
@@ -46,6 +50,11 @@ export interface WheelPeriodDoc {
   commitTxHash?: string;
   rootCommitTxHash?: string;
   revealTxHash?: string;
+  // Immutable copy of the prize table this period's outcomes were derived
+  // from, stamped at open. Auditors can re-derive every leaf from
+  // (salt, vrf, segmentsSnapshot) without trusting the deployed code.
+  segmentsSnapshot?: WheelSegment[];
+  segmentsHash?: string; // sha256 of canonical segments JSON
 }
 
 export interface WheelPeriodStateDoc {
@@ -106,6 +115,7 @@ export async function recordPeriodRequested(input: {
 }): Promise<void> {
   const db = getAdminFirestore();
   const now = Date.now();
+  const segmentsJson = JSON.stringify(wheelSegments.map((s) => ({ id: s.id, label: s.label, probability: s.probability })));
   const doc: WheelPeriodDoc = {
     periodNumber: input.periodNumber,
     status: 'requested',
@@ -116,6 +126,8 @@ export async function recordPeriodRequested(input: {
     maxSpins: MAX_SPINS_PER_PERIOD,
     openedAt: now,
     commitTxHash: input.commitTxHash,
+    segmentsSnapshot: wheelSegments,
+    segmentsHash: crypto.createHash('sha256').update(segmentsJson).digest('hex'),
   };
   await db.collection(PERIODS_COLLECTION).doc(String(input.periodNumber)).set(doc);
   await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).set(
@@ -148,38 +160,33 @@ export function computePeriodMerkleRoot(salt: string, vrf: string): Hex {
 }
 
 /**
- * Serialize the Merkle tree's leaves into a Firestore-friendly blob.
- * For 10k leaves, this is 10k * 64 hex chars ≈ 640KB. We store only the
- * leaves (not internal nodes) — the tree's internal nodes can be
- * recomputed from leaves on demand at proof-generation time. Storing
- * just leaves keeps the period doc compact and makes the schema
- * extensible if we shard in the future.
- */
-function serializeLeaves(tree: MerkleTree): string[] {
-  return tree.leaves;
-}
-
-/**
- * Subcollection: wheel_periods/{N}/leaves/{shardId}. For 10k leaves we
- * use ONE shard ("0") containing all leaves. Future scale to 100k+ adds
- * more shards transparently — proof generation re-reads only the shards
- * it needs.
+ * Subcollection: wheel_periods/{N}/leaves/{shardId}. Leaves are stored in
+ * shards of 10k (10k * 66 hex chars ≈ 660KB — safely under Firestore's
+ * 1MB doc limit). A 100k-spin period writes 10 shard docs. Period 1
+ * (single shard "0") reads back identically through the same path.
  */
 const LEAVES_SUBCOLLECTION = 'leaves';
+const LEAF_SHARD_SIZE = 10_000;
 
 export async function storePeriodLeaves(periodNumber: number, tree: MerkleTree): Promise<void> {
   const db = getAdminFirestore();
-  const ref = db
+  const col = db
     .collection(PERIODS_COLLECTION)
     .doc(String(periodNumber))
-    .collection(LEAVES_SUBCOLLECTION)
-    .doc('0');
-  await ref.set({
-    shardId: 0,
-    startIndex: 0,
-    endIndex: tree.leaves.length - 1,
-    leaves: serializeLeaves(tree),
-  });
+    .collection(LEAVES_SUBCOLLECTION);
+  const writes: Promise<unknown>[] = [];
+  for (let shardId = 0, i = 0; i < tree.leaves.length; shardId += 1, i += LEAF_SHARD_SIZE) {
+    const chunk = tree.leaves.slice(i, i + LEAF_SHARD_SIZE);
+    writes.push(
+      col.doc(String(shardId)).set({
+        shardId,
+        startIndex: i,
+        endIndex: i + chunk.length - 1,
+        leaves: chunk,
+      }),
+    );
+  }
+  await Promise.all(writes);
 }
 
 export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
@@ -188,12 +195,17 @@ export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
     .collection(PERIODS_COLLECTION)
     .doc(String(periodNumber))
     .collection(LEAVES_SUBCOLLECTION)
-    .doc('0')
     .get();
-  if (!snap.exists) throw new Error(`Period ${periodNumber} has no stored leaves`);
-  const data = snap.data() as { leaves: Hex[] } | undefined;
-  if (!data?.leaves) throw new Error(`Period ${periodNumber} leaves doc malformed`);
-  return data.leaves;
+  if (snap.empty) throw new Error(`Period ${periodNumber} has no stored leaves`);
+  const shards = snap.docs
+    .map((d) => d.data() as { shardId: number; leaves: Hex[] })
+    .sort((a, b) => a.shardId - b.shardId);
+  const leaves: Hex[] = [];
+  for (const shard of shards) {
+    if (!shard?.leaves) throw new Error(`Period ${periodNumber} leaves shard malformed`);
+    leaves.push(...shard.leaves);
+  }
+  return leaves;
 }
 
 /**
@@ -202,18 +214,33 @@ export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
  * the leaf hash + proof path; the browser combines them and compares
  * against the on-chain root to verify.
  */
+// A period's leaves are fixed at creation (the whole tree is committed up
+// front), so the rebuilt tree is immutable and safe to cache for the life of
+// the (warm) lambda. Without this, every proof request reloads ~7MB of leaves
+// and rebuilds a 100k-leaf tree (~3s). Cached → subsequent proofs are a tree
+// walk (sub-ms). Keyed by period number; bounded (only a handful of periods).
+const periodTreeCache = new Map<number, MerkleTree>();
+
+async function getPeriodTree(periodNumber: number): Promise<MerkleTree> {
+  const cached = periodTreeCache.get(periodNumber);
+  if (cached) return cached;
+  const leaves = await loadPeriodLeaves(periodNumber);
+  const tree = buildMerkleTree(leaves);
+  periodTreeCache.set(periodNumber, tree);
+  return tree;
+}
+
 export async function generateSpinProof(periodNumber: number, spinIndex: number): Promise<{
   leaf: Hex;
   proof: Hex[];
   root: Hex;
 }> {
-  const leaves = await loadPeriodLeaves(periodNumber);
-  if (spinIndex < 0 || spinIndex >= leaves.length) {
+  const tree = await getPeriodTree(periodNumber);
+  if (spinIndex < 0 || spinIndex >= tree.leaves.length) {
     throw new Error(`spinIndex ${spinIndex} out of range for period ${periodNumber}`);
   }
-  const tree = buildMerkleTree(leaves);
   const proof = getMerkleProof(tree, spinIndex);
-  return { leaf: leaves[spinIndex], proof, root: tree.root };
+  return { leaf: tree.leaves[spinIndex], proof, root: tree.root };
 }
 
 /**

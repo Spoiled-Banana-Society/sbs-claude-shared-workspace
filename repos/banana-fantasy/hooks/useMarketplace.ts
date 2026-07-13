@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 import type { MarketplaceTeam, DraftType, OfferData } from '@/lib/opensea';
 import type { CollectionStats } from '@/lib/opensea';
 import { getOwnerDraftTokens, type ApiDraftToken } from '@/lib/api/owner';
@@ -53,34 +54,56 @@ interface UseCollectionNftsResult {
   refetch: () => void;
 }
 
-export function useCollectionNfts(limit: number = 50): UseCollectionNftsResult {
-  const [data, setData] = useState<MarketplaceTeam[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+// Per-filter cache (all / level / league) so switching tabs paints INSTANTLY from
+// memory, and a flaky/empty fetch never blanks a section that already had teams.
+const collectionCache = new Map<string, MarketplaceTeam[]>();
+const ckey = (level?: string | null, league?: number | null, team?: number | null) => `${level ?? ''}|${league ?? ''}|${team ?? ''}`;
+
+export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null, league?: number | null, team?: number | null): UseCollectionNftsResult {
+  const [data, setData] = useState<MarketplaceTeam[]>(() => collectionCache.get(ckey(level, league, team)) ?? []);
+  const [isLoading, setIsLoading] = useState(() => !collectionCache.has(ckey(level, league, team)));
   const [error, setError] = useState<unknown>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
-    if (!append) setIsLoading(true);
+    const key = ckey(level, league, team);
+    // Only show the skeleton when we have nothing cached for this filter.
+    if (!append && !collectionCache.has(key)) setIsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: String(limit) });
-      if (nextCursor) params.set('cursor', nextCursor);
+      // ALWAYS backend-sourced: the marketplace_index (keyed by on-chain id) is the
+      // source of truth for which tokens are teams + level/league/roster/image, and
+      // prices come from our own active_listings cache. No OpenSea on the page path
+      // (the actual trades still settle on Seaport — that's the only OpenSea piece).
+      const p = new URLSearchParams();
+      if (level) p.set('level', level);
+      if (league != null) p.set('league', String(league));
+      if (team != null) p.set('team', String(team));
+      const url = `/api/marketplace/teams?${p}`;
 
-      const res = await fetch(`/api/marketplace/collection-nfts?${params}`);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch collection NFTs: ${res.status}`);
       const json = await res.json();
 
       const nfts: MarketplaceTeam[] = json.nfts ?? [];
-      setData(prev => append ? [...prev, ...nfts] : nfts);
+      // A successful EMPTY result for a filter that previously had teams is almost
+      // always a transient backend blip — keep the cached cards rather than blanking.
+      if (!append && nfts.length === 0 && (collectionCache.get(key)?.length ?? 0) > 0) {
+        setData(collectionCache.get(key)!);
+      } else {
+        if (!append) collectionCache.set(key, nfts);
+        setData(prev => append ? [...prev, ...nfts] : nfts);
+      }
       setCursor(json.next ?? null);
       setHasMore(!!json.next);
       setError(null);
     } catch (err) {
+      // On a failed fetch, keep whatever's on screen — never blank to "No Teams".
       setError(err);
     } finally {
       setIsLoading(false);
     }
-  }, [limit]);
+  }, [limit, level, league, team]);
 
   useEffect(() => {
     fetchNfts(false);
@@ -93,6 +116,19 @@ export function useCollectionNfts(limit: number = 50): UseCollectionNftsResult {
   const refetch = useCallback(() => {
     fetchNfts(false);
   }, [fetchNfts]);
+
+  // Refresh when the tab/window regains focus so navigating to the marketplace
+  // (e.g. right after a draft finishes) shows the latest teams without a manual
+  // reload. User-driven events only — never a per-render fetch.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refetch]);
 
   return { data, isLoading, error, hasMore, loadMore, refetch };
 }
@@ -157,6 +193,18 @@ export function useListings(
     fetchListings(false);
   }, [fetchListings]);
 
+  // Refresh when the tab/window regains focus so navigating back shows the
+  // latest listings without a manual reload. User-driven events only.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refetch]);
+
   return { data, isLoading, error, hasMore, loadMore, refetch };
 }
 
@@ -167,6 +215,14 @@ interface UseMyNftsResult {
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
+  /**
+   * Optimistically reflect a just-created/cancelled listing in local state.
+   * OpenSea takes a few seconds to index a new order, so a plain refetch right
+   * after listing still returns the NFT without its orderHash — leaving the UI
+   * showing "List for Sale" until a manual refresh. Patch it locally so the
+   * button flips immediately; the next natural refetch confirms it.
+   */
+  patchListing: (tokenId: string, listing: { orderHash: string; price: number } | null) => void;
 }
 
 /**
@@ -223,22 +279,62 @@ function enrichWithBackendData(
   });
 }
 
+// Last result per wallet — so re-opening the Sell tab paints the cards INSTANTLY
+// from memory while a fresh fetch runs silently in the background (no skeleton
+// flash). Survives tab switches for the life of the page.
+const myNftsCache = new Map<string, MarketplaceTeam[]>();
+
+// localStorage mirror so a HARD refresh paints the teams instantly from the
+// last snapshot (then revalidates live), instead of a skeleton + network wait.
+const MY_NFTS_LS_PREFIX = 'sbs:my-nfts:';
+function getCachedMyNfts(walletAddress: string): MarketplaceTeam[] | undefined {
+  const lc = walletAddress.toLowerCase();
+  if (myNftsCache.has(lc)) return myNftsCache.get(lc);
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem(MY_NFTS_LS_PREFIX + lc);
+      if (raw) { const parsed = JSON.parse(raw) as MarketplaceTeam[]; myNftsCache.set(lc, parsed); return parsed; }
+    } catch { /* ignore corrupt localStorage */ }
+  }
+  return undefined;
+}
+function writeMyNftsCache(walletAddress: string, data: MarketplaceTeam[]): void {
+  const lc = walletAddress.toLowerCase();
+  myNftsCache.set(lc, data);
+  if (typeof window !== 'undefined') {
+    try { window.localStorage.setItem(MY_NFTS_LS_PREFIX + lc, JSON.stringify(data)); } catch { /* quota — non-fatal */ }
+  }
+}
+
 export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
-  const [data, setData] = useState<MarketplaceTeam[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [data, setData] = useState<MarketplaceTeam[]>(() => (walletAddress ? getCachedMyNfts(walletAddress) ?? [] : []));
+  // Only show the loading skeleton when we have NOTHING cached to paint.
+  const [isLoading, setIsLoading] = useState(() => !(walletAddress && getCachedMyNfts(walletAddress)));
   const [error, setError] = useState<unknown>(null);
   const fetchingRef = useRef<string | null>(null);
 
   const fetchMyNfts = useCallback(async () => {
     if (!walletAddress) {
       setData([]);
+      setIsLoading(false); // logged-out: no wallet to load — clear the skeleton
       return;
     }
-    // Avoid duplicate fetches
+    // Paint instantly from the localStorage snapshot the MOMENT the wallet is
+    // known — on a hard refresh the wallet arrives a beat after first render
+    // (Privy rehydrating), and `data` was initialised empty. Without this the
+    // cards showed the "Team" placeholder until the network fetch landed (~1s).
+    const cached = getCachedMyNfts(walletAddress);
+    if (cached && cached.length) {
+      setData(cached);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+
+    // Avoid duplicate in-flight fetches (after the cache paint, so a refresh
+    // still gets the instant snapshot even while a fetch is already running).
     if (fetchingRef.current === walletAddress) return;
     fetchingRef.current = walletAddress;
-
-    setIsLoading(true);
     try {
       // Fetch OpenSea NFTs, SBS backend tokens, and free-origin tokenIds in parallel
       const [nftRes, tokens, freeRes] = await Promise.all([
@@ -260,9 +356,26 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
       // minted via admin grant / spin / promo — takes precedence over the
       // Go API `passType` field (which is absent for reserveTokens mints).
       const freeTokenIds = new Set<string>(((freeRes as { tokenIds?: string[] }).tokenIds ?? []).map(String));
-      const finalData = enriched.map((team) =>
+      const withFree = enriched.map((team) =>
         freeTokenIds.has(String(team.tokenId)) ? { ...team, passType: 'free' as const } : team,
       );
+
+      // Overlay "filling JP/HOF wheel pass" status: a wheel-won JP/HOF pass that's
+      // still in a filling queue round is sellable now (the marketplace waives the
+      // free-pass listing block for it). Best-effort — a failure just omits it.
+      let fillingLevels: Record<string, 'jackpot' | 'hof'> = {};
+      const ids = withFree.map((t) => String(t.tokenId)).filter(Boolean);
+      if (ids.length > 0) {
+        try {
+          const wpRes = await fetch(`/api/queues/wheel-pass-filling?tokenIds=${ids.join(',')}`);
+          if (wpRes.ok) fillingLevels = ((await wpRes.json()) as { levels?: Record<string, 'jackpot' | 'hof'> }).levels ?? {};
+        } catch { /* ignore — non-blocking enrichment */ }
+      }
+      const finalData = withFree.map((team) => {
+        const lvl = fillingLevels[String(team.tokenId)];
+        return lvl ? { ...team, fillingWheelLevel: lvl } : team;
+      });
+      writeMyNftsCache(walletAddress, finalData);
       setData(finalData);
       setError(null);
     } catch (err) {
@@ -277,7 +390,20 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
     fetchMyNfts();
   }, [fetchMyNfts]);
 
-  return { data, isLoading, error, refetch: fetchMyNfts };
+  // Instant: sales/team-ready/offer events fire a server noti ping — refetch
+  // My Teams within ~300ms (a sold team disappears, a fresh team appears)
+  // instead of waiting for a manual refresh.
+  useStreamRefetch(walletAddress, () => { void fetchMyNfts(); });
+
+  const patchListing = useCallback((tokenId: string, listing: { orderHash: string; price: number } | null) => {
+    setData(prev => prev.map(t =>
+      String(t.tokenId) === String(tokenId)
+        ? { ...t, orderHash: listing?.orderHash ?? null, price: listing ? listing.price : null }
+        : t,
+    ));
+  }, []);
+
+  return { data, isLoading, error, refetch: fetchMyNfts, patchListing };
 }
 
 // ── Single NFT Detail ───────────────────────────────────────────────
@@ -380,20 +506,23 @@ interface UseActivityHistoryResult {
   refetch: () => void;
 }
 
-export function useActivityHistory(walletAddress: string | null): UseActivityHistoryResult {
+export function useActivityHistory(walletAddress: string | null, scope: 'mine' | 'all' = 'mine'): UseActivityHistoryResult {
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const fetchActivities = useCallback(async (append = false, nextCursor?: string | null) => {
-    if (!walletAddress) {
+    // 'mine' is wallet-scoped (needs a wallet); 'all' is the global feed.
+    if (scope === 'mine' && !walletAddress) {
       setActivities([]);
       return;
     }
     if (!append) setIsLoading(true);
     try {
-      const params = new URLSearchParams({ wallet: walletAddress, limit: '20' });
+      const params = new URLSearchParams({ limit: '20' });
+      if (scope === 'all') params.set('scope', 'all');
+      else params.set('wallet', walletAddress as string);
       if (nextCursor) params.set('cursor', nextCursor);
 
       const res = await fetch(`/api/marketplace/activity?${params}`);
@@ -409,7 +538,7 @@ export function useActivityHistory(walletAddress: string | null): UseActivityHis
     } finally {
       setIsLoading(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, scope]);
 
   useEffect(() => {
     fetchActivities(false);
@@ -448,14 +577,20 @@ export function useMyNftOffers(
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchAllOffers = useCallback(async () => {
-    if (!walletAddress || ownedNfts.length === 0) {
+    // CRITICAL: only fetch offers for teams the user has LISTED for sale.
+    // Fanning out one /api/marketplace/offers request per OWNED NFT fired
+    // hundreds of requests at once for big holders (~600 passes/teams) and
+    // tripped the rate limiter, 429-ing the whole site. Offers on an unlisted
+    // team are still visible on that team's detail page (useNftOffers).
+    const listed = walletAddress ? ownedNfts.filter((n) => !!n.orderHash) : [];
+    if (listed.length === 0) {
       setAllOffers([]);
       return;
     }
     setIsLoading(true);
     try {
       const results = await Promise.all(
-        ownedNfts.map(async (nft) => {
+        listed.map(async (nft) => {
           try {
             const res = await fetch(`/api/marketplace/offers?tokenId=${nft.tokenId}`);
             if (!res.ok) return [];
@@ -483,7 +618,47 @@ export function useMyNftOffers(
     fetchAllOffers();
   }, [fetchAllOffers]);
 
+  // Instant: an incoming offer fires a server noti ping — refresh the offers
+  // list within ~300ms instead of waiting for a manual refresh. Coalesced and
+  // listed-teams-only (see fetchAllOffers), so no request fan-out risk.
+  useStreamRefetch(walletAddress, () => { void fetchAllOffers(); });
+
   return { allOffers, isLoading, refetch: fetchAllOffers };
+}
+
+/**
+ * Offers the user has MADE (inverse of useMyNftOffers) — one request to our
+ * offer cache, returned as tokenId → offer USD. Drives the "Your offer $X"
+ * chip on marketplace cards. Effect deps are the wallet scalar only (Rule #0).
+ */
+export function useMyMadeOffers(walletAddress: string | null): Record<string, number> {
+  const [byToken, setByToken] = useState<Record<string, number>>({});
+
+  // Stable refetch so the stream subscription (deps: wallet only) never churns.
+  const load = useCallback(async () => {
+    if (!walletAddress) { setByToken({}); return; }
+    try {
+      const res = await fetch(`/api/marketplace/offers/mine?address=${walletAddress}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const map: Record<string, number> = {};
+      for (const o of (json.offers ?? []) as Array<{ tokenId: string; priceUsd: number }>) {
+        // Keep the highest live offer per token for display.
+        if (!(o.tokenId in map) || o.priceUsd > map[o.tokenId]) map[o.tokenId] = o.priceUsd;
+      }
+      setByToken(map);
+    } catch { /* chip is best-effort */ }
+  }, [walletAddress]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Real-time: the server pings the user's event stream on every offer action
+  // (the stream covers purchase/sale/offer), so the chip reflects a just-made
+  // or cancelled offer within ~300ms — and across devices — instead of being
+  // frozen at the mount value. Additive; the mount fetch above is the baseline.
+  useStreamRefetch(walletAddress, () => { void load(); });
+
+  return byToken;
 }
 
 // ── Log Activity Helper ──────────────────────────────────────────
@@ -507,6 +682,35 @@ export async function logActivity(data: {
   } catch (err) {
     console.error('[logActivity] error:', err);
   }
+}
+
+// ── Sold-team detection (drafted leagues no longer owned) ────────
+
+/**
+ * Given the wallet's drafted leagues it can't already confirm as owned, returns
+ * the subset it has SOLD (no longer owns on-chain). My Teams uses this to hide
+ * teams the user drafted but later sold — the draft backend keeps them forever.
+ * Deps are scalars only (wallet + sorted id key), per the render-loop rule.
+ */
+export function useNotOwnedLeagues(wallet: string | null, candidateLeagueIds: string[]): Set<string> {
+  const [notOwned, setNotOwned] = useState<Set<string>>(new Set());
+  const key = candidateLeagueIds.slice().sort().join(',');
+
+  const fetchIt = useCallback(async () => {
+    if (!wallet || !key) { setNotOwned(new Set()); return; }
+    try {
+      const res = await fetch(`/api/marketplace/league-ownership?wallet=${wallet}&leagues=${encodeURIComponent(key)}`);
+      if (!res.ok) { setNotOwned(new Set()); return; }
+      const j = await res.json();
+      setNotOwned(new Set((j.notOwned ?? []) as string[]));
+    } catch {
+      setNotOwned(new Set());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet, key]);
+
+  useEffect(() => { void fetchIt(); }, [fetchIt]);
+  return notOwned;
 }
 
 // ── Last Sale Prices (batch) ─────────────────────────────────────
@@ -573,7 +777,7 @@ export function useTokenSaleHistory(tokenId: string | null) {
     }
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/marketplace/activity?tokenId=${tokenId}&type=buy,sell`);
+      const res = await fetch(`/api/marketplace/activity?tokenId=${tokenId}&type=buy,sell,list,cancel,offer_accepted`);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       const json = await res.json();
       setActivities(json.activities ?? []);
@@ -680,6 +884,7 @@ async function postNotification(data: {
   title: string;
   message: string;
   link?: string;
+  dedupeKey?: string;
 }) {
   try {
     await fetch('/api/marketplace/notifications', {
@@ -692,13 +897,16 @@ async function postNotification(data: {
   }
 }
 
-/** Notify seller that their item was sold */
+/** Notify seller that their item was sold. The Alchemy transfer webhook fires
+ *  the same noti server-side (guaranteed even if this tab closes) — the shared
+ *  dedupeKey (tokenId + txHash) makes whichever lands second a no-op. */
 export function notifySeller(data: {
   sellerWallet: string;
   tokenId: string;
   teamName: string;
   price: number;
   buyerWallet: string;
+  txHash?: string;
 }) {
   postNotification({
     wallet: data.sellerWallet,
@@ -706,6 +914,7 @@ export function notifySeller(data: {
     title: 'Your Team Was Sold!',
     message: `${data.teamName} sold for $${data.price.toFixed(2)}`,
     link: `/marketplace/${data.tokenId}`,
+    ...(data.txHash ? { dedupeKey: `sale-${data.tokenId}-${data.txHash}` } : {}),
   });
 }
 
@@ -789,6 +998,10 @@ export function useFirestoreNotifications(walletAddress: string | null): UseFire
     const interval = setInterval(fetchNotifications, 30_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  // Instant: every createNotification fires a stream ping — pick the new
+  // entry up within ~300ms instead of the 30s poll.
+  useStreamRefetch(walletAddress, () => { void fetchNotifications(); });
 
   const markAllRead = useCallback(async () => {
     if (!walletAddress) return;

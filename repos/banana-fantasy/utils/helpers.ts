@@ -28,8 +28,8 @@ export const truncate = (string: string, limiter = 11) => {
     return string
 }
 
-export const truncateDisplayName = (string: string, limiter = 15) => {
-    if (!string) return
+export const truncateDisplayName = (string: string, limiter = 15): string => {
+    if (!string) return string
     if (string.length >= limiter) {
         const truncatedString = string.slice(0, 15) + "..."
         return truncatedString
@@ -66,10 +66,11 @@ export const isWalletAddress = (address: string) => {
 const PLACEHOLDER_NAMES = new Set(["testname", "testuser", "test"])
 
 // Deterministic FNV-1a 32-bit hash of the wallet hex, mapped into a
-// 7-digit space [1_000_000, 9_999_999]. ~9M handles. Stable per user,
-// no server coordination needed. Birthday-paradox collision odds:
-// ~5% at ~1.5k users; revisit / move to server-assigned if we grow past.
-// Boris's prior 4-hex `Banana #93e2` was 65k space — this is 138x wider.
+// 5-digit space [10_000, 99_999]. Always exactly 5 digits so the handle
+// shows in full inside a draft slot — no ellipsis, no truncation. Stable
+// per user (deterministic from the address), no server coordination.
+// Trade-off: 90k handles means birthday-paradox collisions get likely past
+// a few hundred users — revisit / move to server-assigned names if we grow.
 export const bananaNumberFromWallet = (walletAddress: string): number => {
     const hex = (walletAddress || "").replace(/^0x/i, "").toLowerCase()
     let h = 0x811c9dc5
@@ -77,25 +78,41 @@ export const bananaNumberFromWallet = (walletAddress: string): number => {
         h ^= hex.charCodeAt(i)
         h = Math.imul(h, 0x01000193)
     }
-    return ((h >>> 0) % 9_000_000) + 1_000_000
+    return ((h >>> 0) % 90_000) + 10_000
 }
 
-// On-brand default handle for users who haven't set a name. Stable per
-// wallet (deterministic from the address) so the same user always sees
-// the same number across devices and sessions.
+// ⛔ DO NOT use for display. The hash above has only 90k values — two wallets
+// CAN produce the same "Banana#####" (a hash-matched lookup mis-granted a
+// pass to a name-twin on 2026-07-04). The real default handle is the
+// SERVER-ASSIGNED `bananaNumber` (v2_users, unique counter) returned by
+// /api/users/display-batch. While that loads — or for wallets with no
+// account — use `bananaPlaceholderName` below.
 export const bananaDefaultName = (walletAddress: string): string => {
     if (!walletAddress) return "Banana"
-    return `Banana #${bananaNumberFromWallet(walletAddress)}`
+    return `Banana${bananaNumberFromWallet(walletAddress)}`
+}
+
+// Neutral, collision-honest stand-in while the server-assigned handle loads
+// (or for wallets that have no account at all). Tagged with the wallet's
+// leading hex so two players in one list still read differently — but it
+// never LOOKS like a real numbered handle, so nobody can act on it.
+export const bananaPlaceholderName = (walletAddress: string): string => {
+    const hex = (walletAddress || "").replace(/^0x/i, "")
+    return hex ? `Banana ${hex.slice(0, 4)}` : "Banana"
 }
 
 // Returns the user's display name if it's a real, user-chosen one;
-// otherwise an on-brand "Banana #1234567" default derived from the
-// wallet. Never surfaces a leftover "TestName" placeholder or a raw
-// wallet address.
+// otherwise the neutral banana placeholder (the caller's data source is
+// responsible for supplying the server-assigned "Banana#####" — never
+// derive a numbered handle from the wallet here). Never surfaces a
+// leftover "TestName" placeholder or a raw wallet address.
 export const getTruncatedAccountName = (displayName: string, walletAddress: string) => {
     const name = (displayName || "").trim()
     const isPlaceholder =
         name === "" || isWalletAddress(name) || PLACEHOLDER_NAMES.has(name.toLowerCase())
+        // Reject the seeded `User-0x…` placeholder (db-firestore createUser) so it
+        // falls through to the Banana default — same rule everywhere on the site.
+        || /^user-0x[0-9a-f]/i.test(name)
 
-    return isPlaceholder ? bananaDefaultName(walletAddress) : truncateDisplayName(name)
+    return isPlaceholder ? bananaPlaceholderName(walletAddress) : truncateDisplayName(name)
 }

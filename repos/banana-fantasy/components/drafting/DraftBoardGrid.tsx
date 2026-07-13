@@ -6,6 +6,8 @@ import type { DraftSummarySlot } from '@/hooks/useDraftEngine';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName } from '@/utils/helpers';
+import { useSelfPfp } from '@/hooks/useSelfPfp';
 
 interface DraftBoardGridProps {
   draftOrder: DraftPlayer[];
@@ -16,6 +18,10 @@ interface DraftBoardGridProps {
   usersMap?: DraftRoomUsersMap;
   userProfilePicture?: string;
   userEquippedBadge?: string | null;
+  userRipeness?: import('@/types').Ripeness | null;
+  /** The current user's own board label — their custom name or default
+   *  "Banana####". Shown on their column instead of the word "You". */
+  userDisplayName?: string;
 }
 
 export function DraftBoardGrid({
@@ -27,8 +33,20 @@ export function DraftBoardGrid({
   usersMap,
   userProfilePicture,
   userEquippedBadge,
+  userRipeness,
+  userDisplayName,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Durable self avatar: prefer the live auth pfp, then the polled usersMap
+  // entry for our own slot, then the last-known-good pfp persisted to
+  // localStorage. Survives Privy rehydration + mobile tab backgrounding, so
+  // our own avatar never blanks out to the banana once we've seen it once.
+  const selfPlayer = draftOrder.find((p) => p?.isYou);
+  const selfMapImageUrl = selfPlayer?.name
+    ? usersMap?.[selfPlayer.name.toLowerCase()]?.imageUrl
+    : undefined;
+  const selfPfp = useSelfPfp(userProfilePicture, selfMapImageUrl);
 
   // Chunk picks into rounds of 10
   const rounds: DraftSummarySlot[][] = [];
@@ -51,6 +69,13 @@ export function DraftBoardGrid({
       ref={gridRef}
       className="font-primary"
       style={{
+        // width:100% keeps the horizontal scroll INSIDE this div on phones.
+        // Without it, `margin: 0 auto` cancels the flex-stretch sizing, the
+        // grid renders at its intrinsic ~1120px, and the PARENT tab container
+        // pans instead — dragging the Draft/Queue/Board tab row off-screen
+        // (Richard, 2026-07-05: end-slot drafters had to scroll the whole
+        // board back left just to reach the Draft tab).
+        width: '100%',
         maxWidth: 1200,
         margin: '0 auto',
         padding: 10,
@@ -58,11 +83,16 @@ export function DraftBoardGrid({
         WebkitOverflowScrolling: 'touch',
       }}
     >
-      {/* Header row: owner names */}
+      {/* Header row: owner names.
+          Fixed 110px tracks (cell is 100px wide + 10px horizontal margin) so
+          the grid keeps its intrinsic ~1100px width. On a phone the parent's
+          overflow:auto then scrolls horizontally instead of collapsing the
+          1fr columns down to ~37px and overlapping every cell. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(10, 1fr)',
+          gridTemplateColumns: 'repeat(10, 110px)',
+          width: 'max-content',
         }}
       >
         {headings.map((slot, idx) => {
@@ -71,21 +101,21 @@ export function DraftBoardGrid({
           const resolvedUser = !player?.isYou && player?.name
             ? usersMap?.[player.name.toLowerCase()]
             : null;
-          const rawName = player
+          const displayLabel = player
             ? (player.isYou
-                ? (player.displayName || 'You')
-                : (resolvedUser?.displayName || player.displayName || player.name))
+                ? (userDisplayName || 'You')
+                : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
-          const displayLabel = rawName && rawName.startsWith('0x') && rawName.length > 12
-            ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}`
-            : rawName;
 
           const avatarUrl = player?.isYou
-            ? (userProfilePicture || '/banana-profile.png')
+            ? (selfPfp || '/banana-profile.png')
             : (resolvedUser?.imageUrl || '/banana-profile.png');
           const badge = player?.isYou
             ? userEquippedBadge
             : (resolvedUser?.equippedBadge ?? null);
+          const ripeness = player?.isYou
+            ? userRipeness
+            : (resolvedUser?.ripeness ?? null);
 
           return (
             <div
@@ -112,8 +142,9 @@ export function DraftBoardGrid({
                 alt={displayLabel}
                 size={32}
                 equippedBadge={badge}
+                ripeness={ripeness}
                 useNextImage={false}
-                className="border border-gray-500"
+                className=""
               />
               <div
                 style={{
@@ -136,7 +167,8 @@ export function DraftBoardGrid({
           key={roundIdx}
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(10, 1fr)',
+            gridTemplateColumns: 'repeat(10, 110px)',
+            width: 'max-content',
           }}
         >
           {roundSlots.map((slot) => {

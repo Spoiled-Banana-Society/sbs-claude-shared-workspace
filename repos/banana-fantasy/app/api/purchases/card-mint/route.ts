@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { paymentsEnabled } from '@/lib/envGates';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import {
   BASE,
@@ -22,16 +23,31 @@ import {
   reserveTokensToWallet,
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { writeDraftPassMetadata } from '@/lib/nftCardServer';
+import { acquireAdminWalletLock } from '@/lib/onchain/adminWalletLock';
+import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
-import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
-import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
+import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
+import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
+import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { pushStreamEventBg } from '@/lib/userEventStream';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 const USERS_COLLECTION = 'v2_users';
 const FAILED_MINTS_COLLECTION = 'failed_mints';
+// Idempotency markers for the card-fee → free-draft accumulator, keyed by the
+// mint txHash so a retried card-mint can never double-credit / double-grant.
+const CARD_FEE_CREDIT_COLLECTION = 'card_fee_credits';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
-const MAX_QUANTITY = 40;
+// 100 = uniform ceiling with the USDC path (purchases/create). One on-chain
+// reserveTokens tx mints the whole batch — 100 is comfortably inside Base's
+// gas envelope; far beyond that a single tx gets risky, so whales buy twice.
+// NOTE the card PROCESSOR may still decline very large charges ($2,500) on
+// its own risk rules — that's their ceiling, not ours (Boris 2026-07-03).
+const MAX_QUANTITY = 100;
 
 // Floor at which the admin wallet can reliably submit the permit +
 // transferFrom + reserveTokens trio. We pin gas params to 0.1 gwei
@@ -55,7 +71,7 @@ const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_
  * Staging-only during soak — promote to prod after a verification pass.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!paymentsEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {
@@ -93,13 +109,21 @@ export async function POST(req: Request) {
     }
     const deadline = BigInt(Math.floor(deadlineNum));
 
-    const signatureStr = requireString(body.signature, 'signature');
+    // Permit signature is OPTIONAL. Smart-account wallets (EIP-7702/Privy smart
+    // wallets) can't produce an ECDSA permit USDC accepts, so they set the
+    // allowance with an on-chain `approve` and send NO signature (sentinel
+    // '0x'). We only parse + submit a permit below when the on-chain allowance
+    // doesn't already cover the purchase.
+    const signatureStr = typeof body.signature === 'string' ? body.signature : '';
+    const hasPermitSig = signatureStr.length > 0 && signatureStr !== '0x';
     const signature = (signatureStr.startsWith('0x') ? signatureStr : `0x${signatureStr}`) as Hex;
-    let parsedSig: { v: number; r: Hex; s: Hex };
-    try {
-      parsedSig = parsePermitSignature(signature);
-    } catch (err) {
-      return jsonError(`invalid signature: ${(err as Error).message}`, 400);
+    let parsedSig: { v: number; r: Hex; s: Hex } | null = null;
+    if (hasPermitSig) {
+      try {
+        parsedSig = parsePermitSignature(signature);
+      } catch (err) {
+        return jsonError(`invalid signature: ${(err as Error).message}`, 400);
+      }
     }
 
     const paymentMethodRaw = body.paymentMethod;
@@ -166,92 +190,264 @@ export async function POST(req: Request) {
 
     const value = (tokenPriceUsdc as bigint) * BigInt(quantity);
 
-    // 1. Consume the user's permit. Admin wallet now has allowance.
-    let permitTxHash: Hex;
+    // Serialize the entire approve → pull → mint sequence on the shared admin
+    // wallet so two concurrent purchases (or the fulfillment cron) can't
+    // interleave and race on the tx nonce or the USDC allowance — the exact
+    // cause of the "replacement underpriced" / "transfer exceeds allowance"
+    // failures. Released in finally on every path.
+    const releaseAdminLock = await acquireAdminWalletLock('card-mint');
+    let mintResult: { txHash: Hex; tokenIds: string[] } | undefined;
+    let permitTxHash: Hex | 'skipped' = 'skipped';
+    let transferTxHash: Hex | undefined;
     try {
-      permitTxHash = await submitUsdcPermit({
-        owner,
-        spender: adminWallet,
-        value,
-        deadline,
-        v: parsedSig.v,
-        r: parsedSig.r,
-        s: parsedSig.s,
-      });
-    } catch (err) {
-      logger.warn('card-mint.permit_failed', {
-        userId,
-        quantity,
-        nonce: (onchainNonce as bigint).toString(),
-        err: (err as Error).message,
-      });
-      if (err instanceof ApiError) return jsonError(err.message, err.status);
-      return jsonError(`Permit failed: ${(err as Error).message}`, 400);
-    }
+      const ALLOWANCE_ABI = [{
+        type: 'function',
+        name: 'allowance',
+        stateMutability: 'view',
+        inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+      }] as const;
+      const readAllowance = () =>
+        publicClient.readContract({
+          address: BASE_SEPOLIA_USDC_ADDRESS,
+          abi: ALLOWANCE_ABI,
+          functionName: 'allowance',
+          args: [owner, adminWallet],
+        }) as Promise<bigint>;
 
-    // 2. Pull USDC into the BBB4 contract. Existing skim-bbb4-usdc cron will
-    //    sweep it to COLD_TREASURY_ADDRESS on its hourly schedule.
-    let transferTxHash: Hex;
-    try {
-      transferTxHash = await pullUsdcFromUser({
-        owner,
-        to: BBB4_CONTRACT_ADDRESS,
-        amount: value,
-      });
-    } catch (err) {
-      logger.error('card-mint.transferFrom_failed', {
-        userId,
-        quantity,
-        value: value.toString(),
-        permitTxHash,
-        err: (err as Error).message,
-      });
-      if (err instanceof ApiError) return jsonError(err.message, err.status);
-      return jsonError(`USDC transfer failed: ${(err as Error).message}`, 402);
-    }
-
-    // 3. Admin-mint the NFTs to the user. If this fails after transferFrom
-    //    succeeded, we owe the user a pass — record for retry.
-    let mintResult: { txHash: Hex; tokenIds: string[] };
-    try {
-      mintResult = await reserveTokensToWallet({ to: userId, count: quantity });
-    } catch (err) {
-      logger.error('card-mint.mint_failed_after_payment', {
-        userId,
-        quantity,
-        value: value.toString(),
-        permitTxHash,
-        transferTxHash,
-        err: (err as Error).message,
-      });
-      if (isFirestoreConfigured()) {
+      // 1. Ensure the admin wallet can pull `value`. Skip the permit if a prior
+      //    (unconsumed) allowance already covers it — OR if the buyer is a smart
+      //    account that set the allowance via an on-chain approve (no permit sig
+      //    sent; parsedSig is null). The allowance is re-verified at 1b below, so
+      //    a missing/failed approve is caught cleanly there ("You were NOT charged").
+      if ((await readAllowance()) < value && parsedSig) {
         try {
-          const db = getAdminFirestore();
-          await db.collection(FAILED_MINTS_COLLECTION).add({
-            source: 'card-mint',
+          permitTxHash = await submitUsdcPermit({
+            owner,
+            spender: adminWallet,
+            value,
+            deadline,
+            v: parsedSig.v,
+            r: parsedSig.r,
+            s: parsedSig.s,
+          });
+        } catch (err) {
+          logger.warn('card-mint.permit_failed', {
             userId,
             quantity,
-            value: value.toString(),
-            paymentMethod,
-            permitTxHash,
-            transferTxHash,
-            error: (err as Error).message,
-            createdAt: FieldValue.serverTimestamp(),
-            retryable: true,
+            nonce: (onchainNonce as bigint).toString(),
+            err: (err as Error).message,
           });
-        } catch (logErr) {
-          logger.error('card-mint.failed_mint_record_error', { userId, err: logErr });
+          if (err instanceof ApiError) return jsonError(err.message, err.status);
+          return jsonError(`Permit failed: ${(err as Error).message}`, 400);
         }
       }
-      return jsonError(
-        'Payment succeeded but mint failed. This has been recorded and will be retried — please contact support if your passes do not appear shortly.',
-        500,
-      );
+
+      // 1b. VERIFY the allowance is in place BEFORE pulling any money. The permit
+      //     receipt above is already confirmed successful, so the allowance IS set
+      //     on-chain — but the very next read can land on a lagging Alchemy replica
+      //     (read-after-write across the RPC node pool) and return a stale 0,
+      //     producing a FALSE "Approval didn't go through" 409 (caught 2026-06-21:
+      //     a Venmo mint failed here while the allowance was provably set to the
+      //     exact price). Retry the read briefly so a stale replica can catch up
+      //     before treating it as a real failure. This only returns OK once the
+      //     allowance has ACTUALLY reached `value`, so it can never wave through an
+      //     unpaid mint — it just rides out RPC lag.
+      let confirmedAllowance = await readAllowance();
+      for (let i = 0; confirmedAllowance < value && i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 600));
+        confirmedAllowance = await readAllowance();
+      }
+      if (confirmedAllowance < value) {
+        logger.warn('card-mint.allowance_not_set', {
+          userId,
+          quantity,
+          permitTxHash,
+          allowance: confirmedAllowance.toString(),
+        });
+        return jsonError('Approval didn’t go through — please tap Buy again. You were NOT charged.', 409);
+      }
+
+      // 2. Pull USDC into the BBB4 contract. Existing skim-bbb4-usdc cron will
+      //    sweep it to COLD_TREASURY_ADDRESS on its hourly schedule.
+      try {
+        transferTxHash = await pullUsdcFromUser({
+          owner,
+          to: BBB4_CONTRACT_ADDRESS,
+          amount: value,
+        });
+      } catch (err) {
+        logger.error('card-mint.transferFrom_failed', {
+          userId,
+          quantity,
+          value: value.toString(),
+          permitTxHash,
+          err: (err as Error).message,
+        });
+        if (err instanceof ApiError) return jsonError(err.message, err.status);
+        return jsonError(`USDC transfer failed: ${(err as Error).message}`, 402);
+      }
+
+      // 3. Admin-mint the NFTs to the user. If this fails after transferFrom
+      //    succeeded, we owe the user a pass — record it; the
+      //    fulfill-failed-mints cron delivers it automatically within minutes.
+      try {
+        mintResult = await reserveTokensToWallet({ to: userId, count: quantity });
+      } catch (err) {
+        logger.error('card-mint.mint_failed_after_payment', {
+          userId,
+          quantity,
+          value: value.toString(),
+          permitTxHash,
+          transferTxHash,
+          err: (err as Error).message,
+        });
+        if (isFirestoreConfigured()) {
+          try {
+            const db = getAdminFirestore();
+            await db.collection(FAILED_MINTS_COLLECTION).add({
+              source: 'card-mint',
+              userId,
+              quantity,
+              value: value.toString(),
+              paymentMethod,
+              permitTxHash,
+              transferTxHash,
+              error: (err as Error).message,
+              createdAt: FieldValue.serverTimestamp(),
+              retryable: true,
+              resolved: false,
+              attempts: 0,
+            });
+          } catch (logErr) {
+            logger.error('card-mint.failed_mint_record_error', { userId, err: logErr });
+          }
+        }
+        return jsonError(
+          'Your payment went through and your draft pass is on its way — it has been queued and will be delivered automatically, usually within a few minutes. You will NOT be charged again. If it hasn’t shown up shortly, contact support and we’ll sort it out right away.',
+          500,
+          { paymentSucceeded: true },
+        );
+      }
+    } finally {
+      await releaseAdminLock();
     }
 
-    // 4. Atomic Firestore commit: counter + cardPurchaseCount + activity
-    //    event all written in ONE transaction. Activity feed and counter
-    //    can never disagree.
+    if (!mintResult) {
+      // Unreachable: a successful mint exits the try with mintResult set, and
+      // every failure path returned above. Guards the type checker.
+      return jsonError('Mint did not complete', 500);
+    }
+
+    // 3b. Register the minted tokens into the Go engine as REAL spendable
+    //     tokens, typed `paid`. AWAITED — the draftPasses counter below is
+    //     recomputed from the resulting inventory, so it can only reflect
+    //     tokens that actually landed. Collision-proof on the engine side, so
+    //     reused ids no longer drop the token.
+    try {
+      await registerMintedTokens(userId, mintResult.tokenIds, 'paid');
+    } catch (e) {
+      logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message });
+    }
+    // Grey pre-reveal draft-pass image for each fresh token (real token id → #).
+    // waitUntil-backed — a detached write dies with the frozen lambda.
+    runInBackground('mint.pass-metadata', writeDraftPassMetadata(mintResult.tokenIds));
+
+    // 4. Card-fee credit → free draft (card payments only). Credit the MoonPay
+    //    fee for this quantity (feeForQty) toward a free draft; once accumulated
+    //    card fees reach $25, grant paid-type draft(s) and roll over the
+    //    remainder. Atomic + idempotent per mint txHash (marker doc) so a retry
+    //    can never double-credit or double-grant. USDC purchases pay no card
+    //    fee, so they never accrue credit.
+    let rewardEarned = 0;
+    let rewardRolloverCents = 0;
+    let rewardTokenIds: string[] = [];
+    let rewardMintTxHash: string | undefined;
+
+    if (isFirestoreConfigured() && paymentMethod === 'card') {
+      const db = getAdminFirestore();
+      const userRef = db.collection(USERS_COLLECTION).doc(userId);
+      const markerRef = db
+        .collection(CARD_FEE_CREDIT_COLLECTION)
+        .doc(mintResult.txHash.toLowerCase());
+      const feeCents = feeForQty(quantity);
+      try {
+        const res = await db.runTransaction(async (tx) => {
+          const marker = await tx.get(markerRef);
+          if (marker.exists) return { duplicate: true, earned: 0, rolloverCents: 0 };
+          const userSnap = await tx.get(userRef);
+          const cur = Math.max(0, (userSnap.data()?.cardFeeCreditCents as number | undefined) ?? 0);
+          const credit = cur + feeCents;
+          const earned = Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
+          const rolloverCents = credit % FREE_DRAFT_CREDIT_CENTS;
+          tx.set(userRef, { cardFeeCreditCents: rolloverCents }, { merge: true });
+          tx.set(markerRef, {
+            txHash: mintResult.txHash.toLowerCase(),
+            userId,
+            quantity,
+            feeCents,
+            earned,
+            status: earned > 0 ? 'pending' : 'credited',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          return { duplicate: false, earned, rolloverCents };
+        });
+        if (res.duplicate) {
+          logger.info(LOG_SOURCES.payment.REWARD_DUPLICATE_SKIPPED, { userId, txHash: mintResult.txHash });
+        } else {
+          rewardEarned = res.earned;
+          rewardRolloverCents = res.rolloverCents;
+          logger.info(LOG_SOURCES.payment.FEE_CREDITED, {
+            userId, quantity, feeCents, rolloverCents: res.rolloverCents, earned: res.earned,
+          });
+        }
+      } catch (creditErr) {
+        // Non-fatal: the on-chain mint already succeeded. A missed credit is
+        // recoverable; never roll back the paid mint over a credit write.
+        logger.warn('card-mint.fee_credit_failed', { userId, err: (creditErr as Error).message });
+      }
+    }
+
+    // 4b. If the credit crossed $25, mint the earned draft(s) as PAID-type
+    //     (usable in promos) BEFORE the recount so the counter reflects them.
+    if (rewardEarned > 0) {
+      try {
+        const rewardMint = await reserveTokensToWallet({ to: userId, count: rewardEarned });
+        rewardTokenIds = rewardMint.tokenIds;
+        rewardMintTxHash = rewardMint.txHash;
+        // Register as 'paid' (NOT 'free' / no free-origin stamp) so the reward
+        // draft is a normal usable pass — enterable in promos.
+        await registerMintedTokens(userId, rewardMint.tokenIds, 'paid');
+        runInBackground('mint.reward-pass-metadata', writeDraftPassMetadata(rewardMint.tokenIds));
+        try {
+          await getAdminFirestore()
+            .collection(CARD_FEE_CREDIT_COLLECTION)
+            .doc(mintResult.txHash.toLowerCase())
+            .set({ status: 'granted', rewardTokenIds: rewardMint.tokenIds, rewardMintTxHash: rewardMint.txHash }, { merge: true });
+        } catch { /* marker status update is best-effort */ }
+        logger.info(LOG_SOURCES.payment.REWARD_GRANTED, {
+          userId, earned: rewardEarned, rolloverCents: rewardRolloverCents,
+          rewardTxHash: rewardMintTxHash, tokenIds: rewardTokenIds,
+        });
+      } catch (rewardErr) {
+        // Credit was already consumed but the reward mint failed → the user is
+        // owed a draft. CRITICAL (matches ^payment\.) + recorded for re-grant.
+        logger.error(LOG_SOURCES.payment.REWARD_GRANT_FAILED, {
+          userId, earned: rewardEarned, sourceTxHash: mintResult.txHash, err: (rewardErr as Error).message,
+        });
+        try {
+          await getAdminFirestore().collection(FAILED_MINTS_COLLECTION).add({
+            source: 'card_reward', userId, quantity: rewardEarned,
+            sourceTxHash: mintResult.txHash, error: (rewardErr as Error).message,
+            createdAt: FieldValue.serverTimestamp(), retryable: true,
+          });
+        } catch { /* failed-mint record is best-effort */ }
+        rewardEarned = 0; // don't fire a "you earned a draft" event we couldn't fulfill
+      }
+    }
+
+    // 5. draftPasses recounted from real inventory (purchase + any reward
+    //    tokens). pass_purchased activity event written in the same recount tx.
     let newDraftPasses: number | null = null;
     const activityInput = {
       type: 'pass_purchased' as const,
@@ -281,53 +477,48 @@ export async function POST(req: Request) {
     };
 
     if (isFirestoreConfigured()) {
-      const db = getAdminFirestore();
-      const userRef = db.collection(USERS_COLLECTION).doc(userId);
-      const activityDoc = await buildActivityEventDoc(activityInput);
-
       try {
-        newDraftPasses = await db.runTransaction(async (tx) => {
-          const snap = await tx.get(userRef);
-          const data = snap.exists ? (snap.data() ?? {}) : {};
-          const currentPasses = (data.draftPasses as number | undefined) ?? 0;
-          const currentCardCount = (data.cardPurchaseCount as number | undefined) ?? 0;
-          const nextPasses = Math.max(0, currentPasses) + quantity;
-          const nextCardCount =
-            paymentMethod === 'card' ? Math.max(0, currentCardCount) + 1 : currentCardCount;
-          tx.set(userRef, { draftPasses: nextPasses, cardPurchaseCount: nextCardCount }, { merge: true });
-          addActivityEventToTx(tx, activityDoc);
-          return nextPasses;
-        });
-      } catch (txErr) {
-        console.error('[card-mint] firestore transaction failed, falling back:', txErr);
-        try {
-          await userRef.set(
-            {
-              draftPasses: FieldValue.increment(quantity),
-              ...(paymentMethod === 'card' ? { cardPurchaseCount: FieldValue.increment(1) } : {}),
-            },
-            { merge: true },
-          );
-          const after = await userRef.get();
-          newDraftPasses = (after.data()?.draftPasses as number | undefined) ?? null;
-          await logActivityEvent({ ...activityInput, metadata: { ...activityInput.metadata, fallbackPath: true } });
-        } catch (incErr) {
-          console.error('[card-mint] atomic increment fallback also failed:', incErr);
-          logger.warn('card-mint.firestore_increment_failed', {
-            userId,
-            err: (incErr as Error).message,
-          });
-        }
+        const activityDoc = await buildActivityEventDoc(activityInput);
+        const counts = await recountFromInventory(userId, activityDoc);
+        newDraftPasses = counts.draftPasses;
+      } catch (recErr) {
+        console.error('[card-mint] recount failed, falling back to activity log:', recErr);
+        logger.warn('card-mint.recount_failed', { userId, err: (recErr as Error).message });
+        await logActivityEvent({ ...activityInput, metadata: { ...activityInput.metadata, fallbackPath: true } }).catch(() => {});
       }
     } else {
       await logActivityEvent(activityInput);
     }
 
-    // Bump Buy 10 + Buy 2 promo progress and referrer milestones.
-    // Best-effort — must not roll back the on-chain mint (already happened).
+    // Bell: real-time confirmation for every successful pass buy (Boris).
+    await notifyPassPurchased(userId, quantity, mintResult.txHash);
+
+    // 5b. Reward activity event → shows live in the admin LiveActivity feed.
+    if (rewardEarned > 0) {
+      await logActivityEvent({
+        type: 'pass_granted',
+        userId,
+        walletAddress: userId,
+        paymentMethod: 'free',
+        quantity: rewardEarned,
+        tokenIds: rewardTokenIds,
+        txHash: rewardMintTxHash ?? null,
+        metadata: {
+          source: 'card_fee_reward',
+          creditConsumedCents: FREE_DRAFT_CREDIT_CENTS * rewardEarned,
+          rolloverCents: rewardRolloverCents,
+          sourceTxHash: mintResult.txHash,
+        },
+      }).catch((e) => logger.warn('card-mint.reward_activity_failed', { userId, err: (e as Error).message }));
+    }
+
+    // 6. Bump Buy 10 + Buy 2 promo progress and referrer milestones — for the
+    //    PAID purchase `quantity` only; the reward draft never advances promos.
+    //    Best-effort — must not roll back the on-chain mint (already happened).
+    let promoAwards = { mintMilestonesEarned: 0, buyBonusMilestonesEarned: 0, firstPurchaseSpinsEarned: 0 };
     if (isFirestoreConfigured()) {
       try {
-        await incrementMintPromos(userId, quantity);
+        promoAwards = await incrementMintPromos(userId, quantity);
       } catch (promoErr) {
         logger.warn('card-mint.promo_increment_failed', {
           userId,
@@ -366,11 +557,33 @@ export async function POST(req: Request) {
       }
     }
 
+    // Happy-path observability for ALL NFT purchases (card + USDC). info-level
+    // → structured logs / dev export, NOT the critical error feed.
+    logger.info(LOG_SOURCES.payment.PURCHASE_COMPLETED, {
+      userId,
+      quantity,
+      paymentMethod,
+      cardProvider: cardProvider ?? undefined,
+      txHash: mintResult.txHash,
+      valueUsdc: Number(value) / 1_000_000,
+      rewardEarned,
+    });
+
+    // Post-commit: fire the synced bell + bottom toast when a free draft was
+    // earned from card-fee credit. Best-effort; never blocks the response.
+    if (rewardEarned > 0) {
+      pushStreamEventBg(userId, 'promo-card-free-draft', { awardedCount: rewardEarned });
+    }
+
     return json({
       success: true,
       minted: quantity,
       tokenIds: mintResult.tokenIds,
       draftPasses: newDraftPasses,
+      // Lets the buying device fire milestone toasts + bell refresh instantly
+      // from this response (stream event is the cross-device copy, deduped).
+      promoAwards,
+      cardFreeDraftsEarned: rewardEarned,
       txHashes: {
         permit: permitTxHash,
         transferFrom: transferTxHash,

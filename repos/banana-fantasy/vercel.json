@@ -1,9 +1,18 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  },
   "crons": [
     {
-      "path": "/api/crons/skim-bbb4-usdc",
-      "schedule": "0 * * * *"
+      "path": "/api/crons/fulfill-failed-mints",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/crons/reconcile-relay-buys",
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/crons/sync-cloud-errors",
@@ -20,6 +29,26 @@
     {
       "path": "/api/crons/backfill-username-lower",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/crons/audit-integrity",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/crons/health-canary",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/crons/king-of-drafts",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/crons/capture-draft-data",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/crons/founder-teaser",
+      "schedule": "0 * * * *"
     }
   ]
 }

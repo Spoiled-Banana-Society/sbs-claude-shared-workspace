@@ -41,6 +41,9 @@ export function DraftsTab({ enabled }: { enabled: boolean }) {
       {sub === 'completed' && <CompletedDraftsList enabled={enabled} />}
       {sub === 'spectate' && <SpectateBrowser enabled={enabled} />}
       {sub === 'founder' && <FounderScheduleEditor enabled={enabled} />}
+      {/* House-bot ops are behind the scenes now: the "+ Bot" button lives on
+          each filling draft row (Active sub-tab + the Manage list); minting
+          happens automatically whenever the pool runs dry. */}
       {sub === 'manage' && <AdminDraftManage enabled={enabled} />}
     </div>
   );

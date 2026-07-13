@@ -42,6 +42,23 @@ async function resolveUsersCollection(): Promise<CollectionReference<DocumentDat
   return v2;
 }
 
+// Default "Banana#####" handles resolve against the STORED server-assigned
+// `bananaNumber` (counters/banana_user_number, one per account — unique).
+// NEVER against the old client wallet-hash: that 90k-value hash collides, and
+// on 2026-07-04 a hash-matched search sent an admin pass grant to a name-twin.
+// For a typed prefix like "banana7", every number length is covered by one
+// range query per digit-count (7, 70–79, 700–799, …).
+function bananaPrefixRanges(digits: string): Array<{ lo: number; hi: number }> {
+  const p = Number(digits);
+  if (!Number.isFinite(p)) return [];
+  const ranges: Array<{ lo: number; hi: number }> = [];
+  for (let k = 0; k <= 6 - digits.length; k++) {
+    const scale = 10 ** k;
+    ranges.push({ lo: p * scale, hi: (p + 1) * scale - 1 });
+  }
+  return ranges;
+}
+
 function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) {
   const data = doc.data();
   const storedWallet = typeof data.walletAddress === 'string' ? data.walletAddress : '';
@@ -50,11 +67,19 @@ function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) 
     id: doc.id,
     walletAddress: isStoredValid ? storedWallet : doc.id,
     username: (typeof data.username === 'string' && !data.username.startsWith('User-')) ? data.username : null,
+    // Server-assigned unique default-handle number ("Banana"+bananaNumber).
+    // Display fallback for unnamed users — NEVER recompute from the wallet.
+    bananaNumber: typeof data.bananaNumber === 'number' ? data.bananaNumber : null,
     email:
       (typeof data.blueCheckEmail === 'string' && data.blueCheckEmail) ||
       (typeof data.email === 'string' && data.email) ||
       null,
     createdAt: toIsoDate(data.createdAt),
+    // Returning-player flag from the returning-check (email/social/wallet match
+    // to an old-prod identity). This catches WEB2 returners that the on-chain
+    // BBB3-holders set misses (their new wallet isn't on-chain from last year).
+    isReturningPlayer: data.isReturningPlayer === true,
+    returningVia: typeof data.returningVia === 'string' ? data.returningVia : null,
     blueCheckVerified: data.blueCheckVerified === true || data.isBlueCheckVerified === true,
     banned: data.banned === true,
     freeDrafts: typeof data.freeDrafts === 'number' ? data.freeDrafts : 0,
@@ -120,6 +145,30 @@ export async function GET(req: Request) {
         if (!snap) continue;
         for (const doc of snap.docs) {
           if (!results.has(doc.id)) results.set(doc.id, mapUserDoc(doc));
+        }
+      }
+
+      // Banana-handle resolution against the STORED server-assigned number.
+      // (Stored "BananaNNNNN" usernames are already covered by the username
+      // prefix queries above.) One indexed range query per digit-length —
+      // no scans, no computed hashes, no collisions.
+      const bananaDigits = q.match(/^banana(\d+)$/)?.[1];
+      if (bananaDigits) {
+        const numberSnaps = await Promise.all(
+          bananaPrefixRanges(bananaDigits).map((r) =>
+            usersCollection
+              .where('bananaNumber', '>=', r.lo)
+              .where('bananaNumber', '<=', r.hi)
+              .limit(20)
+              .get()
+              .catch(() => null),
+          ),
+        );
+        for (const snap of numberSnaps) {
+          if (!snap) continue;
+          for (const doc of snap.docs) {
+            if (!results.has(doc.id) && results.size < 50) results.set(doc.id, mapUserDoc(doc));
+          }
         }
       }
 

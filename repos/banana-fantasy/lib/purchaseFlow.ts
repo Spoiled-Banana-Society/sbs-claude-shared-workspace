@@ -31,6 +31,11 @@ export interface PurchaseFlowState {
   joinError: string | null;
   isJoiningDraft: boolean;
   waitingForUsdcStartedAt: number | null;
+  /** Card/PayPal/Apple Pay payment has been CONFIRMED (the user paid and USDC is
+   *  inbound). Once true, the user is never out money — any later error just
+   *  means "finish from your balance", so we show a reassuring notice instead of
+   *  the alarming "something went wrong". Reset at the start of every attempt. */
+  cardPaymentCommitted: boolean;
 }
 
 const initialState: PurchaseFlowState = {
@@ -38,10 +43,11 @@ const initialState: PurchaseFlowState = {
   flowError: null,
   phase: 'purchase',
   mintedCount: 0,
-  quantity: 10,
+  quantity: 1,
   joinError: null,
   isJoiningDraft: false,
   waitingForUsdcStartedAt: null,
+  cardPaymentCommitted: false,
 };
 
 let state: PurchaseFlowState = { ...initialState };
@@ -80,4 +86,59 @@ export function isPurchaseFlowActive(): boolean {
 export function resetPurchaseFlow(): void {
   state = { ...initialState };
   listeners.forEach((cb) => cb());
+}
+
+// ── Card-purchase resume record (localStorage) ───────────────────────────────
+// The in-memory store above survives modal close/reopen but NOT a full page
+// reload. On mobile the browser can kill our backgrounded tab while the user is
+// in the MoonPay window, so on return the tab reloads fresh and the in-flight
+// mint is lost — their USDC arrives but no pass is minted. This durable marker
+// lets a fresh load finish the mint (see PurchaseResumeRunner). CARD path only
+// (USDC-on-Base has no external-window detour). Resume is double-mint-safe: it
+// only mints if the USDC is still sitting un-pulled in the wallet.
+
+const RESUME_KEY = 'sbs-card-purchase-resume';
+
+export interface CardResumeRecord {
+  quantity: number;
+  walletAddress: string;
+  ts: number;
+  /** USDC balance (USD) right BEFORE the card flow started. Recovery only fires
+   *  if the balance later GREW by ~the purchase amount — proof the card actually
+   *  funded — so pre-existing USDC (e.g. team-sale proceeds) can't trip a false
+   *  "your payment went through" prompt. */
+  balanceBefore?: number;
+}
+
+export function writeResumeRecord(rec: { quantity: number; walletAddress: string; balanceBefore?: number }): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const payload: CardResumeRecord = { quantity: rec.quantity, walletAddress: rec.walletAddress, ts: Date.now(), balanceBefore: rec.balanceBefore };
+    window.localStorage.setItem(RESUME_KEY, JSON.stringify(payload));
+  } catch { /* storage unavailable — resume just won't be possible, no harm */ }
+}
+
+export function readResumeRecord(): CardResumeRecord | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem(RESUME_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw) as CardResumeRecord;
+    if (
+      !rec ||
+      typeof rec.quantity !== 'number' || rec.quantity < 1 ||
+      typeof rec.walletAddress !== 'string' || !rec.walletAddress ||
+      typeof rec.ts !== 'number'
+    ) {
+      return null;
+    }
+    return rec;
+  } catch { return null; }
+}
+
+export function clearResumeRecord(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(RESUME_KEY);
+  } catch { /* noop */ }
 }

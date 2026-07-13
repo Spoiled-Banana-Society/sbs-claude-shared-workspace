@@ -54,6 +54,9 @@ export async function POST(req: NextRequest) {
       pickLengthSeconds: Number.isFinite(body.pickLengthSeconds)
         ? Number(body.pickLengthSeconds)
         : undefined,
+      // Fast drafts fire for the ON-DECK player (their pick is next), set by the
+      // onPickAdvance Cloud Function; drives the "your pick is next" copy.
+      onDeck: body.onDeck === true,
     });
 
     logger.debug(

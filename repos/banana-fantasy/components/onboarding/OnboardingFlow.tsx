@@ -4,15 +4,16 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
+import { usernameErrorText } from '@/lib/usernameMessages';
 
 // Extended steps: profile setup → draft tutorial → first-draft promo → done
 const steps = ['welcome', 'display', 'avatar', 'howItWorks', 'promo', 'done'] as const;
 type _Step = typeof steps[number];
-
-const PROMO_KEY = 'sbs-first-draft-promo-claimed';
 
 // --- How It Works carousel slides ---
 const draftSlides = [
@@ -70,6 +71,7 @@ const fadeUp = {
 
 export function OnboardingFlow() {
   const router = useRouter();
+  const privy = usePrivy();
   const { user, walletAddress } = useAuth();
   const { isNewUser, isSubmitting, error, createProfile, updateProfile, completeOnboarding } = useOnboarding();
   const [stepIndex, setStepIndex] = useState(0);
@@ -79,7 +81,8 @@ export function OnboardingFlow() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [profileCreated, setProfileCreated] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
-  const [promoClaimed, setPromoClaimed] = useState(false);
+  // Account-synced: claiming the first-draft promo on one device reflects everywhere.
+  const [promoClaimed, setPromoClaimed] = useSyncedFlag<boolean>('firstDraftPromoClaimed', false);
   const [promoLoading, setPromoLoading] = useState(false);
   const step = steps[stepIndex] ?? 'welcome';
 
@@ -87,13 +90,6 @@ export function OnboardingFlow() {
     if (user?.username) setDisplayName(user.username);
     if (user?.profilePicture) setAvatarPreview(user.profilePicture);
   }, [user]);
-
-  // Check if promo was already claimed
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setPromoClaimed(localStorage.getItem(PROMO_KEY) === 'true');
-    }
-  }, []);
 
   const canGoBack = stepIndex > 0 && step !== 'done';
   const trimmedName = displayName.trim();
@@ -129,6 +125,21 @@ export function OnboardingFlow() {
         if (!trimmedName) {
           setLocalError('Please enter a display name.');
           return;
+        }
+        // Usernames must be unique — claim it before creating/updating the
+        // profile. A 409 means someone already has that name.
+        if (trimmedName.toLowerCase() !== (user?.username ?? '').toLowerCase()) {
+          const token = await privy.getAccessToken();
+          const res = await fetch('/api/username', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName }),
+          });
+          if (!res.ok) {
+            const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
+            setLocalError(usernameErrorText(data.reason || data.error));
+            return;
+          }
         }
         if (isNewUser && !profileCreated) {
           await createProfile(trimmedName, avatarPreview);
@@ -201,7 +212,6 @@ export function OnboardingFlow() {
       });
       if (res.ok) {
         setPromoClaimed(true);
-        localStorage.setItem(PROMO_KEY, 'true');
       }
     } catch {
       // Promo claim is best-effort — don't block onboarding

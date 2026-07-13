@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useWallets } from '@privy-io/react-auth';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useWallets, useSignTypedData, useSendTransaction, type SignTypedDataParams } from '@privy-io/react-auth';
 import {
   createPublicClient,
+  encodeFunctionData,
   http,
   type Address,
   type Hex,
@@ -11,6 +12,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import {
   BASE,
+  BASE_CHAIN_ID,
   BASE_RPC_URL,
   BASE_SEPOLIA_USDC_ADDRESS,
   BBB4_ABI,
@@ -20,7 +22,10 @@ import {
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { clientLog } from '@/lib/clientLog';
+import { connectMetaMaskFresh } from '@/lib/metamaskSigner';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
+import { type PurchasePromoAwards } from '@/lib/promoAwardToasts';
 
 type MintFn = (
   quantity: number,
@@ -43,6 +48,12 @@ interface UseMintDraftPassResult {
   /** Current step of the mint flow, used by the modal to render a stepper. */
   mintStep: MintStep;
   error: string | null;
+  /**
+   * True when the user's payment SUCCEEDED but pass delivery is still pending
+   * (e.g. a transient mint retry exhausted). Their money is safe and the pass
+   * is queued — the UI should reassure, not show a hard failure.
+   */
+  paymentPending: boolean;
   txHash: Hex | null;
   tokenPrice: bigint | null;
   mintActive: boolean;
@@ -81,10 +92,26 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const { wallets, ready: walletsReady } = useWallets();
   const { walletAddress } = useAuth();
 
+  // Privy embedded-wallet signer — lets web2 (email/X) users sign the gasless
+  // permit silently (no confirm modal) for a one-tap mint. Ref-held so it
+  // doesn't churn `mint`'s deps (render-loop rule).
+  const { signTypedData } = useSignTypedData();
+  const signTypedDataRef = useRef(signTypedData);
+  signTypedDataRef.current = signTypedData;
+
+  // Gas-sponsored send for embedded wallets (same proven path as useListTeam).
+  // Smart-account embedded wallets can't produce an ECDSA permit USDC accepts,
+  // so they grant the allowance with a real (sponsored, gasless) `approve` tx
+  // instead; the relay then skips the permit and pulls + mints as usual.
+  const { sendTransaction } = useSendTransaction();
+  const sendTransactionRef = useRef(sendTransaction);
+  sendTransactionRef.current = sendTransaction;
+
   const [isApproving, setIsApproving] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [mintStep, setMintStep] = useState<MintStep>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [paymentPending, setPaymentPending] = useState(false);
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [tokenPrice, setTokenPrice] = useState<bigint | null>(null);
   const [mintActive, setMintActive] = useState(false);
@@ -101,6 +128,19 @@ export function useMintDraftPass(): UseMintDraftPassResult {
     }
     return wallets[0];
   }, [walletAddress, wallets]);
+
+  // Live refs so mint() can read the CURRENT wallet readiness at call time, not
+  // the (possibly stale) value captured when the callback was created. On mobile
+  // useWallets can be momentarily not-ready right after the MoonPay detour / a
+  // tab refocus, and the auto-mint may fire in that window.
+  const walletsReadyRef = useRef(walletsReady);
+  walletsReadyRef.current = walletsReady;
+  const selectedWalletRef = useRef(selectedWallet);
+  selectedWalletRef.current = selectedWallet;
+  // Auth address in a ref so mint() can read it without taking walletAddress as a
+  // dep (keeps the callback stable — render-loop rule).
+  const walletAddressRef = useRef(walletAddress);
+  walletAddressRef.current = walletAddress;
 
   const onChainAddress = selectedWallet?.address ?? walletAddress;
 
@@ -163,11 +203,90 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const mint = useCallback<MintFn>(
     async (quantity, opts) => {
       setError(null);
+      setPaymentPending(false);
       setTxHash(null);
       setMintStep('idle');
 
-      if (!walletsReady || !selectedWallet) {
-        const message = 'Wallet not ready — please wait a moment and try again.';
+      // Diagnostic backstop — captures the exact wallet state at mint entry so a
+      // mobile stall is pinpointable from the logs (no console needed).
+      clientLog('payment', 'mint_wallet_state', {
+        walletsReady: walletsReadyRef.current,
+        hasSelected: !!selectedWalletRef.current,
+        selectedType: selectedWalletRef.current?.walletClientType,
+        selectedAddr: selectedWalletRef.current?.address,
+      });
+
+      // Resolve a usable wallet OBJECT to sign with (not Privy's `ready` flag,
+      // which can stay false on mobile while a wallet exists). Wait briefly for
+      // useWallets() to populate.
+      let activeWallet = selectedWalletRef.current;
+      if (!activeWallet) {
+        const readyStart = Date.now();
+        while (Date.now() - readyStart < 6000) {
+          await new Promise((r) => setTimeout(r, 250));
+          if (selectedWalletRef.current) break;
+        }
+        activeWallet = selectedWalletRef.current;
+      }
+
+      // Mobile fallback: the mobile login uses SIWE / WalletConnect, which
+      // AUTHENTICATES the user (sets walletAddress) but does NOT add a wallet to
+      // Privy's useWallets() — so on mobile MetaMask (in-app browser) activeWallet
+      // is null even though a usable injected provider (window.ethereum) is right
+      // there. Sign through it directly. (Root-caused 2026-06-22: mint_wallet_state
+      // logged walletsReady:true, hasSelected:false on every mobile attempt.)
+      const injected = typeof window !== 'undefined'
+        ? (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
+        : undefined;
+      if (!activeWallet && injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_injected_fallback', { addr: walletAddressRef.current });
+        activeWallet = {
+          address: walletAddressRef.current,
+          walletClientType: 'injected',
+          getEthereumProvider: async () => injected,
+        } as unknown as NonNullable<typeof activeWallet>;
+      }
+
+      // Mobile MetaMask fresh-connect fallback (the main mobile case).
+      // On mobile, login signs in via MetaMask's SDK in one connect→sign burst
+      // over a LIVE relay (works), but Privy never registers it in useWallets()
+      // and there's no window.ethereum in a normal browser, so both paths above
+      // miss. Reusing the post-login provider FAILS: by purchase time the relay
+      // socket is dead (app backgrounded during login) and mobile Safari often
+      // reloaded the tab on return (root-caused 2026-06-22: `mint_started` fired
+      // but MetaMask opened with "nothing to approve" and the request hung).
+      // So establish a BRAND-NEW MetaMask connection right here — the same proven
+      // burst login uses — so the signature requested a moment later round-trips
+      // over a fresh, live relay.
+      //   SAFETY: only runs when there's STILL no wallet (no useWallets entry AND
+      //   no injected provider). Card / embedded / desktop / MetaMask-in-app-browser
+      //   flows all already have a wallet here → they never enter this block (zero
+      //   regression). On failure / address mismatch we fall through to the same
+      //   "reconnect" error below — never worse than today.
+      if (!activeWallet && !injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_mm_fresh_connect_start', {});
+        const fresh = await connectMetaMaskFresh();
+        const matches = !!fresh &&
+          fresh.address.toLowerCase() === walletAddressRef.current.toLowerCase();
+        clientLog('payment', 'mint_mm_fresh_connect_result', {
+          connected: !!fresh,
+          matches,
+          addr: fresh?.address ?? null,
+        });
+        if (fresh && matches) {
+          activeWallet = {
+            address: fresh.address,
+            // NOT 'privy' → routes through the external-wallet signing branch
+            // (getEthereumProvider → ensureBaseNetwork → eth_signTypedData_v4).
+            walletClientType: 'metamask',
+            getEthereumProvider: async () => fresh.provider,
+          } as unknown as NonNullable<typeof activeWallet>;
+        }
+      }
+
+      if (!activeWallet) {
+        clientLog('payment', 'mint_no_wallet', { hasInjected: !!injected, authAddr: walletAddressRef.current });
+        const message = 'Wallet not connected — please reconnect your wallet and try again.';
         setError(message);
         setMintStep('error');
         throw new Error(message);
@@ -179,6 +298,14 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         setMintStep('error');
         throw new Error(message);
       }
+
+      const method = opts?.paymentMethod ?? 'usdc';
+      clientLog('payment', 'mint_started', {
+        wallet: activeWallet.address,
+        quantity,
+        paymentMethod: method,
+        walletType: activeWallet.walletClientType,
+      });
 
       try {
         setIsApproving(true);
@@ -200,7 +327,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
             address: BASE_SEPOLIA_USDC_ADDRESS,
             abi: USDC_PERMIT_ABI,
             functionName: 'nonces',
-            args: [selectedWallet.address as Address],
+            args: [activeWallet.address as Address],
           }),
           fetch('/api/purchases/admin-wallet').then((r) => r.ok ? r.json() : null).catch(() => null),
         ]);
@@ -220,44 +347,91 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const value = (price as bigint) * BigInt(quantity);
         const deadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_SECONDS);
 
-        const typedData = buildUsdcPermitTypedData({
-          owner: selectedWallet.address as Address,
-          spender: adminAddress,
-          value,
-          nonce: userNonce as bigint,
-          deadline,
-        });
+        const isEmbedded = activeWallet.walletClientType === 'privy';
 
-        // Request EIP-712 signature via the wallet's own provider. Works for
-        // Privy embedded, MetaMask, Coinbase Wallet, etc. — no gas prompt.
-        const provider = await selectedWallet.getEthereumProvider();
+        // Detect a smart-contract account (e.g. an EIP-7702 / Privy smart wallet
+        // — it has on-chain bytecode). USDC validates permits for such accounts
+        // via EIP-1271, which REJECTS a plain ECDSA permit ("EIP2612: invalid
+        // signature"). So for an embedded smart account we grant the allowance
+        // with a real, gas-sponsored `approve` tx instead of a permit signature;
+        // the relay then sees the allowance and skips the permit (no signature
+        // needed) before pulling + minting. Plain EOAs keep the gasless permit.
+        let walletCode: string | undefined;
+        try {
+          walletCode = await publicClient.getBytecode({ address: activeWallet.address as Address });
+        } catch { walletCode = undefined; }
+        const isSmartAccount = !!walletCode && walletCode !== '0x';
 
-        // Make sure the wallet is on Base before signing. The USDC permit's
-        // domain references Base (8453), so a wallet on another network
-        // would warn or refuse. ensureBaseNetwork switches them — or adds
-        // Base if their wallet doesn't have it — and on failure returns
-        // clear copy instead of letting the signature fail murkily.
-        // Embedded wallets are already on Base, so this is a no-op.
-        const baseNet = await ensureBaseNetwork(provider);
-        if (!baseNet.ok) {
-          throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+        const ALLOWANCE_ABI = [{
+          type: 'function', name: 'allowance', stateMutability: 'view',
+          inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+          outputs: [{ type: 'uint256' }],
+        }] as const;
+        const APPROVE_ABI = [{
+          type: 'function', name: 'approve', stateMutability: 'nonpayable',
+          inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+          outputs: [{ type: 'bool' }],
+        }] as const;
+
+        // '0x' is a sentinel meaning "no permit — allowance set on-chain instead".
+        let signature: Hex = '0x';
+        if (isEmbedded && isSmartAccount) {
+          // Gas-sponsored approve (Privy sponsors it → $0 for the user).
+          const approveData = encodeFunctionData({ abi: APPROVE_ABI, functionName: 'approve', args: [adminAddress, value] });
+          await sendTransactionRef.current(
+            { to: BASE_SEPOLIA_USDC_ADDRESS, data: approveData, chainId: BASE_CHAIN_ID },
+            { sponsor: true, uiOptions: { showWalletUIs: false } },
+          );
+          // Wait until the allowance actually reflects on-chain before the relay
+          // reads it (RPC nodes can lag a block behind the just-mined approve).
+          for (let i = 0; i < 20; i++) {
+            const allowance = (await publicClient.readContract({
+              address: BASE_SEPOLIA_USDC_ADDRESS, abi: ALLOWANCE_ABI,
+              functionName: 'allowance', args: [activeWallet.address as Address, adminAddress],
+            }).catch(() => 0n)) as bigint;
+            if (allowance >= value) break;
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        } else {
+          const typedData = buildUsdcPermitTypedData({
+            owner: activeWallet.address as Address,
+            spender: adminAddress,
+            value,
+            nonce: userNonce as bigint,
+            deadline,
+          });
+          if (isEmbedded) {
+            // Embedded EOA — sign the gasless permit silently for a one-tap mint.
+            const result = await signTypedDataRef.current(
+              typedData as unknown as SignTypedDataParams,
+              { uiOptions: { showWalletUIs: false }, address: activeWallet.address },
+            );
+            signature = result.signature as Hex;
+          } else {
+            // External wallet (MetaMask/Coinbase) — signs in its own popup; ensure Base first.
+            const provider = await activeWallet.getEthereumProvider();
+            const baseNet = await ensureBaseNetwork(provider);
+            if (!baseNet.ok) {
+              throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+            }
+            signature = (await provider.request({
+              method: 'eth_signTypedData_v4',
+              params: [activeWallet.address, JSON.stringify(typedData)],
+            })) as Hex;
+          }
         }
-
-        const signature = (await provider.request({
-          method: 'eth_signTypedData_v4',
-          params: [selectedWallet.address, JSON.stringify(typedData)],
-        })) as Hex;
 
         setIsApproving(false);
         setIsMinting(true);
         setMintStep('processing');
+        clientLog('payment', 'mint_signed', { wallet: activeWallet.address, quantity, paymentMethod: method });
 
         // Server orchestrates permit → transferFrom → reserveTokens.
         const res = await fetch('/api/purchases/card-mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: (selectedWallet.address as string).toLowerCase(),
+            userId: (activeWallet.address as string).toLowerCase(),
             quantity,
             deadline: Number(deadline),
             signature,
@@ -268,14 +442,38 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const data = (await res.json().catch(() => ({}))) as {
           success?: boolean;
           error?: string;
+          paymentSucceeded?: boolean;
           txHashes?: { mint?: Hex };
+          promoAwards?: PurchasePromoAwards;
+          cardFreeDraftsEarned?: number;
         };
+        clientLog('payment', 'mint_server_result', {
+          wallet: activeWallet.address,
+          quantity,
+          paymentMethod: method,
+          httpOk: res.ok,
+          success: !!data.success,
+          paymentSucceeded: !!data.paymentSucceeded,
+          txHash: data.txHashes?.mint ?? null,
+          error: data.error ?? null,
+        });
         if (!res.ok || !data.success) {
+          // Payment went through but delivery is pending — NOT a hard failure.
+          // Surface a reassuring pending state instead of an error so the user
+          // knows their money is safe and the pass is on its way.
+          if (data.paymentSucceeded) {
+            setPaymentPending(true);
+            setError(data.error || 'Payment received — your pass is on its way.');
+            setMintStep('error');
+            return '0x' as Hex;
+          }
           throw new Error(data.error || `Mint failed (${res.status})`);
         }
         const hash = (data.txHashes?.mint ?? '0x') as Hex;
         setTxHash(hash);
         setMintStep('success');
+        // No toasts (Boris 2026-07-10): promo milestones surface via the
+        // server-created bell only.
         await refreshContractState();
         return hash;
       } catch (err) {
@@ -339,7 +537,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         setIsMinting(false);
       }
     },
-    [publicClient, walletsReady, refreshContractState, selectedWallet]
+    [publicClient, refreshContractState, selectedWallet]
   );
 
   return {
@@ -348,6 +546,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
     isMinting,
     mintStep,
     error,
+    paymentPending,
     txHash,
     tokenPrice,
     mintActive,

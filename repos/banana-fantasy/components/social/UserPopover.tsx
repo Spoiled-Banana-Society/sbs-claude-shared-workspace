@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface UserPopoverProps {
   walletAddress: string;
@@ -12,6 +13,9 @@ interface UserPopoverProps {
   children: React.ReactNode;
   /** Visual side of the trigger to anchor against. Default 'auto' (chooses based on viewport). */
   side?: 'top' | 'bottom' | 'auto';
+  /** Render the trigger as a full-width block (row-shaped children like
+   *  leaderboard rows). Default false = inline-flex (avatar-sized triggers). */
+  block?: boolean;
 }
 
 type Relationship = 'self' | 'friend' | 'incoming' | 'outgoing' | 'none' | 'loading';
@@ -40,7 +44,7 @@ function shortWallet(w: string): string {
  * On open, fetches /api/friends + /api/friends/mutual lazily so the popover
  * always reflects current state. Closes on outside click or Escape.
  */
-export function UserPopover({ walletAddress, username, pfpUrl, children, side = 'auto' }: UserPopoverProps) {
+export function UserPopover({ walletAddress, username, pfpUrl, children, side = 'auto', block = false }: UserPopoverProps) {
   const { user } = useAuth();
   const privy = usePrivy();
   const router = useRouter();
@@ -53,6 +57,12 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
   const [relationship, setRelationship] = useState<Relationship>('loading');
   const [mutualCount, setMutualCount] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // Inline compose: tapping "Message" expands a little box right here in
+  // the popover (Richard's ask) instead of navigating away to /messages.
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -138,9 +148,44 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     };
   }, [open]);
 
+  // Reset the compose box whenever the popover closes, so reopening on a
+  // different user never shows a stale half-typed message.
+  useEffect(() => {
+    if (!open) {
+      setComposing(false);
+      setDraft('');
+      setSent(false);
+      setSending(false);
+    }
+  }, [open]);
+
   const flash = (text: string) => {
     setFeedback(text);
     setTimeout(() => setFeedback(null), 2000);
+  };
+
+  const handleSendMessage = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/dms/${encodeURIComponent(targetWallet)}`, {
+        method: 'POST', headers, body: JSON.stringify({ text }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flash(json.error || 'Couldn’t send');
+        setSending(false);
+        return;
+      }
+      setDraft('');
+      setSent(true);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Couldn’t send');
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleSendRequest = async () => {
@@ -276,8 +321,9 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     );
   };
 
-  const displayName = username || shortWallet(walletAddress);
-  const initial = (username || walletAddress).slice(0, 1).toUpperCase();
+  // Floor the placeholder/empty username to the canonical Banana handle; the raw
+  // wallet still shows on its own sub-line below (line ~360), never as the name.
+  const displayName = getTruncatedAccountName(username || '', walletAddress);
 
   return (
     <>
@@ -287,7 +333,10 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="cursor-pointer"
+        // inline-flex (not default inline) so the wrapped avatar has no
+        // baseline gap — otherwise it added phantom height that pushed
+        // draft-card content down vs the un-wrapped "you" card.
+        className={`cursor-pointer ${block ? 'block w-full' : 'inline-flex'}`}
       >
         {children}
       </span>
@@ -301,14 +350,14 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-white/[0.06]">
             <div className="flex items-start gap-3">
-              {pfpUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={pfpUrl} alt={displayName} className="w-14 h-14 rounded-full object-cover bg-white/5 border border-white/10 flex-shrink-0" />
-              ) : (
-                <div className="w-14 h-14 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-xl">
-                  {initial}
-                </div>
-              )}
+              {/* Always a real picture or the banana default; never a wallet initial. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pfpUrl || '/banana-profile.png'}
+                alt={displayName}
+                onError={(e) => { e.currentTarget.src = '/banana-profile.png'; }}
+                className="w-14 h-14 rounded-full object-cover bg-white/5 border border-white/10 flex-shrink-0"
+              />
               <div className="flex-1 min-w-0 mt-1">
                 <p className="text-white font-semibold truncate">{displayName}</p>
                 <p className="text-white/40 text-xs font-mono truncate">{shortWallet(walletAddress)}</p>
@@ -322,16 +371,81 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           {/* Actions */}
           <div className="p-3 space-y-2">
             {renderAction()}
-            {!isSelf && !!myWallet && (
+            {!isSelf && !!myWallet && !composing && (
               <button
-                onClick={() => {
-                  router.push(`/messages?with=${encodeURIComponent(walletAddress)}`);
-                  setOpen(false);
-                }}
+                onClick={() => setComposing(true)}
                 className="w-full px-3 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] text-white/80 hover:text-white text-sm font-medium transition-colors"
               >
-                Send Message
+                Message
               </button>
+            )}
+            {!composing && (
+              <button
+                onClick={() => { router.push(`/u/${walletAddress}`); setOpen(false); }}
+                className="w-full px-3 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] text-white/80 hover:text-white text-sm font-medium transition-colors"
+              >
+                View teams
+              </button>
+            )}
+
+            {/* Inline compose box — the "little box they can write in". */}
+            {!isSelf && !!myWallet && composing && (
+              <div className="space-y-2">
+                {sent ? (
+                  <div className="text-center py-2 space-y-2">
+                    <p className="text-green-400 text-sm font-medium">Message sent ✓</p>
+                    <button
+                      onClick={() => {
+                        router.push(`/messages?with=${encodeURIComponent(walletAddress)}`);
+                        setOpen(false);
+                      }}
+                      className="text-banana/80 hover:text-banana text-xs underline underline-offset-2"
+                    >
+                      Open conversation
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter sends; Shift+Enter makes a newline.
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendMessage();
+                        }
+                      }}
+                      maxLength={1000}
+                      rows={3}
+                      placeholder={`Message ${displayName}…`}
+                      className="w-full resize-none rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-banana/50 transition-colors"
+                    />
+                    {/* First message to a non-friend lands as a request. */}
+                    {relationship !== 'friend' && (
+                      <p className="text-white/40 text-[11px] leading-snug">
+                        They&apos;ll get this as a message request until they accept.
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setComposing(false); setDraft(''); }}
+                        className="px-3 py-2 rounded-lg text-white/40 hover:text-white/70 text-sm transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleSendMessage()}
+                        disabled={!draft.trim() || sending}
+                        className="flex-1 px-3 py-2 rounded-lg bg-banana text-black hover:bg-banana-light text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {sending ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
 

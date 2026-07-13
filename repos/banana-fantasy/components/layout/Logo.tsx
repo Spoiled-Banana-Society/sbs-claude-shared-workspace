@@ -31,7 +31,7 @@ export function Logo({ size = 'md' }: LogoProps) {
         priority
       />
       <span
-        className="font-bold tracking-tight leading-none text-white"
+        className="-ml-1.5 font-bold tracking-tight leading-none text-white"
         style={{ fontSize: `${fontSize}px` }}
       >
         SBS

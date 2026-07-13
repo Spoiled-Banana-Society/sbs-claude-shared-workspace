@@ -6,10 +6,12 @@ import {
   useExportErrorSession,
   useResolvedErrors,
   useMarkErrorResolved,
+  useSentryIssues,
   AdminApiError,
   type ErrorEventEntry,
 } from '@/hooks/admin/useAdminApi';
-import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { logAreaForSource, logSeverity, isSuppressedLogNoise, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { isResolutionActive } from '@/lib/errorGrouping';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GroupSparkline } from '@/components/admin/Logs/GroupSparkline';
@@ -174,12 +176,16 @@ export function LogsTab({ enabled }: { enabled: boolean }) {
         </button>
       </div>
 
-      {mode === 'feed' ? <ErrorFeed enabled={enabled} /> : <SentryIssues enabled={enabled} />}
+      {mode === 'feed' ? <ErrorFeed enabled={enabled} onShowSentry={() => setMode('sentry')} /> : <SentryIssues enabled={enabled} />}
     </div>
   );
 }
 
-function ErrorFeed({ enabled }: { enabled: boolean }) {
+function ErrorFeed({ enabled, onShowSentry }: { enabled: boolean; onShowSentry: () => void }) {
+  // Sentry count for the chip next to Critical/Warning/Low — already filtered
+  // to real error-level bugs server-side (performance/INFO noise dropped).
+  const sentryQuery = useSentryIssues(enabled);
+  const sentryCount = sentryQuery.data?.issues.length ?? 0;
   const query = useRecentErrors(enabled);
   const resolvedQuery = useResolvedErrors(enabled);
   const allErrors = useMemo(() => query.data?.errors ?? [], [query.data]);
@@ -213,16 +219,21 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       );
     });
 
-    // 2. split real vs test-suite traffic
+    // 2. split real vs suppressed noise (test-suite traffic + expected
+    //    operational noise like filling-draft state reads). Suppressed noise
+    //    is kept out of the actionable sections + counts so only things worth
+    //    fixing surface.
     const real: ErrorEventEntry[] = [];
     const test: ErrorEventEntry[] = [];
-    for (const e of filtered) (isTestNoiseError(e) ? test : real).push(e);
+    for (const e of filtered) (isSuppressedLogNoise(e) ? test : real).push(e);
 
     // 3. group + split out resolved (admin-marked-fixed) groups
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
     const allGroups = groupErrors(real);
-    const resolvedGroups = allGroups.filter((g) => !!resolvedMap[g.key]);
-    const groups = allGroups.filter((g) => !resolvedMap[g.key]);
+    // Recurrence-aware: a "fixed" group stays resolved only if it hasn't fired
+    // since the fix. If it recurred, it reopens into the active feed.
+    const resolvedGroups = allGroups.filter((g) => isResolutionActive(resolvedMap[g.key], g.lastTs));
+    const groups = allGroups.filter((g) => !isResolutionActive(resolvedMap[g.key], g.lastTs));
 
     // Cross-error correlation map (only unresolved — resolved groups
     // shouldn't pollute the "+N other errors" tally).
@@ -280,6 +291,22 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     ? groups.filter((g) => g.severity === severityFilter).sort((a, b) => b.lastTs - a.lastTs)
     : null;
 
+  // Bulk "Fix all" — marks every currently-shown unresolved group fixed at
+  // once (respects the active area + severity filter so it's predictable).
+  // They move to Resolved and stay re-openable. One confirm; fans out the
+  // per-group mutation in parallel.
+  const markResolve = useMarkErrorResolved();
+  const fixAllTargets = (filteredView ?? groups);
+  const handleFixAll = async () => {
+    if (fixAllTargets.length === 0 || markResolve.isPending) return;
+    const scope = area === 'all' ? '' : ` in ${area}`;
+    const sev = severityFilter === 'all' ? '' : ` ${severityFilter}`;
+    if (!window.confirm(`Mark all ${fixAllTargets.length}${sev} issue${fixAllTargets.length === 1 ? '' : 's'}${scope} as fixed? They move to Resolved and can be re-opened.`)) return;
+    await Promise.all(
+      fixAllTargets.map((g) => markResolve.mutateAsync({ groupKey: g.key, resolved: true }).catch(() => {})),
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -289,12 +316,24 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
             Auto-refreshes every 15s{query.isFetching ? ' · refreshing…' : ''}
           </p>
         </div>
-        <button
-          onClick={() => query.refetch()}
-          className="text-xs text-gray-400 hover:text-white underline underline-offset-2"
-        >
-          ↻ Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {fixAllTargets.length > 0 && (
+            <button
+              onClick={handleFixAll}
+              disabled={markResolve.isPending}
+              title="Mark every issue shown (current filter) as fixed at once"
+              className="px-2.5 py-1 rounded-md bg-emerald-500/90 hover:bg-emerald-500 text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+            >
+              {markResolve.isPending ? 'Fixing…' : `✓ Fix all (${fixAllTargets.length})`}
+            </button>
+          )}
+          <button
+            onClick={() => query.refetch()}
+            className="text-xs text-gray-400 hover:text-white underline underline-offset-2"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {/* Severity summary — three color-coded chips with total counts
@@ -306,8 +345,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         critical={totalCritical}
         warning={totalWarning}
         low={totalLow}
+        sentry={sentryCount}
         active={severityFilter}
         onChange={(next) => setSeverityFilter(next === severityFilter ? 'all' : next)}
+        onShowSentry={onShowSentry}
       />
       <p className="text-[11px] text-gray-500">
         Counts exclude fixed issues. Tap a chip to see only that severity (recent + earlier combined).
@@ -629,16 +670,60 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const handleExport = async () => {
-    if (!rep.sessionId || exporting) return;
-    setExporting(true);
-    setExportError(null);
+    if (exporting) return;
+    // With a client session → export the full session trace (breadcrumbs).
+    if (rep.sessionId) {
+      setExporting(true);
+      setExportError(null);
+      try {
+        await exportSession(rep.sessionId);
+      } catch (err) {
+        setExportError((err as Error).message || 'Export failed');
+      } finally {
+        setExporting(false);
+      }
+      return;
+    }
+    // No session (e.g. a backend error) → export the error record itself so
+    // the dev still gets everything we know: message, stack, route, context,
+    // counts. Client-side blob download, no API needed.
     try {
-      await exportSession(rep.sessionId);
+      const record = {
+        source: rep.source, area, severity,
+        message: rep.message,
+        route: rep.route ?? null,
+        actor: rep.actor ?? null,
+        requestId: rep.requestId ?? null,
+        stack: rep.stack ?? null,
+        context: rep.context ?? null,
+        occurrences: count,
+        countLast24h: group.countLast24h,
+        countLast7d: group.countLast7d,
+        firstSeen: new Date(group.firstTs).toISOString(),
+        lastSeen: rep.timestamp,
+        note: 'No client session attached (backend/server-side error) — no breadcrumb trace available.',
+      };
+      const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sbs-error-${rep.source.replace(/[^a-z0-9._-]/gi, '_')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       setExportError((err as Error).message || 'Export failed');
-    } finally {
-      setExporting(false);
     }
+  };
+
+  // Mark fixed / re-open. Shared by the inline row action and the expanded
+  // button so both behave identically. Only prompts for a note when fixing.
+  const handleMarkFixed = () => {
+    const note = resolved
+      ? undefined
+      : window.prompt('Optional note about the fix (visible to all admins):', '') ?? undefined;
+    markResolve.mutate({ groupKey: group.key, resolved: !resolved, note: note?.trim() || undefined });
   };
 
   const accent = muted
@@ -650,7 +735,8 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
 
   return (
     <div className={`rounded-lg border ${accent} overflow-hidden`}>
-      <button onClick={onToggle} className="w-full px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] text-left">
+      <div className="flex items-stretch">
+      <button onClick={onToggle} className="flex-1 min-w-0 px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] text-left">
         <span className={`${dot} mt-0.5`}>●</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
@@ -677,8 +763,37 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
             {rep.route && <span className="font-mono truncate max-w-[260px]">{rep.route}</span>}
           </div>
         </div>
-        <span className="text-gray-500 text-xs">{isOpen ? '▾' : '▸'}</span>
       </button>
+      {/* Inline actions — no need to expand + scroll. Mark fixed (or re-open)
+          and Export trace are right on the row. */}
+      <div className="flex items-center gap-1.5 px-2 shrink-0 self-center">
+        <button
+          onClick={handleMarkFixed}
+          disabled={markResolve.isPending}
+          title={resolved ? 'Re-open this issue (use if it actually recurred)' : 'Mark fixed — drops it from the counts'}
+          className={`px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap ${
+            resolved
+              ? 'border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              : 'bg-emerald-500/90 hover:bg-emerald-500 text-black'
+          }`}
+        >
+          {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Fix'}
+        </button>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          title={rep.sessionId
+            ? 'Export this error + full session trace as JSON (for the dev)'
+            : 'Export this error record as JSON (backend error — no session trace available)'}
+          className="px-2 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+        >
+          {exporting ? '…' : '⬇ Export'}
+        </button>
+        <button onClick={onToggle} title={isOpen ? 'Collapse' : 'Expand'} className="text-gray-500 hover:text-white text-xs px-1 py-1">
+          {isOpen ? '▾' : '▸'}
+        </button>
+      </div>
+      </div>
 
       {/* Affected users — inline so triage doesn't need to leave this row.
           Renders even when collapsed so you can scan affected wallets at
@@ -713,16 +828,7 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
               export button so it can't be missed. */}
           <div className="flex items-center gap-3 pt-1 flex-wrap">
             <button
-              onClick={() => {
-                const note = resolved
-                  ? undefined
-                  : window.prompt('Optional note about the fix (visible to all admins):', '') ?? undefined;
-                markResolve.mutate({
-                  groupKey: group.key,
-                  resolved: !resolved,
-                  note: note?.trim() || undefined,
-                });
-              }}
+              onClick={handleMarkFixed}
               disabled={markResolve.isPending}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 ${
                 resolved
@@ -737,16 +843,16 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
             >
               {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Mark fixed'}
             </button>
-            {rep.sessionId && (
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="px-2.5 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50"
-                title="Download this error + the user's full session trace as a JSON file to hand to a developer"
-              >
-                {exporting ? 'Exporting…' : '⬇ Export trace for dev'}
-              </button>
-            )}
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="px-2.5 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50"
+              title={rep.sessionId
+                ? "Download this error + the user's full session trace as a JSON file to hand to a developer"
+                : 'Download this error record as JSON (backend error — no session trace available)'}
+            >
+              {exporting ? 'Exporting…' : rep.sessionId ? '⬇ Export trace for dev' : '⬇ Export for dev'}
+            </button>
             {exportError && <span className="text-[11px] text-red-300">{exportError}</span>}
           </div>
         </div>
@@ -837,14 +943,18 @@ function SeveritySummaryBar({
   critical,
   warning,
   low,
+  sentry,
   active,
   onChange,
+  onShowSentry,
 }: {
   critical: number;
   warning: number;
   low: number;
+  sentry: number;
   active: LogSeverity | 'all';
   onChange: (next: LogSeverity) => void;
+  onShowSentry: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -875,6 +985,15 @@ function SeveritySummaryBar({
         isActive={active === 'low'}
         onClick={() => onChange('low')}
       />
+      <SeverityChip
+        emoji="🟣"
+        label="Sentry"
+        count={sentry}
+        tone="sentry"
+        helpText="Auto-caught frontend crashes/errors from Sentry (real bugs only — performance noise filtered out). Click to view them."
+        isActive={false}
+        onClick={onShowSentry}
+      />
       {active !== 'all' && (
         <span className="text-[11px] text-gray-400">
           Filtering by <span className="text-white">{active}</span> — click chip again to clear.
@@ -896,7 +1015,7 @@ function SeverityChip({
   emoji: string;
   label: string;
   count: number;
-  tone: 'critical' | 'warning' | 'low';
+  tone: 'critical' | 'warning' | 'low' | 'sentry';
   helpText: string;
   isActive: boolean;
   onClick: () => void;
@@ -915,7 +1034,9 @@ function SeverityChip({
         ? 'border-red-500/50 bg-red-500/[0.10] text-red-200'
         : tone === 'warning'
           ? 'border-yellow-500/40 bg-yellow-500/[0.08] text-yellow-200'
-          : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
+          : tone === 'sentry'
+            ? 'border-purple-500/50 bg-purple-500/[0.10] text-purple-200'
+            : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
   const activeRing = isActive
     ? tone === 'critical'
       ? 'ring-2 ring-red-400/60'

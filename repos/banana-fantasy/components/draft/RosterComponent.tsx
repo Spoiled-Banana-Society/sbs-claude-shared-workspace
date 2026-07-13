@@ -3,10 +3,12 @@ import { useAuth } from "@/hooks/useAuth"
 import RosterItemComponent from "./RosterItemComponent"
 import { setDraftRosters } from "@/redux/draftSlice"
 import React, { useEffect, useState } from "react"
-import { bananaDefaultName, isWalletAddress } from "@/utils/helpers"
+import { bananaPlaceholderName, isWalletAddress } from "@/utils/helpers"
 import Dropdown from "react-dropdown"
 import ReactLoading from "react-loading"
 import { Draft } from "@/utils/api"
+import { UserPopover } from "@/components/social/UserPopover"
+import { useDraftRoomUsers } from "@/hooks/useDraftRoomUsers"
 import "react-dropdown/style.css"
 
 const RosterComponent = () => {
@@ -19,6 +21,15 @@ const RosterComponent = () => {
     const leagueId = useAppSelector((state) => state.league.leagueId)
     const players = Object.keys(roster!)
     const dispatch = useAppDispatch()
+    const roomUsers = useDraftRoomUsers([selectedPlayer])
+
+    // Show the "add friend / message" affordance only when looking at
+    // another real human's roster — not yourself, not a bot slot.
+    const viewingOther =
+        isWalletAddress(selectedPlayer) &&
+        selectedPlayer.toLowerCase() !== (walletAddress || "").toLowerCase() &&
+        !selectedPlayer.toLowerCase().startsWith("bot-")
+    const otherInfo = roomUsers[selectedPlayer?.toLowerCase()]
 
     useEffect(() => {
         if (selectedCard) setSelectedPlayer(selectedCard)
@@ -49,11 +60,11 @@ const RosterComponent = () => {
         <div className="px-3 pt-5 w-full lg:w-[900px] mx-auto" data-tutorial="roster">
             {players && walletAddress ? (
                 <Dropdown
-                    options={players.map((w) => ({ value: w, label: bananaDefaultName(w) }))}
+                    options={players.map((w) => ({ value: w, label: bananaPlaceholderName(w) }))}
                     onChange={(e) => setSelectedPlayer(e.value)}
                     value={{
                         value: selectedPlayer || walletAddress!,
-                        label: bananaDefaultName(
+                        label: bananaPlaceholderName(
                             isWalletAddress(selectedPlayer) ? selectedPlayer : walletAddress!
                         ),
                     }}
@@ -65,6 +76,22 @@ const RosterComponent = () => {
                     <p className="text-center font-primary font-bold">Please wait...</p>
                 </div>
             )}
+
+            {viewingOther && (
+                <div className="mt-2 flex justify-center">
+                    <UserPopover
+                        walletAddress={selectedPlayer}
+                        username={otherInfo?.displayName || bananaPlaceholderName(selectedPlayer)}
+                        pfpUrl={otherInfo?.imageUrl || undefined}
+                    >
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/[0.12] hover:text-white cursor-pointer">
+                            <span aria-hidden>👤</span>
+                            Add friend / message
+                        </span>
+                    </UserPopover>
+                </div>
+            )}
+
             <div>
                 {selectedPlayer && roster && !refetch ? (
                     <RosterItemComponent selectedPlayer={selectedPlayer} roster={roster} />

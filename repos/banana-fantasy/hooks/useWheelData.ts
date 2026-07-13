@@ -14,9 +14,14 @@ export type WheelSpinOutcome = {
     value?: number | string;
   };
   angle: number;
-  // Present when the spin was assigned by an active wheel-proof period.
-  // The browser verifies `path` against the on-chain `root` for instant
-  // "Verified ✓" status.
+  // Present when the spin was assigned by an active wheel-proof period. The spin
+  // response NO LONGER carries the full Merkle proof — building it loads every
+  // leaf in the period (~3s at 100k spins) and was blocking the wheel from
+  // landing. The client fetches the proof lazily AFTER the wheel stops, via
+  // GET /api/wheel/proof/{spinId}, using these identifiers to know it's
+  // verifiable. (`proof` kept optional for backward-compat with old responses.)
+  periodNumber?: number | null;
+  spinIndex?: number | null;
   proof?: {
     periodNumber: number;
     spinIndex: number;
@@ -31,6 +36,8 @@ export interface WheelHistoryEntry {
   spinId: string;
   date: string;
   result: string;
+  /** Prize the spin paid out — drives the lifetime "won" totals in My Winnings. */
+  prize?: { type?: string; value?: number | string } | null;
 }
 
 export function useWheelHistory(userId: string | undefined | null) {
@@ -38,7 +45,7 @@ export function useWheelHistory(userId: string | undefined | null) {
     queryKey: ['wheel', 'history', userId || ''],
     enabled: !!userId,
     queryFn: async () => {
-      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string }>>(
+      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string; prize?: { type?: string; value?: number | string } | null }>>(
         `/api/wheel/history?userId=${encodeURIComponent(userId!)}`,
       );
       if (!Array.isArray(raw)) return [];
@@ -48,6 +55,7 @@ export function useWheelHistory(userId: string | undefined | null) {
           spinId: h.spinId || h.id || '',
           date: h.date || '',
           result: h.result || '',
+          prize: h.prize ?? null,
         }))
         .filter((h) => h.spinId && h.result);
     },

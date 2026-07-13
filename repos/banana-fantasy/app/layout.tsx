@@ -3,23 +3,37 @@ import './globals.css';
 import { Providers } from './providers';
 import StyledComponentsRegistry from '@/lib/registry';
 import GoogleAnalytics from './components/GoogleAnalytics';
-import { StagingBanner } from '@/components/StagingBanner';
 import { Footer } from '@/components/layout/Footer';
 // import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
-// import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
-const SITE_URL = 'https://bananafantasy.com';
-const SITE_NAME = 'Banana Fantasy';
-const DEFAULT_TITLE = 'Banana Fantasy | Onchain Best Ball Fantasy Football Drafts';
+const SITE_URL = 'https://sbsfantasy.com';
+const SITE_NAME = 'SBSFantasy';
+const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
-  'Draft best ball teams onchain, enter Spoiled Banana Society contests, and compete for prizes across fast and slow fantasy football drafts.';
-const DEFAULT_OG_IMAGE = '/bestball.webp';
+  'Banana Best Ball IV is live now! $100K Guaranteed Prize Pool';
+
+// The share-card image must be an ABSOLUTE url pointing at the SAME deployment
+// that renders the page — otherwise metadataBase (sbsfantasy.com) rewrites it
+// to the prod domain even on staging, so a staging share would 404 the image
+// until prod has the file. Vercel auto-exposes VERCEL_PROJECT_PRODUCTION_URL
+// (= banana-fantasy-sbs.vercel.app on staging, sbsfantasy.com on prod), so each
+// environment serves its own /og-card.png. Falls back to sbsfantasy.com locally.
+const DEPLOY_ORIGIN = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : SITE_URL;
+// Dedicated 1200×630 share card: black SBS football-banana centered on a clean
+// white background (baked in, no transparency) so it renders identically on
+// every platform — Discord/iMessage dark cards, X, etc. The bare transparent
+// logo washed out on light card backgrounds. Static .png so it's served
+// directly (the prelaunch middleware walls off extension-less routes, which
+// would otherwise break the countdown's share card). Bump ?v= to bust caches.
+const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=4`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: DEFAULT_TITLE,
-    template: '%s | Banana Fantasy',
+    template: '%s | SBSFantasy',
   },
   description: DEFAULT_DESCRIPTION,
   alternates: {
@@ -34,7 +48,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: DEFAULT_OG_IMAGE,
-        alt: 'Banana Fantasy best ball drafting platform',
+        width: 1200,
+        height: 630,
+        alt: 'SBSFantasy',
       },
     ],
   },
@@ -53,7 +69,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Banana Fantasy',
+    title: 'SBSFantasy',
   },
   icons: {
     icon: [
@@ -70,6 +86,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: true,
   themeColor: '#F3E216',
+  // Required for env(safe-area-inset-*) to report real values on iOS —
+  // without it the home-indicator bar overlaps the bottom tab bar and
+  // taps land on the indicator instead (Boris 2026-06-11).
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -83,7 +103,7 @@ export default function RootLayout({
     name: 'Spoiled Banana Society',
     url: SITE_URL,
     description:
-      'Spoiled Banana Society powers Banana Fantasy, an onchain best ball fantasy football drafting platform with prize contests.',
+      'Spoiled Banana Society powers SBSFantasy, an onchain best ball fantasy football drafting platform with prize contests.',
   };
 
   return (
@@ -115,14 +135,12 @@ export default function RootLayout({
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(reg){reg.unregister()})});caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}`
           }}
         />
-        <StagingBanner />
         <StyledComponentsRegistry>
           <Providers>
             <div className="flex flex-col min-h-screen">
               <div className="flex-1">{children}</div>
               <Footer />
             </div>
-            {/* <PWAInstallPrompt /> */}
           </Providers>
         </StyledComponentsRegistry>
       </body>

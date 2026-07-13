@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react';
 
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
+import { LineIcon } from '@/components/NotificationIcons';
 import type { ActivityEventType } from '@/lib/activityEvents';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -14,23 +15,62 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   spin_won: 'Won on wheel',
   promo_claimed: 'Promo claim',
   draft_entered: 'Entered draft',
+  draft_filled: 'Draft filled',
   draft_left: 'Left draft',
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
   cashout_completed: 'Cashed out',
+  // Presence events exist for the ADMIN live feed only — hidden below.
+  user_signed_up: 'Account created',
+  user_returned: 'Logged in',
 };
 
-const TYPE_EMOJI: Record<ActivityEventType, string> = {
-  pass_purchased: '💳',
-  pass_granted: '🎁',
-  spin_won: '🎡',
-  promo_claimed: '🎯',
-  draft_entered: '🏟️',
-  draft_left: '↩️',
-  draft_won: '🏆',
-  marketplace_sold: '💰',
-  cashout_completed: '💸',
+// Admin-only telemetry types — never rendered in the user-facing history.
+const HIDDEN_TYPES: ReadonlySet<ActivityEventType> = new Set(['user_signed_up', 'user_returned']);
+
+// Clean line-icon key per type (same icon set as the bell — never emoji).
+// pass_granted is overridden by source in iconFor().
+const TYPE_ICON: Record<ActivityEventType, string> = {
+  pass_purchased: 'bag',
+  pass_granted: 'gift',
+  spin_won: 'spin',
+  promo_claimed: 'target',
+  draft_entered: 'football',
+  draft_filled: 'check',
+  draft_left: 'undo',
+  draft_won: 'trophy',
+  marketplace_sold: 'banknote',
+  cashout_completed: 'banknote',
+  user_signed_up: 'check',
+  user_returned: 'check',
 };
+
+function iconFor(e: LiveActivityEvent): string {
+  if (e.type === 'pass_granted') {
+    const s = String(e.metadata?.source ?? '');
+    if (s === 'card_fee_reward') return 'banknote';
+    if (s === 'wheel_spin_mint') return 'spin';
+  }
+  return TYPE_ICON[e.type];
+}
+
+// Label varies for pass_granted so it only says "from SBS" when we actually
+// sent it, and names credit/wheel rewards correctly.
+function labelFor(e: LiveActivityEvent): string {
+  if (e.type === 'pass_granted') {
+    const s = String(e.metadata?.source ?? '');
+    if (s === 'card_fee_reward') return 'Credit reward';
+    if (s === 'wheel_spin_mint') return 'Wheel prize';
+    if (e.metadata?.adminActor) return 'Gift from SBS';
+    return 'Reward';
+  }
+  return TYPE_LABEL[e.type];
+}
+
+function leagueShort(e: LiveActivityEvent): string {
+  const id = String(e.metadata?.leagueId ?? '');
+  return id ? id.slice(0, 8) : '';
+}
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
   pass_purchased: 'text-emerald-300',
@@ -38,10 +78,13 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   spin_won: 'text-purple-300',
   promo_claimed: 'text-pink-300',
   draft_entered: 'text-blue-300',
+  draft_filled: 'text-teal-300',
   draft_left: 'text-gray-400',
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
   cashout_completed: 'text-green-300',
+  user_signed_up: 'text-gray-400',
+  user_returned: 'text-gray-400',
 };
 
 function formatWhen(ms: number | null, iso: string): string {
@@ -63,8 +106,19 @@ function describe(e: LiveActivityEvent): string {
       const via = e.paymentMethod === 'card' ? ' (card)' : e.paymentMethod === 'usdc' ? ' (USDC)' : '';
       return `${e.quantity} draft pass${e.quantity !== 1 ? 'es' : ''}${priceStr}${via}`;
     }
-    case 'pass_granted':
-      return `${e.quantity} free draft pass${e.quantity !== 1 ? 'es' : ''} from admin`;
+    case 'pass_granted': {
+      // pass_granted fires for several reasons — describe by the real source,
+      // never a blanket "from admin".
+      const passWord = `draft pass${e.quantity !== 1 ? 'es' : ''}`;
+      const source = String(e.metadata?.source ?? '');
+      // Card-fee credit is EARNED from your accumulated card fees — a PAID
+      // pass (usable everywhere, incl. promos), not a free admin gift.
+      if (source === 'card_fee_reward') return `${e.quantity} paid ${passWord} from your $25 card credit`;
+      if (source === 'wheel_spin_mint') return `${e.quantity} ${passWord}`;
+      // Only a true manual admin grant carries adminActor — we actually sent it.
+      if (e.metadata?.adminActor) return `SBS Team sent you ${e.quantity} ${passWord}`;
+      return `${e.quantity} ${passWord}`;
+    }
     case 'spin_won': {
       const prizeType = String(e.metadata?.prizeType ?? '');
       const prizeValue = e.metadata?.prizeValue;
@@ -81,8 +135,14 @@ function describe(e: LiveActivityEvent): string {
       if (spins > 0) return `${spins} wheel spin${spins !== 1 ? 's' : ''} (${promoType})`;
       return `${promoType} reward`;
     }
-    case 'draft_entered':
-      return `Entered draft ${String(e.metadata?.leagueId ?? '').slice(0, 16) || ''}`;
+    case 'draft_entered': {
+      const lg = leagueShort(e);
+      return lg ? `League ${lg}` : '';
+    }
+    case 'draft_filled':
+      return 'Your draft filled — drafting begins';
+    case 'draft_left':
+      return '';
     case 'draft_won': {
       const amount = Number(e.metadata?.amount);
       return Number.isFinite(amount) ? `Won $${amount.toLocaleString()}` : 'Draft win';
@@ -110,11 +170,22 @@ function describe(e: LiveActivityEvent): string {
       return `${amountStr}${railLabel ? ` ${railLabel}` : ''}`;
     }
     default:
-      return String(e.type);
+      return '';
   }
 }
 
-export function ActivityHistory({ userId }: { userId: string | null }) {
+export function ActivityHistory({
+  userId,
+  filterTypes,
+  title = 'Activity History',
+  emptyText = 'Your purchases, wins, and promo claims will show up here.',
+}: {
+  userId: string | null;
+  /** If set, only these event types are shown (e.g. a promo-only feed on the Promos tab). */
+  filterTypes?: ActivityEventType[];
+  title?: string;
+  emptyText?: string;
+}) {
   const url = userId ? `/api/user/activity/stream?userId=${encodeURIComponent(userId.toLowerCase())}` : null;
   const { events, isConnected, error } = useActivityStream(url);
 
@@ -146,17 +217,24 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
   // unrelated activity from other flows.
   const isFrozen = spinRevealFrozenUntil > 0 && Date.now() < spinRevealFrozenUntil;
   const visibleEvents = useMemo(() => {
-    if (!isFrozen) return events;
+    // Optional type filter — e.g. the Promos tab passes the promo-relevant
+    // types so it only shows spins/claims/buys/wins, not every draft action.
+    let evs = events.filter((e) => !HIDDEN_TYPES.has(e.type));
+    if (filterTypes && filterTypes.length) {
+      const allowed = new Set<ActivityEventType>(filterTypes);
+      evs = evs.filter((e) => allowed.has(e.type));
+    }
+    if (!isFrozen) return evs;
     // Hide spin-related events arriving during the freeze window so
     // the wheel can land before the activity feed reveals the prize.
-    return events.filter((e) => {
+    return evs.filter((e) => {
       if (e.type !== 'spin_won' && e.type !== 'pass_granted') return true;
       const ms = e.createdAt ?? Date.parse(e.createdAtIso);
       // Events older than the freeze start are normal history — show them.
       const freezeStartedAt = spinRevealFrozenUntil - 6000; // ~SPIN_DURATION_MS + buffer
       return ms < freezeStartedAt;
     });
-  }, [events, isFrozen, spinRevealFrozenUntil]);
+  }, [events, isFrozen, spinRevealFrozenUntil, filterTypes]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, LiveActivityEvent[]>();
@@ -173,7 +251,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
   return (
     <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest">Activity History</h3>
+        <h3 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest">{title}</h3>
         <div className="flex items-center gap-1.5 text-[10px] text-white/30">
           <span className={`inline-block w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-white/20'}`} />
           {isConnected ? 'Live' : 'Connecting…'}
@@ -182,7 +260,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
 
       {visibleEvents.length === 0 ? (
         <p className="text-white/30 text-xs py-6 text-center">
-          Your purchases, wins, and promo claims will show up here.
+          {emptyText}
         </p>
       ) : (
         <div className="space-y-4">
@@ -204,15 +282,19 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
 
 function ActivityRow({ event }: { event: LiveActivityEvent }) {
   const tx = event.txHash ? `https://basescan.org/tx/${event.txHash}` : null;
+  const detail = describe(event);
   return (
     <div className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
-      <span className="text-base flex-shrink-0 w-6 text-center">{TYPE_EMOJI[event.type]}</span>
+      {/* Clean line-icon, muted grey — same language as the notification bell. */}
+      <span className="flex-shrink-0 w-6 flex items-center justify-center">
+        <LineIcon icon={iconFor(event)} color="rgba(255,255,255,0.55)" size={18} />
+      </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className={`text-xs font-semibold ${TYPE_COLOR[event.type]}`}>{TYPE_LABEL[event.type]}</p>
+          <p className={`text-xs font-semibold ${TYPE_COLOR[event.type]}`}>{labelFor(event)}</p>
           <p className="text-white/20 text-[10px]">{formatWhen(event.createdAt, event.createdAtIso)}</p>
         </div>
-        <p className="text-white/70 text-xs truncate">{describe(event)}</p>
+        {detail && <p className="text-white/70 text-xs truncate">{detail}</p>}
       </div>
       {tx && (
         <a

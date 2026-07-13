@@ -56,9 +56,9 @@ export function FounderScheduleEditor({ enabled }: { enabled: boolean }) {
       <div>
         <h3 className="text-base font-semibold text-white mb-1">Founder Draft schedule</h3>
         <p className="text-xs text-gray-500">
-          Sets the next founder draft event. The homepage shows a countdown banner when active. The
-          draft-room flags drafts as Founder when their start time falls within the window AND the
-          founder&apos;s wallet is in the draft order.
+          Sets the next founder draft event. Fires the Founder Draft bells (a day-before broadcast at
+          the event time + a day-of bell on login). The draft-room flags drafts as Founder when their
+          start time falls within the window AND the founder&apos;s wallet is in the draft order.
         </p>
       </div>
 
@@ -75,20 +75,6 @@ export function FounderScheduleEditor({ enabled }: { enabled: boolean }) {
         {draft.at && (
           <p className="text-[11px] text-gray-500 mt-1 font-mono">{draft.at}</p>
         )}
-      </label>
-
-      <label className="block">
-        <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1.5">
-          Day label (shown on homepage banner)
-        </span>
-        <input
-          type="text"
-          value={draft.dayLabel}
-          onChange={(e) => setDraft({ ...draft, dayLabel: e.target.value })}
-          placeholder="Thursday at 6 PM PT"
-          maxLength={80}
-          className="w-full bg-bg-elevated text-white px-3 py-2 rounded-md border border-white/10 focus:border-banana outline-none"
-        />
       </label>
 
       <label className="block">

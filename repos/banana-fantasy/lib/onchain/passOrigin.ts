@@ -3,7 +3,13 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 const COLLECTION = 'pass_origin';
 
-export type PassOrigin = 'spin_reward' | 'admin_grant';
+export type PassOrigin = 'spin_reward' | 'admin_grant' | 'house_bot';
+
+// A wheel-won Jackpot/HOF pass is KNOWN to be that level at mint time (the wheel
+// guaranteed it), unlike a normal pass whose level is only revealed when its
+// league fills. We stamp that known level here so the marketplace can mark/treat
+// the pass as JP/HOF before any league reveal.
+export type PassWheelLevel = 'jackpot' | 'hof';
 
 export interface PassOriginDoc {
   tokenId: string;
@@ -12,6 +18,7 @@ export interface PassOriginDoc {
   txHash: string;
   mintedAt: FirebaseFirestore.Timestamp;
   reason?: string;
+  level?: PassWheelLevel;
 }
 
 export async function recordPassOrigins(params: {
@@ -20,8 +27,9 @@ export async function recordPassOrigins(params: {
   ownerAtMint: string;
   txHash: string;
   reason?: string;
+  level?: PassWheelLevel;
 }): Promise<void> {
-  const { tokenIds, origin, ownerAtMint, txHash, reason } = params;
+  const { tokenIds, origin, ownerAtMint, txHash, reason, level } = params;
   if (tokenIds.length === 0) return;
 
   const db = getAdminFirestore();
@@ -40,6 +48,7 @@ export async function recordPassOrigins(params: {
         txHash: txHashLower,
         mintedAt: FieldValue.serverTimestamp(),
         ...(reason ? { reason } : {}),
+        ...(level ? { level } : {}),
       },
       { merge: false },
     );

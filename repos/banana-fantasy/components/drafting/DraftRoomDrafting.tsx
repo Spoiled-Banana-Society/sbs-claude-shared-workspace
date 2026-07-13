@@ -11,20 +11,25 @@ import { DraftQueue } from '@/components/drafting/DraftQueue';
 import { DraftBoardGrid } from '@/components/drafting/DraftBoardGrid';
 import { DraftRoster } from '@/components/drafting/DraftRoster';
 import { DraftComplete } from '@/components/drafting/DraftComplete';
+import { getTruncatedAccountName, bananaPlaceholderName } from '@/utils/helpers';
 import {
   getPositionColorHex,
   POSITION_COLORS,
   ALL_POSITIONS,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { draftBandBackground, draftBandShadow, draftStatusColor } from '@/lib/draftBandStyle';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { useSelfPfp } from '@/hooks/useSelfPfp';
+import { UserPopover } from '@/components/social/UserPopover';
 
 interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
   equippedBadge?: string | null;
+  ripeness?: import('@/types').Ripeness | null;
 }
 
 interface DraftRoomDraftingProps {
@@ -33,6 +38,10 @@ interface DraftRoomDraftingProps {
   visibleDraftType: DraftType | null;
   mainCountdown: number;
   bestTimeRemaining: number;
+  /** True when this is a slow draft (8h picks with an overnight pause). */
+  isSlowDraft?: boolean;
+  /** True when the slow-draft clock is currently paused (22:00–05:00 PT). */
+  isSlowDraftPaused?: boolean;
   formatTime: (seconds: number) => string;
   activeTab: DraftTab;
   onTabChange: (tab: DraftTab) => void;
@@ -66,6 +75,8 @@ export function DraftRoomDrafting({
   visibleDraftType,
   mainCountdown,
   bestTimeRemaining,
+  isSlowDraft = false,
+  isSlowDraftPaused = false,
   formatTime,
   activeTab,
   onTabChange,
@@ -90,6 +101,20 @@ export function DraftRoomDrafting({
   usersMap,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
+  // Driven entirely by DraftRoomChat (which is always mounted + polling); reset
+  // to 0 whenever the Chat tab is the active tab.
+  const [chatUnread, setChatUnread] = useState(0);
+
+  // Durable self avatar: live auth pfp → polled usersMap (our slot) →
+  // last-known-good pfp persisted in localStorage. Keeps our own avatar from
+  // blanking to the banana during Privy rehydration or after a mobile tab is
+  // backgrounded (both live sources go briefly empty there).
+  const selfPlayer = engine.draftOrder.find((p) => p?.isYou);
+  const selfMapImageUrl = selfPlayer?.name
+    ? usersMap?.[selfPlayer.name.toLowerCase()]?.imageUrl
+    : undefined;
+  const selfPfp = useSelfPfp(user?.profilePicture, selfMapImageUrl);
 
   useEffect(() => {
     try {
@@ -133,42 +158,61 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* Radial halo during the drafting phase too — paired with the
-          thin viewport-edge border so the "double glow" persists from
-          reveal all the way through drafting. Gold for HOF, red for JP. */}
-      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
-        <div
-          className="fixed inset-0 z-0 pointer-events-none animate-pulse-glow"
-          style={{
-            background: visibleDraftType === 'jackpot'
-              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.3) 0%, transparent 70%)'
-              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
-          }}
-        />
-      )}
+      {/* New HOF/JP look: the gold/red lives on the top BANNER (below),
+          and the drafting area stays clean/dark — so the old full-screen
+          radial halo during drafting was removed. The dramatic reveal
+          halo still plays pre-draft (see DraftRoomReveal). */}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
 
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
-          <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
+          <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
+        background: draftBandBackground(visibleDraftType),
+        boxShadow: draftBandShadow(visibleDraftType),
+        // Drop the type-colored band + player strip below the notch on iOS
+        // (viewportFit:'cover'). Without this the colored top + PRO/HOF word
+        // hide under the status bar — looked "unsynced" on mobile (Boris 2026-06-13).
+        paddingTop: 'env(safe-area-inset-top)',
+      }}>
             <div
               ref={bannerRef}
               className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar"
-              style={{ marginTop: '15px' }}
+              // Jackpot/HOF: the "you" card gets an outer halo (see userHalo
+              // below) painted OUTSIDE the card box — without this padding the
+              // scroll container clips it. 7+4 keeps total height at 15px.
+              style={
+                visibleDraftType === 'jackpot' || visibleDraftType === 'hof'
+                  ? { marginTop: '7px', padding: '4px' }
+                  : { marginTop: '15px' }
+              }
             >
               {engine.draftSummary.map((slot) => {
                 const isPicked = slot.playerId !== '';
-                const isCurrent = slot.pickNum === engine.currentPickNumber;
+                // A picked slot can NEVER render as "current" — at the final
+                // pick (and briefly on every pick between landing and advance)
+                // both were true, stacking the current-pick clock border +
+                // position-needs row ON TOP of the picked-card border + player
+                // name. That's the "lines over the boxes" glitch during the
+                // 1s final-pick reveal hold.
+                const isCurrent = slot.pickNum === engine.currentPickNumber && !isPicked;
                 const isUpcoming = slot.pickNum > engine.currentPickNumber;
                 const isUserCard = slot.ownerIndex === engine.userDraftPosition;
                 const posHex = isPicked ? getPositionColorHex(slot.position) : '';
                 const counts = getPositionCountsForPlayer(slot.ownerName);
                 const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : '#444';
-                const textColor = visibleDraftType === 'hof' && isUserCard ? '#111'
-                  : visibleDraftType === 'jackpot' && isUserCard ? '#222'
-                  : '#fff';
+                // New look: cards stay dark on every draft type; "you" is the
+                // gold border + gold pfp ring. So text is always white.
+                const textColor = '#fff';
+                // Jackpot (red band) / HOF (gold band) drown out a 1px yellow
+                // edge — gold-on-gold is invisible (ticket-2661). Thicken the
+                // "you" ring to ~3px and add a black moat OUTSIDE it so the
+                // gold always sits on dark regardless of band color. Shadows
+                // don't affect layout, so cards stay aligned.
+                const userHalo = isUserCard && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')
+                  ? '0 0 0 2px #F3E216, 0 0 0 4px #000'
+                  : undefined;
 
                 const playerData = engine.draftOrder[slot.ownerIndex];
                 const playerUser = !isUserCard && playerData?.name
@@ -176,6 +220,13 @@ export function DraftRoomDrafting({
                   : null;
                 const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
                 const otherBadge = playerUser?.equippedBadge ?? null;
+                const otherRipeness = playerUser?.ripeness ?? null;
+                // A drafter is friend/message-able only if it's a real user
+                // (live-mode name is their wallet, starts with 0x) and not you.
+                // Bots (name `bot-…`) and empty slots are skipped.
+                const friendWallet = !isUserCard && playerData?.name?.toLowerCase().startsWith('0x')
+                  ? playerData.name
+                  : null;
                 let displayName = '';
                 if (playerData) {
                   if (playerData.isYou) {
@@ -183,8 +234,7 @@ export function DraftRoomDrafting({
                   } else if (playerUser?.displayName) {
                     displayName = playerUser.displayName;
                   } else {
-                    const raw = playerData.name || playerData.displayName || '';
-                    displayName = raw.length > 14 ? `${raw.slice(0, 6)}...${raw.slice(-4)}` : raw;
+                    displayName = getTruncatedAccountName(playerData.name || playerData.displayName || '', playerData.name || '');
                   }
                 } else {
                   displayName = slot.ownerName || '';
@@ -205,16 +255,15 @@ export function DraftRoomDrafting({
                       borderWidth: 1,
                       borderStyle: 'solid',
                       borderColor,
+                      boxShadow: userHalo,
                       transition: 'all 0.25s ease-in-out',
-                      background: isUserCard
-                        ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-                        : '#222',
+                      background: '#222',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; e.currentTarget.style.borderColor = '#fff'; }}
+                    // Keep the "you" card gold on hover — flipping it white
+                    // would kill the highlight under the cursor.
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; if (!isUserCard) e.currentTarget.style.borderColor = '#fff'; }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = isUserCard
-                        ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-                        : '#222';
+                      e.currentTarget.style.background = '#222';
                       e.currentTarget.style.borderColor = borderColor;
                     }}
                     onClick={() => onViewRoster(slot.ownerName)}
@@ -223,13 +272,34 @@ export function DraftRoomDrafting({
                       {isUserCard ? (
                         <div className="flex justify-center">
                           <AvatarWithBadge
-                            imageUrl={user?.profilePicture || '/banana-profile.png'}
+                            // Durable self pfp (see useSelfPfp at top): live auth
+                            // pfp → polled usersMap → localStorage cache, so it
+                            // never blanks to the banana on reload / mobile.
+                            imageUrl={selfPfp || '/banana-profile.png'}
                             alt="You"
                             size={48}
                             equippedBadge={user?.equippedBadge}
+                            ripeness={user?.ripeness}
                             useNextImage={false}
-                            className="border border-gray-500"
+                            ringClassName="border-2 border-[#F3E216]"
                           />
+                        </div>
+                      ) : friendWallet ? (
+                        // Tapping a real drafter's avatar opens the friend /
+                        // message popover. stopPropagation in UserPopover keeps
+                        // this from also firing the card's view-roster click.
+                        <div className="flex justify-center">
+                          <UserPopover walletAddress={friendWallet} username={displayName} pfpUrl={otherPfp}>
+                            <AvatarWithBadge
+                              imageUrl={otherPfp}
+                              alt={displayName}
+                              size={48}
+                              equippedBadge={otherBadge}
+                              ripeness={otherRipeness}
+                              useNextImage={false}
+                              className="cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
+                            />
+                          </UserPopover>
                         </div>
                       ) : (
                         <div className="flex justify-center">
@@ -238,26 +308,40 @@ export function DraftRoomDrafting({
                             alt={displayName}
                             size={48}
                             equippedBadge={otherBadge}
+                            ripeness={otherRipeness}
                             useNextImage={false}
-                            className="border border-gray-500"
+                            className=""
                           />
                         </div>
                       )}
 
-                      <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                      <div className="mt-2 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
                         {truncatedName}
                       </div>
 
                       {isCurrent && engine.draftStatus !== 'completed' ? (
-                        <div style={{
-                          fontWeight: 'bold',
-                          fontSize: '16px',
-                          margin: '2px auto 0px auto',
-                          textAlign: 'center',
-                          color: bestTimeRemaining > 10 ? '#fff' : (visibleDraftType === 'jackpot' ? 'yellow' : 'red'),
-                        }}>
-                          {formatTime(bestTimeRemaining)}
-                        </div>
+                        isSlowDraftPaused ? (
+                          // Paused overnight: still show the (frozen) time
+                          // remaining, with a small pause marker below it.
+                          <div style={{ margin: '2px auto 0px auto', textAlign: 'center' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'rgba(255,255,255,0.85)' }}>
+                              {formatTime(bestTimeRemaining)}
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
+                              ⏸ Paused · 5am PT
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{
+                            fontWeight: 'bold',
+                            fontSize: '16px',
+                            margin: '2px auto 0px auto',
+                            textAlign: 'center',
+                            color: bestTimeRemaining > 10 ? '#fff' : 'red',
+                          }}>
+                            {formatTime(bestTimeRemaining)}
+                          </div>
+                        )
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
                           <span style={{ fontSize: '12px', fontWeight: 700, color: textColor, opacity: 0.7 }}>R{slot.round}</span>
@@ -306,15 +390,18 @@ export function DraftRoomDrafting({
               })}
             </div>
 
-            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
+            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: draftStatusColor(visibleDraftType) }}>
               {spectator ? (
                 (() => {
                   const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;
                   const onClockName = onClockIdx !== undefined
-                    ? (engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '')
+                    ? getTruncatedAccountName(
+                        engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '',
+                        engine.draftOrder[onClockIdx]?.name || '',
+                      )
                     : '';
                   const truncated = onClockName.length > 14
-                    ? `${onClockName.slice(0, 6)}…${onClockName.slice(-4)}`
+                    ? `${onClockName.substring(0, 12)}…`
                     : onClockName;
                   return (
                     <span className="text-white/80">
@@ -347,34 +434,72 @@ export function DraftRoomDrafting({
               )}
             </div>
 
+            {isSlowDraft && (
+              isSlowDraftPaused ? (
+                <div className="text-center text-[12px] mt-1 px-3 text-white/65">
+                  ⏸ Clock paused until 5am PT — you can still make picks
+                </div>
+              ) : (
+                <div className="text-center text-[12px] mt-1 px-3 text-white/65">
+                  Clock pauses daily 10pm–5am PT · you can still make picks
+                </div>
+              )
+            )}
+
             {controls}
           </div>
 
-          <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
+          {/* Spacer reserves the space under the position:fixed banner above.
+              The banner's content (~290px) sits flush against this. For the
+              colored draft types (jackpot/HOF) the banner has a red/gold
+              background, so a flush edge makes the colored bar visually touch
+              the tab menu below it — add a little extra height so a clean black
+              gap separates them. Black drafts need no gap (black-on-black). */}
+          <div style={{ height: `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`, flexShrink: 0, backgroundColor: '#000' }} />
         </>
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {(() => {
-          const isCompleted = phase === 'drafting' && engine.draftStatus === 'completed';
+          // Spectators (zero-address wallet) own no team, so the wallet-keyed
+          // "Generating your team" card-ready wait never resolves and the bar
+          // hangs forever. Skip the overlay for spectators and leave them in
+          // the room — the board/roster tabs below are already populated with
+          // the completed draft for review.
+          const isCompleted = phase === 'drafting' && engine.draftStatus === 'completed' && !spectator;
           return (
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
-            <div className="flex-1 overflow-auto flex flex-col min-w-0">
+            <div className="relative flex-1 overflow-auto flex flex-col min-w-0">
+              {/* Draft completion screen — generates the team card and
+                  redirects to /draft-results. Rendered as a full overlay over
+                  the content area so it shows regardless of which tab the user
+                  happens to be on when the final pick lands. Previously this was
+                  gated behind `activeTab === 'draft'`, so a user sitting on any
+                  other tab (queue/board/roster/chat) at draft completion never
+                  saw the card and was never redirected. The underlying tabs stay
+                  mounted (chat polling/history persists) until the redirect. */}
+              {isCompleted && (
+                <div className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain bg-black pb-12">
+                  <DraftComplete
+                    draftId={draftId || urlDraftId}
+                    generatedCardUrl={generatedCardUrl}
+                    walletAddress={walletParam}
+                    draftType={visibleDraftType}
+                    roster={engine.picks
+                      .filter(p => (p.ownerName || '').toLowerCase() === (walletParam || '').toLowerCase())
+                      .map(p => ({ playerId: p.playerId, position: p.position, pick: p.pickNumber }))}
+                  />
+                </div>
+              )}
               <DraftTabs
                 activeTab={activeTab}
                 onTabChange={onTabChange}
-                queueCount={engine.queuedPlayers.length}
+                queueCount={engine.queuedPlayers.filter(p => engine.availablePlayers.some(a => a.playerId === p.playerId)).length}
+                chatUnread={chatUnread}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
               />
-              {activeTab === 'draft' && isCompleted && (
-                <DraftComplete
-                  draftId={draftId || urlDraftId}
-                  generatedCardUrl={generatedCardUrl}
-                  walletAddress={walletParam}
-                />
-              )}
               {activeTab === 'draft' && !isCompleted && (
                 <DraftPlayerList
                   availablePlayers={engine.availablePlayers}
@@ -395,6 +520,7 @@ export function DraftRoomDrafting({
                   sortPreference={sortPreference}
                   userRankMap={userRankMap}
                   userStatsMap={userStatsMap}
+                  upcomingUserPicks={engine.upcomingUserPicks}
                 />
               )}
               {activeTab === 'queue' && (
@@ -424,6 +550,12 @@ export function DraftRoomDrafting({
                   usersMap={usersMap}
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
+                  userRipeness={user?.ripeness}
+                  userDisplayName={
+                    (user?.username && !user.username.startsWith('0x'))
+                      ? user.username
+                      : bananaPlaceholderName(walletParam || '')
+                  }
                 />
               )}
               {activeTab === 'roster' && (
@@ -431,11 +563,14 @@ export function DraftRoomDrafting({
                   draftOrder={engine.draftOrder}
                   rosters={engine.rosters}
                   picks={engine.picks}
+                  playerStatsById={engine.playerStatsById}
                   userDraftPosition={engine.userDraftPosition}
                   initialPlayer={rosterViewPlayer}
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userName={user?.username ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
+                  userRipeness={user?.ripeness}
+                  usersMap={usersMap}
                 />
               )}
               {/* Keep chat mounted across tab switches and through draft
@@ -449,6 +584,8 @@ export function DraftRoomDrafting({
                   username={user?.username ?? undefined}
                   draftId={draftId}
                   walletAddress={walletParam}
+                  isActive={activeTab === 'chat'}
+                  onUnreadChange={setChatUnread}
                 />
               </div>
             </div>
@@ -502,7 +639,13 @@ export function DraftRoomDrafting({
                                     <div className="flex items-center gap-2 min-w-0">
                                       <span className="text-white/20 text-[10px] flex-shrink-0">⠿</span>
                                       <span className="text-white/30 w-4 text-center flex-shrink-0">{i + 1}</span>
-                                      <span className="text-white/80 font-medium truncate">{player.playerId}</span>
+                                      <span className="text-white/80 font-medium truncate">
+                                        {player.playerId}
+                                        {(() => {
+                                          const bye = engine.playerStatsById?.[player.playerId]?.byeWeek ?? player.byeWeek;
+                                          return bye ? <span className="text-white/40 font-normal"> ({bye})</span> : null;
+                                        })()}
+                                      </span>
                                     </div>
                                     <span className="text-white/30 flex-shrink-0 ml-2">#{player.rank}</span>
                                   </div>
@@ -537,7 +680,7 @@ export function DraftRoomDrafting({
                   }
                   const teamCount = engine.picks.filter(p => p.ownerIndex === viewedIdx).length;
                   const teamLabel = spectator
-                    ? (engine.draftOrder[viewedIdx]?.displayName || viewedName || 'Team').slice(0, 14)
+                    ? getTruncatedAccountName(engine.draftOrder[viewedIdx]?.displayName || viewedName || '', viewedName || '').slice(0, 14)
                     : 'My Team';
                   return (
                 <>
@@ -552,15 +695,21 @@ export function DraftRoomDrafting({
                   {(() => {
                     const userRoster = engine.rosters[viewedName];
                     const positionKeys = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
-                    // Build a lookup for pick details (bye, adp, pick#) from static data
-                    // Use ALL_POSITIONS (never mutated) instead of engine.availablePlayers (which removes picked players)
+                    // Build a lookup for pick details (bye, adp, pick#).
+                    // ADP/bye come from engine.playerStatsById — the LIVE server
+                    // values (same source as the available list + results page),
+                    // which include already-picked players. Fall back to the
+                    // static ALL_POSITIONS only if the live map lacks the id
+                    // (e.g. before the server payload arrives). This is the fix
+                    // for the roster panel showing a stale hardcoded ADP.
                     const pickLookup: Record<string, { bye: number; adp: number; pick: number }> = {};
                     for (const p of engine.picks) {
                       if (p.ownerIndex === engine.userDraftPosition) {
+                        const live = engine.playerStatsById?.[p.playerId];
                         const player = ALL_POSITIONS.find(ap => ap.playerId === p.playerId);
                         pickLookup[p.playerId] = {
-                          bye: player?.byeWeek || 0,
-                          adp: player?.adp || player?.rank || 0,
+                          bye: live?.byeWeek ?? player?.byeWeek ?? 0,
+                          adp: live?.adp ?? player?.adp ?? player?.rank ?? 0,
                           pick: p.pickNumber || 0,
                         };
                       }

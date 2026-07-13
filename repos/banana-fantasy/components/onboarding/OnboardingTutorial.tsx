@@ -1,9 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Image from 'next/image';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { useBadges } from '@/hooks/useBadges';
+import { usernameErrorText } from '@/lib/usernameMessages';
+import { BADGE_CATALOG } from '@/lib/badges/catalog';
+import { BadgeIcon } from '@/components/badges/BadgeIcon';
 
 interface OnboardingTutorialProps {
   onComplete?: () => void;
@@ -24,15 +29,13 @@ const sections = [
 ];
 
 export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
-  const { user, walletAddress } = useAuth();
+  const { user, updateUser } = useAuth();
+  const privy = usePrivy();
   const {
-    createProfile,
     completeOnboarding,
     setCurrentStep,
-    isNewUser,
-    isSubmitting,
-    error,
   } = useOnboarding();
+  const [savingProfile, setSavingProfile] = useState(false);
   const [sectionIndex, setSectionIndex] = useState(-1); // -1 = initial black
   const [isVisible, setIsVisible] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -40,6 +43,31 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // NFL team badge picker on the final "You're ready" slide. The team
+  // flair badges are alwaysUnlocked cosmetics, so equipping one needs no
+  // unlock check — equipBadge POSTs to /api/badges/equip and optimistically
+  // updates the user, so the choice persists even if they hit "Let's Go"
+  // immediately after. Options come from the static catalog (instant, no
+  // wait on the /api/badges fetch); `equipped`/`equipBadge` drive state.
+  const { equipped, equipBadge } = useBadges();
+  const teamBadges = useMemo(
+    () => BADGE_CATALOG.filter(b => b.category === 'team'),
+    [],
+  );
+  const [equippingTeam, setEquippingTeam] = useState(false);
+
+  const handlePickTeam = useCallback(async (badgeId: string) => {
+    if (equippingTeam) return;
+    // Click the equipped team again to clear it (toggle off).
+    const next = equipped === badgeId ? null : badgeId;
+    setEquippingTeam(true);
+    try {
+      await equipBadge(next);
+    } finally {
+      setEquippingTeam(false);
+    }
+  }, [equipped, equipBadge, equippingTeam]);
 
   const currentSection = sections[sectionIndex];
 
@@ -91,10 +119,77 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     setCurrentStep(currentSection.id === 'profile' ? 'profile' : 'tutorial');
   }, [currentSection, setCurrentStep]);
 
+  // Seed Display Name / Avatar from the user ONCE, when the user first loads.
+  // Re-seeding on every `user` change would wipe what the person typed/uploaded
+  // the moment anything else updates the user object (e.g. picking a team badge
+  // calls equipBadge, which optimistically updates `user`).
+  const seededProfileRef = useRef(false);
   useEffect(() => {
-    if (user?.username) setDisplayName(user.username);
-    if (user?.profilePicture) setAvatarPreview(user.profilePicture);
+    if (seededProfileRef.current) return;
+    if (user?.username || user?.profilePicture) {
+      if (user?.username) setDisplayName(user.username);
+      if (user?.profilePicture) setAvatarPreview(user.profilePicture);
+      seededProfileRef.current = true;
+    }
   }, [user]);
+
+  // Claim a unique display name before saving it. Returns true if the name is
+  // free to use (unchanged from the user's current name, or successfully
+  // reserved); false if it's taken/invalid, in which case nameError is set.
+  // Mirrors EditProfileModal's hard gate — POST /api/username, 409 = taken.
+  const reserveUsername = async (name: string): Promise<boolean> => {
+    const changed = name.toLowerCase() !== (user?.username ?? '').toLowerCase();
+    if (!changed) return true;
+    // A brand-new web2 wallet takes a few seconds to resolve server-side (Privy
+    // propagation). During that window POST /api/username 400s with
+    // 'wallet required', which used to surface as a misleading "Username
+    // unavailable." on a perfectly free name. Retry a few times so the claim
+    // lands once the wallet propagates, instead of failing on the first beat.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        let token: string | null = null;
+        try { token = await privy.getAccessToken(); } catch { /* token not ready yet */ }
+        const res = await fetch('/api/username', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ name, wallet: user?.walletAddress }),
+        });
+        if (res.ok) { setNameError(null); return true; }
+        const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
+        const notReady = res.status === 400 && /wallet required/i.test(data.error || '');
+        if (notReady && attempt < 5) {
+          setNameError('Finalizing your account…');
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        setNameError(notReady
+          ? 'Still finalizing your account — try that name again in a moment.'
+          : usernameErrorText(data.reason || data.error));
+        return false;
+      } catch {
+        if (attempt < 5) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+        setNameError('Could not check username — try again.');
+        return false;
+      }
+    }
+    return false;
+  };
+
+  // Persist the typed name/avatar through useAuth.updateUser — the SAME path
+  // the live EditProfileModal uses. updateUser (a) refreshes the in-memory user
+  // so the home page reflects the change with no manual refresh, (b) writes
+  // localStorage, and (c) syncs to the Go API's working endpoints
+  // (POST /owner/{id}/update/displayName + /update/pfpImage).
+  //
+  // Do NOT route this through useOnboarding.createProfile/updateProfile: those
+  // hit POST/PUT /api/owners → /owner/create and PUT /owner/{id}, routes the Go
+  // API does not implement. The PUT failed with a raw "Owner update failed"
+  // JSON shown to the user. Returns true on success, false if the name is taken.
+  const persistProfile = async (trimmed: string): Promise<boolean> => {
+    if (!(await reserveUsername(trimmed))) return false; // nameError set
+    updateUser({ username: trimmed, profilePicture: avatarPreview || undefined });
+    return true;
+  };
 
   const handleProfileSubmit = async () => {
     const trimmed = displayName.trim();
@@ -103,28 +198,26 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
       return;
     }
     setNameError(null);
+    setSavingProfile(true);
     try {
-      if (isNewUser) {
-        await createProfile(trimmed, avatarPreview);
-      }
+      if (!(await persistProfile(trimmed))) return;
       advanceSection();
-    } catch {
-      // Error is surfaced via hook state
+    } finally {
+      setSavingProfile(false);
     }
   };
 
   const handleSkip = async () => {
-    if (isSubmitting) return;
+    if (savingProfile) return;
+    const trimmed = displayName.trim();
+    setSavingProfile(true);
     try {
-      if (isNewUser) {
-        const fallbackName =
-          displayName.trim() ||
-          user?.username ||
-          (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Rookie');
-        await createProfile(fallbackName, avatarPreview);
-      }
-    } catch {
-      // Best effort; still allow skip
+      // Persist any name/avatar the user entered before skipping, so the edit
+      // isn't silently lost. Skipped only if the chosen name is taken;
+      // reserveUsername no-ops when the name is unchanged from their current one.
+      if (trimmed) await persistProfile(trimmed);
+    } finally {
+      setSavingProfile(false);
     }
     await completeOnboarding({ displayName, avatar: avatarPreview });
     onComplete?.();
@@ -676,23 +769,8 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
             </div>
           )}
 
-          {/* Navigation buttons */}
-          <div className="mt-6 flex items-center justify-center gap-3">
-            {sectionIndex > 0 && (
-              <button
-                onClick={goBack}
-                className="px-6 py-3 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
-              >
-                ← Back
-              </button>
-            )}
-            <button
-              onClick={advanceSection}
-              className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
-            >
-              Next →
-            </button>
-          </div>
+          {/* Back/Next live in the fixed bottom bar (always visible, no
+              scroll) — see the footer below. */}
         </div>
       );
     }
@@ -716,8 +794,8 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   placeholder="BananaBaller"
                   className="w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-banana/60"
                 />
-                {(nameError || error) && (
-                  <p className="text-sm text-red-400 mt-2">{nameError || error}</p>
+                {nameError && (
+                  <p className="text-sm text-red-400 mt-2">{nameError}</p>
                 )}
               </div>
 
@@ -761,32 +839,54 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   )}
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-center gap-3">
-              {sectionIndex > 0 && (
-                <button
-                  onClick={goBack}
-                  className="px-6 py-3 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
-                >
-                  ← Back
-                </button>
-              )}
-              <button
-                onClick={handleProfileSubmit}
-                disabled={isSubmitting}
-                className="px-8 py-3 bg-banana text-black font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
-              >
-                {isSubmitting ? 'Saving…' : 'Continue'}
-              </button>
+              {/* Optional NFL team badge — reps on the user's profile and teams. */}
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Rep Your Team <span className="text-white/40">(Optional)</span>
+                </label>
+                <p className="text-white/40 text-xs mb-3">
+                  Pick a badge for your profile. You can change it anytime.
+                </p>
+                <div className="grid grid-cols-6 gap-2.5 max-h-40 overflow-y-auto px-1 py-1">
+                  {teamBadges.map(badge => {
+                    const isSelected = equipped === badge.id;
+                    return (
+                      <button
+                        key={badge.id}
+                        type="button"
+                        onClick={() => handlePickTeam(badge.id)}
+                        disabled={equippingTeam}
+                        title={badge.label}
+                        aria-label={badge.label}
+                        aria-pressed={isSelected}
+                        className={`relative flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-95 disabled:opacity-60 ${
+                          isSelected
+                            ? 'ring-2 ring-banana ring-offset-2 ring-offset-black scale-105'
+                            : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <BadgeIcon badge={badge} size={36} showTooltip={false} />
+                      </button>
+                    );
+                  })}
+                </div>
+                {equipped && teamBadges.some(b => b.id === equipped) && (
+                  <p className="text-banana/80 text-xs mt-3">
+                    Repping the {teamBadges.find(b => b.id === equipped)?.label}.
+                    <button
+                      type="button"
+                      onClick={() => handlePickTeam(equipped)}
+                      disabled={equippingTeam}
+                      className="ml-2 underline text-white/50 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  </p>
+                )}
+              </div>
             </div>
-
-            <button
-              onClick={handleSkip}
-              className="text-white/50 hover:text-white/80 text-sm"
-            >
-              Skip for now
-            </button>
+            {/* Back/Continue live in the fixed bottom bar — see the footer below. */}
           </div>
         </div>
       );
@@ -837,6 +937,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
           <div className="text-7xl mb-6 animate-bounce">🍌</div>
           <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">You&apos;re ready.</h2>
           <p className="text-white/50 text-xl mb-8">Draft smart. Win big.</p>
+
           <button
             onClick={handleSkip}
             className="px-8 py-4 bg-banana text-black font-bold text-lg rounded-2xl hover:bg-banana/90 transition-all hover:scale-105 active:scale-95"
@@ -869,10 +970,12 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         }`}
       />
 
-      {/* Skip button */}
+      {/* Skip button — offset below the iOS notch/safe-area so it's reachable
+          and tappable on the mobile/PWA app (top-5 alone sat under the notch). */}
       <button
         onClick={handleSkip}
-        className="absolute top-5 right-5 flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+        className="absolute right-5 flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
       >
         Skip
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -881,18 +984,34 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
       </button>
 
       {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto flex items-center justify-center px-6 pt-24 pb-12">
-        <div
-          className={`relative z-10 w-full max-w-2xl transition-all duration-300 ${
-            isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-          }`}
-        >
-          {renderSection()}
+      {/* Outer scrolls; inner min-h-full centers short slides but grows
+          (top-aligned, fully scrollable) for tall slides so the heading
+          above tall content like the slot-machine slide is never clipped. */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="min-h-full flex items-center justify-center px-6 pt-24 pb-12">
+          <div
+            className={`relative z-10 w-full max-w-2xl transition-all duration-300 ${
+              isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+            }`}
+          >
+            {renderSection()}
+          </div>
         </div>
       </div>
 
-      {/* Fixed progress bar at bottom */}
-      <div className="flex-shrink-0 py-5 flex justify-center z-20">
+      {/* Fixed bottom bar — always visible regardless of scroll. On content
+          sections, Back/Next flank the progress dots (left/right of the
+          "yellow things"). Intro/profile/ready keep their own primary CTAs. */}
+      <div className="flex-shrink-0 py-5 px-6 flex items-center justify-center gap-4 sm:gap-6 z-20">
+        {(currentSection?.type === 'section' || currentSection?.type === 'profile') && sectionIndex > 0 && (
+          <button
+            onClick={goBack}
+            className="px-4 sm:px-6 py-2.5 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
+          >
+            ← Back
+          </button>
+        )}
+
         <div className="flex gap-2">
           {sections.map((_, i) => (
             <div
@@ -907,6 +1026,25 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
             />
           ))}
         </div>
+
+        {currentSection?.type === 'section' && (
+          <button
+            onClick={advanceSection}
+            className="px-5 sm:px-8 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
+          >
+            Next →
+          </button>
+        )}
+
+        {currentSection?.type === 'profile' && (
+          <button
+            onClick={handleProfileSubmit}
+            disabled={savingProfile}
+            className="px-5 sm:px-8 py-2.5 bg-banana text-black font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+          >
+            {savingProfile ? 'Saving…' : 'Continue'}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,15 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { markChatRead } from '@/hooks/useUnreadChatCount';
 import { UserPopover } from '@/components/social/UserPopover';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface ChatMessage {
   id: string;
   sender: string;
+  pfpUrl?: string;
   walletAddress: string;
   text: string;
   isYou: boolean;
@@ -24,6 +27,7 @@ const HISTORY_LIMIT = 200;
 
 export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueChatProps) {
   const myWallet = (walletAddress || '').toLowerCase();
+  const { getAccessToken } = usePrivy();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -50,6 +54,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
             id: string;
             walletAddress: string;
             username: string;
+            pfpUrl?: string;
             text: string;
             timestamp: number;
           }>;
@@ -57,7 +62,8 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         if (cancelled || !Array.isArray(data.messages)) return;
         setMessages(data.messages.slice(-HISTORY_LIMIT).map((r) => ({
           id: r.id,
-          sender: r.username || r.walletAddress.slice(0, 6),
+          sender: getTruncatedAccountName(r.username || '', r.walletAddress),
+          pfpUrl: r.pfpUrl,
           walletAddress: r.walletAddress,
           text: r.text,
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
@@ -88,10 +94,12 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
     setIsSending(true);
     setInputValue('');
     try {
+      const token = await getAccessToken();
+      if (!token) throw new Error('not authenticated');
       const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress, username, text }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username, text }),
       });
       if (!res.ok) throw new Error(`send failed (${res.status})`);
     } catch (err) {
@@ -139,7 +147,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         {grouped.map((msg) => (
           <div key={msg.id} className={`flex flex-col ${msg.isYou ? 'items-end' : 'items-start'}`}>
             {msg.isFirstInGroup && !msg.isYou && (
-              <UserPopover walletAddress={msg.walletAddress} username={msg.sender}>
+              <UserPopover walletAddress={msg.walletAddress} username={msg.sender} pfpUrl={msg.pfpUrl}>
                 <span className="text-[10px] text-white/40 ml-3 mb-0.5 hover:text-white hover:underline cursor-pointer">{msg.sender}</span>
               </UserPopover>
             )}

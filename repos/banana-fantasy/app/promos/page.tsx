@@ -4,12 +4,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { PromoModal } from '@/components/modals/PromoModal';
-import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { API_CONFIG } from '@/lib/api/config';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -27,16 +31,16 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'referral':           { accent: '#3b82f6', label: 'Referral' },
   'jackpot':            { accent: '#ef4444', label: 'Jackpot' },
   'hof':                { accent: '#D4AF37', label: 'HOF' },
-  'mint':               { accent: '#a855f7', label: 'Mint' },
+  'mint':               { accent: '#a855f7', label: 'Buy' },
   'new-user':           { accent: '#ec4899', label: 'New User' },
-  'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
+  'buy-bonus':          { accent: '#ef4444', label: 'July 4th' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
-  'add-to-home-screen': { accent: '#64748b', label: 'Install' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
+  'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
 };
 
-type FilterKey = 'all' | 'claimable' | 'active' | 'locked';
+type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
 
 function formatTimeRemaining(endTime?: string): string {
   if (!endTime) return '';
@@ -52,10 +56,16 @@ export default function PromosPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const promoQueryId = searchParams?.get('promo') ?? null;
+  // Jackpot draw replay deep-link (noti → ?promo=4&draw=<draftId>).
+  const drawQueryId = searchParams?.get('draw') ?? null;
   const autoOpenedRef = useRef<string | null>(null);
 
-  const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed } = useAuth();
+  const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed, isBalanceLoaded } = useAuth();
   const promosQuery = usePromos({ userId: user?.id });
+  // Pick 10 expands to slots 6/9/10 while the current 100-batch's specials are
+  // all hit — surface that live on the card.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
   const promos = promosQuery.promos;
 
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -102,10 +112,15 @@ export default function PromosPage() {
     return filterAndSortVisiblePromos(promos, {
       isBB3Holder,
       newUserPromoClaimed,
+      hasSpunWheel: !!user?.hasSpunWheel,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+      flagsKnown: isBalanceLoaded,
       hasVisibleClaim,
+      isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, user?.hasSpunWheel, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, user?.walletAddress]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper
@@ -142,15 +157,46 @@ export default function PromosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
 
+  // Promos you're actively working toward right now — has a progress bar or a
+  // live timer, not yet claimable or claimed. Answers "what's cooking" at a
+  // glance on the stat row.
+  const activeCount = useMemo(() => visiblePromos.filter(p =>
+    !hasVisibleClaim(p) && !isClaimed(p) && (p.progressMax || p.timerEndTime)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
+
+  // The Locked tab holds ONLY the X-gated promos (new-user + tweet-engagement
+  // before X verification, or everything when logged out). Once the user
+  // connects X there is nothing locked left — hide the tab entirely rather
+  // than show an empty bucket (Boris 2026-07-13).
+  const lockedCount = useMemo(() => visiblePromos.filter(p =>
+    ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) ||
+    !isLoggedIn).length,
+    [visiblePromos, isTwitterVerified, isLoggedIn]);
+
+  // If they verify X while sitting ON the Locked tab, it empties + disappears —
+  // land them back on All instead of a vanished tab.
+  useEffect(() => {
+    if (filter === 'locked' && lockedCount === 0) setFilter('all');
+  }, [filter, lockedCount]);
+
+  // Spendable balances for the stat row.
+  const freeSpins = user?.wheelSpins ?? 0;
+  const freeDrafts = user?.freeDrafts ?? 0;
+  const jpEntries = user?.jackpotEntries ?? 0;
+  const hofEntries = user?.hofEntries ?? 0;
+  const specialEntries = jpEntries + hofEntries;
+
   const handleClaim = async (promo: Promo): Promise<boolean> => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
       return false;
     }
     const count = promo.claimCount || 1;
-    if (promo.type === 'jackpot' || promo.type === 'hof') {
-      reservePromoDraftType(promo.type, count);
-    }
+    // NOTE: a promo claim must NEVER pre-determine a draft's type. Draft type
+    // (Jackpot/HOF/Pro) is decided solely by the backend's provably-fair
+    // guaranteed distribution at fill time. The old reservePromoDraftType()
+    // call here forced the next draft's outcome — removed as a rigging vector.
     if (promosQuery.claimPromo) {
       const result = await promosQuery.claimPromo(promo.id);
       if (result instanceof Error) {
@@ -170,7 +216,7 @@ export default function PromosPage() {
     }
     setClaimedLocally(prev => new Set([...Array.from(prev), promo.id]));
     if (user) {
-      if (promo.type === 'buy-bonus') {
+      if (promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft') {
         updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
       } else {
         updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
@@ -222,7 +268,7 @@ export default function PromosPage() {
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-10 sm:mb-14 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
-          <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">Promos</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Promos</h1>
           <p className="text-white/40 text-sm sm:text-base mt-2">
             Earn free spins, drafts, and entries.
           </p>
@@ -239,20 +285,31 @@ export default function PromosPage() {
         )}
       </div>
 
-      {/* ── Stat tiles — minimal, single rounded card with internal dividers ─── */}
+      {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
+          you've got to spend. Minimal single card with internal dividers. ─── */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] mb-10 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-white/[0.06]">
         <StatTile
           label="Claimable"
           value={totalClaimableRewards}
-          sublabel={claimableCount > 0 ? `from ${claimableCount} promo${claimableCount === 1 ? '' : 's'}` : undefined}
+          sublabel={claimableCount > 0 ? 'ready to claim now' : 'all caught up'}
           highlight={totalClaimableRewards > 0}
         />
-        <StatTile label="Free spins" value={user?.wheelSpins ?? 0} />
-        <StatTile label="Free drafts" value={user?.freeDrafts ?? 0} />
         <StatTile
-          label="Special entries"
-          value={(user?.jackpotEntries ?? 0) + (user?.hofEntries ?? 0)}
-          sublabel={`${user?.jackpotEntries ?? 0} JP · ${user?.hofEntries ?? 0} HOF`}
+          label="In progress"
+          value={activeCount}
+          sublabel={activeCount > 0 ? 'promos still earning' : 'nothing active'}
+        />
+        <StatTile
+          label="Free spins"
+          value={freeSpins}
+          sublabel={freeSpins > 0 ? 'use on the Banana Wheel' : 'none right now'}
+        />
+        <StatTile
+          label="Free drafts"
+          value={freeDrafts}
+          sublabel={specialEntries > 0
+            ? `+ ${jpEntries} JP · ${hofEntries} HOF entries`
+            : (freeDrafts > 0 ? 'enter a draft free' : 'none right now')}
         />
       </div>
 
@@ -263,7 +320,10 @@ export default function PromosPage() {
             ['all',       'All',       visiblePromos.length],
             ['claimable', 'Claimable', claimableCount],
             ['active',    'In progress', null],
-            ['locked',    'Locked',    null],
+            // Locked only exists while something IS locked (X not connected /
+            // logged out) — it vanishes cleanly once X is verified.
+            ...(lockedCount > 0 ? [['locked', 'Locked', null]] : []),
+            ['activity',  'Activity',  null],
           ] as [FilterKey, string, number | null][]).map(([key, label, count]) => (
             <button
               key={key}
@@ -284,7 +344,7 @@ export default function PromosPage() {
       </div>
 
       {/* ── Loading state ──────────────────────────────────────────────── */}
-      {promosQuery.isLoading && visiblePromos.length === 0 && (
+      {filter !== 'activity' && promosQuery.isLoading && visiblePromos.length === 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-52 rounded-2xl bg-white/[0.02] animate-pulse" />
@@ -293,7 +353,7 @@ export default function PromosPage() {
       )}
 
       {/* ── Empty filter state ─────────────────────────────────────────── */}
-      {!promosQuery.isLoading && filteredPromos.length === 0 && visiblePromos.length > 0 && (
+      {filter !== 'activity' && !promosQuery.isLoading && filteredPromos.length === 0 && visiblePromos.length > 0 && (
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center">
           <p className="text-white/45 text-sm">Nothing in this filter.</p>
           <button onClick={() => setFilter('all')} className="text-banana text-xs mt-3 hover:underline">
@@ -302,8 +362,21 @@ export default function PromosPage() {
         </div>
       )}
 
+      {/* ── Activity tab — the full-picture hub. Reuses the profile
+          ActivityHistory feed (SSE, real-time), filtered to promo-relevant
+          events: spins won, promos claimed, passes bought, drafts won — each
+          timestamped. Same styling language as the cards. ──────────────────── */}
+      {filter === 'activity' && (
+        <ActivityHistory
+          userId={user?.id ?? null}
+          filterTypes={['spin_won', 'promo_claimed', 'pass_purchased', 'pass_granted', 'draft_won']}
+          title="Your Promo Activity"
+          emptyText="Spins you win, promos you claim, passes you buy, and drafts you win show up here."
+        />
+      )}
+
       {/* ── Promo grid ─────────────────────────────────────────────────── */}
-      {filteredPromos.length > 0 && (
+      {filter !== 'activity' && filteredPromos.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredPromos.map(promo => (
             <PromoCard
@@ -313,6 +386,7 @@ export default function PromosPage() {
               hasVisibleClaim={hasVisibleClaim(promo)}
               onClick={() => setSelectedPromo(promo)}
               onClaim={() => void handleClaim(promo)}
+              pickExpanded={pickExpanded}
             />
           ))}
         </div>
@@ -333,6 +407,7 @@ export default function PromosPage() {
 
       {/* ── Detail modal ───────────────────────────────────────────────── */}
       <PromoModal
+        drawDraftId={drawQueryId}
         isOpen={!!selectedPromo}
         onClose={() => setSelectedPromo(null)}
         promo={selectedPromo}
@@ -377,19 +452,24 @@ interface PromoCardProps {
   hasVisibleClaim: boolean;
   onClick: () => void;
   onClaim: () => void;
+  pickExpanded?: boolean;
 }
 
-function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: PromoCardProps) {
+function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickExpanded }: PromoCardProps) {
   const style = TYPE_STYLES[promo.type];
   const progressMax = promo.progressMax || 0;
-  const progressCurrent = isClaimed ? progressMax : (promo.progressCurrent || 0);
+  // Stacking promos (Buy-10 spin, buy-bonus) repeat: after claiming, the bar
+  // keeps showing the real rolled-over progress (0/10), never a full bar or a
+  // persistent "Claimed" — both read as "done, can't earn again".
+  const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
+  const progressCurrent = isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0);
   const progressPercent = progressMax > 0 ? Math.min(100, (progressCurrent / progressMax) * 100) : 0;
   const showProgress = progressMax > 0;
   const timeRemaining = promo.timerEndTime ? formatTimeRemaining(promo.timerEndTime) : '';
 
   // Single status indicator. Restrained — small dot + label, no pulsing.
   const isClaimedPersistent =
-    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10';
+    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10' && !isStacking;
 
   return (
     <button
@@ -397,19 +477,23 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
       className={`
         relative group w-full text-left rounded-2xl border bg-white/[0.02] backdrop-blur-xl
         transition-all duration-200 ease-out
-        ${hasVisibleClaim
+        ${hasVisibleClaim || promo.featured
           ? 'border-banana/40 hover:border-banana/60'
           : 'border-white/[0.06] hover:border-white/[0.12]'}
         hover:bg-white/[0.04]
       `}
     >
-      {/* NEW indicator — subtle, top-right */}
-      {promo.isNew && (
+      {/* NEW indicator — big banana pill for the featured promo, subtle text otherwise */}
+      {promo.isNew && (promo.featured ? (
+        <span className="absolute -top-3 right-4 z-10 inline-flex items-center rounded-full bg-banana px-3.5 py-1.5 text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_24px_rgba(251,191,36,0.5)]">
+          New
+        </span>
+      ) : (
         <span className="absolute top-4 right-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-banana font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-banana" />
           New
         </span>
-      )}
+      ))}
 
       <div className="p-5 sm:p-6 flex flex-col h-full min-h-[13rem]">
         {/* Type label — small dot + plain text, color-restrained */}
@@ -422,11 +506,17 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
 
         {/* Title + description — Apple-style typographic hierarchy */}
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
-          {promo.title}
+          {promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title}
         </h3>
+        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
-          {promo.description}
+          {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
         </p>
+        {promo.type === 'pick-10' && pickExpanded && (
+          <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">
+            🔥 Bonus: this batch&apos;s Jackpot + all 5 HOFs are gone, so slots 6, 9 &amp; 10 all win now
+          </p>
+        )}
 
         {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
         {showProgress && (

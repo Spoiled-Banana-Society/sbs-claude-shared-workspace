@@ -68,13 +68,13 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
 
         <div className="px-8 pt-9 pb-6 shrink-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-400 mb-3">
-            Provably Fair
+            Verified Fair
           </div>
           <h2 className="text-[26px] font-semibold text-white tracking-tight leading-tight">
             How your spins are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            Outcomes AND who gets them are both locked on-chain. Chainlink VRF picks the outcomes before any spin, and every wallet assignment is publicly committed as spins happen.
+            Both the outcomes and who gets them are locked in for good. Chainlink VRF picks every outcome before any spin, and who gets what is recorded publicly as spins happen.
           </p>
         </div>
 
@@ -86,18 +86,18 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
           />
           <Step
             num="2"
-            title="The full list was committed to Base mainnet"
-            body="A cryptographic fingerprint of all 10,000 outcomes was published on-chain before any spin happened. Outcomes are immutable after commit."
+            title="The full list was locked in up front"
+            body="All 10,000 outcomes were locked in before any spin happened, and can't be changed afterward."
           />
           <Step
             num="3"
-            title="Wallet assignments committed every 100 spins"
-            body="Every 100 spins, the wallet→spinIndex assignments are bundled into a Merkle root and committed to Base mainnet. This creates a permanent, public record of which wallet received which outcome — anyone can verify the order is honest, with no swapping or skipping possible after the fact."
+            title="Who gets what is locked in every 100 spins"
+            body="Every 100 spins, the record of which wallet received which outcome is locked in publicly. That creates a permanent record anyone can check — no swapping or skipping possible after the fact."
           />
           <Step
             num="4"
             title="Every spin returns its own proof"
-            body="Each spin response includes two Merkle proofs — one tying its outcome to the on-chain outcomes root, one tying your wallet to the on-chain assignments root. Verified in your browser in milliseconds."
+            body="Each spin comes with its own proof — one tying its outcome to the locked-in list, one tying your wallet to the locked-in record. Checked in your browser in milliseconds."
           />
           <Step
             num="5"
@@ -109,13 +109,13 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
         <div className="px-8 py-5 border-t border-white/[0.07] shrink-0">
           <p className="text-white/80 text-[13.5px] leading-relaxed">
             <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
-            Outcomes AND wallet assignments are both cryptographically immutable. Nothing about who got what can be quietly changed after the fact.
+            Both the outcomes and who got them are locked in for good. Nothing about who got what can be quietly changed after the fact.
           </p>
           <a
             href="/wheel-batches"
             className="inline-block mt-3 text-banana hover:underline text-[12px] font-medium"
           >
-            See on-chain proof →
+            See the proof →
           </a>
           {contractAddress && (
             <a

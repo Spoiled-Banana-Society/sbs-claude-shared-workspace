@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logErrorEvent } from '@/lib/errorEvents';
+import { logSeverity, SEVERITY_POLICY } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 
@@ -51,6 +52,18 @@ export async function POST(req: Request) {
     if (!source || !message) {
       return jsonError('source and message are required', 400, { requestId });
     }
+
+    // Cost-smart ingest sampling: keep 100% of critical + warning, but only
+    // a fraction of LOW-tier (cosmetic/fallback) events — enough to spot a
+    // spike without paying full Firestore/Sentry cost on noise. Criticals are
+    // NEVER sampled. Disable entirely with ERROR_SAMPLING_ENABLED=false.
+    if (process.env.ERROR_SAMPLING_ENABLED !== 'false') {
+      const sampleRate = SEVERITY_POLICY[logSeverity(source)].ingestSampleRate;
+      if (sampleRate < 1 && Math.random() >= sampleRate) {
+        return json({ ok: true, sampled: true, requestId });
+      }
+    }
+
     const route = asString(body.route, 500);
     const stack = asString(body.stack, 5000);
     const actor = asString(body.actor, 200);

@@ -15,6 +15,8 @@ import {
   serverTimestamp,
   query,
   limitToLast,
+  goOnline,
+  goOffline,
   type Database,
   type Unsubscribe,
   off,
@@ -108,6 +110,22 @@ export function getFirebaseDatabase(): Database | null {
 }
 
 /**
+ * Force the Realtime Database websocket to reconnect. iOS installed PWAs
+ * suspend the websocket when backgrounded and don't always auto-revive it on
+ * foreground — so live events stop arriving (they pile up and dump ~minutes
+ * later). Calling goOffline→goOnline on foreground kicks a fresh connection so
+ * real-time resumes immediately. No-op if Firebase isn't configured.
+ */
+export function wakeRealtime(): void {
+  const db = getFirebaseDatabase();
+  if (!db) return;
+  try {
+    goOffline(db);
+    goOnline(db);
+  } catch { /* ignore */ }
+}
+
+/**
  * Subscribe to a Firebase path.
  *
  * @param path - Firebase RTDB path to subscribe to
@@ -152,6 +170,56 @@ export function subscribeValue<T = unknown>(
  */
 export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: number) => void): Unsubscribe {
   return subscribeValue<number>(`/drafts/${draftId}/numPlayers`, (v) => cb(Number(v || 0)));
+}
+
+/**
+ * Subscribe to the draft TYPE (pro|hof|jackpot) the Go API stamps onto
+ * /drafts/{draftId}/realTimeDraftInfo/type at fill. This is the SAME node the
+ * draft room reads, so a direct onValue subscription here gives the My Drafts
+ * list instant (push) type updates — identical to the room and across devices,
+ * no 3s poll. The server may write the human strings or the short codes; both
+ * are normalized. Unrecognized/absent values invoke nothing (caller keeps its
+ * current type). The realTimeDraftInfo `.read` rule cascades to this child.
+ */
+export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | 'jackpot') => void): Unsubscribe {
+  return subscribeValue<unknown>(`/drafts/${draftId}/realTimeDraftInfo/type`, (v) => {
+    if (typeof v !== 'string') return;
+    const s = v.trim().toLowerCase();
+    if (s === 'jackpot') cb('jackpot');
+    else if (s === 'hof' || s === 'hall of fame') cb('hof');
+    else if (s === 'pro') cb('pro');
+  });
+}
+
+/** The fast-changing live fields the My Drafts list needs per drafting row. */
+export interface DraftRealTimeInfoLite {
+  currentDrafter?: string;
+  pickNumber?: number;
+  roundNum?: number;
+  pickEndTime?: number;
+  isDraftComplete?: boolean;
+  // Set at fill. Used to reject a STALE reused-id node (staging reuses draft
+  // ids): only trust this snapshot if its draftStartTime matches the draft's
+  // known start, so a previous draft's leftover state can't drive the row.
+  draftStartTime?: number;
+}
+
+/**
+ * Subscribe to the whole /drafts/{draftId}/realTimeDraftInfo node — the SAME
+ * node the draft room reads — so the My Drafts list gets instant (push) pick
+ * progress: current pick number, whose turn it is, the pick countdown, and
+ * completion. This is what makes the list's "we're on pick X / your turn"
+ * update in lockstep with the room and across devices instead of on a 3s poll.
+ * The node only exists once the draft has started (10/10), so it stays null
+ * during filling — callers treat null as "no live pick state yet".
+ */
+export function subscribeRealTimeDraftInfo(
+  draftId: string,
+  cb: (info: DraftRealTimeInfoLite | null) => void,
+): Unsubscribe {
+  return subscribeValue<DraftRealTimeInfoLite>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
+    cb(v && typeof v === 'object' ? v : null);
+  });
 }
 
 /**
@@ -209,13 +277,25 @@ export interface UserStreamEvent {
     | 'promo-buy-10'
     | 'promo-daily-drafts'
     | 'promo-new-user'
-    | 'referral-milestone';
+    | 'promo-first-purchase'
+    | 'first-purchase-unlocked'
+    | 'referral-milestone'
+    | 'promo-card-free-draft'
+    // Content-less refetch ping for the server-backed notification bell.
+    | 'notification';
   timestamp: number;
   draftId?: string;
   badgeId?: string;
   milestone?: 'verified' | 'bought1' | 'bought10';
   source?: string;
   awardedCount?: number;
+  // For 'notification' pings — the bell entry, for instant render (no refetch).
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
+  notifIcon?: string;
 }
 
 /**
@@ -232,6 +312,52 @@ export interface UserStreamEvent {
  *
  * Returns no-op if Firebase isn't configured.
  */
+/**
+ * Subscribe to the global-chat broadcast ping — a single shared RTDB node the
+ * server bumps on every #general message. One write, every open chat hears
+ * it instantly. Returns no-op if Firebase isn't configured.
+ */
+/**
+ * Shared presence map — ONE RTDB listener no matter how many avatars render
+ * dots. `presence/{wallet}` holds a server-stamped lastSeen (ms); online =
+ * within the last 90s. Subscribers get the full map on every change.
+ */
+type PresenceMap = Record<string, number>;
+let presenceMap: PresenceMap = {};
+let presenceUnsub: Unsubscribe | null = null;
+const presenceSubs = new Set<(m: PresenceMap) => void>();
+
+export function subscribePresenceMap(cb: (m: PresenceMap) => void): () => void {
+  presenceSubs.add(cb);
+  cb(presenceMap);
+  if (!presenceUnsub) {
+    const db = getFirebaseDatabase();
+    if (db) {
+      presenceUnsub = onValue(ref(db, '/presence'), (snap) => {
+        presenceMap = (snap.val() as PresenceMap | null) ?? {};
+        presenceSubs.forEach((fn) => fn(presenceMap));
+      }, () => { /* read rule missing — dots simply don't render */ });
+    }
+  }
+  return () => {
+    presenceSubs.delete(cb);
+    if (presenceSubs.size === 0 && presenceUnsub) {
+      try { presenceUnsub(); } catch { /* ignore */ }
+      presenceUnsub = null;
+    }
+  };
+}
+
+export const PRESENCE_ONLINE_WINDOW_MS = 90_000;
+
+export function subscribeGlobalChatPing(cb: () => void): Unsubscribe {
+  const db = getFirebaseDatabase();
+  if (!db) return () => {};
+  const r = ref(db, '/globalChatPing');
+  const unsub = onValue(r, () => cb(), () => { /* permission/network — poll covers it */ });
+  return unsub;
+}
+
 export function subscribeUserEvents(
   userId: string,
   cb: (event: UserStreamEvent) => void,
@@ -247,8 +373,16 @@ export function subscribeUserEvents(
   }
 
   const r = ref(db, `/userEvents/${userId.toLowerCase()}`);
+  // CRITICAL: constrain to the most recent events. `/userEvents/{wallet}` is
+  // an append-only log that's never trimmed, so a plain onChildAdded would
+  // replay the ENTIRE history on every load — on an active wallet that backlog
+  // (bandwidth + per-child processing) delays delivery of NEW events by
+  // seconds, which is exactly the cross-device lag we were chasing. limitToLast
+  // gives a tiny initial window + every new event instantly. The caller's
+  // freshness gate (timestamp window) drops any old ones in that small window.
+  const q = query(r, limitToLast(15));
   const unsub = onChildAdded(
-    r,
+    q,
     (snapshot) => {
       const val = snapshot.val();
       if (!val || typeof val !== 'object') return;

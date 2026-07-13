@@ -1,11 +1,15 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { formatScore, formatRank } from '@/lib/formatters';
+import Image from 'next/image';
+import Link from 'next/link';
+import { isDraftingOpen } from '@/lib/draftTypes';
 import type { League } from '@/types';
+import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
-import { FounderPill } from '@/components/drafting/FounderPill';
 import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
+import { useNftOffers } from '@/hooks/useMarketplace';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 interface TeamCardProps {
   league: League;
@@ -18,133 +22,80 @@ interface TeamCardProps {
   onRename?: (leagueId: string, name: string) => Promise<void> | void;
   /** Authenticated wallet — used to scope the chat unread badge. */
   walletAddress?: string;
+  /** This league's marketplace NFT (tokenId + listing), matched by leagueId. */
+  marketplaceTeam?: MarketplaceTeam | null;
+  /** Kept for prop compatibility — listing is handled in the marketplace, not here. */
+  onListed?: (tokenId: string, orderHash: string, price: number) => void;
+  onCancelled?: (tokenId: string) => void;
+  /** True when this team was drafted in a Founder Draft → show the FOUNDER pill. */
+  isFounder?: boolean;
 }
 
 const typeConfig = {
-  jackpot: {
-    label: 'Jackpot',
-    color: 'bg-jackpot',
-    text: 'text-jackpot',
-    border: 'border-red-500/40',
-    bg: 'bg-gradient-to-r from-red-500/15 via-red-500/5 to-transparent',
-    accentBar: 'bg-gradient-to-b from-red-400 to-red-600',
-  },
-  hof: {
-    label: 'HOF',
-    color: 'bg-hof',
-    text: 'text-hof',
-    border: 'border-[#D4AF37]/40',
-    bg: 'bg-gradient-to-r from-[#D4AF37]/15 via-[#D4AF37]/5 to-transparent',
-    accentBar: 'bg-gradient-to-b from-[#D4AF37] to-yellow-700',
-  },
-  pro: {
-    label: 'Pro',
-    color: 'bg-pro',
-    text: 'text-pro',
-    border: 'border-purple-500/25',
-    bg: 'bg-white/[0.02]',
-    accentBar: 'bg-gradient-to-b from-purple-400 to-purple-700',
-  },
-  regular: {
-    label: 'Pro',
-    color: 'bg-pro',
-    text: 'text-pro',
-    border: 'border-purple-500/25',
-    bg: 'bg-white/[0.02]',
-    accentBar: 'bg-gradient-to-b from-purple-400 to-purple-700',
-  },
+  jackpot: { label: 'Jackpot', pill: 'bg-jackpot', border: 'border-red-500/30', bg: 'bg-gradient-to-b from-red-500/[0.06] to-transparent', text: 'text-jackpot' },
+  hof: { label: 'HOF', pill: 'bg-hof', border: 'border-[#D4AF37]/30', bg: 'bg-gradient-to-b from-[#D4AF37]/[0.06] to-transparent', text: 'text-hof' },
+  pro: { label: 'Pro', pill: 'bg-pro', border: 'border-purple-500/25', bg: 'bg-white/[0.02]', text: 'text-pro' },
+  regular: { label: 'Pro', pill: 'bg-pro', border: 'border-purple-500/25', bg: 'bg-white/[0.02]', text: 'text-pro' },
 };
 
-function getPlaceBadge(place: number) {
-  if (place === 1) {
-    return (
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center shadow-lg shadow-yellow-500/30 flex-shrink-0">
-        <span className="text-xs font-bold text-black">1</span>
-      </div>
-    );
-  }
-  if (place === 2) {
-    return (
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center shadow-lg shadow-gray-400/30 flex-shrink-0">
-        <span className="text-xs font-bold text-black">2</span>
-      </div>
-    );
-  }
-  if (place === 3) {
-    return (
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-orange-700 flex items-center justify-center shadow-lg shadow-orange-500/30 flex-shrink-0">
-        <span className="text-xs font-bold text-white">3</span>
-      </div>
-    );
-  }
-  return (
-    <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-      <span className="text-xs font-medium text-white/60">{place}</span>
-    </div>
-  );
-}
-
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress }: TeamCardProps) {
+export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, isFounder }: TeamCardProps) {
   const unreadCount = useUnreadChatCount(league.id, walletAddress);
+
+  const mt = marketplaceTeam;
+  const isListed = !!mt?.orderHash;
+
+  const downloadCard = async () => {
+    if (!mt?.imageUrl) return;
+    try {
+      const res = await fetch(mt.imageUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sbs-team-${mt.tokenId}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore download failure */ }
+  };
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(nickname || '');
   useEffect(() => { setDraft(nickname || ''); }, [nickname]);
   const canEdit = typeof onRename === 'function';
-  const displayName = nickname?.trim() || league.name;
-  const commit = () => {
-    if (!onRename) return;
-    void onRename(league.id, draft);
-    setEditing(false);
-  };
-  const cancel = () => {
-    setDraft(nickname || '');
-    setEditing(false);
-  };
+
+  const teamLabel = mt?.tokenId ? `Team #${mt.tokenId}` : league.name;
+  const displayName = nickname?.trim() || teamLabel;
+  const leagueNo = mt?.leagueNumber ?? (league.name.match(/#\s*(\d+)/)?.[1] ?? null);
+
+  const commit = () => { if (onRename) { void onRename(league.id, draft); } setEditing(false); };
+  const cancel = () => { setDraft(nickname || ''); setEditing(false); };
+
   const config = typeConfig[league.type] || typeConfig.regular;
-  const inTheMoney = league.leagueRank > 0 && league.leagueRank <= 2;
   const isCompleted = league.status === 'completed';
 
   const actionButtons: { tab: ModalTab; label: string; icon: React.ReactNode }[] = [
     {
-      tab: 'roster',
-      label: 'Roster',
+      tab: 'roster', label: 'Roster',
       icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       ),
     },
     {
-      tab: 'board',
-      label: 'Board',
+      tab: 'board', label: 'Board',
       icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" />
-          <rect x="14" y="3" width="7" height="7" />
-          <rect x="3" y="14" width="7" height="7" />
-          <rect x="14" y="14" width="7" height="7" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
         </svg>
       ),
     },
     {
-      tab: 'team',
-      label: 'Team',
+      tab: 'chat', label: 'Chat',
       icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      ),
-    },
-    {
-      tab: 'chat',
-      label: 'Chat',
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       ),
@@ -153,154 +104,155 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
 
   return (
     <div
-      className={`
-        animate-card-enter w-full text-left rounded-2xl overflow-hidden border transition-all duration-200
-        ${isCompleted ? 'opacity-80' : ''}
-        ${config.border} ${config.bg} hover:brightness-125
-      `}
-      style={{ animationDelay: `${index * 50}ms` }}
+      className={`animate-card-enter rounded-2xl overflow-hidden border transition-all duration-200 ${isCompleted ? 'opacity-80' : ''} ${config.border} ${config.bg}`}
+      style={{ animationDelay: `${index * 40}ms` }}
     >
-      <div className="flex items-stretch">
-        {/* Left accent bar */}
-        <div
-          className={`w-1.5 flex-shrink-0 rounded-l-2xl ${
-            inTheMoney
-              ? 'bg-gradient-to-b from-green-400 to-green-600'
-              : config.accentBar
-          }`}
-        />
-
-        <div className="flex-1 px-4 py-4 sm:px-5 min-w-0">
-          {/* Top row: rank badge + league name + type pill + prize */}
-          <div className="flex items-center gap-2.5 mb-3">
-            {league.leagueRank > 0 && getPlaceBadge(league.leagueRank)}
-            {editing ? (
-              <input
-                autoFocus
-                value={draft}
-                maxLength={60}
-                onChange={(e) => setDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') commit();
-                  else if (e.key === 'Escape') cancel();
-                }}
-                onBlur={commit}
-                placeholder={league.name}
-                className="bg-bg-elevated text-white text-sm sm:text-base px-2 py-0.5 rounded border border-banana/40 outline-none focus:border-banana min-w-0 flex-1"
-              />
-            ) : (
-              <h3
-                className="text-white font-medium text-sm sm:text-base truncate flex items-center gap-1.5 group/name"
-                title={nickname?.trim() ? `Custom name (real: ${league.name})` : undefined}
-              >
-                <span className="truncate">{displayName}</span>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setDraft(nickname || ''); setEditing(true); }}
-                    className="text-white/30 hover:text-banana opacity-0 group-hover/name:opacity-100 transition-opacity flex-shrink-0"
-                    aria-label="Rename team"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                )}
-              </h3>
-            )}
-            <span
-              className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full flex-shrink-0 ${config.color}/20 ${config.text} ring-1 ring-current/20`}
-            >
-              {config.label}
-            </span>
-            <FounderPill draftId={league.id} size="sm" />
-            {league.prizeIndicator != null && league.prizeIndicator > 0 && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 flex-shrink-0">
-                ${league.prizeIndicator}
-              </span>
-            )}
-            {inTheMoney && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 flex-shrink-0 border border-green-500/20">
-                Advancing
-              </span>
-            )}
+      {/* Obsidian team card image — the hero. Tap → full-screen view. */}
+      <div className="relative aspect-[4/5] bg-[#0d0d12]">
+        {mt?.fillingWheelLevel ? (
+          // Wheel-won JP/HOF pass still filling: gold HOF / red Jackpot pass art.
+          <Image
+            src={buildTieredDraftPassUrl(mt.tokenId, mt.fillingWheelLevel)}
+            alt={`${mt.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${mt.tokenId}`}
+            fill
+            className="object-contain"
+            sizes="(max-width: 640px) 100vw, 50vw"
+            priority={index < 4}
+            loading={index < 4 ? undefined : 'lazy'}
+          />
+        ) : mt?.imageUrl ? (
+          <Image
+            src={mt.imageUrl}
+            alt={`Team #${mt.tokenId}`}
+            fill
+            className="object-contain"
+            sizes="(max-width: 640px) 100vw, 50vw"
+            // Preload the above-the-fold cards (first 2 rows of the 2-up grid)
+            // so they paint immediately instead of lazy-loading on scroll.
+            priority={index < 4}
+            loading={index < 4 ? undefined : 'lazy'}
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <span className={`text-[11px] font-bold uppercase tracking-widest ${config.text}`}>{config.label}</span>
+            <span className="text-white/80 font-mono text-base">{mt?.tokenId ? `Team #${mt.tokenId}` : 'Team'}</span>
           </div>
+        )}
 
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Rank</p>
-              <p className="text-white font-bold text-lg">
-                {league.leagueRank > 0 ? (
-                  <>{formatRank(league.leagueRank)}<span className="text-white/30 font-normal text-xs ml-0.5">of 10</span></>
-                ) : '-'}
-              </p>
-            </div>
-            <div>
-              <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Weekly</p>
-              <p className="text-white/80 font-semibold text-lg">
-                {formatScore(league.weeklyScore)}
-              </p>
-            </div>
-            <div>
-              <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Season</p>
-              <p className="text-banana font-bold text-lg">
-                {formatScore(league.seasonScore)}
-              </p>
-            </div>
-          </div>
-
-          {/* Rank progress bar */}
-          {league.leagueRank > 0 && (
-            <div className="flex items-center gap-0.5 mb-3">
-              {Array.from({ length: 10 }, (_, i) => {
-                const pos = i + 1;
-                const isYou = pos === league.leagueRank;
-                const isAdvancingZone = pos <= 2;
-                return (
-                  <div
-                    key={i}
-                    className={`h-1.5 flex-1 rounded-full ${
-                      isYou
-                        ? isAdvancingZone
-                          ? 'bg-green-400'
-                          : 'bg-banana'
-                        : isAdvancingZone
-                          ? 'bg-green-500/25'
-                          : 'bg-white/[0.06]'
-                    }`}
-                  />
-                );
-              })}
-            </div>
+        {/* Tier badge top-left (+ Listed indicator if on sale) */}
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 pointer-events-none">
+          <span className={`text-[9px] font-bold uppercase tracking-wider text-white px-2.5 py-1 rounded-full ${config.pill}`}>{config.label}</span>
+          {isFounder && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white px-2.5 py-1 rounded-full" style={{ background: '#06b6d4' }}>Founder</span>
           )}
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {actionButtons.map(({ tab, label, icon }) => (
-              <button
-                key={tab}
-                onClick={() => onOpenModal(league, tab)}
-                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.06] text-white/50 hover:text-white/80 text-xs font-medium transition-colors"
-              >
-                {icon}
-                {label}
-                {tab === 'chat' && unreadCount > 0 && (
-                  <span
-                    className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff3b30] text-white text-[10px] font-bold flex items-center justify-center shadow-md"
-                    aria-label={`${unreadCount} unread messages`}
-                  >
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          {isListed && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-1 rounded-full">
+              Listed{typeof mt?.price === 'number' ? ` $${mt.price.toFixed(2)}` : ''}
+            </span>
+          )}
         </div>
+
+        {/* Direct download — no need to open the card first */}
+        {mt?.imageUrl && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void downloadCard(); }}
+            className="absolute top-2.5 right-2.5 z-20 w-8 h-8 rounded-full text-white/70 hover:text-white hover:bg-black/40 flex items-center justify-center transition-colors"
+            aria-label="Download card image"
+            title="Download card"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+          </button>
+        )}
       </div>
+
+      {/* Info strip: Team # (left) · League # (right) */}
+      <div className="px-4 pt-3.5 pb-1 flex items-center justify-between gap-2 min-w-0">
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            maxLength={60}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') cancel(); }}
+            onBlur={commit}
+            placeholder={teamLabel}
+            className="bg-bg-elevated text-white text-base px-2 py-0.5 rounded border border-banana/40 outline-none focus:border-banana min-w-0 flex-1"
+          />
+        ) : (
+          <h3 className="text-white font-mono font-bold text-base sm:text-[17px] truncate flex items-center gap-1.5 group/name min-w-0">
+            <span className="truncate">{displayName}</span>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { setDraft(nickname || ''); setEditing(true); }}
+                className="text-white/30 hover:text-banana opacity-0 group-hover/name:opacity-100 transition-opacity flex-shrink-0"
+                aria-label="Rename team"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+            )}
+          </h3>
+        )}
+        {leagueNo != null && (
+          <span className="text-white/40 text-xs font-mono flex-shrink-0">League #{leagueNo}</span>
+        )}
+      </div>
+
+      {/* Best offer — only for LISTED teams (fetching offers for every owned
+          team floods the rate limiter), mirrors the marketplace Sell tab. */}
+      {isListed && mt?.tokenId && <TeamOfferLine tokenId={mt.tokenId} />}
+
+      {/* List for Sale — straight to the working list/delist form for this token.
+          Shown only when it's actually listable: a wheel-won filling pass, an
+          already-listed item, or a paid team. A free team mid-season can't list. */}
+      {mt?.tokenId && (mt.fillingWheelLevel != null || isListed || !(mt.passType === 'free' && isDraftingOpen())) && (
+        <div className="px-4 pt-2">
+          <Link
+            href={`/marketplace/${mt.tokenId}`}
+            className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors ${isListed ? 'border border-green-500/30 text-green-400 bg-green-500/[0.06] hover:bg-green-500/15' : 'border border-banana/50 text-banana bg-banana/[0.06] hover:bg-banana hover:text-black'}`}
+          >
+            {isListed ? `Listed${typeof mt.price === 'number' ? ` $${mt.price.toFixed(2)}` : ''} · Manage` : 'List for Sale'}
+          </Link>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="px-4 pb-4 pt-2 flex items-center gap-2">
+        {actionButtons.map(({ tab, label, icon }) => (
+          <button
+            key={tab}
+            onClick={() => onOpenModal(league, tab)}
+            className="relative flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.07] text-white/55 hover:text-white/85 text-xs font-medium transition-colors"
+          >
+            {icon}
+            {label}
+            {tab === 'chat' && unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff3b30] text-white text-[10px] font-bold flex items-center justify-center shadow-md" aria-label={`${unreadCount} unread messages`}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+// Best offer on a listed team, shown under the Team #/League # strip. Matches
+// the marketplace Sell tab. Gated to listed teams by the caller so we don't
+// fetch offers for every owned team (rate-limiter protection).
+function TeamOfferLine({ tokenId }: { tokenId: string }) {
+  const { bestOffer } = useNftOffers(tokenId);
+  if (!bestOffer) return null;
+  return (
+    <div className="px-4 pt-1">
+      <span className="text-[11px] text-text-muted font-mono">
+        Best offer <span className="text-banana font-semibold">${bestOffer.amount.toFixed(2)}</span>
+      </span>
     </div>
   );
 }

@@ -6,10 +6,10 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
 import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
+import { isSlowDraftPickLength, isSlowDraftNightPause, slowDraftActiveSecondsUntil } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
-import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
@@ -38,11 +38,9 @@ interface UseDraftLiveSyncParams {
   walletParam: string;
   speedParam: 'fast' | 'slow' | null;
   passTypeParam: 'paid' | 'free' | null;
-  promoTypeParam: 'jackpot' | 'hof' | 'pro' | null;
   phase: RoomPhase;
   liveDataReady: boolean;
   setLiveDataReady: Dispatch<SetStateAction<boolean>>;
-  setFallbackLocal: Dispatch<SetStateAction<boolean>>;
   setPhase: Dispatch<SetStateAction<RoomPhase>>;
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
@@ -61,11 +59,9 @@ export function useDraftLiveSync({
   walletParam,
   speedParam,
   passTypeParam,
-  promoTypeParam,
   phase,
   liveDataReady,
   setLiveDataReady,
-  setFallbackLocal,
   setPhase,
   setMainCountdown,
   setShowSlotMachine,
@@ -81,6 +77,16 @@ export function useDraftLiveSync({
   const liveInitializedRef = useRef(false);
   const joinCalledRef = useRef(false);
   const liveRetryCountRef = useRef(0);
+  // How many times loadLiveData has waited because the draft simply hasn't
+  // STARTED yet (still filling/randomizing). These waits are NOT failures —
+  // a slow bot-filled draft can sit in filling for minutes — so they must not
+  // count toward liveRetryCountRef (the fall-to-local budget). Bounded only by
+  // a generous ceiling so a genuinely stuck draft still eventually surfaces.
+  const fillingWaitCountRef = useRef(0);
+  // Mirror of `phase` so the loadLiveData retry closure (which doesn't list
+  // phase in its deps) can read the CURRENT phase when deciding wait-vs-fail.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   const loadLiveDataRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadLiveDataReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWsMessagesRef = useRef<PendingWsMessage[]>([]);
@@ -112,9 +118,11 @@ export function useDraftLiveSync({
 
   const firebaseEndOfTurn = firebaseRtdb.data?.pickEndTime ?? null;
   const firebaseDraftStart = firebaseRtdb.data?.draftStartTime ?? null;
+  const firebasePickLength = firebaseRtdb.data?.pickLength ?? null;
   const firebaseTimeRemaining = useTimeRemaining(
     firebaseActive ? firebaseEndOfTurn : null,
     firebaseActive ? firebaseDraftStart : null,
+    firebaseActive ? firebasePickLength : null,
   );
 
   useEffect(() => {
@@ -144,27 +152,18 @@ export function useDraftLiveSync({
     async function joinAndFill() {
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
-
-      // Auto-mint a token before joining so the wallet always has one available
-      try {
-        const { getStagingApiUrl } = await import('@/lib/staging');
-        const apiBase = getStagingApiUrl();
-        if (apiBase) {
-          const mintId = Date.now();
-          await fetch(`${apiBase}/owner/${walletParam}/draftToken/mint`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minId: mintId, maxId: mintId }),
-          });
-        }
-      } catch {
-        // Mint may fail if token already exists — that's fine
-      }
+      // NOTE: no auto-mint here. Entry uses the real draft pass the wallet
+      // already holds (free or paid), exactly like prod — the backend selects
+      // a pass of the chosen type and binds that exact token to the league.
+      // (Previously this minted a fake Date.now() staging token every join,
+      // which bypassed the real pass, piled up stray tokens, and broke leave/
+      // refund. Stock test wallets via /staging/mint-tokens instead.)
 
       for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
         try {
           const { joinDraft } = await import('@/lib/api/leagues');
-          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, promoTypeParam ?? undefined, passTypeParam || 'paid');
+          // Draft TYPE is never client-chosen — backend provably-fair only.
+          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 
           const newId = draftRoom.id;
@@ -218,6 +217,14 @@ export function useDraftLiveSync({
             passType: passTypeParam || 'paid',
             cardId: draftRoom.cardId,
           });
+          // addDraft no-ops if a record for this draftId already exists, which
+          // would leave a STALE cardId from a previous join — and leaving then
+          // sends the wrong token → 409 ("said good but kept me in"). Force the
+          // exact token this join landed on so leave refunds the token we
+          // actually entered with.
+          if (draftRoom.cardId) {
+            draftStore.updateDraft(newId, { cardId: draftRoom.cardId });
+          }
 
           return;
         } catch (err) {
@@ -235,7 +242,7 @@ export function useDraftLiveSync({
         message: lastErr instanceof Error ? lastErr.message : String(lastErr),
         route: 'draft-room',
         actor: walletParam,
-        context: { speed: speedParam || 'fast', passType: passTypeParam || 'paid', promoType: promoTypeParam ?? null, attempts: MAX_JOIN_RETRIES },
+        context: { speed: speedParam || 'fast', passType: passTypeParam || 'paid', attempts: MAX_JOIN_RETRIES },
         stack: lastErr instanceof Error ? lastErr.stack : undefined,
       });
       draftStore.removeDraft(pendingId);
@@ -243,16 +250,18 @@ export function useDraftLiveSync({
     }
 
     joinAndFill();
-  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, promoTypeParam, setDraftId]);
+  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, setDraftId]);
 
-  const handleLiveDraft = useCallback((playerId: string) => {
+  const handleLiveDraft = useCallback((playerId: string, isAuto = false) => {
     // Manual-pick / airplane auto-off side effects are handled at the
     // page level (app/draft-room/page.tsx → onDraftPlayer prop) because
     // the airplane icon in live mode reads from the page's `autoDraft`
     // state, which this hook can't touch. Here we just mark the pick as
     // manual so the engine's consecutive-timeout counter resets when the
     // pick echoes back through Firebase.
-    engine.markManualPick();
+    // isAuto=true is an AIRPLANE auto-pick — don't mark it manual (that would
+    // reset the strike counter and flag the user as active).
+    if (!isAuto) engine.markManualPick();
     if (!isLiveMode) {
       engine.draftPlayer(playerId);
       return;
@@ -268,34 +277,88 @@ export function useDraftLiveSync({
         position: pickPayload.position,
       }).then(() => {
         logger.debug('[REST] Pick submitted:', pickPayload.playerId);
+        // The Go pick route treats every submitted pick as MANUAL and clears
+        // the server AutoDraft flag + missed counter. For an airplane
+        // auto-pick that's wrong — the user still wants auto on — and it
+        // left the server unable to pick for them offline (the next turn
+        // burned the full slow-draft clock). Re-arm the flag immediately;
+        // pure idempotent prefs write, and the page-level post-pick sync is
+        // the safety net if this one call fails.
+        if (isAuto) {
+          draftApi.patchDraftPreferences(draftId, walletParam, true).catch((e) => {
+            reportClientError({
+              source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+              message: e instanceof Error ? e.message : String(e),
+              route: 'draft-room.handleLiveDraft',
+              actor: walletParam,
+              context: { draftId, stage: 're-arm-after-airplane-pick' },
+            });
+          });
+        }
       }).catch((err) => {
         const msg = err?.message || '';
         const match = msg.match(/already picked (\S+)/);
-        const handledByAutopick = engine.airplaneMode && engine.isUserTurn && !!match;
-        if (handledByAutopick) {
+        if (match) {
+          // The pick was rejected because that player is already drafted —
+          // either a stale board (a missed live update) or a lost race on a
+          // simultaneous pick. Drop the player from the board immediately so
+          // it stops showing as available. The buttons stay live, so the
+          // user can pick someone else right away — a failed tap can NEVER
+          // strand them (this is why we never lock the UI). Applies to BOTH
+          // manual taps and airplane auto-picks; previously only airplane
+          // mode self-healed, so manual taps silently 400'd forever.
           const staleId = match[1];
-          logger.debug('[Airplane] Removing stale player and retrying:', staleId);
           engine.removeFromAvailable(staleId);
-          // Defer to next tick so removeFromAvailable settles before
-          // getAutoPickPlayer runs. Was 300ms — no longer visible.
-          setTimeout(() => {
-            const nextPick = engine.getAutoPickPlayer();
-            if (nextPick && draftId) {
-              logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
-              const retryPayload = engine.draftPlayer(nextPick);
-              if (retryPayload) {
-                draftApi.submitPickREST(draftId, walletParam, {
-                  playerId: retryPayload.playerId,
-                  displayName: retryPayload.displayName,
-                  team: retryPayload.team,
-                  position: retryPayload.position,
-                }).catch(e => console.error('[Airplane] Retry failed:', e));
+          if (engine.airplaneMode && engine.isUserTurn) {
+            // Airplane auto-pick landed on a stale player → retry with the
+            // next best available on the next tick (after removal settles).
+            logger.debug('[Airplane] Stale player removed, retrying:', staleId);
+            setTimeout(() => {
+              const nextPick = engine.getAutoPickPlayer();
+              if (nextPick && draftId) {
+                logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
+                const retryPayload = engine.draftPlayer(nextPick);
+                if (retryPayload) {
+                  draftApi.submitPickREST(draftId, walletParam, {
+                    playerId: retryPayload.playerId,
+                    displayName: retryPayload.displayName,
+                    team: retryPayload.team,
+                    position: retryPayload.position,
+                  }).then(() => {
+                    // Same re-arm as the primary airplane submit: the Go pick
+                    // route clears the server AutoDraft flag on every pick.
+                    draftApi.patchDraftPreferences(draftId, walletParam, true).catch(() => { /* post-pick sync is the safety net */ });
+                  }).catch(e => {
+                    console.error('[Airplane] Retry failed:', e);
+                    // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
+                    reportClientError({
+                      source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+                      message: e instanceof Error ? e.message : String(e),
+                      route: 'draft-room',
+                      actor: walletParam,
+                      context: { draftId, playerId: retryPayload.playerId, retry: true },
+                    });
+                  });
+                }
               }
-            }
-          }, 0);
+            }, 0);
+          } else {
+            // Manual tap on an already-drafted player. The board has been
+            // healed above (player removed), so the user simply picks again.
+            // Log for visibility — no longer a silent dead-end.
+            logger.debug('[Pick] Removed already-drafted player from board:', staleId);
+            reportClientError({
+              source: LOG_SOURCES.draft.PICK_SUBMIT_UNHANDLED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, playerId: pickPayload.playerId, reason: 'stalePlayerRemoved', airplaneMode: engine.airplaneMode, isUserTurn: engine.isUserTurn },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          }
         } else {
-          // Pick-submit failure that the autopick stale-player handler
-          // does not cover — surface it so we don't silently drop picks.
+          // Non-"already picked" failure (network / 5xx / etc.) — surface it
+          // so we don't silently drop picks.
           reportClientError({
             source: LOG_SOURCES.draft.PICK_SUBMIT_UNHANDLED,
             message: err instanceof Error ? err.message : String(err),
@@ -581,23 +644,98 @@ export function useDraftLiveSync({
           }
         }
       } catch (err) {
+        setLiveLoading(false);
+
+        // ── Patient wait: the draft simply hasn't STARTED yet ──────────────
+        // "Required draft data not available yet" while the room is still
+        // filling/randomizing is NOT a failure — the backend has no draftOrder
+        // until the draft starts, and a slow bot-filled draft can sit filling
+        // for minutes. Keep polling patiently WITHOUT touching the
+        // fall-to-local budget (liveRetryCountRef). This is the fix for
+        // draft.live_load_exhausted_retries firing on slow-filling drafts: the
+        // old code burned its ~100s budget and dropped the user into local
+        // mode minutes before the (perfectly healthy) draft actually started.
+        const notStartedYet = err instanceof Error && err.message === 'Required draft data not available yet';
+        const stillFilling = phaseRef.current === 'filling' || phaseRef.current === 'pre-spin'
+          || phaseRef.current === 'countdown' || phaseRef.current === 'spinning' || phaseRef.current === 'result';
+        const MAX_FILLING_WAITS = 150; // ~150 × 4s ≈ 10 min — far beyond any real fill
+        if (notStartedYet && stillFilling && fillingWaitCountRef.current < MAX_FILLING_WAITS) {
+          fillingWaitCountRef.current += 1;
+          clientLog('liveload', 'waiting-for-draft-start', {
+            draftId, phase: phaseRef.current, waits: fillingWaitCountRef.current,
+          });
+          if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
+          if (loadLiveDataReadyTimeoutRef.current) clearTimeout(loadLiveDataReadyTimeoutRef.current);
+          loadLiveDataRetryTimeoutRef.current = setTimeout(() => {
+            liveInitializedRef.current = false;
+            setLiveDataReady(false);
+            loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
+              setLiveDataReady(true);
+              loadLiveDataReadyTimeoutRef.current = null;
+            }, 100);
+            loadLiveDataRetryTimeoutRef.current = null;
+          }, 4000);
+          return;
+        }
+        // ───────────────────────────────────────────────────────────────────
+
         const MAX_OUTER_RETRIES = 8;
         liveRetryCountRef.current += 1;
         console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
-        setLiveLoading(false);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
-          logger.debug('[Draft Room] All retries exhausted — falling back to local mode');
+          // While the room is still FILLING, the visible screen runs off its own
+          // poll — the live connection isn't load-bearing until the draft fills,
+          // so don't alarm the user with a "connection error" banner yet. Keep
+          // retrying silently; if it's still dead once the draft fills, the next
+          // exhaustion (post-fill phase) surfaces the banner, and the page's
+          // countdown-end live-not-ready guard still protects draft start.
+          const suppressWhileFilling = phaseRef.current === 'filling';
+          logger.debug(suppressWhileFilling
+            ? '[Draft Room] Retries exhausted while filling — banner suppressed, retrying silently'
+            : '[Draft Room] Retries exhausted — surfacing reconnect UI (NO fake local draft)');
           reportClientError({
             source: LOG_SOURCES.draft.LIVE_LOAD_EXHAUSTED,
             message: err instanceof Error ? err.message : String(err),
             route: 'draft-room',
             actor: walletParam,
-            context: { draftId, attempts: liveRetryCountRef.current, maxRetries: MAX_OUTER_RETRIES },
+            context: {
+              draftId,
+              attempts: liveRetryCountRef.current,
+              maxRetries: MAX_OUTER_RETRIES,
+              phase: phaseRef.current,
+              fillingWaits: fillingWaitCountRef.current,
+              // If fillingWaits hit the ceiling, this draft was stuck FILLING for
+              // ~10min (real problem) rather than just genuinely-broken data.
+              stuckWhileFilling: fillingWaitCountRef.current >= 150,
+              bannerSuppressedWhileFilling: suppressWhileFilling,
+            },
             stack: err instanceof Error ? err.stack : undefined,
           });
-          setFallbackLocal(true);
-          liveInitializedRef.current = true;
+          // NEVER fall to a local bot-simulated draft: it diverges from the real
+          // server draft and only a refresh recovered from it. Surface the existing
+          // "Draft connection error → Retry" banner instead, and leave the loader
+          // re-runnable (liveInitializedRef stays false, retry counter reset) so
+          // Retry / returning to the tab reloads the REAL draft. The server
+          // auto-picks the user's turns while disconnected, so nothing is lost by
+          // waiting rather than faking.
+          if (!suppressWhileFilling) {
+            setLiveError('Still connecting to the live draft — tap Retry.');
+          }
+          liveRetryCountRef.current = 0;
+          if (suppressWhileFilling) {
+            if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
+            if (loadLiveDataReadyTimeoutRef.current) clearTimeout(loadLiveDataReadyTimeoutRef.current);
+            loadLiveDataRetryTimeoutRef.current = setTimeout(() => {
+              liveInitializedRef.current = false;
+              setLiveDataReady(false);
+              loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
+                setLiveDataReady(true);
+                loadLiveDataReadyTimeoutRef.current = null;
+              }, 100);
+              loadLiveDataRetryTimeoutRef.current = null;
+            }, 5000);
+          }
         } else {
           logger.debug('[Live Mode] Auto-retrying in 5s...');
           if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
@@ -706,6 +844,49 @@ export function useDraftLiveSync({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, engine.draftStatus]);
 
+  // ── Turn-start authoritative refresh ──────────────────────────────────
+  // Live state is built incrementally from a single Firebase `lastPick`
+  // field; RTDB can coalesce/skip an intermediate snapshot, which leaves an
+  // already-drafted player still showing as available (and the user's own
+  // pick missing from their roster — the "blank" roster). On YOUR turn no one
+  // else can pick, so the instant your turn starts we pull the full
+  // authoritative board + rosters from REST and rebuild from the source of
+  // truth. That makes a stale/ghost player impossible for the duration of
+  // your pick, and repairs your roster if a prior pick was missed.
+  //
+  // Safety:
+  //  • Fires EXACTLY ONCE per turn — guarded by lastTurnRefreshRef keyed on
+  //    the pick number, set synchronously before the fetch — so it can never
+  //    loop (RULE #0). Deps are scalars only; no Privy-derived callback.
+  //  • Additive / non-blocking: we never lock the UI. If the fetch fails we
+  //    keep the existing live state and the user can still pick.
+  const lastTurnRefreshRef = useRef<number>(0);
+  useEffect(() => {
+    if (!isLiveMode || !draftId) return;
+    if (engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+    if (!liveInitializedRef.current) return;
+    const pick = engine.currentPickNumber;
+    if (lastTurnRefreshRef.current === pick) return; // already refreshed this turn
+    lastTurnRefreshRef.current = pick;               // set before await → single-shot
+    draftApi.getDraftSummary(draftId).then(summary => {
+      if (summary.length > 0) {
+        engine.refreshSummaryPicks(summary);
+        logger.debug(`[TurnRefresh] pick ${pick}: synced ${countSummaryPicks(summary)} picks from REST`);
+      }
+    }).catch((err) => {
+      // Non-blocking: log and fall back to existing live state.
+      reportClientError({
+        source: LOG_SOURCES.draft.WATCHDOG_RESYNC_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, call: 'getDraftSummary', trigger: 'turnRefresh', pick },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, draftId, engine.isUserTurn, engine.currentPickNumber, engine.draftStatus]);
+
   const retryLiveSync = useCallback(() => {
     if (loadLiveDataRetryTimeoutRef.current) {
       clearTimeout(loadLiveDataRetryTimeoutRef.current);
@@ -716,6 +897,7 @@ export function useDraftLiveSync({
       loadLiveDataReadyTimeoutRef.current = null;
     }
     liveRetryCountRef.current = 0;
+    fillingWaitCountRef.current = 0;
     liveInitializedRef.current = false;
     setLiveError(null);
     setLiveDataReady(false);
@@ -726,11 +908,74 @@ export function useDraftLiveSync({
   }, [setLiveDataReady]);
 
   const bestTimeRemaining = useMemo(() => {
-    const value = (firebaseActive && firebaseTimeRemaining !== null)
-      ? firebaseTimeRemaining
-      : engine.timeRemaining;
-    return value ?? 0;
-  }, [firebaseActive, firebaseTimeRemaining, engine.timeRemaining]);
+    // The displayed clock MUST be a pure function of the SHARED server pick-end
+    // timestamp and the local now, with ONE rounding rule — otherwise desktop
+    // and mobile drift (the first-pick "desktop 29 / mobile 27" desync). Order:
+    //   1. Firebase's pickEndTime − now (floor, via useTimeRemaining)        [shared]
+    //   2. the engine's endOfTurnTimestamp − now, computed with the SAME floor.
+    //      It's the IDENTICAL server pickEndTime (set from the same WS/RTDB),
+    //      so a device whose Firebase subscription isn't live yet (e.g. a
+    //      slower-loading phone on the first pick) still shows the exact same
+    //      number as a device already on Firebase. NEVER engine.timeRemaining
+    //      here — that's a per-device ceil()/default LOCAL countdown and is the
+    //      whole reason the two devices diverged. Gated to active drafting so
+    //      it can't interfere with the pre-draft start countdown, and to fast
+    //      drafts (slow drafts use the active-window clock in useTimeRemaining).
+    //   3. engine.timeRemaining only as a last resort, before ANY server
+    //      pick-end timestamp exists (both devices show the same default there).
+    let value: number | null;
+    if (firebaseActive && firebaseTimeRemaining !== null) {
+      value = firebaseTimeRemaining;
+    } else if (
+      engine.draftStatus === 'active'
+      && engine.endOfTurnTimestamp > 0
+      && !isSlowDraftPickLength(firebasePickLength ?? 0)
+    ) {
+      value = Math.max(0, Math.ceil((engine.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+    } else if (
+      engine.draftStatus === 'active'
+      && engine.endOfTurnTimestamp > 0
+      && isSlowDraftPickLength(firebasePickLength ?? 0)
+    ) {
+      // SLOW draft, Firebase not live yet on this device: compute from the SAME
+      // shared server pickEndTime (engine.endOfTurnTimestamp, identical to the
+      // Firebase value) using the SAME pause-aware active-window math the
+      // Firebase path uses — so mobile and desktop match instead of falling to
+      // the per-device raw engine.timeRemaining. Produces the identical number
+      // as branch 1, so there's no jump when Firebase goes live. FAST drafts are
+      // untouched (they keep the branch above).
+      value = slowDraftActiveSecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp);
+    } else {
+      value = engine.timeRemaining;
+    }
+    const raw = value ?? 0;
+    // Display cap: the clock CEILs the remaining (so a 30s pick window reads a
+    // solid 30 → 0 instead of starting at 29). The only way ceil exceeds the
+    // window is a slightly-behind device clock making `pickEnd − now` read e.g.
+    // 30.4s → ceil 31. Cap to pickLength so it never flashes 31. No-op for slow
+    // drafts (their pickLength window is hours).
+    if (firebasePickLength && firebasePickLength > 0) {
+      return Math.min(raw, firebasePickLength);
+    }
+    return raw;
+  }, [firebaseActive, firebaseTimeRemaining, engine.draftStatus, engine.endOfTurnTimestamp, engine.timeRemaining, firebasePickLength]);
+
+  // Slow drafts pause overnight (22:00–05:00 PT). Surface whether this is a slow
+  // draft and whether the clock is currently frozen so the UI can show the
+  // "paused, you can still pick" copy. Polled because during the pause the timer
+  // value is constant (no re-render) — we still need to flip the flag at 05:00.
+  const isSlowDraft = isSlowDraftPickLength(firebasePickLength ?? 0);
+  const [isSlowDraftPaused, setIsSlowDraftPaused] = useState(false);
+  useEffect(() => {
+    if (!firebaseActive || !isSlowDraft) {
+      setIsSlowDraftPaused(false);
+      return;
+    }
+    const check = () => setIsSlowDraftPaused(isSlowDraftNightPause(Math.floor(Date.now() / 1000)));
+    check();
+    const id = setInterval(check, 15000);
+    return () => clearInterval(id);
+  }, [firebaseActive, isSlowDraft]);
 
   return {
     liveLoading,
@@ -743,6 +988,8 @@ export function useDraftLiveSync({
     firebaseRtdb,
     ws,
     bestTimeRemaining,
+    isSlowDraft,
+    isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
     liveInitializedRef,

@@ -3,9 +3,11 @@ import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import {
   OPENSEA_API_BASE,
-  BBB4_CONTRACT,
+  COLLECTION_SLUG,
   type OfferData,
 } from '@/lib/opensea';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
+import { isPlaceholderName } from '@/lib/api/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,86 +23,121 @@ export async function GET(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
-    }
-
     const tokenId = getSearchParam(req, 'tokenId');
     if (!tokenId) {
       return jsonError('Missing tokenId parameter', 400);
     }
 
-    // Fetch offers from OpenSea orderbook
-    const params = new URLSearchParams({
-      asset_contract_address: BBB4_CONTRACT,
-      token_ids: tokenId,
-      order_by: 'eth_price',
-      order_direction: 'desc',
-      limit: '50',
-    });
+    const offers: OfferData[] = [];
+    const seen = new Set<string>();
+    const nowMs = Date.now();
 
-    const offersRes = await fetch(
-      `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers?${params}`,
-      {
-        headers: {
-          accept: 'application/json',
-          'x-api-key': OPENSEA_API_KEY,
-        },
-        cache: 'no-store',
-      },
-    );
+    // Cached state up front: live offers to add later, and consumed hashes to
+    // VETO OpenSea's view — it keeps reporting an offer as live for minutes
+    // after its on-chain cancel/acceptance; our consumed markers know better.
+    const { getCachedOfferState } = await import('@/lib/marketplace/offerCache');
+    const cachedState = await getCachedOfferState(tokenId);
 
-    if (!offersRes.ok) {
-      const text = await offersRes.text();
-      console.error('[marketplace/offers] OpenSea error:', offersRes.status, text);
-      return jsonError('Failed to fetch offers', offersRes.status >= 500 ? 502 : offersRes.status);
+    // 1) OpenSea first — the item-offers endpoint carries the real order hash +
+    //    protocol address, which Accept/Cancel need. (The old GET on
+    //    /v2/orders/.../offers now 405s — OpenSea made that URL POST-only.)
+    //    Best-effort: NEVER fail the whole request on an OpenSea error; our own
+    //    cache below covers offers made through SBS.
+    if (OPENSEA_API_KEY) {
+      try {
+        const offersRes = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/offers/collection/${COLLECTION_SLUG}/nfts/${tokenId}?limit=50`,
+          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
+        );
+        if (offersRes.ok) {
+          const offersData = await offersRes.json();
+          for (const order of (offersData.offers ?? []) as Array<Record<string, unknown>>) {
+            const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; endTime: string } })?.parameters;
+            if (!p) continue;
+            const hash = order.order_hash as string;
+            if (!hash || seen.has(hash) || cachedState.consumedHashes.has(hash)) continue;
+            const totalUsdcWei = (p.offer || []).reduce((s: bigint, it: { startAmount: string }) => s + BigInt(it.startAmount || '0'), 0n);
+            const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
+            if (new Date(expiresAt) <= new Date()) continue;
+            seen.add(hash);
+            offers.push({
+              orderHash: hash,
+              offererAddress: p.offerer,
+              offererName: `${p.offerer.slice(0, 6)}...${p.offerer.slice(-4)}`,
+              offererPfp: null,
+              amount: Number(totalUsdcWei) / 1e6,
+              expiresAt,
+              protocolAddress: order.protocol_address as string,
+            });
+          }
+        } else {
+          console.error('[marketplace/offers] OpenSea error (non-fatal):', offersRes.status);
+        }
+      } catch (e) { console.error('[marketplace/offers] OpenSea fetch failed (non-fatal):', e); }
     }
 
-    const offersData = await offersRes.json();
-    const orders = offersData.orders ?? [];
-
-    // Parse each offer
-    const offers: OfferData[] = orders
-      .filter((order: Record<string, unknown>) => {
-        // Only include active/valid offers
-        const cancelled = order.cancelled as boolean;
-        const finalized = order.finalized as boolean;
-        return !cancelled && !finalized;
-      })
-      .map((order: Record<string, unknown>) => {
-        const protocolData = order.protocol_data as {
-          parameters: {
-            offerer: string;
-            offer: Array<{ startAmount: string; token: string }>;
-            endTime: string;
-          };
-        };
-        const params = protocolData.parameters;
-
-        // Sum USDC amounts from the offer array (the USDC the offerer is putting up)
-        const totalUsdcWei = params.offer.reduce((sum: bigint, item: { startAmount: string }) => {
-          return sum + BigInt(item.startAmount);
-        }, 0n);
-
-        // Convert from USDC wei (6 decimals) to dollars
-        const amount = Number(totalUsdcWei) / 1e6;
-
-        const expiresAt = new Date(Number(params.endTime) * 1000).toISOString();
-
-        return {
-          orderHash: order.order_hash as string,
-          offererAddress: params.offerer,
-          offererName: `${params.offerer.slice(0, 6)}...${params.offerer.slice(-4)}`,
+    // 2) OUR offer cache — instant supplement so an offer just made through SBS
+    //    shows before OpenSea has indexed it (and survives OpenSea outages).
+    //    Dedupe by orderHash ONLY (cache hashes are the client-computed Seaport
+    //    hash, identical to OpenSea's) — deduping by offerer here would let an
+    //    older indexed offer shadow a newer not-yet-indexed one during the lag.
+    //    The per-wallet collapse below picks the display winner.
+    try {
+      for (const c of cachedState.active) {
+        if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
+        const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        offers.push({
+          orderHash: c.orderHash,
+          offererAddress: c.offerer,
+          offererName: `${c.offerer.slice(0, 6)}...${c.offerer.slice(-4)}`,
           offererPfp: null,
-          amount,
-          expiresAt,
-          protocolAddress: order.protocol_address as string,
-        };
-      })
-      .filter((offer: OfferData) => {
-        // Filter out expired offers
-        return new Date(offer.expiresAt) > new Date();
-      });
+          amount: c.priceUsd,
+          expiresAt: c.endTimeSec ? new Date(Number(c.endTimeSec) * 1000).toISOString() : new Date(nowMs + 7 * 86400000).toISOString(),
+          protocolAddress: '',
+        });
+      }
+    } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
+
+    // OpenSea-style funding validation: an offer is only real if the offerer
+    // STILL holds enough USDC and has approved the Seaport conduit for it. The
+    // funds aren't escrowed — if the offerer spent/withdrew them (e.g. minted a
+    // pass or bought a team), the offer would revert on accept. OpenSea hides
+    // such offers from sellers; we do the same so a seller never accepts one
+    // that can't pay. Best-effort: on any RPC error we KEEP the offer (never
+    // hide a real order just because a balance read hiccuped).
+    if (offers.length > 0) {
+      const OPENSEA_CONDUIT_ADDRESS = '0x1e0049783f008a0085193e00003d00cd54003c71';
+      try {
+        const { createPublicClient, http } = await import('viem');
+        const { BASE, BASE_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS, USDC_ABI } = await import('@/lib/contracts/bbb4');
+        const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+        const fundOf = new Map<string, { bal: bigint; allow: bigint }>();
+        await Promise.all(
+          [...new Set(offers.map((o: OfferData) => o.offererAddress.toLowerCase()))].map(async (addr) => {
+            try {
+              const [bal, allow] = await Promise.all([
+                client.readContract({ address: BASE_SEPOLIA_USDC_ADDRESS, abi: USDC_ABI, functionName: 'balanceOf', args: [addr as `0x${string}`] }),
+                client.readContract({ address: BASE_SEPOLIA_USDC_ADDRESS, abi: USDC_ABI, functionName: 'allowance', args: [addr as `0x${string}`, OPENSEA_CONDUIT_ADDRESS as `0x${string}`] }),
+              ]);
+              fundOf.set(addr, { bal: bal as bigint, allow: allow as bigint });
+            } catch { /* unreadable → leave unset → keep the offer */ }
+          }),
+        );
+        for (let i = offers.length - 1; i >= 0; i--) {
+          const f = fundOf.get(offers[i].offererAddress.toLowerCase());
+          if (!f) continue; // couldn't verify → don't hide
+          const needWei = BigInt(Math.ceil(offers[i].amount * 1e6));
+          if (f.bal < needWei || f.allow < needWei) offers.splice(i, 1); // underfunded → hide
+        }
+      } catch (e) { console.error('[marketplace/offers] funding validation skipped (non-fatal):', e); }
+    }
+
+    // Show EVERY remaining live offer (deduped by orderHash above) — each is a
+    // separate signed order the owner can accept and the offerer can cancel, so
+    // hiding any of them hides a real cancellable/acceptable order.
+    offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
     // Enrich with SBS profiles (same pattern as listings route)
     const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
@@ -128,11 +165,15 @@ export async function GET(req: Request) {
       );
 
       for (const offer of offers) {
-        const profile = profiles.get(offer.offererAddress.toLowerCase());
-        if (profile) {
-          if (profile.name) offer.offererName = profile.name;
-          if (profile.pfp) offer.offererPfp = profile.pfp;
-        }
+        const addr = offer.offererAddress.toLowerCase();
+        const profile = profiles.get(addr);
+        // Real, user-chosen Go name wins (a Go name equal to the wallet's own
+        // hash default is the app's old auto-sync echo); otherwise the neutral
+        // placeholder — never the colliding wallet-hash handle.
+        offer.offererName = profile?.name && !isPlaceholderName(profile.name, addr) && profile.name !== bananaDefaultName(addr)
+          ? profile.name
+          : bananaPlaceholderName(addr);
+        if (profile?.pfp) offer.offererPfp = profile.pfp;
       }
     } catch { /* enrichment failed — continue with raw data */ }
 
@@ -165,6 +206,8 @@ export async function POST(req: Request) {
       return jsonError('Missing signed order fields', 400);
     }
 
+    // Forward ONLY the order fields to OpenSea — never our internal `_meta`.
+    const openSeaBody = { parameters: body.parameters, signature: body.signature, protocol_address: body.protocol_address };
     const postRes = await fetch(
       `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers`,
       {
@@ -174,7 +217,7 @@ export async function POST(req: Request) {
           'content-type': 'application/json',
           'x-api-key': OPENSEA_API_KEY,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(openSeaBody),
       },
     );
 
@@ -190,7 +233,42 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    return json({ orderHash: result.order?.order_hash || '' });
+    // OpenSea's offer response shape has varied — try the known paths, then the
+    // client-computed Seaport hash (deterministic, so it equals OpenSea's).
+    const metaHash = typeof (body._meta as { orderHash?: unknown })?.orderHash === 'string' ? (body._meta as { orderHash: string }).orderHash : '';
+    const orderHash = (result.order?.order_hash || result.order_hash || result.orders?.[0]?.order_hash || metaHash || '') as string;
+
+    // Cache the offer so the detail page shows it instantly. OpenSea's offers
+    // feed lags (or silently never returns it), so without a cache a fresh offer
+    // never appeared. Prefer the client's explicit `_meta`; fall back to digging
+    // the fields out of the signed order. Best-effort.
+    try {
+      const meta = (body._meta || {}) as { tokenId?: string; priceUsd?: number; offerer?: string; endTimeSec?: string };
+      const p = body.parameters as {
+        offerer?: string;
+        endTime?: string;
+        offer?: Array<{ startAmount?: string }>;
+        consideration?: Array<{ itemType?: number | string; identifierOrCriteria?: string; identifier?: string }>;
+      };
+      const nftItem = (p.consideration || []).find(c => Number(c.itemType) === 2 || Number(c.itemType) === 3);
+      const tokenId = meta.tokenId || nftItem?.identifierOrCriteria || nftItem?.identifier;
+      const offerer = meta.offerer || p.offerer;
+      const usdcWei = (p.offer || []).reduce((s, it) => s + BigInt(it.startAmount || '0'), 0n);
+      const priceUsd = typeof meta.priceUsd === 'number' ? meta.priceUsd : Number(usdcWei) / 1e6;
+      // Record even if OpenSea didn't return an orderHash — the offer cache uses
+      // a tokenId+offerer fallback key, so the offer still shows (the owner just
+      // can't one-click-accept until a real hash is known; the offer is real).
+      if (tokenId && offerer) {
+        const { recordOffer } = await import('@/lib/marketplace/offerCache');
+        // Store the full signed Seaport parameters too — lets the offerer cancel
+        // during OpenSea's indexing lag (cancel route falls back to this).
+        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd, offerer, endTimeSec: meta.endTimeSec || p.endTime || null, parameters: (body.parameters as Record<string, unknown>) || null });
+      } else {
+        console.error('[marketplace/offers] cache skip — missing tokenId/offerer', { hasMeta: !!body._meta, tokenId, offerer });
+      }
+    } catch (e) { console.error('[marketplace/offers] cache write failed:', e); }
+
+    return json({ orderHash });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/offers] POST failed:', err);

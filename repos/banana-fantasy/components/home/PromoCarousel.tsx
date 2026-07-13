@@ -4,10 +4,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
-import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { API_CONFIG } from '@/lib/api/config';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 
 interface PromoCarouselProps {
+  /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
+  heading?: string;
   promos: Promo[];
   autoPlay?: boolean;
   claimPromo?: (promoId: string) => Promise<{ spinsAdded: number } | Error | null>;
@@ -32,8 +37,11 @@ function useVisibleCount() {
   return count;
 }
 
-export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode }: PromoCarouselProps) {
-  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder } = useAuth();
+export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode, heading = 'Promos' }: PromoCarouselProps) {
+  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
+  // Pick 10 expands to 6, 9 & 10 while the batch's specials are all hit.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
   const VISIBLE_COUNT = useVisibleCount();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -68,17 +76,33 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   const sortedPromos = filterAndSortVisiblePromos(promos, {
     isBB3Holder,
     newUserPromoClaimed,
+    hasSpunWheel: !!user?.hasSpunWheel,
+    firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
+    firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+    flagsKnown: isBalanceLoaded,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
+    isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
 
   // Create extended array with clones for infinite loop
   const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
   const startOffset = sortedPromos.length; // Start at the middle copy
 
-  // Reset carousel position when promos re-sort (e.g., after minting)
+  // Snap back to the first promo ONLY when the ORDER / claim state actually
+  // changes — a new claim becomes available, a promo is added/removed, or the
+  // sort reorders (e.g. after minting). NOT on every parent re-render: the parent
+  // hands down a NEW `promos` array reference on each refetch/poll even when the
+  // content is identical, and depending on that raw reference yanked the user
+  // back to promo #1 a second after they swiped (mobile bug). A stable signature
+  // of the sorted id-order + claim state fires the reset only on a REAL change,
+  // so a manual swipe sticks until refresh or a genuine reorder/claim — matching
+  // desktop. (Progress ticking up within the same order does NOT snap back.)
+  const orderSignature = sortedPromos
+    .map((p) => `${p.id}:${p.claimable ? 1 : 0}:${p.claimCount ?? 0}`)
+    .join('|');
   useEffect(() => {
     setCurrentIndex(startOffset);
-  }, [promos, startOffset]);
+  }, [orderSignature, startOffset]);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -157,9 +181,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
 
     const count = promo.claimCount || 1;
-    if (promo.type === 'jackpot' || promo.type === 'hof') {
-      reservePromoDraftType(promo.type, count);
-    }
+    // NOTE: a promo claim must NEVER pre-determine a draft's type. Draft type
+    // (Jackpot/HOF/Pro) is decided solely by the backend's provably-fair
+    // guaranteed distribution at fill time. The old reservePromoDraftType()
+    // call here forced the next draft's outcome — removed as a rigging vector.
 
     // Use real backend claim if available — celebration modal fires
     // centrally from usePromos.claimPromo via ClaimCelebrationContext.
@@ -174,7 +199,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     // because we'd be lying about a backend reward.
     setClaimedPromos(prev => new Set([...Array.from(prev), promo.id]));
     if (user) {
-      if (promo.type === 'buy-bonus') {
+      if (promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft') {
         updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
       } else {
         updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
@@ -187,7 +212,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   return (
     <div className="space-y-4">
       {/* Section Title */}
-      <h2 className="text-2xl font-bold text-text-primary text-center">Promos</h2>
+      <h2 className="text-2xl font-bold text-text-primary text-center">{heading}</h2>
 
       {/* Carousel with arrows */}
       <div className="flex items-center justify-center gap-6">
@@ -226,14 +251,22 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
+              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
               const progressMax = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (promo.progressMax || 10);
-              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed ? progressMax : (promo.progressCurrent || 0));
-              const progressPercent = isClaimed ? 100 : (hasProgress
+              // Stacking promos (Buy-10 spin, buy-bonus) repeat — after a
+              // claim the bar keeps showing real rolled-over progress (0/10),
+              // never a forced full bar (reads as "done, can't earn again").
+              const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
+              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0));
+              const progressPercent = isClaimed && !isStacking ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
+              // Featured (July 4th) card gets the patriotic treatment:
+              // flag stripe, chip, corner stars, red ribbon, red→blue bar.
+              const isJuly4 = !!promo.featured;
               return (
                 <div
                   key={`${promo.id}-${index}`}
@@ -241,13 +274,24 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   className={`
-                    relative overflow-hidden rounded-[20px] p-5 w-52 h-44 flex-shrink-0 transition-all duration-200 cursor-pointer
+                    relative overflow-hidden rounded-[20px] p-5 w-52 h-56 flex-shrink-0 transition-all duration-200 cursor-pointer
                     bg-[#fbfbfd]
                     ${isHovered
                       ? 'border-2 border-banana shadow-[0_0_15px_rgba(251,191,36,0.3)]'
                       : 'border border-[#d2d2d7] shadow-sm'}
                   `}
                 >
+                  {/* July 4th featured treatment — flag stripe + faint corner stars */}
+                  {isJuly4 && (
+                    <>
+                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#ef4444] via-[#f8fafc] to-[#3b82f6]" />
+                      <span className="absolute left-3 top-9 z-[5] text-[#ef4444]/50 text-xs pointer-events-none">✦</span>
+                      <span className="absolute right-8 top-14 z-[5] text-[#3b82f6]/45 text-[10px] pointer-events-none">✦</span>
+                      <span className="absolute left-5 bottom-9 z-[5] text-[#3b82f6]/50 text-sm pointer-events-none">✦</span>
+                      <span className="absolute right-4 bottom-14 z-[5] text-[#ef4444]/45 text-[10px] pointer-events-none">✦</span>
+                    </>
+                  )}
+
                   {/* Hover overlay */}
                   <div className={`absolute inset-0 bg-[#f5f5f7] pointer-events-none transition-opacity duration-300 z-10 ${isHovered ? 'opacity-50' : 'opacity-0'}`} />
 
@@ -261,26 +305,46 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   {/* NEW Badge */}
                   {promo.isNew && (
                     <div className="absolute -right-1 -top-1 z-30">
-                      <span className="inline-block bg-banana text-[#1d1d1f] text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border border-banana/50">
+                      {/* One consistent banana-yellow NEW ribbon for every promo
+                          (Boris 2026-07-03 — no per-promo color variants). */}
+                      <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border bg-banana text-[#1d1d1f] border-banana/50">
                         NEW
                       </span>
                     </div>
                   )}
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
+                    {isJuly4 && (
+                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#ef4444]/10 via-transparent to-[#3b82f6]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
+                        🇺🇸 July 4th Weekend
+                      </span>
+                    )}
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
-                      {promo.title.includes('→') ? (
+                      {promoTitle.includes('→') ? (
                         <>
-                          <span>{promo.title.split('→')[0].trim()}</span>
+                          <span>{promoTitle.split('→')[0].trim()}</span>
                           <br/>
                           <span className="text-[#4a4a4a] text-sm mt-1 inline-block font-semibold">
-                            → {promo.title.split('→')[1].trim()}
+                            → {promoTitle.split('→')[1].trim()}
                           </span>
                         </>
                       ) : (
-                        <span className="text-sm whitespace-nowrap">{promo.title}</span>
+                        <span className="text-sm whitespace-nowrap">{promoTitle}</span>
                       )}
                     </h4>
+                    {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy
+                        on the box front as FIXED LINES — each line is one
+                        complete idea and can never wrap mid-phrase ("40" on
+                        one line, "Drafts" on the next read broken). */}
+                    {promo.type === 'first-purchase' && (
+                      <div className="mt-1.5 px-1 text-center text-[10px] leading-relaxed text-[#4a4a4a]">
+                        <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
+                        <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
+                        <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
+                        <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                      </div>
+                    )}
+                    <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -318,18 +382,24 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Mint & Pick 10 promo - show progress + claim if available */}
+                      {/* Mint & Pick 10 promo - show progress + claim if available.
+                          Binary promos (max <= 1) skip the counter+bar — "0/1"
+                          says nothing (Boris 2026-06-11). */}
                       {(promo.type === 'mint' || promo.type === 'pick-10') && (
                         <div className="-mt-2">
-                          <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                          </div>
-                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
+                          {progressMax > 1 && (
+                            <>
+                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                              </div>
+                              <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
                           {promo.claimable && !isClaimed ? (
                             <>
                               <button
@@ -351,39 +421,30 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* PWA Install promo - show countdown + entry count */}
-                      {promo.type === 'add-to-home-screen' && (
-                        <div className="-mt-2">
-                          <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1.5">
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-                          </div>
-                          <p className="text-[10px] text-[#9a9a9a] text-center">{promo.description}</p>
-                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-                            Learn more
-                          </p>
-                        </div>
-                      )}
-
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && promo.type !== 'add-to-home-screen' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
-                          <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                          </div>
-                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
+                          {progressMax > 1 && (
+                            <>
+                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                              </div>
+                              <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${isJuly4 ? 'bg-gradient-to-r from-[#ef4444] to-[#3b82f6]' : 'bg-[#1d1d1f]'}`}
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
                           <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                             Learn more
                           </p>
                         </div>
                       )}
 
-                      {/* Claimable button - for other promos (not daily-drafts, mint, pick-10, or add-to-home-screen) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'add-to-home-screen' && promo.claimable && !isClaimed && ((promo.type !== 'new-user' && promo.type !== 'tweet-engagement') || (isLoggedIn && isTwitterVerified)) && (
+                      {/* Claimable button - for other promos (not daily-drafts, mint, pick-10) */}
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.claimable && !isClaimed && ((promo.type !== 'new-user' && promo.type !== 'tweet-engagement') || (isLoggedIn && isTwitterVerified)) && (
                         <div className="pt-6">
                           <button
                             onClick={(e) => handleClaim(promo, e)}

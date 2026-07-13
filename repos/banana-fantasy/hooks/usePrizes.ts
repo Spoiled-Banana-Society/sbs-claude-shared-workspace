@@ -6,6 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import type { EligibilityStatus, PrizeHistoryItem, PrizeWithdrawal } from '@/types';
 import { AppApiError, fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 interface WithdrawResponse {
   status: PrizeWithdrawal['status'];
@@ -26,10 +27,25 @@ export function usePrizes(opts?: { userId?: string }) {
 
   const query = useSWRLike<PrizeHistoryItem[]>(
     ownerId ? `prizes:history:${ownerId}` : null,
-    ({ signal }) => fetchJson<PrizeHistoryItem[]>('/api/prizes/history', { signal, query: { userId: ownerId } }),
+    // The history endpoint is auth-required (money data) — attach the
+    // Privy JWT. Safe re: render-loop rule: useSWRLike stores the
+    // fetcher in a ref, so the privy-derived callback never enters a
+    // dep array.
+    async ({ signal }) => {
+      const token = await privy.getAccessToken();
+      return fetchJson<PrizeHistoryItem[]>('/api/prizes/history', {
+        signal,
+        query: { userId: ownerId },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     { enabled: !!ownerId, fallbackData: [] },
   );
   const refresh = query.mutate;
+
+  // Instant: a prize grant fires a server noti ping — refresh winnings within
+  // ~300ms instead of only on page load / manual refresh.
+  useStreamRefetch(ownerId, () => { void refresh(); });
 
   const prizes = query.data ?? [];
 
@@ -163,9 +179,17 @@ export function useEligibility(opts?: { userId?: string }) {
   const { user } = useAuth();
   const userId = opts?.userId ?? user?.walletAddress ?? user?.id;
 
-  return useSWRLike<EligibilityStatus>(
+  const query = useSWRLike<EligibilityStatus>(
     userId ? `eligibility:${userId}` : null,
     ({ signal }) => fetchJson<EligibilityStatus>('/api/eligibility', { signal, query: { userId } }),
     { enabled: !!userId, fallbackData: { isVerified: false, season: 0, w9Completed: false, tier1Verified: false, tier2Verified: false, cumulativeWithdrawals: 0 } },
   );
+
+  // Real-time: the Didit verify webhook pings the user's event stream (keyed on
+  // the same Privy userId used here) the moment verification is Approved, so
+  // the /verify status flips live instead of only on reload. Additive — the
+  // mount fetch + focus-revalidate stay as the baseline.
+  useStreamRefetch(userId, () => { void query.mutate(); });
+
+  return query;
 }

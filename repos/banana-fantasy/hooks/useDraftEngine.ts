@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ALL_POSITIONS,
   DRAFT_PLAYERS,
-  TOTAL_ROUNDS,
   TOTAL_PICKS,
   positionFromPlayerId,
+  slotFromPlayerId,
 } from '@/lib/draftRoomConstants';
 import type { PlayerData, DraftPick, PositionRoster } from '@/lib/draftRoomConstants';
 import type { RealTimeDraftInfo, LastPickInfo } from '@/hooks/useRealTimeDraftInfo';
@@ -15,9 +15,16 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DEFAULT_POSITION_LIMITS, type Position, type PositionLimits } from '@/lib/positionLimits';
 import { usePositionLimits } from '@/hooks/usePositionLimits';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 export type DraftPlayer = typeof DRAFT_PLAYERS[number];
 export type DraftMode = 'local' | 'live';
+
+// How long to keep the live board on screen after the FINAL pick lands, before
+// flipping to the completion / card-generation overlay. Just long enough for
+// everyone to see the last auto/manual pick render in the board + last box
+// (mobile + desktop), then move on.
+const FINAL_PICK_REVEAL_MS = 1000;
 
 export interface DraftEngineState {
   picks: DraftPick[];
@@ -32,6 +39,7 @@ export interface DraftEngineState {
   timeRemaining: number;
   isUserTurn: boolean;
   turnsUntilUserPick: number;
+  upcomingUserPicks: number[];
   draftStatus: 'waiting' | 'active' | 'completed';
   mostRecentPick: DraftPick | null;
   draftSummary: DraftSummarySlot[];
@@ -192,12 +200,28 @@ function generateDraftSummary(draftOrder: DraftPlayer[]): DraftSummarySlot[] {
   return slots;
 }
 
+/** Per-player ADP/bye/rank lookup. Live (server) values override the static
+ *  ALL_POSITIONS baseline — see `playerStatsById` below. */
+export type PlayerStat = { adp: number; byeWeek: number; rank: number };
+
+// Static baseline derived from the bundled ALL_POSITIONS file. Used only before
+// the server payload arrives (filling/local mode); replaced by live server data
+// in initializeFromServer so the roster panel never reads a stale hardcoded ADP.
+const STATIC_STATS_BY_ID: Record<string, PlayerStat> = Object.fromEntries(
+  ALL_POSITIONS.map((p) => [p.playerId, { adp: p.adp, byeWeek: p.byeWeek, rank: p.rank }]),
+);
+
 export function useDraftEngine(mode: DraftMode = 'local') {
   const [draftOrder, setDraftOrder] = useState<DraftPlayer[]>([]);
   const [userDraftPosition, setUserDraftPosition] = useState(0);
   const [picks, setPicks] = useState<DraftPick[]>([]);
   const [currentPickNumber, setCurrentPickNumber] = useState(1);
   const [availablePlayers, setAvailablePlayers] = useState<PlayerData[]>(ALL_POSITIONS);
+  // Live ADP/bye/rank for EVERY player (including already-picked ones), so the
+  // roster panel/tab show the SAME ADP as the live board + results page instead
+  // of the static ALL_POSITIONS file (which must be hand-regenerated and drifts).
+  // Seeded with the static baseline; overwritten by the server payload below.
+  const [playerStatsById, setPlayerStatsById] = useState<Record<string, PlayerStat>>(STATIC_STATS_BY_ID);
   const [queuedPlayers, setQueuedPlayers] = useState<PlayerData[]>([]);
   const [rosters, setRosters] = useState<Record<string, PositionRoster>>({});
   const [timeRemaining, setTimeRemaining] = useState(30);
@@ -231,6 +255,9 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const isProcessingRef = useRef(false);
   // Track highest pickNum seen — rejects duplicate/stale picks (matches old useDraftRoom.ts pattern)
   const lastPickRef = useRef<number>(0);
+  // Holds the deferred "draft completed" timer so the FINAL pick paints on the
+  // board/last box (mobile + desktop) before the completion overlay covers it.
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Computed values
   const currentRound = Math.ceil(currentPickNumber / 10);
@@ -247,6 +274,20 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       ? calculateTurnsUntilPick(currentPickNumber, userDraftPosition)
       : calculateTurnsUntilPick(currentPickNumber, draftOrder.findIndex(p => p.isYou)))
     : 0;
+
+  // The user's next two overall pick numbers, strictly after the pick on the
+  // clock (while the user is picking, only the following pick matters).
+  // Powers the "YOUR PICK · N" divider in the player list. Empty when the
+  // draft isn't active or the viewer isn't a drafter (findIndex → -1).
+  const upcomingUserPickIndex = mode === 'live' ? userDraftPosition : draftOrder.findIndex(p => p.isYou);
+  const upcomingUserPicks = useMemo(() => {
+    const picks: number[] = [];
+    if (draftStatus !== 'active' || upcomingUserPickIndex < 0 || draftOrder.length === 0) return picks;
+    for (let pick = currentPickNumber + 1; pick <= TOTAL_PICKS && picks.length < 2; pick++) {
+      if (getSnakeDrafterIndex(pick) === upcomingUserPickIndex) picks.push(pick);
+    }
+    return picks;
+  }, [draftStatus, upcomingUserPickIndex, currentPickNumber, draftOrder.length]);
 
   // ==================== LOCAL MODE: INITIALIZE DRAFT ====================
   const initializeDraft = useCallback((shuffledOrder: DraftPlayer[]) => {
@@ -338,8 +379,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Build draft order from server draftOrder
     const order: DraftPlayer[] = draftInfo.draftOrder.map((u, idx) => ({
       id: String(idx + 1),
-      name: u.ownerId, // In live mode, name is the wallet address
-      displayName: u.ownerId,
+      name: u.ownerId, // In live mode, name is the wallet address (kept raw — it's the usersMap lookup key)
+      displayName: bananaPlaceholderName(u.ownerId), // never the raw wallet OR a hash-derived Banana##### (hash collides across users) — neutral placeholder until the real handle layers in from usersMap
       isYou: u.ownerId.toLowerCase() === userWallet.toLowerCase(),
       avatar: '🍌',
     }));
@@ -361,6 +402,19 @@ export function useDraftEngine(mode: DraftMode = 'local') {
         playersFromTeam: p.stats.playersFromTeam || [],
       }));
     setAvailablePlayers(available);
+
+    // Build the live per-player stats map from the FULL ranking list (NOT the
+    // available-only filter above) — picked players carry an ownerAddress but
+    // still have their real stats here. This is the single source the roster
+    // views read ADP/bye from, so a picked player's ADP always matches the
+    // live board. Falls back to the static baseline for any id the server omits.
+    const liveStats: Record<string, PlayerStat> = { ...STATIC_STATS_BY_ID };
+    for (const p of playerRankings) {
+      const id = p.playerStateInfo.playerId || p.playerId;
+      if (!id) continue;
+      liveStats[id] = { adp: p.stats.adp, byeWeek: p.stats.byeWeek, rank: p.ranking.rank };
+    }
+    setPlayerStatsById(liveStats);
 
     // Build picks from summary — filter on playerId (not ownerAddress!) because the server
     // pre-populates ownerAddress for ALL 150 slots (assigned drafter), but only sets playerId
@@ -460,6 +514,39 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setDraftPhase('live'); // First timer_update = draft has started, picks are happening
   }, []);
 
+  // Flip the draft to "completed" — but on a short delay so the FINAL pick has
+  // a chance to paint on the board + last box (mobile + desktop) before the
+  // DraftComplete overlay (z-[60]) covers it. Live completion can arrive from
+  // several places that all land in the SAME Firebase snapshot as the last pick
+  // (processPick's pickNum>=TOTAL, setFirebaseState's isDraftComplete, the WS
+  // draft_complete/final_card messages) — routing them all through here means
+  // whichever fires the deferral wins and reschedules to one clean delay.
+  // Idempotent: re-calls just reset the single pending timer.
+  const scheduleCompletion = useCallback(() => {
+    if (completionTimerRef.current) return; // already scheduled — keep the one delay
+    // Server-shipped (admin Logs) so we can SEE that the final pick is being held
+    // on the board before completion — and for how long — to debug the
+    // "last pick didn't show, jumped straight to next phase" report.
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[Complete] final pick in — holding board for reveal',
+      route: 'useDraftEngine.scheduleCompletion',
+      actor: walletAddressRef.current,
+      context: { event: 'hold_scheduled', delayMs: FINAL_PICK_REVEAL_MS },
+    }, { skipThrottle: true });
+    completionTimerRef.current = setTimeout(() => {
+      completionTimerRef.current = null;
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] reveal window elapsed — flipping to completed',
+        route: 'useDraftEngine.scheduleCompletion',
+        actor: walletAddressRef.current,
+        context: { event: 'hold_elapsed' },
+      }, { skipThrottle: true });
+      setDraftStatus('completed');
+    }, FINAL_PICK_REVEAL_MS);
+  }, []);
+
   const processPick = useCallback((pickData: ProcessablePick) => {
     const basePos = positionFromPlayerId(pickData.playerId);
 
@@ -508,62 +595,39 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     const wallet = walletAddressRef.current;
     if (wallet && pickData.ownerAddress.toLowerCase() === wallet) {
-      if (userPickedManuallyRef.current) {
-        consecutiveTimeoutsRef.current = 0;
-        logger.info('[Airplane] Manual pick — counter reset to 0', { pickNum: pickData.pickNum, wallet });
-        reportClientEvent({
-          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-          message: '[Airplane] manual pick — engine counter reset to 0',
-          route: 'useDraftEngine.processPick',
-          actor: wallet,
-          context: { event: 'manual_pick_counter_reset', pickNum: pickData.pickNum },
-        }, { skipThrottle: true });
-      } else {
-        consecutiveTimeoutsRef.current += 1;
-        logger.info('[Airplane] Server auto-pick — counter incremented', {
-          counter: consecutiveTimeoutsRef.current,
-          pickNum: pickData.pickNum,
-          wallet,
-        });
-        reportClientEvent({
-          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-          message: `[Airplane] server auto-pick — engine counter ${consecutiveTimeoutsRef.current}`,
-          route: 'useDraftEngine.processPick',
-          actor: wallet,
-          context: {
-            event: 'autopick_counter_increment',
-            counter: consecutiveTimeoutsRef.current,
-            pickNum: pickData.pickNum,
-          },
-        }, { skipThrottle: true });
-        if (consecutiveTimeoutsRef.current >= 2) {
-          logger.info('[Airplane] setAirplaneMode(true) — source=consecutive-timeouts', {
-            counter: consecutiveTimeoutsRef.current,
-            pickNum: pickData.pickNum,
-            wallet,
-          });
-          reportClientEvent({
-            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-            message: '[Airplane] engine setAirplaneMode(true) via consecutive-timeouts',
-            route: 'useDraftEngine.processPick',
-            actor: wallet,
-            context: {
-              event: 'engine_set_airplane_true',
-              counter: consecutiveTimeoutsRef.current,
-              pickNum: pickData.pickNum,
-              trigger: 'consecutive-timeouts',
-            },
-          }, { skipThrottle: true });
-          setAirplaneMode(true);
-        }
-      }
+      // BUG 1 FIX (multi-device airplane): do NOT infer a "missed pick" from
+      // this device's local userPickedManuallyRef. That flag is only set on the
+      // device that actually tapped the player, so when a user had the same
+      // draft open on both desktop and phone, a MANUAL pick made on desktop
+      // arrived at the phone looking like a server auto-pick. The phone then
+      // incremented its own counter and, after two such picks, wrongly flipped
+      // itself into airplane mode and started auto-drafting for the user.
+      //
+      // The server's numPicksMissedConsecutive is device-independent and resets
+      // on any manual pick from ANY device. It is mirrored into the engine after
+      // every pick by the post-pick preferences sync in page.tsx (via
+      // setConsecutiveTimeouts / setAirplaneMode), so it is now the single
+      // source of truth for the counter and airplane state. The local counter is
+      // still reset instantly on the tapping device by markManualPick() for snappy
+      // feedback; here we only clear the manual flag as housekeeping.
       userPickedManuallyRef.current = false;
     }
 
     if (pickData.pickNum >= TOTAL_PICKS) {
-      setDraftStatus('completed');
+      // Confirms the FINAL pick was processed onto the board (setPicks /
+      // setDraftSummary above) before completion — the thing that was silently
+      // skipped when detection keyed on pickNumber. If this trace is present,
+      // the last pick rendered on the board.
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] final pick processed onto board',
+        route: 'useDraftEngine.processPick',
+        actor: walletAddressRef.current,
+        context: { event: 'final_pick_processed', pickNum: pickData.pickNum, playerId: pickData.playerId },
+      }, { skipThrottle: true });
+      scheduleCompletion();
     }
-  }, []);
+  }, [scheduleCompletion]);
 
   const handleNewPick = useCallback((payload: ServerNewPickPayload) => {
     // Go server sends flat PlayerInfo: { playerId, displayName, team, position, ownerAddress, pickNum, round }
@@ -600,13 +664,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   }, []);
 
   const handleDraftComplete = useCallback(() => {
-    setDraftStatus('completed');
-  }, []);
+    scheduleCompletion();
+  }, [scheduleCompletion]);
 
   const handleFinalCard = useCallback((payload: ServerFinalCardPayload) => {
     setFinalCard({ cardId: payload.cardId, imageUrl: payload.imageUrl });
-    setDraftStatus('completed');
-  }, []);
+    scheduleCompletion();
+  }, [scheduleCompletion]);
 
   // ==================== LIVE MODE: Firebase RTDB state handler ====================
   // Accepts a Firebase RTDB snapshot and updates engine state accordingly.
@@ -639,11 +703,14 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       setDraftPhase('countdown');
     }
 
-    // Check completion
+    // Check completion. The final pick (lastPick.pickNum === TOTAL) and
+    // isDraftComplete arrive in the SAME RTDB snapshot, so flipping completed
+    // here synchronously would cover the board before the last pick paints.
+    // Defer it so the final pick is visible first.
     if (rtdb.isDraftComplete) {
-      setDraftStatus('completed');
+      scheduleCompletion();
     }
-  }, []);
+  }, [scheduleCompletion]);
 
   // Process a new pick detected by the Firebase RTDB listener.
   // Called by the page when useRealTimeDraftInfo signals newPickDetected.
@@ -739,7 +806,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     const nextPick = currentPickNumber + 1;
     if (nextPick > TOTAL_PICKS) {
-      setDraftStatus('completed');
+      scheduleCompletion();
       setCurrentPickNumber(nextPick);
     } else {
       setCurrentPickNumber(nextPick);
@@ -748,13 +815,15 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     isProcessingRef.current = false;
     return null;
-  }, [mode, draftStatus, currentPickNumber, availablePlayers, draftOrder, currentDrafterIndex, currentRound, walletAddress, endOfTurnTimestamp]);
+  }, [mode, draftStatus, currentPickNumber, availablePlayers, draftOrder, currentDrafterIndex, currentRound, walletAddress, endOfTurnTimestamp, scheduleCompletion]);
 
   // ==================== AUTO-PICK AI ====================
   // positionLimits caps the auto-picker so a single seat can't grind out 8 QBs.
-  // Filters apply to queue, BPA, and position-fill candidates. If every
+  // Caps filter BPA candidates ONLY — the queue bypasses them, because a queued
+  // player is a deferred manual pick and manual picks bypass caps entirely
+  // (jetsonjets22 draft-77: caps silently overrode his queued WR2s). If every
   // position is at its cap, we relax and pick BPA so the draft never stalls
-  // (caps block, they never force fills — manual picks bypass entirely).
+  // (caps block, they never force fills).
   const autoPickForPlayer = useCallback((
     playerRoster: PositionRoster,
     queue: PlayerData[],
@@ -762,22 +831,31 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     _round: number,
     sortBy: 'adp' | 'rank' = 'adp',
     positionLimits: PositionLimits = DEFAULT_POSITION_LIMITS,
+    capsEnabled: boolean = true,
   ): string => {
     const isAtCap = (playerId: string): boolean => {
-      const pos = positionFromPlayerId(playerId) as Position;
-      const cap = positionLimits[pos];
+      if (!capsEnabled) return false; // user turned auto-draft position limits off
+      // Caps are per TIERED slot (WR1/WR2/RB1/RB2 limited separately).
+      const slot = slotFromPlayerId(playerId) as Position;
+      const cap = positionLimits[slot];
       if (typeof cap !== 'number') return false;
-      const rosterPos = pos as keyof PositionRoster;
-      return (playerRoster[rosterPos]?.length ?? 0) >= cap;
+      // The roster array is keyed by BASE position (QB/RB/WR/...), so count only
+      // the entries that match this exact tiered slot.
+      const basePos = positionFromPlayerId(playerId) as keyof PositionRoster;
+      const haveOfSlot = (playerRoster[basePos] ?? []).filter(
+        (pid) => slotFromPlayerId(pid) === slot,
+      ).length;
+      return haveOfSlot >= cap;
     };
     const sortByMetric = (a: PlayerData, b: PlayerData) =>
       sortBy === 'adp' ? a.adp - b.adp : a.rank - b.rank;
 
-    // 1. Queue first — if the user queued players that are still available
-    //    and not at cap, those pick before anything else.
+    // 1. Queue first — a queued player is a deferred MANUAL pick, so position
+    //    caps do NOT apply here (same as clicking the player live). The queue
+    //    always beats the caps.
     if (queue.length > 0) {
       const queuePick = queue.find(q =>
-        available.some(a => a.playerId === q.playerId) && !isAtCap(q.playerId),
+        available.some(a => a.playerId === q.playerId),
       );
       if (queuePick) return queuePick.playerId;
     }
@@ -794,7 +872,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
   // User's per-wallet limits (loaded from Firestore via usePositionLimits).
   // Falls back to defaults until loaded or for non-wallet contexts.
-  const { limits: userLimits } = usePositionLimits();
+  const { limits: userLimits, enabled: userLimitsEnabled } = usePositionLimits();
 
   // ==================== AIRPLANE MODE FUNCTIONS ====================
 
@@ -802,8 +880,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const getAutoPickPlayer = useCallback((): string => {
     const rosterKey = mode === 'live' ? walletAddress : (currentDrafter?.name || '');
     const roster = rosters[rosterKey] || createEmptyRoster();
-    return autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits);
-  }, [mode, walletAddress, currentDrafter, rosters, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, autoPickForPlayer, userLimits]);
+    return autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits, userLimitsEnabled);
+  }, [mode, walletAddress, currentDrafter, rosters, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, autoPickForPlayer, userLimits, userLimitsEnabled]);
 
   /** Called by the page when user manually picks a player */
   const markManualPick = useCallback(() => {
@@ -879,6 +957,23 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       .sort((a, b) => a.pickNum - b.pickNum);
     const pickedIds = new Set(pickedEntries.map((pi) => pi.playerId));
 
+    // Stale-response guard: this rebuilds rosters/board/picks WHOLESALE from
+    // `summaryData`. If the summary is older than what we've already applied
+    // (e.g. a turn-start refresh whose fetch returns AFTER the user's own pick
+    // has already echoed in), applying it would drop that newer pick AND bump
+    // lastPickRef so the live feed never re-adds it → blank roster until a
+    // manual reload. Apply only when the summary is at least as current as the
+    // highest pick we've seen; a strictly-older one is never useful. ('===' the
+    // applied high-water mark still passes, so the missed-intermediate-pick
+    // heal keeps working — only strictly-stale responses are dropped.)
+    const summaryMaxPick = pickedEntries.length > 0
+      ? pickedEntries[pickedEntries.length - 1].pickNum
+      : 0;
+    if (summaryMaxPick < lastPickRef.current) {
+      logger.debug('[refreshSummaryPicks] Skipping stale summary (max', summaryMaxPick, '< applied', lastPickRef.current, ')');
+      return;
+    }
+
     setDraftSummary(prev => {
       const updated = prev.map((slot) => ({
         ...slot,
@@ -930,6 +1025,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     return queuedPlayers.some(p => p.playerId === playerId);
   }, [queuedPlayers]);
 
+  // Clear the deferred final-pick completion timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+    };
+  }, []);
+
   // ==================== LOCAL MODE TIMER ====================
   useEffect(() => {
     if (mode === 'live') return; // Live mode timer handled below
@@ -979,11 +1081,11 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     }
 
     const roster = rosters[currentDrafter?.name || ''] || createEmptyRoster();
-    const pickId = autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits);
+    const pickId = autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits, userLimitsEnabled);
     if (pickId) {
       draftPlayer(pickId);
     }
-  }, [mode, isUserTurn, timeRemaining, draftStatus, rosters, currentDrafter, queuedPlayers, availablePlayers, currentRound, autoPickForPlayer, autoPickSortPreference, draftPlayer, airplaneMode, userLimits]);
+  }, [mode, isUserTurn, timeRemaining, draftStatus, rosters, currentDrafter, queuedPlayers, availablePlayers, currentRound, autoPickForPlayer, autoPickSortPreference, draftPlayer, airplaneMode, userLimits, userLimitsEnabled]);
 
   // ==================== LOCAL MODE BOT AUTO-PICK ====================
   useEffect(() => {
@@ -1019,11 +1121,18 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     draftOrder,
     userDraftPosition,
     availablePlayers,
+    playerStatsById,
     queuedPlayers,
     rosters,
     timeRemaining,
+    // Absolute server pick-end timestamp (Unix seconds), set from the SAME
+    // WS/RTDB pickEndTime everyone shares. Exposed so the live-sync timer can
+    // anchor to it (floor(end − now)) instead of the per-device local countdown
+    // — keeps desktop/mobile identical from the first tick.
+    endOfTurnTimestamp,
     isUserTurn,
     turnsUntilUserPick,
+    upcomingUserPicks,
     draftStatus,
     mostRecentPick,
     draftSummary,

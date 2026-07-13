@@ -62,7 +62,7 @@ export default function VerifyPage() {
           <p className="text-text-secondary text-sm">
             Verification happens automatically when you withdraw. No action needed until then.
           </p>
-          <Button onClick={() => router.push('/prizes')}>Go to Prizes</Button>
+          <Button onClick={() => router.push('/winnings')}>Go to Prizes</Button>
         </div>
       </Card>
     </div>

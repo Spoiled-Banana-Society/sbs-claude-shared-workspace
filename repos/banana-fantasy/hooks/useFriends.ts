@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useAuth } from '@/hooks/useAuth';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 export interface PublicUser {
   walletAddress: string;
@@ -73,6 +75,11 @@ export function useFriends(enabled: boolean): {
     return () => clearInterval(id);
   }, [enabled]);
 
+  // Instant: friend requests/accepts fire a server noti ping — refresh the
+  // buckets within ~300ms instead of waiting out the 15s poll.
+  const { walletAddress } = useAuth();
+  useStreamRefetch(enabled ? walletAddress : null, () => { void refreshRef.current(); });
+
   const sendRequest = useCallback(async (targetWallet: string) => {
     try {
       const headers = await authHeaders();
@@ -96,6 +103,18 @@ export function useFriends(enabled: boolean): {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: json.error || `error ${res.status}` };
+      // Optimistic: move them incoming → friends NOW so this surface flips
+      // instantly; refresh + the server stream ping confirm everywhere else.
+      const w = otherWallet.toLowerCase();
+      setData((prev) => {
+        const entry = prev.incoming.find((u) => u.walletAddress.toLowerCase() === w);
+        if (!entry) return prev;
+        return {
+          ...prev,
+          incoming: prev.incoming.filter((u) => u.walletAddress.toLowerCase() !== w),
+          friends: prev.friends.some((u) => u.walletAddress.toLowerCase() === w) ? prev.friends : [...prev.friends, entry],
+        };
+      });
       await refresh();
       return { ok: true };
     } catch (err) {

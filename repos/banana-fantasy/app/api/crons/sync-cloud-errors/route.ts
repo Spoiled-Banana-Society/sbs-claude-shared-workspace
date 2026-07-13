@@ -56,9 +56,12 @@ function httpContext(entry: LogEntry): string {
   return `${h.requestMethod || 'request'} ${path} → ${h.status ?? '?'}`;
 }
 
-const SERVICES = ['sbs-drafts-api-staging', 'sbs-drafts-server-staging'];
+// Env-driven so prod monitors its own services/project. Staging keeps these
+// exact defaults when the env vars are unset — unchanged there.
+const SERVICES = (process.env.CLOUD_ERROR_SYNC_SERVICES || 'sbs-drafts-api-staging,sbs-drafts-server-staging')
+  .split(',').map((s) => s.trim()).filter(Boolean);
 const STATE_DOC = 'admin_state/cloud_error_sync';
-const PROJECT_ID = 'sbs-staging-env';
+const PROJECT_ID = process.env.GCP_PROJECT_ID || process.env.NEXT_PUBLIC_PROJECT_ID || 'sbs-staging-env';
 const LOOKBACK_FALLBACK_MS = 15 * 60 * 1000; // 15 min on first run
 const MAX_ENTRIES_PER_RUN = 200;
 

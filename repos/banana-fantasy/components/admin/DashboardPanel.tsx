@@ -26,6 +26,7 @@ import Link from 'next/link';
 import {
   useAdminMetrics,
   useRecentErrors,
+  useResolvedErrors,
   useHeaviestUsers,
   usePromoProgress,
   type ErrorEventEntry,
@@ -35,8 +36,11 @@ import {
 } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
+import { ActivityStatCards } from '@/components/admin/ActivityStatCards';
+import { LiveActivity } from '@/components/admin/LiveActivity';
 import { UsersTableBox } from '@/components/admin/Dashboard/UsersTableBox';
 import { explainError } from '@/lib/logSources';
+import { dropResolvedEvents } from '@/lib/errorGrouping';
 import { VISIBLE_PROMO_TYPES_ORDER } from '@/lib/promoFilter';
 
 /* ─────────────────────────────────────────────────────────  Page  */
@@ -44,11 +48,19 @@ import { VISIBLE_PROMO_TYPES_ORDER } from '@/lib/promoFilter';
 export function DashboardPanel({ enabled }: { enabled: boolean }) {
   const metricsQ = useAdminMetrics(enabled);
   const errorsQ = useRecentErrors(enabled);
+  const resolvedQ = useResolvedErrors(enabled);
   const heaviestQ = useHeaviestUsers(enabled);
   const promoProgressQ = usePromoProgress(enabled);
   const m = metricsQ.data;
 
-  const health = computeHealth(errorsQ.data?.errors, m?.withdrawals.pending);
+  // Exclude issues an admin marked fixed (recurrence-aware) so the health box
+  // and Errors-24h card agree with the Logs feed + badge. One shared rule.
+  const activeErrors = React.useMemo(
+    () => dropResolvedEvents(errorsQ.data?.errors ?? [], resolvedQ.data?.resolved),
+    [errorsQ.data, resolvedQ.data],
+  );
+
+  const health = computeHealth(activeErrors, m?.withdrawals.pending);
   const ageSec = m?.generatedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(m.generatedAt).getTime()) / 1000))
     : null;
@@ -72,6 +84,11 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
           we can search all the different things in the dashboard'. */}
       <GlobalSearch enabled={enabled} />
 
+      {/* Day-at-a-glance band (Boris 2026-07-03: "i want this stuff in the
+          dashboard not in audit") — same six cards as Audit → Live Activity,
+          same server truth, so the two screens can never disagree. */}
+      <ActivityStatCards enabled={enabled} />
+
       {m && (
         <>
           {/* TOP — 3 small boxes: Users · Drafts · Mints */}
@@ -89,10 +106,24 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         </>
       )}
 
+      {/* Live feed — the full activity stream with type pills (Pass purchased,
+          Spin prize, Draft entered, …), filters, and CSV export. Boris
+          2026-07-03: "where is the purchased tab in dashboard where that
+          activity" — the whole feed lives here now; Audit keeps its copy.
+          hideStats: the six-card band above is the same data. */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+        <div className="px-5 py-3 border-b border-white/[0.06]">
+          <h3 className="text-sm font-semibold text-white">Live Activity — as it happens</h3>
+        </div>
+        <div className="p-4">
+          <LiveActivity enabled={enabled} hideStats />
+        </div>
+      </div>
+
       {/* Footer: top users + errors (smaller secondary panels) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <TopUsersBox q={heaviestQ.data} loading={heaviestQ.isLoading} />
-        <ErrorsBox errors={errorsQ.data?.errors ?? []} loading={errorsQ.isLoading} />
+        <ErrorsBox errors={activeErrors} loading={errorsQ.isLoading} />
       </div>
 
       {/* Every-user database. Filterable, sortable, paginated. Boris's

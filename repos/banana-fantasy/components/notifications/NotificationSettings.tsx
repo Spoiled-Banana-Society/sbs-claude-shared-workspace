@@ -88,6 +88,10 @@ interface Tile {
   grad: string;
   /** Dark glyph for light (banana) tiles, white otherwise. */
   dark?: boolean;
+  /** Clean monochrome treatment (white glyph on a dark outlined tile) — the
+   *  SBS-bot look. Used for the SBS event icons so they read as one clean
+   *  family; brand channels (Email/Telegram/Discord) keep their colors. */
+  mono?: boolean;
 }
 
 const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
@@ -115,7 +119,7 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
   },
   discord: {
     label: 'Discord',
-    blurb: 'Pinged in the SBS Discord server.',
+    blurb: 'A DM from the SBS bot.',
     tile: { Icon: FaDiscord, grad: 'from-[#5865f2] to-[#4752c4]' },
   },
 };
@@ -123,19 +127,25 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
 const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   draftFilled: {
     label: 'Draft fills',
-    tile: { Icon: IoAmericanFootball, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
+    tile: { Icon: IoAmericanFootball, grad: '', mono: true },
   },
   pickFast: {
     label: 'My pick — fast draft',
-    tile: { Icon: IoFlash, grad: 'from-[#ff9f0a] to-[#f08000]' },
+    tile: { Icon: IoFlash, grad: '', mono: true },
   },
   pickSlow: {
     label: 'My pick — slow draft',
-    tile: { Icon: IoTime, grad: 'from-[#30d158] to-[#28b14c]' },
+    tile: { Icon: IoTime, grad: '', mono: true },
   },
 };
 const EVENT_ORDER: EventId[] = ['draftFilled', 'pickFast', 'pickSlow'];
-const CHANNEL_ORDER: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
+// Web push intentionally removed as a draft-alert channel (Boris 2026-06-14):
+// for time-sensitive draft alerts it's unreliable — iOS only delivers to an
+// installed PWA and even then drops/delays, and Safari/macOS web push needs the
+// browser running and is flaky vs. native delivery. Telegram / Discord / Email
+// all push to a real app and are far more dependable, so we steer users there.
+// (Push plumbing below is left intact so re-adding 'push' here restores it.)
+const CHANNEL_ORDER: ChannelId[] = ['email', 'telegram', 'discord'];
 
 // Discord @mentions only reach a user who is in the SBS Discord server —
 // OAuth links the account but doesn't add them. Surface a join link.
@@ -557,27 +567,10 @@ export function NotificationSettings() {
       )}
 
       {loading ? (
-        <div className="space-y-7">
-          {[3, 4].map((n) => (
-            <div key={n}>
-              <div className="mb-2.5 ml-1 h-3 w-32 animate-pulse rounded bg-white/[0.06]" />
-              <div className="glass-card overflow-hidden">
-                {Array.from({ length: n }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t border-white/[0.05]' : ''}`}
-                  >
-                    <div className="h-[30px] w-[30px] animate-pulse rounded-[8px] bg-white/[0.06]" />
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-3.5 w-40 animate-pulse rounded bg-white/[0.06]" />
-                      <div className="h-2.5 w-52 animate-pulse rounded bg-white/[0.04]" />
-                    </div>
-                    <div className="h-[31px] w-[51px] animate-pulse rounded-full bg-white/[0.06]" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+        // Quiet, minimal loader — no big empty skeleton cards (they read as a
+        // broken grey box while the profile API loads). Content flows in.
+        <div className="flex justify-center py-12">
+          <span className="h-5 w-5 rounded-full border-2 border-white/15 border-t-white/55 animate-spin" />
         </div>
       ) : (
         <div className="space-y-7">
@@ -717,7 +710,10 @@ export function NotificationSettings() {
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
-                    {id === 'discord' && isStandalonePWA && !linked && (
+                    {/* Discord mobile/first-time setup steps — HIDDEN for now
+                        (Boris 2026-06-30; may restore later). To bring it back,
+                        remove the `false &&` below. Code kept intact. */}
+                    {false && id === 'discord' && isStandalonePWA && !linked && (
                       // iOS PWA quirk: the OAuth tab is SFSafariViewController
                       // — a separate cookie jar from real Safari, so it can't
                       // see the user's Discord login session. The bottom-right
@@ -781,7 +777,7 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && DISCORD_INVITE_URL && (
                       <p className="text-[12px] leading-relaxed text-text-muted">
-                        Pings only reach you inside the SBS Discord —{' '}
+                        The bot can only DM you if you&apos;re in our server —{' '}
                         <a
                           href={DISCORD_INVITE_URL}
                           target="_blank"
@@ -806,6 +802,39 @@ export function NotificationSettings() {
           </section>
         </div>
       )}
+
+      {/* SBS Draft Bot — for folks who don't want to enter yet but want to
+          watch how close drafts are to filling, so they can time their entry.
+          Plain link out to the X bot; touches no notification system/flow.
+          Lives in the shared component so it shows on the Draft Alerts page AND
+          the Profile › Notifications tab. */}
+      <p className="mb-2.5 ml-1 mt-9 text-[11px] font-semibold uppercase tracking-[0.09em] text-text-muted">
+        Track drafts live
+      </p>
+      <a
+        href="https://x.com/sbsdraftbot"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block glass-card transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-banana/40"
+      >
+        <div className="flex items-center gap-4 p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/sbs-draft-bot.png"
+            alt="SBS Draft Bot"
+            className="h-14 w-14 shrink-0 rounded-2xl border border-white/10 object-cover"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold leading-tight text-white">Watch drafts fill, live</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-text-muted">
+              Not ready to draft yet? <span className="text-white/80">@SBSDraftBot</span> posts every draft on X as it fills — see which are close and jump in at the right moment.
+            </p>
+          </div>
+          <span className="shrink-0 self-center whitespace-nowrap text-[13px] font-semibold text-banana group-hover:underline">
+            Follow&nbsp;→
+          </span>
+        </div>
+      </a>
     </div>
   );
 }
@@ -826,8 +855,17 @@ function Group({ children }: { children: React.ReactNode }) {
   return <div className="glass-card overflow-hidden">{children}</div>;
 }
 
-/** Apple-Settings colored icon tile: white (or dark) glyph on a tinted gradient. */
-function IconTile({ Icon, grad, dark }: Tile) {
+/** Apple-Settings colored icon tile: white (or dark) glyph on a tinted gradient.
+ *  `mono` tiles instead use the clean SBS-bot look — a white glyph on a dark,
+ *  thin-outlined tile — so the SBS event icons read as one minimal family. */
+function IconTile({ Icon, grad, dark, mono }: Tile) {
+  if (mono) {
+    return (
+      <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] border border-white/15 bg-[#0c0d11] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <Icon className="text-[15px] text-[#f4f4f4]" />
+      </div>
+    );
+  }
   return (
     <div
       className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] bg-gradient-to-b ${grad} shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.25)]`}

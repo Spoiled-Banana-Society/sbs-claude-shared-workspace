@@ -21,33 +21,24 @@ import { getPrivyUser } from '@/lib/auth';
 import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import { logDirectWithdrawal } from '@/lib/offrampAudit';
-import { markPrizesProcessing } from '@/lib/prizeOverlay';
+import { markPrizesProcessing, getPrizeClaimStates } from '@/lib/prizeOverlay';
+import { getPrizeHistoryForUser } from '@/lib/prizeHistory';
 import { logger } from '@/lib/logger';
-import type { PrizeHistoryItem, PrizeWin } from '@/types';
+import { LOG_SOURCES } from '@/lib/logSources';
+import type { PrizeWin } from '@/types';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const KYC_THRESHOLD = 2000;
 
-async function fetchPendingWins(userId: string, origin: string): Promise<PrizeWin[]> {
-  // Re-use the history endpoint as the canonical merge of go-api wins +
-  // synthetic prizes + overlay statuses. Means we can't accidentally
-  // diverge in how the two views compute "what's pending".
-  const url = `${origin}/api/prizes/history?userId=${encodeURIComponent(userId)}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new ApiError(502, 'Failed to load prize history');
-  const items = (await res.json()) as PrizeHistoryItem[];
+async function fetchPendingWins(userId: string): Promise<PrizeWin[]> {
+  // Same canonical merge the /api/prizes/history route serves (go-api
+  // wins + synthetic prizes + overlay statuses) — called directly so we
+  // can't diverge in how the two views compute "what's pending", and so
+  // there's no unauthenticated HTTP self-call.
+  const items = await getPrizeHistoryForUser(userId);
   return items.filter(
     (i): i is PrizeWin => i.type === 'win' && i.status === 'pending',
   );
-}
-
-function getOrigin(req: Request): string {
-  try {
-    const url = new URL(req.url);
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return 'https://banana-fantasy-sbs.vercel.app';
-  }
 }
 
 export async function POST(req: Request) {
@@ -55,12 +46,18 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    await getPrivyUser(req);
+    // Authenticate AND authorize: verify the JWT, then require the request's
+    // userId to be the caller's own wallet — an authenticated user must not be
+    // able to settle another wallet's prizes.
+    const { walletAddress } = await getPrivyUser(req);
     const body = await parseBody(req);
     const userIdRaw = requireString(body.userId, 'userId').trim();
     const userId = userIdRaw.toLowerCase();
     if (!ETH_ADDRESS_RE.test(userId)) {
       return jsonError('userId must be a valid wallet address', 400);
+    }
+    if (!walletAddress || walletAddress.toLowerCase() !== userId) {
+      return jsonError('Forbidden — you can only withdraw from your own wallet', 403);
     }
 
     // method is the destination type. Always 'usdc' for now — money
@@ -96,7 +93,7 @@ export async function POST(req: Request) {
     }
 
     // Pull pending wins (Go API + synthetic, with overlays applied).
-    const pending = await fetchPendingWins(userId, getOrigin(req));
+    const pending = await fetchPendingWins(userId);
 
     // Sort oldest-first so partial allocations consume the longest-held
     // prizes first — fairer to the user (they get their old money out
@@ -157,6 +154,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // Double-withdrawal guard. In the normal flow a prize that is
+    // already 'processing' or 'paid' never reaches `targets` (the
+    // history merge filters it out by overlay status). So this only
+    // trips on a concurrent / duplicate submit — closing the race where
+    // two requests both see the prizes as pending and each create a
+    // withdrawal for the SAME prizes (the double-payout root cause).
+    const targetIds = targets.map((t) => t.id);
+    const claims = await getPrizeClaimStates(targetIds);
+    const conflicting = targetIds.filter((id) => {
+      const c = claims.get(id);
+      return !!c && (c.status === 'processing' || c.status === 'paid');
+    });
+    if (conflicting.length > 0) {
+      logger.warn('withdraw-all.already_in_flight', { userId, conflicting });
+      return jsonError(
+        'Some of these prizes are already being withdrawn or have been paid. Please refresh and try again.',
+        409,
+      );
+    }
+
     // Use the first prize's draftId as the "primary" draftId on the
     // withdrawal doc — required by createWithdrawal for compat. The
     // prizeIds array is the authoritative source of which prizes are
@@ -194,17 +211,27 @@ export async function POST(req: Request) {
     }
 
     // Mark prizes as processing so they show as in-flight on the next
-    // /prizes load — fire-and-forget; never block the response.
-    markPrizesProcessing({
-      prizeIds: targets.map((t) => t.id),
-      userId,
-      withdrawalId: withdrawal.id,
-    }).catch((err) => {
-      logger.warn('withdraw-all.mark_processing_failed', { err: (err as Error).message });
-    });
+    // /prizes load. AWAITED (was fire-and-forget) so the 'processing'
+    // lock is committed before we return — that's what makes the guard
+    // above see a concurrent submit's claim and reject it. If the mark
+    // itself fails we log critical but don't fail the request: the admin
+    // pay route's double-payout backstop is the hard money guarantee.
+    try {
+      await markPrizesProcessing({
+        prizeIds: targetIds,
+        userId,
+        withdrawalId: withdrawal.id,
+      });
+    } catch (err) {
+      logger.error(LOG_SOURCES.prizes.MARK_PROCESSING_FAILED, {
+        err,
+        actor: userId,
+        context: { withdrawalId: withdrawal.id, prizeIds: targetIds },
+      });
+    }
 
     // Track cumulative for KYC threshold.
-    await incrementCumulativeWithdrawals(userId, totalAmount).catch(() => { /* non-fatal */ });
+    await incrementCumulativeWithdrawals(userId, totalAmount).catch((err) => logger.error(LOG_SOURCES.prizes.CUMULATIVE_INCREMENT_FAILED, { err, actor: userId, context: { totalAmount } }));
 
     // Audit log into offramp_attempts so admin sees this in Offramps.
     await logDirectWithdrawal({
@@ -215,7 +242,7 @@ export async function POST(req: Request) {
       withdrawalId: withdrawal.id,
       status: 'tx_pending',
       // No single draftId — multiple prizes consolidated.
-    }).catch(() => { /* non-fatal */ });
+    }).catch((err) => logger.error(LOG_SOURCES.prizes.OFFRAMP_AUDIT_FAILED, { err, actor: userId, context: { withdrawalId: withdrawal.id, totalAmount } }));
 
     return json({
       withdrawal: { ...withdrawal, prizeIds: targets.map((t) => t.id) },

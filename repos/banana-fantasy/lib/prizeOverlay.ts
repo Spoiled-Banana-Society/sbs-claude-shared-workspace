@@ -88,6 +88,53 @@ export async function createSyntheticPrize(input: {
 }
 
 /**
+ * Create a prize record with a caller-supplied deterministic id.
+ * Used by the batch winners import: the id is a hash of
+ * wallet|contestName|amount so re-importing the same CSV row maps to
+ * the same doc. Uses Firestore .create() — fails with ALREADY_EXISTS
+ * if the doc is already there, which the import reports as "skipped"
+ * instead of double-granting. The id MUST keep the `syn_` prefix so
+ * every isSyntheticPrizeId() branch keeps working.
+ *
+ * Returns 'created' | 'exists' | null (Firestore unconfigured).
+ */
+export async function createPrizeRecordWithId(
+  id: string,
+  input: {
+    userId: string;
+    amount: number;
+    contestName: string;
+    draftId?: string;
+    note?: string;
+    grantedBy?: string;
+  },
+): Promise<'created' | 'exists' | null> {
+  if (!isFirestoreConfigured()) return null;
+  if (!isSyntheticPrizeId(id)) throw new Error(`prize record id must start with "${SYNTHETIC_ID_PREFIX}"`);
+  const db = getAdminFirestore();
+  const now = new Date().toISOString();
+  const doc: SyntheticPrize = {
+    id,
+    userId: input.userId.toLowerCase(),
+    amount: input.amount,
+    contestName: input.contestName,
+    status: 'pending',
+    createdAt: now,
+  };
+  if (input.draftId) doc.draftId = input.draftId;
+  if (input.note) doc.note = input.note;
+  if (input.grantedBy) doc.grantedBy = input.grantedBy.toLowerCase();
+  try {
+    await db.collection(SYNTHETIC_COLLECTION).doc(id).create(doc);
+    return 'created';
+  } catch (err) {
+    // Firestore ALREADY_EXISTS = gRPC code 6.
+    if ((err as { code?: number }).code === 6) return 'exists';
+    throw err;
+  }
+}
+
+/**
  * Get all synthetic prizes for a user, projected as PrizeWin so the
  * /prizes history endpoint can merge them with Go-API wins without
  * needing to know they're synthetic.
@@ -144,6 +191,49 @@ export async function getPrizeOverlays(prizeIds: string[]): Promise<Map<string, 
 }
 
 /**
+ * Effective claim state for a prize, merged across BOTH layers:
+ * Go-API prizes (status lives in prize_overlays) and synthetic prizes
+ * (status lives on the synthetic_prizes doc itself). `withdrawalId` is
+ * the withdrawal that claimed/settled it, when known.
+ *
+ * Used to guard the money path:
+ *  - withdraw-all refuses to settle a prize that is already
+ *    'processing' or 'paid' (double-withdrawal guard).
+ *  - the admin pay route refuses to pay a withdrawal whose prizes were
+ *    already 'paid' by a DIFFERENT withdrawal (double-payout backstop).
+ */
+export interface PrizeClaimState {
+  status: string; // 'pending' | 'processing' | 'paid' | 'forfeited'
+  withdrawalId?: string;
+}
+
+export async function getPrizeClaimStates(prizeIds: string[]): Promise<Map<string, PrizeClaimState>> {
+  const out = new Map<string, PrizeClaimState>();
+  if (!isFirestoreConfigured() || prizeIds.length === 0) return out;
+  const db = getAdminFirestore();
+  const overlayIds = prizeIds.filter((id) => !isSyntheticPrizeId(id));
+  const synIds = prizeIds.filter((id) => isSyntheticPrizeId(id));
+
+  // Go-API prizes: read the overlay layer (batched, chunked at 30).
+  const overlays = await getPrizeOverlays(overlayIds);
+  for (const [pid, ov] of overlays) {
+    out.set(pid, { status: ov.status, withdrawalId: ov.withdrawalId });
+  }
+
+  // Synthetic prizes: status is on the doc itself. Small N (explicit
+  // selections), so per-doc reads are fine.
+  await Promise.all(synIds.map(async (pid) => {
+    const snap = await db.collection(SYNTHETIC_COLLECTION).doc(pid).get();
+    if (snap.exists) {
+      const data = snap.data() as SyntheticPrize & { withdrawalId?: string };
+      out.set(pid, { status: data.status, withdrawalId: data.withdrawalId });
+    }
+  }));
+
+  return out;
+}
+
+/**
  * Apply overlays to a list of PrizeWin records. Mutates statuses to
  * reflect what the overlay says, and sets paidDate when relevant.
  * No-op for items that have no overlay.
@@ -179,9 +269,11 @@ export async function markPrizesProcessing(input: {
   const batch = db.batch();
   for (const prizeId of input.prizeIds) {
     if (isSyntheticPrizeId(prizeId)) {
-      // Direct update to synthetic prize doc.
+      // Direct update to synthetic prize doc. Stamp the claiming
+      // withdrawalId so the double-payout backstop can tell which
+      // withdrawal owns this synthetic prize.
       const ref = db.collection(SYNTHETIC_COLLECTION).doc(prizeId);
-      batch.set(ref, { status: 'processing', updatedAt: now }, { merge: true });
+      batch.set(ref, { status: 'processing', withdrawalId: input.withdrawalId, updatedAt: now }, { merge: true });
     } else {
       // Overlay write for Go-API prize.
       const ref = db.collection(OVERLAY_COLLECTION).doc(prizeId);
@@ -216,7 +308,7 @@ export async function markPrizesPaid(input: {
       const ref = db.collection(SYNTHETIC_COLLECTION).doc(prizeId);
       batch.set(
         ref,
-        { status: 'paid', paidAt: now, updatedAt: now },
+        { status: 'paid', paidAt: now, withdrawalId: input.withdrawalId, updatedAt: now },
         { merge: true },
       );
     } else {

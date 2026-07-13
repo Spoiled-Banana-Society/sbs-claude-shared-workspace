@@ -56,7 +56,7 @@ test.describe('1. Page Load Sweep', () => {
     '/standings',
     '/history',
     '/profile',
-    '/prizes',
+    '/winnings',
     '/faq',
     '/how-it-works',
     '/terms',
@@ -828,7 +828,7 @@ test.describe('7. Standalone Pages Content', () => {
   });
 
   test('Prizes: shows prize content or empty state', async ({ page }) => {
-    await page.goto('/prizes', { waitUntil: 'domcontentloaded' });
+    await page.goto('/winnings', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
     const blank = await isPageBlank(page);
     expect(blank).toBe(false);

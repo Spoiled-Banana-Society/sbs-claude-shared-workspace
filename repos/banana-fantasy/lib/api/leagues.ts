@@ -17,20 +17,25 @@ function draftsApi() {
 }
 
 export type DraftSpeed = 'fast' | 'slow';
-export type DraftPromoType = 'jackpot' | 'hof' | 'pro';
 
 export type LeaderboardOrderBy = string;
 
 /**
  * Join a draft (fast or slow).
  *
- * Backend endpoint: `POST /league/{draftType}/owner/{walletAddress}`
+ * Backend endpoint: `POST /league/{speed}/owner/{walletAddress}`
+ *
+ * IMPORTANT (fairness): the client MUST NOT be able to choose the draft TYPE
+ * (Jackpot/HOF/Pro). Type is decided solely by the backend's provably-fair
+ * guaranteed-distribution logic. A previous "promo draft type" feature let the
+ * client pass `draftType` in this body to force a Jackpot/HOF outcome — that
+ * was a rigged-outcome vector and has been removed everywhere. Do not add a
+ * draftType/promoType argument back to this call.
  */
 export async function joinDraft(
   walletAddress: string,
   speed: DraftSpeed,
   numLeaguesToJoin: number = 1,
-  draftType?: DraftPromoType,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
   const wallet = normalizeWalletAddress(walletAddress);
@@ -43,7 +48,6 @@ export async function joinDraft(
       `/league/${speed}/owner/${wallet}`,
       {
         numLeaguesToJoin,
-        ...(draftType ? { draftType } : {}),
         passType: passType || 'paid',
       },
       { signal: controller.signal },
@@ -64,8 +68,15 @@ export async function joinDraft(
 
   // Best-effort mapping to the UI's `DraftRoom` type.
   // Expected fields vary; commonly includes `draftId` and/or `leagueId`.
-  const draftId: string =
-    String(obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id ?? `${Date.now()}`);
+  // A successful join ALWAYS carries one of these id fields. If none is present
+  // the response is malformed/failed — throw instead of fabricating a fake id
+  // (the old `${Date.now()}` fallback spawned a phantom draft and could waste a
+  // pass). This only affects the broken-response case; a real join is unchanged.
+  const resolvedId = obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id;
+  if (resolvedId === undefined || resolvedId === null || resolvedId === '') {
+    throw new Error('Join did not return a draft — please try again.');
+  }
+  const draftId: string = String(resolvedId);
 
   const maxPlayers: number = Number(obj.maxPlayers ?? obj.maxDrafters ?? 10) || 10;
   const players: number = Number(obj.players ?? obj.numPlayers ?? 1) || 1;
@@ -179,13 +190,31 @@ export async function getAllLeaderboards(
 /**
  * Batch progress for the guaranteed distribution system.
  */
+/**
+ * A batch draft that has FILLED but whose slot machine hasn't landed yet.
+ * The dashboard adds its JP/HOF deduction BACK until `atMs`, so a Jackpot/HOF
+ * never shows as hit before its slot reveal — refresh-proof, since this is
+ * recomputed server-side from shared state on every (re)connect.
+ */
+export interface PendingReveal {
+  atMs: number;   // absolute epoch ms (server clock) when this draft's slot reveals
+  jp: number;     // 1 if this filled draft is the Jackpot, else 0
+  hof: number;    // 1 if this filled draft is a HOF, else 0
+}
+
 export interface BatchProgress {
   current: number;
   total: number;
+  // EVENTUAL (all-filled) counts. The dashboard re-derives the "as revealed
+  // right now" view by adding back the deductions of any pendingReveals whose
+  // atMs is still in the future.
   jackpotRemaining: number;
   hofRemaining: number;
   batchStart: number;
   filledLeaguesCount: number;
+  // Reveal-time gating (optional; absent on the plain REST endpoint / old data).
+  pendingReveals?: PendingReveal[];
+  serverNowMs?: number;   // server clock at send time, for client skew correction
 }
 
 /**

@@ -152,6 +152,11 @@ body {
     box-shadow: 0 0 20px rgba(251, 191, 36, 0.3), 0 0 40px rgba(251, 191, 36, 0.1);
   }
 
+  /* Founder pill — static cyan glow so it pops (no pulse). */
+  .glow-founder {
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.45), 0 0 28px rgba(6, 182, 212, 0.18);
+  }
+
   /* Badge pulse — gentle scale + glow throb for legendary badges. The
      filter:drop-shadow uses currentColor so the calling element can set
      its own color via inline style. */
@@ -174,6 +179,14 @@ body {
     animation: badge-rainbow 4s linear infinite;
   }
 
+  /* Brushed-metal sheen ring for podium medallions (BBB silver/bronze). The
+     metallic gradient itself is set inline (per-badge color); this just sizes
+     it and sweeps it slowly using the same background-position keyframes. */
+  .badge-medal-ring {
+    background-size: 200% 100%;
+    animation: badge-rainbow 6s linear infinite;
+  }
+
   /* HOF gold filter - turns red logo to gold */
   .hof-gold-filter {
     filter: sepia(100%) saturate(400%) brightness(110%) hue-rotate(10deg);
@@ -183,6 +196,149 @@ body {
   .glass-card {
     @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-2xl;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* ============================================================
+     Glossy "3D" surfaces — premium product-shot look (deep obsidian
+     panels, domed pill buttons, crisp iridescent rim light).
+     Reusable across the site. Brand = banana yellow on black.
+     ============================================================ */
+
+  /* Deep obsidian panel that floats: smooth matte-glossy black, a soft
+     overhead key-light, and a large diffuse shadow underneath. */
+  .panel-3d {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.10), transparent 55%),
+      linear-gradient(180deg, #1c1c20 0%, #141417 46%, #0b0b0d 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 40px 90px -30px rgba(0, 0, 0, 0.9),
+      0 12px 30px -12px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(255, 255, 255, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  /* Domed pill button base — smooth press + transitions */
+  .btn-3d {
+    position: relative;
+    isolation: isolate;
+    border-radius: 9999px;
+    transition:
+      transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 0.3s ease,
+      filter 0.3s ease;
+  }
+  .btn-3d:active {
+    transform: translateY(1px) scale(0.985);
+  }
+  .btn-3d > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* OBSIDIAN — glossy black dome with a curved-glass top highlight.
+     The hero treatment (image 2's send button). Pair with .rim-chromatic. */
+  .btn-obsidian {
+    background:
+      radial-gradient(120% 85% at 50% 0%, rgba(255, 255, 255, 0.16), transparent 52%),
+      linear-gradient(180deg, #26262b 0%, #141417 52%, #0a0a0c 100%);
+    color: #fbbf24;
+    box-shadow:
+      0 16px 34px -12px rgba(0, 0, 0, 0.8),
+      0 4px 10px -4px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -4px 10px rgba(0, 0, 0, 0.55);
+  }
+  .btn-obsidian:hover {
+    box-shadow:
+      0 22px 44px -12px rgba(0, 0, 0, 0.85),
+      0 5px 12px -4px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -4px 10px rgba(0, 0, 0, 0.55);
+  }
+
+  /* MUTED — same obsidian body, quieter (secondary action). */
+  .btn-muted {
+    background: linear-gradient(180deg, #1a1a1e 0%, #121215 52%, #0a0a0c 100%);
+    color: rgba(255, 255, 255, 0.62);
+    box-shadow:
+      0 12px 26px -12px rgba(0, 0, 0, 0.75),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      inset 0 -3px 8px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .btn-muted:hover {
+    color: rgba(255, 255, 255, 0.9);
+    box-shadow:
+      0 16px 30px -12px rgba(0, 0, 0, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -3px 8px rgba(0, 0, 0, 0.5);
+  }
+
+  /* CRISP iridescent rim — a bright 1.5px refraction ring plus a soft
+     chromatic bloom just outside it. Always on; intensifies on hover. */
+  .rim-chromatic::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: conic-gradient(
+      from 210deg,
+      #5aa8ff,
+      #9b6bff,
+      #ff6bd6,
+      #ffd36b,
+      #6bf0ff,
+      #5aa8ff
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.95;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .rim-chromatic::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from 210deg,
+      #5aa8ff,
+      #9b6bff,
+      #ff6bd6,
+      #ffd36b,
+      #6bf0ff,
+      #5aa8ff
+    );
+    filter: blur(9px);
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity 0.3s ease;
+  }
+  .rim-chromatic:hover::after {
+    opacity: 0.55;
+  }
+
+  /* On-brand variant of the rim — gold shimmer instead of full rainbow. */
+  .rim-banana::before,
+  .rim-banana::after {
+    background: conic-gradient(
+      from 210deg,
+      #fde68a,
+      #fbbf24,
+      #fff4cf,
+      #e08c0a,
+      #fbbf24,
+      #fde68a
+    );
   }
 }
 
@@ -400,6 +556,40 @@ body {
   animation: fade-in 0.5s ease-out forwards;
 }
 
+/* "Joining lobby…" overlay: fades in immediately. The entry handler holds the
+   overlay for a minimum ~700ms (see MIN_OVERLAY_MS in useDraftingPageState) so
+   the branded beat is always clearly visible even when the join resolves
+   instantly — perceptible but still snappy. */
+@keyframes joining-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-joining-in {
+  animation: joining-in 0.2s ease-out both;
+}
+
+/* Indeterminate banana-gradient progress bar that slides across the track. */
+@keyframes joining-bar {
+  0%   { transform: translateX(-160%); }
+  100% { transform: translateX(460%); }
+}
+.animate-joining-bar {
+  animation: joining-bar 1.1s ease-in-out infinite;
+}
+
+/* Animated trailing ellipsis for "Joining lobby". */
+.animate-joining-dots::after {
+  content: '';
+  animation: joining-dots 1.4s steps(1, end) infinite;
+}
+@keyframes joining-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: '...'; }
+}
+
 /* Slide up animation */
 @keyframes slide-up {
   from {
@@ -485,4 +675,17 @@ body {
   .animate-modal-sheet {
     animation: modal-sheet-up 0.25s ease-out forwards;
   }
+}
+
+/* "Creating your account" animated ellipsis — clean sequential dot fade
+   (typing-indicator style). Safari-safe (opacity keyframes, no content anim). */
+.cc-dot {
+  animation: cc-dot-fade 1.4s infinite both;
+  opacity: 0.2;
+}
+.cc-dot:nth-child(2) { animation-delay: 0.2s; }
+.cc-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cc-dot-fade {
+  0%, 70%, 100% { opacity: 0.2; }
+  35% { opacity: 1; }
 }

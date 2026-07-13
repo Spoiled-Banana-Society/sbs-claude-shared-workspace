@@ -1,18 +1,20 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet, usePrivy } from '@privy-io/react-auth';
+import { useFiatOnramp, useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
+import { runNyMint } from '@/lib/nyBuyFlow';
+import { getNySource } from '@/lib/onchain/cctp';
 import { Modal } from '../ui/Modal';
+import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
-import { draftPassPricing } from '@/lib/pricing';
-import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
+import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
-import { pushNotification } from '@/components/NotificationCenter';
-import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
-import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -25,12 +27,34 @@ import {
   setPurchaseFlow,
   resetPurchaseFlow,
   isPurchaseFlowActive,
+  writeResumeRecord,
+  readResumeRecord,
+  clearResumeRecord,
 } from '@/lib/purchaseFlow';
 
 interface BuyPassesModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPurchaseComplete?: (quantity: number) => void;
+}
+
+// Map raw on-chain / SDK errors to short, human copy. Users should never see a
+// viem revert dump (e.g. "transferFrom reverted ... ERC20: transfer amount
+// exceeds balance ... viem@2.52.2").
+function friendlyPurchaseError(raw?: string | null): string {
+  const fallback = 'Something went wrong with the purchase. Please try again.';
+  if (!raw) return fallback;
+  const m = raw.toLowerCase();
+  if (m.includes('exceeds balance') || m.includes('insufficient')) return "The USDC payment didn't come through — please try again.";
+  if (m.includes('allowance')) return "Approval didn't go through — please try again.";
+  if (m.includes('wallet not ready')) return 'Wallet not ready — give it a second, then try again.';
+  if (m.includes('not yet received') || m.includes('not yet')) return 'Still waiting on your payment to settle — try again in a moment.';
+  if (m.includes('rejected') || m.includes('denied')) return 'Signature cancelled — tap Buy to try again.';
+  if (m.includes('not active') || m.includes('maintenance') || m.includes('paused')) return 'Purchases are paused for a moment — please try again shortly.';
+  if (m.includes('base network') || (m.includes('switch') && m.includes('base'))) return 'Switch your wallet to the Base network and try again.';
+  // Hide anything that looks like a raw contract/SDK dump; keep already-short copy.
+  if (m.includes('revert') || m.includes('viem') || m.includes('0x') || raw.length > 90) return fallback;
+  return raw;
 }
 
 export function BuyPassesModal({
@@ -40,23 +64,32 @@ export function BuyPassesModal({
 }: BuyPassesModalProps) {
   const _router = useRouter();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
-  const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
+  const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
+  // NY on-ramp funding. The legacy fundWallet() can't encode USDC-on-Optimism
+  // (it silently falls back to native ETH); useFiatOnramp's explicit
+  // destination {asset,chain} does. Used ONLY on the NY branch.
+  const { fund: fundFiatOnramp } = useFiatOnramp();
   // Used to authenticate the session-beacon call (MoonPay path) so admin
   // sees opened-popup attempts even when the user closes Privy's flow
   // mid-purchase.
   const { getAccessToken } = usePrivy();
+  // NY on-ramp: embedded silent signer + connected wallets, for signing the
+  // Optimism USDC permit (only used on the NY branch — see below).
+  const { signTypedData } = useSignTypedData();
+  const { wallets } = useWallets();
 
   // Purchase flow state lives in a module-level store so it survives modal
   // close/reopen — the card path opens MoonPay externally and a remount
   // mid-flow used to wipe the user's progress indicator. See lib/purchaseFlow.ts.
   const flow = useSyncExternalStore(subscribePurchaseFlow, getPurchaseFlow, getPurchaseFlow);
-  const { quantity, flowStep, flowError, phase, mintedCount, joinError, isJoiningDraft } = flow;
+  const { quantity, flowStep, flowError, phase, mintedCount, joinError, isJoiningDraft, cardPaymentCommitted } = flow;
   const setQuantity = (q: number) => setPurchaseFlow({ quantity: q });
+  const setCardPaymentCommitted = (b: boolean) => setPurchaseFlow({ cardPaymentCommitted: b });
   const setFlowStep = (s: FlowStep) => setPurchaseFlow({ flowStep: s });
   const setFlowError = (e: string | null) => setPurchaseFlow({ flowError: e });
   const setPhase = (p: ModalPhase) => setPurchaseFlow({ phase: p });
@@ -75,12 +108,135 @@ export function BuyPassesModal({
   // the picker UI + the Coinbase route in handlePurchase.
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
+  // Lightweight "not enough USDC" notice for the USDC-on-Base path. Kept OUT of
+  // the sticky error flowStep on purpose — it's a pre-flight validation, not a
+  // failed purchase: it shows only when you tap Buy without enough USDC, and
+  // clears the moment you close, change quantity, or switch payment method. Each
+  // Buy tap re-reads the live balance, so the instant you actually have enough
+  // it just goes through with no error.
+  const [usdcShortfall, setUsdcShortfall] = useState<string | null>(null);
+
+  // Recovery prompt: if a CARD buy was started (marker written) and the user
+  // closed/lost the page mid-purchase, their USDC may have landed but the mint
+  // never finished. On reopen we (live-)check the chain; if the USDC is actually
+  // sitting there, we offer a one-tap "finish with your USDC" (no new charge).
+  // This ONLY shows a prompt — it never auto-mints, so it can't misfire like the
+  // old resume runner. Card path only; cleared on success/cancel.
+  const [recoverableUsdc, setRecoverableUsdc] = useState<{ quantity: number; usd: string } | null>(null);
+
+  // Referral code / username — paste who referred you (codes are name-based,
+  // so the referrer's username works). Sets referredBy via /api/referrals/track
+  // before the purchase, so the buy credits the referrer.
+  const [referralCode, setReferralCode] = useState('');
+  const [referralState, setReferralState] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
+  const [referralMsg, setReferralMsg] = useState<string | null>(null);
+  // Mobile MetaMask USDC buy: interstitial shown before handing off to MetaMask's
+  // in-app browser, so the user understands the (MetaMask-side) few-second load.
+  const [showMetaMaskHandoff, setShowMetaMaskHandoff] = useState(false);
+  const applyReferral = async () => {
+    const code = referralCode.trim();
+    const userId = walletAddress || user?.id;
+    if (!code || referralState === 'applying') return;
+    if (!userId) { setReferralState('error'); setReferralMsg('Sign in first.'); return; }
+    setReferralState('applying'); setReferralMsg(null);
+    try {
+      const res = await fetch('/api/referrals/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referrerCode: code, referredUserId: userId, referredUsername: user?.username }),
+      });
+      const data = await res.json().catch(() => ({} as { error?: string; eligible?: boolean }));
+      if (!res.ok) {
+        setReferralState('error');
+        setReferralMsg(
+          data?.error === 'Cannot refer yourself' ? "That's your own code."
+            : data?.error === 'Invalid referral code' ? "We couldn't find that code."
+            : 'Could not apply that code.',
+        );
+        return;
+      }
+      // Not eligible (returning player / already drafted) → the server did NOT
+      // link anything (2026-07-13): referrals are new-players-only, say so cleanly.
+      if (data?.eligible === false) {
+        setReferralState('error');
+        setReferralMsg('Referrals are for new players only — this account isn’t new, so the code can’t be applied.');
+        return;
+      }
+      setReferralState('applied');
+      setReferralMsg('Applied ✓ — for your friend to get credit: verify your X AND spin your free Banana Wheel, then buy.');
+    } catch {
+      setReferralState('error');
+      setReferralMsg('Network error — try again.');
+    }
+  };
+
   useEffect(() => {
     if (!paymentMethodInitialized && user?.loginMethod) {
       setPaymentMethod(loggedInWithWallet ? 'usdc' : 'card');
       setPaymentMethodInitialized(true);
     }
   }, [user?.loginMethod, loggedInWithWallet, paymentMethodInitialized]);
+
+  // The USDC-shortfall notice is transient — clear it whenever the user closes,
+  // changes quantity, or switches payment method, so it never lingers.
+  useEffect(() => { setUsdcShortfall(null); }, [quantity, paymentMethod, isOpen]);
+
+  // On reopen, detect a stranded CARD purchase: a marker is present AND the USDC
+  // is actually sitting on-chain (live read). Only sets the recovery prompt —
+  // never mints — so it can't misfire. Cleared when the modal closes.
+  useEffect(() => {
+    if (!isOpen) { setRecoverableUsdc(null); return; }
+    if (!walletAddress) return;
+    const rec = readResumeRecord();
+    if (!rec || rec.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) return;
+    if (Date.now() - rec.ts > 45 * 60_000) { clearResumeRecord(); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const bal = await getUsdcBalance(walletAddress as Address);
+        if (cancelled) return;
+        const perPassUsdc = BigInt(draftPassPricing.pricePerPass) * BigInt(10 ** 6);
+        // Not enough for even one pass → nothing to recover. CLEAR any stale
+        // offer too: the balance can drop after the offer was first shown (e.g.
+        // the user spent it elsewhere), and a lingering "your payment went
+        // through" banner with no funds behind it is alarming + misleading.
+        if (bal < perPassUsdc) { setRecoverableUsdc(null); return; }
+        // TIGHTENED: only a real card funding makes the balance GROW. Compare to
+        // the balance recorded right before the card flow started; if it didn't
+        // rise by ~a pass, this USDC was already there (e.g. team-sale proceeds
+        // or a top-up) — NOT a stranded card payment — so don't false-claim
+        // "your payment went through". Markers without a recorded baseline
+        // (older ones) are treated as unverifiable and never shown.
+        const currentUsd = Number(bal) / 1e6;
+        const grew = currentUsd - (rec.balanceBefore ?? Number.POSITIVE_INFINITY);
+        if (grew < draftPassPricing.pricePerPass * 0.9) { setRecoverableUsdc(null); return; }
+        const qty = Math.max(1, Math.min(rec.quantity, Number(bal / perPassUsdc)));
+        setRecoverableUsdc({ quantity: qty, usd: currentUsd.toFixed(2) });
+        clientLog('payment', 'recovery_offer_shown', { wallet: walletAddress, quantity: qty });
+      } catch { /* RPC blip — just don't show the prompt */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, walletAddress]);
+
+  // One-tap recovery: finish the stranded purchase with the USDC already in the
+  // wallet — no new charge. Reuses the same mint() the normal USDC buy uses.
+  const recoverWithUsdc = async () => {
+    const rec = recoverableUsdc;
+    if (!rec || isProcessing) return;
+    setRecoverableUsdc(null);
+    setPaymentMethod('usdc');
+    setQuantity(rec.quantity);
+    clearResumeRecord();
+    setFlowError(null);
+    clientLog('payment', 'recover_existing_usdc', { wallet: walletAddress, quantity: rec.quantity });
+    try {
+      await mint(rec.quantity, { paymentMethod: 'usdc' });
+      clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity: rec.quantity, paymentMethod: 'usdc', recovered: true });
+    } catch (err) {
+      setFlowError(friendlyPurchaseError(err instanceof Error ? err.message : String(err)));
+      setFlowStep('error');
+    }
+  };
 
   // Reset state when modal opens — but ONLY if there's no in-flight purchase
   // to preserve. If the user closed mid-MoonPay or before clicking "Pick speed",
@@ -94,8 +250,27 @@ export function BuyPassesModal({
 
   const { pricePerPass } = draftPassPricing;
   const totalPrice = quantity * pricePerPass;
+  // Web2 (email/social) users can have real USDC in their embedded wallet (team
+  // sales, prizes, leftover credit). When they already hold enough, let them pay
+  // from that balance instead of forcing a card top-up — the USDC mint path is
+  // gasless for embedded wallets (useMintDraftPass signs the permit silently).
+  const hasWalletFunds = (user?.usdcBalance ?? 0) >= totalPrice;
+  // Web2 payment preference: when they already hold enough USDC, default to
+  // paying from balance (once — never fights a later manual toggle). If a bigger
+  // quantity outgrows the balance, the "Pay with balance" option disappears, so
+  // fall back to card to keep the summary/Buy button consistent.
+  const web2BalancePrefSet = useRef(false);
+  useEffect(() => {
+    if (user?.loginMethod !== 'social') return;
+    if (!web2BalancePrefSet.current && hasWalletFunds) {
+      web2BalancePrefSet.current = true;
+      setPaymentMethod('usdc');
+    } else if (!hasWalletFunds && paymentMethod === 'usdc') {
+      setPaymentMethod('card');
+    }
+  }, [user?.loginMethod, hasWalletFunds, paymentMethod]);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
-  const quantityOptions = [1, 5, 10, 20, 30, 40];
+  const quantityOptions = [1, 5, 10, 20, 50, 100];
   const isProcessing =
     flowStep === 'funding' ||
     flowStep === 'waiting-for-usdc' ||
@@ -113,22 +288,48 @@ export function BuyPassesModal({
     else if (mintStep === 'error') setFlowStep('error');
   }, [mintStep]);
 
-  // Track how long the "waiting for USDC to arrive" step has been running
-  // so the modal can show an elapsed timer and an expected duration. MoonPay
-  // can take anywhere from ~15s (card) to ~60s (Apple Pay first-run).
-  const waitingForUsdcStartedAt = flow.waitingForUsdcStartedAt;
   const setWaitingForUsdcStartedAt = (t: number | null) =>
     setPurchaseFlow({ waitingForUsdcStartedAt: t });
+
+  // Heartbeat that drives the live progress bar. `stepStartedAt` resets on
+  // every flowStep change so the bar can ease forward ("creep") within the
+  // current step and snap exactly when the next real milestone fires. The
+  // ticker only runs while a purchase is in flight.
   const [nowTick, setNowTick] = useState(Date.now());
+  const [stepStartedAt, setStepStartedAt] = useState(Date.now());
   useEffect(() => {
-    if (flowStep !== 'waiting-for-usdc') return;
-    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    setStepStartedAt(Date.now());
+    setNowTick(Date.now());
+  }, [flowStep]);
+  useEffect(() => {
+    if (flowStep === 'idle' || flowStep === 'success' || flowStep === 'error') return;
+    const id = setInterval(() => setNowTick(Date.now()), 300);
     return () => clearInterval(id);
   }, [flowStep]);
-  const waitingElapsedSec =
-    waitingForUsdcStartedAt && flowStep === 'waiting-for-usdc'
-      ? Math.max(0, Math.floor((nowTick - waitingForUsdcStartedAt) / 1000))
-      : 0;
+
+  // Cover Privy's vestigial funding modal on the CARD path once payment is
+  // confirmed on-chain. Privy never auto-closes its "You've funded / Continue"
+  // screen (confirmed in the SDK — the CTA is wired to closePrivyModal with no
+  // auto-effect), so from `signing` onward it's just noise sitting on top of
+  // our clean flow. We fade it out via Privy's stable element IDs. This is
+  // PURELY COSMETIC: the purchase/mint never depend on it, and if Privy ever
+  // renames those IDs the rule simply matches nothing → Privy shows exactly as
+  // today, with zero impact on the buy. We only hide from `signing` (funds
+  // confirmed) — never during funding/waiting, when the user still needs
+  // Privy's modal to reach MoonPay. MoonPay's own window is closed by Privy
+  // itself on completion. USDC has no Privy funding modal, so this is card-only.
+  const coverPrivyModal =
+    paymentMethod === 'card' &&
+    (flowStep === 'signing' || flowStep === 'processing' || flowStep === 'success');
+  useEffect(() => {
+    if (!coverPrivyModal) return;
+    const style = document.createElement('style');
+    style.setAttribute('data-sbs-cover-privy', '');
+    style.textContent =
+      '#privy-dialog,#privy-dialog-backdrop{opacity:0!important;pointer-events:none!important;transition:opacity .25s ease;}';
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, [coverPrivyModal]);
 
   /**
    * Track a purchase in Firestore: create record → verify → promo updates.
@@ -153,45 +354,13 @@ export function BuyPassesModal({
 
     clientLog('payment', 'track_purchase_start', { userId, quantity: qty, txHash: hash, paymentMethod });
 
-    try {
-      const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
-        method: 'POST',
-        body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
-      });
-      const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
-        method: 'POST',
-        body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
-      });
-      // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
-      // fields earned alongside the mint. Deliberately DO NOT clobber
-      // `draftPasses` here: on-chain is the source of truth, and the next
-      // refreshBalance() call will pull it from Alchemy. Overwriting with the
-      // Firestore value would cause a flicker (optimistic bump → stale
-      // cached value → real on-chain value).
-      if (verifyRes.user) {
-        const serverUser = verifyRes.user as Partial<import('@/types').User>;
-        const { draftPasses: _ignore, ...rest } = serverUser;
-        void _ignore;
-        updateUser(rest);
-      }
-    } catch (err) {
-      // Verify failed after a successful on-chain mint. The NFT is real; the
-      // counter sync is behind. Log visibly so the user understands their
-      // balance will catch up when the backend reconciles.
-      console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
-      reportClientError({
-        source: LOG_SOURCES.payment.CARD_PURCHASE_TRACKING_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'buy-drafts',
-        context: { userId, quantity: qty, txHash: hash, paymentMethod },
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-      pushNotification({
-        type: 'system',
-        title: 'Pass minted but sync delayed',
-        message: 'Your draft pass is in your wallet. The balance display will catch up shortly.',
-      });
-    }
+    // NOTE: the old /api/purchases/create + /verify calls were removed here —
+    // they were a legacy/stub path (built for a future real card processor) that
+    // always failed in the crypto flow and did nothing useful (it logged the
+    // "Missing authorization token" noise). The real work happens elsewhere: the
+    // pass is minted on-chain via card-mint, referral/promo crediting is
+    // server-side in card-mint, and the balance below self-heals the count.
+
     // Live-sync: poll the balance endpoint until the on-chain count reflects
     // the new mint. Covers the 1–2s window where Alchemy's RPC edge can still
     // be serving the pre-mint balanceOf even though the tx has finalized.
@@ -206,6 +375,18 @@ export function BuyPassesModal({
 
   // Transition to pick-speed after successful USDC mint
   const txTrackedRef = useRef(false);
+  // Abort flag for the card-funding wait loop, so the user can cancel /
+  // change their order during funding without a hard refresh.
+  const cancelledRef = useRef(false);
+  const handleCancelCheckout = () => {
+    cancelledRef.current = true;
+    clearResumeRecord(); // user backed out — no recovery prompt later
+    setWaitingForUsdcStartedAt(null);
+    txTrackedRef.current = false;
+    setFlowError(null);
+    setFlowStep('idle');
+    clientLog('payment', 'checkout_cancelled', { quantity, flowStep });
+  };
   useEffect(() => {
     if (txHash && !mintError && phase === 'purchase' && !txTrackedRef.current) {
       txTrackedRef.current = true;
@@ -228,24 +409,90 @@ export function BuyPassesModal({
     setMintedCount(count);
     setPhase('pick-speed');
     onPurchaseComplete?.(count);
-    // Pluralize title to match the count so "1 draft pass" + "Draft Passes
-    // Purchased!" doesn't read like a bug.
-    pushNotification({
-      type: 'purchase_complete',
-      title: count === 1 ? 'Draft Pass Purchased!' : 'Draft Passes Purchased!',
-      message: `You bought ${count} draft pass${count !== 1 ? 'es' : ''}. Time to draft!`,
-      link: '/drafting',
-    });
+    // No success ping on mint — the pick-speed screen IS the confirmation.
+    // (Promo rewards earned alongside still surface their own toast.)
   };
 
   const handlePurchase = async () => {
     if (!Number.isFinite(quantity) || quantity <= 0) return;
 
+    // One trail per attempt, all flows + login types. Filtering the admin Logs
+    // by a wallet shows the full journey: purchase_started → (funding) → mint_*
+    // → purchase_succeeded/failed → join_draft_*.
+    clientLog('payment', 'purchase_started', {
+      wallet: walletAddress,
+      quantity,
+      paymentMethod,
+      loginMethod: user?.loginMethod ?? 'unknown',
+    });
+
+    setUsdcShortfall(null);
+    setCardPaymentCommitted(false); // re-arm each attempt; only the card path flips it true after payment
+
     if (paymentMethod === 'usdc') {
+      // Mobile MetaMask (external wallet) in Safari: signing the purchase over the
+      // SDK relay is unreliable AND shows an anonymous-origin "deceptive request"
+      // warning (the request shows a relay session id, not sbsfantasy.com). Hand
+      // off to MetaMask's OWN in-app browser, where the wallet is injected
+      // (reliable, no relay) and the request shows the real sbsfantasy.com origin
+      // → no scam warning, correct $25 cap. They do one quick injected connect
+      // there, then buy; /buy-drafts?buy=1 lands them straight back on this screen.
+      //   SCOPED TIGHT (zero regression): only external-wallet logins (email /
+      //   embedded users sign silently and must NOT be sent away), only on mobile,
+      //   and only when MetaMask is NOT already injected — so desktop extension
+      //   users and anyone already inside MetaMask's browser keep the normal flow.
+      //   Card payments never reach this branch. LOGIN is untouched.
+      const isMobileDevice = typeof navigator !== 'undefined' &&
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const injectedMetaMask = typeof window !== 'undefined' &&
+        !!(window as unknown as { ethereum?: { isMetaMask?: boolean } }).ethereum?.isMetaMask;
+      if (loggedInWithWallet && isMobileDevice && !injectedMetaMask && typeof window !== 'undefined') {
+        // Don't jump to MetaMask instantly — show an interstitial first so the
+        // user knows what's happening (MetaMask takes a few seconds to open its
+        // in-app browser). The actual deeplink fires from the interstitial's
+        // button tap (a fresh user gesture → more reliable app-open than an
+        // auto-redirect). Copy lives on OUR screen because we can't write to
+        // MetaMask's own loading screen.
+        clientLog('payment', 'usdc_buy_deeplink_prompt', { wallet: walletAddress, quantity });
+        setShowMetaMaskHandoff(true);
+        return;
+      }
       try {
+        // Pre-flight balance check (LIVE on-chain read each tap) — without it, a
+        // user with too little USDC signs, the server transferFrom reverts, and
+        // the modal hangs on "Processing." Show a transient inline notice (NOT
+        // the sticky error screen) and stay on the form so they can fix it and
+        // retry. Re-reads fresh every tap, so it clears itself once funded.
+        if (walletAddress) {
+          const needed = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
+          try {
+            const bal = await getUsdcBalance(walletAddress as Address);
+            clientLog('payment', 'usdc_preflight', {
+              wallet: walletAddress,
+              balanceUsd: (Number(bal) / 1e6).toFixed(2),
+              neededUsd: totalPrice,
+              sufficient: bal >= needed,
+            });
+            if (bal < needed) {
+              const have = (Number(bal) / 1e6).toFixed(2);
+              setUsdcShortfall(`Not enough USDC on Base — $${have} of $${totalPrice}. Add USDC or pay by card.`);
+              return;
+            }
+          } catch {
+            // RPC blip reading the balance — don't block; the server still guards.
+          }
+        }
         await mint(quantity, { paymentMethod: 'usdc' });
+        clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'usdc' });
         // Phase transition handled by useEffect on txHash
-      } catch {
+      } catch (err) {
+        clientLog('payment', 'purchase_failed', {
+          wallet: walletAddress,
+          quantity,
+          paymentMethod: 'usdc',
+          step: 'mint',
+          error: err instanceof Error ? err.message : String(err),
+        });
         // Error surfaced by mint hook
       }
       return;
@@ -260,8 +507,13 @@ export function BuyPassesModal({
 
     if (isProcessing) return;
 
+    cancelledRef.current = false;
     setFlowStep('funding');
     setFlowError(null);
+    // Drop a marker so that, if the tab is lost mid-purchase (mobile tab-kill),
+    // we can OFFER a one-tap recovery on return. This never auto-mints — it only
+    // gates the recovery prompt. Cleared on success/cancel.
+    writeResumeRecord({ quantity, walletAddress, balanceBefore: user?.usdcBalance ?? 0 });
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
@@ -286,7 +538,16 @@ export function BuyPassesModal({
               amount: Number(fundingAmount),
             }),
           });
-        } catch { /* logging is best-effort */ }
+        } catch (err) {
+          // Best-effort analytics beacon — log so a gap in onramp tracking is visible.
+          reportClientError({
+            source: LOG_SOURCES.payment.MOONPAY_SESSION_BEACON_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'buy-passes',
+            actor: walletAddress,
+            context: { provider: 'moonpay', amount: Number(fundingAmount) },
+          });
+        }
       })();
 
       // MoonPay-only path: Privy handles the popup, opens straight into
@@ -295,52 +556,146 @@ export function BuyPassesModal({
       // /api/coinbase/buy-session, /api/coinbase/buy-status) but disabled
       // here until the CDP project is approved out of trial mode — the
       // default $5/transaction cap blocks $25 draft passes.
-      const result = await fundWallet({
-        address: walletAddress,
-        options: {
-          chain: BASE_SEPOLIA,
-          amount: fundingAmount,
-          asset: 'USDC',
-          defaultFundingMethod: 'card',
-          card: {
-            preferredProvider: 'moonpay',
+      // Open Privy's MoonPay funding flow and WAIT for it to finish. We tried
+      // firing the mint the instant a balance read passed (parallel), but on
+      // mobile that fires before the funds are reliably settled across RPC
+      // nodes, so the server's transferFrom reverts ("exceeds balance"). Waiting
+      // for fundWallet to resolve is the known-good sequencing.
+      // NY on-ramp detection. NY buyers can't get USDC on Base via MoonPay, so
+      // we fund on Optimism and bridge to Base (the isNy pre-step below). Decided
+      // server-side; returns ny:false unless the buyer is NY AND the flag is on,
+      // so this is a no-op for everyone else (they stay on the exact Base flow).
+      // Must send the Bearer token — the route resolves the buyer server-side via
+      // getPrivyUser (Authorization header only, no cookie fallback), so an
+      // unauthenticated fetch always returns ny:false and the NY branch never fires.
+      const nyToken = await getAccessToken();
+      const nyStatus = await fetch('/api/user/ny-status', {
+        headers: nyToken ? { Authorization: `Bearer ${nyToken}` } : {},
+      }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const isNy = !!nyStatus?.ny;
+      clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount, ny: isNy });
+      if (isNy) {
+        // NY buyers can't get USDC-on-Base via MoonPay, so buy USDC on OPTIMISM
+        // (CAIP-2 eip155:10) via the fiat-onramp API — the ONLY Privy path that
+        // correctly encodes USDC-on-Optimism (legacy fundWallet falls back to
+        // native ETH). USDC lands on Optimism; the bridge pre-step below moves it
+        // to the buyer's own Base wallet, then the normal Base wait + mint run.
+        // useFiatOnramp charges a FIAT amount and MoonPay's fee comes OUT of it, so
+        // we gross the fiat up so the buyer RECEIVES the pass cost in USDC. Base
+        // buyers hit the SAME fee, just added on top (25 USDC → ~$29.59), so adding
+        // it here makes the displayed total match Base. MoonPay's fee on small buys
+        // is ~flat $4.6 (its ~$4 minimum dominates); on large buys ~4.5%. So:
+        //   1 pass  → 25 + 4.9  ≈ $29.90  (right next to Base's ~$29.59)
+        //   4 passes→ 100 + 4.9 ≈ $104.90
+        // The slight headroom (buyer nets ~25.3, not exactly 25) guarantees the
+        // amount clears the pass price after the tiny CCTP bridge fee even if
+        // MoonPay's fee wobbles; the few cents of surplus land usable on Base.
+        const nyFiatAmount = (Number(fundingAmount) + Math.max(4.9, Number(fundingAmount) * 0.045)).toFixed(2);
+        try {
+          const fr = await fundFiatOnramp({
+            source: { assets: ['usd'], defaultAsset: 'usd' },
+            destination: { asset: 'usdc', chain: getNySource().caip2, address: walletAddress },
+            environment: 'production',
+            defaultAmount: nyFiatAmount,
+          });
+          clientLog('payment', 'funding_result', { wallet: walletAddress, status: fr.status });
+        } catch {
+          // User closed the onramp before paying — nothing charged, reset quietly.
+          clientLog('payment', 'funding_cancelled', { wallet: walletAddress, ny: true });
+          setFlowStep('idle');
+          return;
+        }
+      } else {
+        const result = await fundWallet({
+          address: walletAddress,
+          options: {
+            chain: BASE_SEPOLIA,
+            amount: fundingAmount,
+            asset: 'USDC',
+            defaultFundingMethod: 'card',
+            card: {
+              preferredProvider: 'moonpay',
+            },
           },
-        },
-      });
+        });
+        clientLog('payment', 'funding_result', { wallet: walletAddress, status: result.status });
 
-      if (result.status === 'cancelled') {
-        setFlowStep('idle');
+        if (result.status === 'cancelled') {
+          setFlowStep('idle');
+          return;
+        }
+      }
+
+      // Payment is COMMITTED — the user has paid and USDC is inbound. From here
+      // on they are never out money: any error just means "finish from balance",
+      // so the error UI shows a reassuring notice instead of a scary failure.
+      setCardPaymentCommitted(true);
+
+      // NY branch (FAST): the USDC landed on Optimism, not Base. ny-mint sweeps
+      // it (payment secured) and IMMEDIATELY owner-mints the paid pass — the pass
+      // is delivered server-side here, with the identical paid/credit/promo
+      // bookkeeping card buyers get. So we jump straight to success and SKIP the
+      // Base wait + mint() below (no second on-chain mint, no second signature).
+      // The USDC→Base treasury bridge runs in the background server-side, unseen.
+      // Non-NY buyers skip this entirely and run the exact Base flow as before.
+      if (isNy) {
+        setFlowStep('processing');
+        await runNyMint({
+          user: walletAddress as Address,
+          quantity,
+          passCost: usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6),
+          signTypedData: signTypedData as unknown as Parameters<typeof runNyMint>[0]['signTypedData'],
+          wallets: wallets as unknown as Parameters<typeof runNyMint>[0]['wallets'],
+          getAccessToken,
+          isCancelled: () => cancelledRef.current,
+        });
+        if (cancelledRef.current) return;
+        // Pass is already delivered — refresh the count + show success. Do NOT
+        // fall through to the Base wait + mint (that path is card/USDC-on-Base).
+        await trackPurchase(quantity, 'ny-mint');
+        clearResumeRecord();
+        clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'card', ny: true });
+        setFlowStep('success');
+        setMintedCount(quantity);
         return;
       }
 
-      // Poll for USDC arrival before minting
+      // Confirm the USDC actually landed before minting — event-driven via the
+      // on-chain Transfer subscription (instant once it settles), no polling.
       setFlowStep('waiting-for-usdc');
-      setWaitingForUsdcStartedAt(Date.now());
+      const usdcWaitStartedAt = Date.now();
+      setWaitingForUsdcStartedAt(usdcWaitStartedAt);
 
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
       const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
-      const pollIntervalMs = 3_000; // check every 3s
 
-      const waitForUsdc = async () => {
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxWaitMs) {
-          const balance = await getUsdcBalance(walletAddress as Address);
-          if (balance >= totalCostUsdc) return true;
-          await new Promise((r) => setTimeout(r, pollIntervalMs));
-        }
-        return false;
-      };
-
-      const funded = await waitForUsdc();
+      const funded = await waitForUsdcArrival(walletAddress as Address, totalCostUsdc, {
+        timeoutMs: maxWaitMs,
+        isCancelled: () => cancelledRef.current,
+        onError: (err) => {
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'buy-passes',
+            actor: walletAddress,
+            context: { totalCostUsdc: String(totalCostUsdc) },
+          });
+        },
+      });
+      if (cancelledRef.current) return;
       if (!funded) {
+        clientLog('payment', 'usdc_timeout', { wallet: walletAddress, waitedMs: Date.now() - usdcWaitStartedAt });
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
+      clientLog('payment', 'usdc_arrived', { wallet: walletAddress, waitedMs: Date.now() - usdcWaitStartedAt });
 
       setWaitingForUsdcStartedAt(null);
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
       await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
+      clearResumeRecord(); // completed — no recovery needed
+      clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'card' });
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
@@ -349,6 +704,12 @@ export function BuyPassesModal({
       // "Pick draft speed" button below to continue.
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Payment failed. Please try again.';
+      clientLog('payment', 'purchase_failed', {
+        wallet: walletAddress,
+        quantity,
+        paymentMethod: 'card',
+        error: message,
+      });
       setFlowError(message);
       setFlowStep('error');
     }
@@ -366,16 +727,18 @@ export function BuyPassesModal({
 
     setPhase('joining');
     setJoinError(null);
+    clientLog('payment', 'join_draft_start', { wallet: addr, speed });
 
     try {
       // Join a draft
       const apiBase = getDraftsApiUrl();
-      const forcedDraftType = peekPromoDraftType();
-      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr, forcedDraftType });
+      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr });
+      // Draft TYPE is decided solely by the backend's provably-fair logic —
+      // the client never sends a draftType (would be a rigged-outcome vector).
       const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numLeaguesToJoin: 1, ...(forcedDraftType ? { draftType: forcedDraftType } : {}) }),
+        body: JSON.stringify({ numLeaguesToJoin: 1 }),
       });
 
       if (!joinRes.ok) {
@@ -392,6 +755,7 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Parsed:', { draftId, contestName });
 
       if (!draftId) throw new Error('No draft ID returned from join API');
+      clientLog('payment', 'join_draft_success', { wallet: addr, speed, draftId });
 
       // In staging mode, bots will fill AFTER user lands in draft room lobby
       // (triggered by draft-room page once WebSocket connects)
@@ -411,10 +775,6 @@ export function BuyPassesModal({
         });
         localStorage.setItem('banana-active-drafts', JSON.stringify(existing));
       } catch { /* ignore */ }
-
-      if (forcedDraftType) {
-        consumePromoDraftType(forcedDraftType);
-      }
 
       // Navigate to draft lobby with staging params
       const params = new URLSearchParams({
@@ -440,6 +800,7 @@ export function BuyPassesModal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to join draft';
       console.error('[BuyModal] Join error:', msg, err);
+      clientLog('payment', 'join_draft_failed', { wallet: addr, speed, error: msg });
       joinInFlightRef.current = false;
       setIsJoiningDraft(false);
       setJoinError(msg);
@@ -447,80 +808,156 @@ export function BuyPassesModal({
     }
   };
 
-  // Step labels are tailored per user segment:
-  //   - Web2 (Privy social login) → friendly, no crypto jargon.
-  //   - Web3 (external wallet) → accurate, since they know what a signature is.
-  // The card path adds two leading steps (payment + funding) that the
-  // USDC path skips — visibleSteps() filters by paymentMethod.
   const isWeb2 = user?.loginMethod === 'social';
 
-  const stepLabels: Record<FlowStep, string> = isWeb2
-    ? {
-        idle: '',
-        funding: 'Processing your payment…',
-        'waiting-for-usdc': 'Preparing your funds…',
-        signing: 'Confirming your purchase…',
-        processing: 'Getting your passes ready…',
-        success: 'All set! Your passes are live',
-        error: '',
-      }
-    : {
-        idle: '',
-        funding: 'Purchasing USDC via MoonPay…',
-        'waiting-for-usdc': 'Waiting for USDC to arrive…',
-        signing: 'Waiting for your wallet signature…',
-        processing: 'Processing on-chain…',
-        success: 'Purchase complete!',
-        error: '',
-      };
+  // Clean, crypto-free progress model. Each visible row maps to one or more
+  // real internal stages (funding / waiting-for-usdc / signing / processing).
+  // Card shows 3 rows; USDC prepends a "Confirm with your wallet" row — the
+  // bottom three rows are identical across both flows. Same copy for everyone
+  // (email, X, wallet), so it can never drift between segments.
+  const internalOrder: FlowStep[] =
+    paymentMethod === 'card'
+      ? ['funding', 'waiting-for-usdc', 'signing', 'processing', 'success']
+      : ['signing', 'processing', 'success'];
+  const internalIdx =
+    flowStep === 'error' || flowStep === 'idle'
+      ? 0
+      : Math.max(0, internalOrder.indexOf(flowStep));
 
-  const stepHelper: Partial<Record<FlowStep, string>> = isWeb2
-    ? {
-        funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'This usually takes 15–60 seconds.',
-        signing: '',
-        processing: 'Finalizing — just a few seconds.',
-      }
-    : {
-        funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'Typically 15–60s. We poll the chain every few seconds.',
-        signing: "Check your wallet — this is just a signature, it won't cost gas.",
-        processing: 'Admin wallet is paying gas for you. ~5 seconds.',
-      };
+  // completeAtIdx = internal index at which the row flips to ✓. The active
+  // (spinning) row is derived as the first not-yet-complete row.
+  type VisibleStep = { label: string; completeAtIdx: number; helper?: string };
+  const cardSteps: VisibleStep[] = [
+    { label: 'Payment confirmed', completeAtIdx: 2 },
+    { label: 'Processing your purchase', completeAtIdx: 3 },
+    { label: 'Adding draft pass to your account', completeAtIdx: 4 },
+  ];
+  const usdcSteps: VisibleStep[] = [
+    { label: 'Confirm with your wallet', completeAtIdx: 1, helper: 'Check your wallet to approve.' },
+    { label: 'Payment confirmed', completeAtIdx: 1 },
+    { label: 'Processing your purchase', completeAtIdx: 2 },
+    { label: 'Adding draft pass to your account', completeAtIdx: 2 },
+  ];
+  const visibleSteps = paymentMethod === 'card' ? cardSteps : usdcSteps;
 
-  const cardStepOrder: FlowStep[] = ['funding', 'waiting-for-usdc', 'signing', 'processing', 'success'];
-  const usdcStepOrder: FlowStep[] = ['signing', 'processing', 'success'];
-  const visibleStepOrder = paymentMethod === 'card' ? cardStepOrder : usdcStepOrder;
+  const stepStatuses = visibleSteps.map((s) => ({
+    ...s,
+    complete: flowStep === 'success' ? true : internalIdx >= s.completeAtIdx,
+  }));
+  // Active = first not-yet-complete row, only while a purchase is in flight.
+  const activeRowIdx =
+    flowStep === 'idle' || flowStep === 'success' || flowStep === 'error'
+      ? -1
+      : stepStatuses.findIndex((s) => !s.complete);
 
-  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Pick Your Draft Speed' : 'Joining Draft...';
+  // Real-time bar: snaps forward on each real milestone, and eases within the
+  // active step so it always looks live (never frozen). The longer card-funding
+  // wait gets a slower creep so it doesn't race to the end prematurely.
+  const totalSteps = visibleSteps.length || 1;
+  const completedCount = stepStatuses.filter((s) => s.complete).length;
+  const activeElapsedSec = activeRowIdx >= 0 ? Math.max(0, (nowTick - stepStartedAt) / 1000) : 0;
+  const activeTau = flowStep === 'funding' || flowStep === 'waiting-for-usdc' ? 9 : 3;
+  const creep = activeRowIdx >= 0 ? (1 - Math.exp(-activeElapsedSec / activeTau)) * 0.85 : 0;
+  const progressPct =
+    flowStep === 'success' ? 100 : Math.min(99, ((completedCount + creep) / totalSteps) * 100);
+
+  const modalTitle =
+    phase === 'pick-speed'
+      ? 'Choose Draft Speed'
+      : phase === 'purchase'
+        ? flowStep === 'success'
+          ? 'Draft Pass ready'
+          : isProcessing
+            ? 'Draft Pass on the way'
+            : 'Buy Draft Passes'
+        : 'Joining Draft...';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
-      <div className="space-y-5">
+      {/* MetaMask handoff interstitial — sets expectations BEFORE the hop, since
+          MetaMask's own loading screen (the few-second wait) is its app UI we
+          can't write to. The deeplink fires from this button (fresh tap = more
+          reliable app-open). Stays up if the user pops back to Safari mid-wait. */}
+      {showMetaMaskHandoff && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-2xl bg-bg-primary/95 backdrop-blur-sm px-6 text-center">
+          <Image src="/metamask.png" alt="MetaMask" width={52} height={52} className="rounded-xl" />
+          <h3 className="text-text-primary text-lg font-bold">Opening MetaMask…</h3>
+          <div className="space-y-1.5 max-w-[300px]">
+            <p className="text-text-muted text-sm leading-relaxed">
+              It takes a few seconds to load our site in MetaMask&apos;s browser. Mint a Draft Pass there, then return to the app to draft.
+            </p>
+            <p className="text-text-muted/60 text-xs leading-relaxed">
+              Desktop works perfectly for minting with USDC.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              clientLog('payment', 'usdc_buy_deeplink_to_metamask', { wallet: walletAddress, quantity });
+              window.location.href = `https://metamask.app.link/dapp/${window.location.host}/buy-drafts?buy=1`;
+            }}
+            className="mt-1 w-full max-w-[300px] rounded-xl bg-banana py-3.5 text-black font-bold text-[15px] active:brightness-95"
+          >
+            Open MetaMask
+          </button>
+          <button
+            onClick={() => setShowMetaMaskHandoff(false)}
+            className="text-text-muted text-xs underline-offset-2 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      <div className="space-y-3.5">
 
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
           <>
-            {/* Balance context */}
+            {/* Recovery prompt — only when a stranded card purchase is detected
+                (marker + USDC actually on-chain). Clean banana banner, one tap,
+                no new charge. Never auto-mints. */}
+            {flowStep === 'idle' && recoverableUsdc && (
+              <div className="rounded-2xl border border-banana/30 bg-banana/[0.08] p-4 space-y-2.5">
+                <p className="text-text-primary text-[15px] font-semibold leading-snug">
+                  Finish your purchase
+                </p>
+                <p className="text-text-muted text-xs leading-relaxed">
+                  Your payment went through — continue to get your draft pass.
+                </p>
+                <button
+                  onClick={recoverWithUsdc}
+                  className="w-full py-2.5 rounded-xl bg-banana text-black font-bold text-sm hover:brightness-110 transition-all"
+                >
+                  {recoverableUsdc.quantity > 1 ? `Get my ${recoverableUsdc.quantity} draft passes` : 'Get my draft pass'}
+                </button>
+              </div>
+            )}
+
+            {flowStep === 'idle' && (
+            <>
+            {/* Balance context — count paid and free passes separately so a
+                user holding only a free pass doesn't read "0 draft passes". */}
             <p className="text-text-muted text-sm text-center -mt-2">
-              You have {user?.draftPasses || 0} draft pass{(user?.draftPasses || 0) !== 1 ? 'es' : ''}
+              {(() => {
+                const paid = user?.draftPasses || 0;
+                const free = user?.freeDrafts || 0;
+                // Always label paid vs free when both kinds exist; otherwise
+                // name the one kind they hold.
+                if (paid === 0 && free === 0) return `You have 0 draft passes`;
+                if (free === 0) return `You have ${paid} paid draft pass${paid !== 1 ? 'es' : ''}`;
+                if (paid === 0) return `You have ${free} free draft pass${free !== 1 ? 'es' : ''}`;
+                return `You have ${paid} paid + ${free} free draft pass${paid + free !== 1 ? 'es' : ''}`;
+              })()}
             </p>
 
             {/* Quantity Selection */}
             <div>
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Quantity</h3>
+              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Quantity</h3>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {quantityOptions.map((qty) => (
                   <button
                     key={qty}
                     onClick={() => setQuantity(qty)}
-                    className={`
-                      py-3 rounded-xl font-semibold text-lg transition-all duration-200
-                      ${quantity === qty
-                        ? 'bg-banana text-bg-primary shadow-lg shadow-banana/25 scale-[1.02]'
-                        : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'
-                      }
-                    `}
+                    className={`py-2.5 rounded-xl font-bold text-[15px] transition-colors ${quantity === qty ? 'bg-banana text-bg-primary' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'}`}
                   >
                     {qty}
                   </button>
@@ -532,12 +969,14 @@ export function BuyPassesModal({
                 <input
                   type="number"
                   min="1"
-                  max="1000"
+                  max="100"
                   value={quantity || ''}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '') setQuantity(0);
-                    else setQuantity(Math.min(1000, Math.max(1, parseInt(val) || 1)));
+                    // 100 = the server ceiling on BOTH payment paths — clamp here
+                    // so nobody types 500 and hits a server rejection at checkout.
+                    else setQuantity(Math.min(100, Math.max(1, parseInt(val) || 1)));
                   }}
                   onBlur={() => { if (quantity < 1) setQuantity(1); }}
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -545,143 +984,164 @@ export function BuyPassesModal({
               </div>
             </div>
 
-            {/* Payment Method */}
+            {/* Payment Method. Social (Gmail/X) login → Card only, one clean
+                box. Wallet login → USDC on Base | Card toggle. The card option
+                covers Card, Apple Pay, Venmo and PayPal (all via MoonPay). */}
             <div>
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setPaymentMethod('usdc')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
-                >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'usdc' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg viewBox="0 0 24 24" className={`w-5 h-5 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <text x="12" y="16" textAnchor="middle" fill="currentColor" stroke="none" fontSize="12" fontWeight="bold">$</text>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</p>
-                    <p className="text-text-muted text-xs">USDC on Base</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'card' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
-                >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'card' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                      <line x1="1" y1="10" x2="23" y2="10"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card / Apple Pay</p>
-                    <p className="text-text-muted text-xs">Instant checkout</p>
-                  </div>
-                </button>
-              </div>
-
+              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Payment</h3>
+              <PaymentMethodSquares
+                value={paymentMethod}
+                onChange={setPaymentMethod}
+                isEmbeddedWallet={isWeb2}
+                usdcBalance={user?.usdcBalance ?? null}
+                requiredAmount={totalPrice}
+              />
             </div>
+            </>
+            )}
 
-            {/* Card Purchase Rewards banner */}
+            {/* Card-fee credit → free draft banner (live $ progress) */}
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
-              const current = user?.cardPurchaseCount || 0;
-              const projected = Math.min(6, current + (quantity || 0));
+              const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
+              // Bar reflects ACTUAL accumulated credit — empty at $0, fills live
+              // as real card purchases accrue (cardFeeCreditCents streams in).
+              const current = Math.min(threshold, user?.cardFeeCreditCents || 0);
+              const earnsNow = current + feeForQty(quantity || 1) >= threshold;
+              const curPct = Math.min(100, (current / threshold) * 100);
+              const remaining = Math.max(0, threshold - current);
+              const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
               return (
               <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm">🎁</span>
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+                    <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+                  </svg>
                   <p className="text-white/70 text-[12px] font-medium">
-                    {projected >= 6
-                      ? 'This purchase earns you a FREE draft!'
-                      : 'Card fee? We\'ve got you — every 6 purchases earns a free draft'
+                    {earnsNow
+                      ? 'This purchase earns you a draft pass!'
+                      : "Your card fee is credited forward — at $25 it's a draft pass"
                     }
                   </p>
                 </div>
-                <div className="flex gap-1">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-1.5 flex-1 rounded-full ${
-                        i < current
-                          ? 'bg-banana'
-                          : i < projected
-                            ? 'bg-banana/40'
-                            : 'bg-white/[0.06]'
-                      }`}
-                    />
-                  ))}
+                <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 bg-banana rounded-full transition-all" style={{ width: `${curPct}%` }} />
                 </div>
-                <p className="text-white/30 text-[10px] mt-1.5">{projected} of 6 toward your next free draft</p>
+                <p className="text-white/30 text-[10px] mt-1.5">
+                  {`${usd(current)} of ${usd(threshold)} toward your next draft pass${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
+                </p>
               </div>
               );
             })()}
 
-            {/* Unified purchase progress stepper (both USDC + card paths) */}
+            {/* Referral code — paste a friend's username/code (works for both
+                USDC + card). Applied before purchase so the buy credits them. */}
+            {flowStep === 'idle' && (
+              <div>
+                <p className="text-text-muted text-[11px] uppercase tracking-wider mb-1.5">Referral code (optional)</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) => { setReferralCode(e.target.value); if (referralState !== 'idle') { setReferralState('idle'); setReferralMsg(null); } }}
+                    placeholder="Friend's username"
+                    disabled={referralState === 'applied'}
+                    className="flex-1 min-w-0 rounded-xl border border-bg-elevated bg-bg-tertiary px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-banana/50 disabled:opacity-60"
+                  />
+                  <button
+                    onClick={applyReferral}
+                    disabled={!referralCode.trim() || referralState === 'applying' || referralState === 'applied'}
+                    className="shrink-0 rounded-xl border-2 border-banana px-4 py-2.5 text-sm font-semibold text-banana hover:bg-banana hover:text-black disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-banana transition-all"
+                  >
+                    {referralState === 'applying' ? 'Applying…' : referralState === 'applied' ? 'Applied ✓' : 'Apply'}
+                  </button>
+                </div>
+                {referralMsg && (
+                  <p className={`text-[11px] mt-1.5 ${referralState === 'error' ? 'text-error' : 'text-text-secondary'}`}>{referralMsg}</p>
+                )}
+              </div>
+            )}
+
+            {/* Live purchase progress — one real-time bar + clean, crypto-free
+                steps. Same shell for card + USDC; USDC adds the wallet-confirm
+                row. Bar advances on real milestones and eases between them. */}
             {flowStep !== 'idle' && (
-              <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-3 space-y-3">
-                {visibleStepOrder.map((key) => {
-                  const currentIdx = visibleStepOrder.indexOf(
-                    flowStep === 'error' ? visibleStepOrder[0] : (flowStep as FlowStep),
-                  );
-                  const stepIdx = visibleStepOrder.indexOf(key);
-                  const isComplete = flowStep === 'success' ? true : stepIdx < currentIdx;
-                  const isActive = key === flowStep;
-                  const label = stepLabels[key];
-                  const helper = isActive ? stepHelper[key] : undefined;
-
-                  return (
-                    <div key={key} className="flex items-start justify-between gap-3 text-sm">
-                      <div className="flex items-start gap-2 min-w-0">
-                        <span className="mt-0.5 flex-shrink-0">
-                          {isComplete ? (
-                            <span className="h-4 w-4 rounded-full bg-banana/20 text-banana flex items-center justify-center">
-                              <svg viewBox="0 0 20 20" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M5 10l3 3 7-7" />
-                              </svg>
-                            </span>
-                          ) : isActive ? (
-                            <span className="h-4 w-4 rounded-full border-2 border-banana/30 border-t-banana animate-spin inline-block" />
-                          ) : (
-                            <span className="h-4 w-4 rounded-full border border-bg-elevated inline-block" />
-                          )}
-                        </span>
-                        <div className="min-w-0">
-                          <p className={isComplete ? 'text-text-primary' : isActive ? 'text-text-primary' : 'text-text-muted'}>
-                            {label}
-                          </p>
-                          {helper && (
-                            <p className="text-text-muted text-[11px] mt-0.5">{helper}</p>
-                          )}
-                          {isActive && key === 'waiting-for-usdc' && waitingElapsedSec > 0 && (
-                            <p className="text-text-muted text-[11px] mt-0.5 tabular-nums">
-                              {waitingElapsedSec}s elapsed
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      {isComplete && <span className="text-text-muted text-xs flex-shrink-0">Done</span>}
+              <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-4 space-y-4">
+                {/* Real-time progress bar + live percent (updates as each
+                    on-chain milestone lands; eases between them). Slim &
+                    minimal — thin flat banana on a quiet track, no glow. */}
+                {flowStep !== 'error' && (
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-2 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 min-w-[0.5rem] rounded-full bg-banana transition-[width] duration-500 ease-out"
+                        style={{ width: `${progressPct}%` }}
+                      />
                     </div>
-                  );
-                })}
-
-                {/* Gas-covered badge — crypto users only, so it doesn't confuse web2 users */}
-                {!isWeb2 && flowStep !== 'success' && flowStep !== 'error' && (
-                  <div className="pt-2 mt-1 border-t border-bg-elevated/60 flex items-center gap-1.5 text-[11px] text-text-muted">
-                    <svg viewBox="0 0 20 20" className="h-3 w-3 text-banana" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M4 6h8l2 2v7H4z" />
-                      <path d="M14 11h2v2a1 1 0 01-1 1 1 1 0 01-1-1z" />
-                    </svg>
-                    <span>Gas fees covered by SBS — you only sign, we pay.</span>
+                    <span className="w-9 shrink-0 text-right text-xs font-medium text-banana/90 tabular-nums">
+                      {Math.round(progressPct)}%
+                    </span>
                   </div>
                 )}
 
-                {flowStep === 'error' && (flowError || mintError) && (
-                  <div className="text-sm text-red-400 text-center pt-1">
-                    {flowError || mintError}
+                {/* Steps — minimal indicators: solid check (done) / pulsing dot
+                    (active) / dim dot (pending). Consistent 20px slot so rows
+                    line up cleanly on desktop and mobile. */}
+                {flowStep !== 'error' && (
+                  <div className="space-y-3.5">
+                    {stepStatuses.map((step, i) => {
+                      const isComplete = step.complete;
+                      const isActive = i === activeRowIdx;
+                      const helper = isActive ? step.helper : undefined;
+                      return (
+                        <div key={step.label} className="flex items-start gap-3 text-sm">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                            {isComplete ? (
+                              // Done — solid banana circle + house check (went through)
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-banana">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-bg-primary">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              </span>
+                            ) : isActive ? (
+                              // Active — house banana spinner (clearly working now)
+                              <span className="h-5 w-5 rounded-full border-2 border-banana border-t-transparent animate-spin" />
+                            ) : (
+                              // Pending — dim empty ring (not yet)
+                              <span className="h-5 w-5 rounded-full border-2 border-white/10" />
+                            )}
+                          </span>
+                          <div className="min-w-0 leading-5">
+                            <p className={isComplete ? 'text-text-primary' : isActive ? 'text-text-primary font-medium' : 'text-text-muted'}>
+                              {step.label}
+                            </p>
+                            {helper && <p className="text-text-muted text-[11px] mt-0.5 leading-snug">{helper}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
+
+                {/* Gas line — USDC on Base only (card has no gas) */}
+                {paymentMethod === 'usdc' && flowStep !== 'success' && flowStep !== 'error' && (
+                  <div className="pt-2 mt-1 border-t border-bg-elevated/60 text-[11px] text-text-muted text-center">
+                    We cover the gas.
+                  </div>
+                )}
+
+                {flowStep === 'error' && (mintPaymentPending || cardPaymentCommitted) ? (
+                  // Payment is confirmed (card/PayPal charged, USDC inbound) — the
+                  // user is NOT out money even if the mint hiccupped. Reassure +
+                  // point them to the one-tap finish, never the scary error.
+                  <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3">
+                    <p className="text-banana font-semibold text-sm text-center">Payment received — your funds are in your wallet</p>
+                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">Your draft pass is on its way. If it&apos;s not there in a minute, tap Buy to finish — no new charge.</p>
+                  </div>
+                ) : flowStep === 'error' && (flowError || mintError) ? (
+                  <div className="text-sm text-red-400 text-center">
+                    {friendlyPurchaseError(flowError || mintError)}
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -690,79 +1150,86 @@ export function BuyPassesModal({
               <p className="text-red-400 text-center text-xs">Mint is currently inactive</p>
             )}
 
-            {/* Price + Total */}
-            <div className="text-center space-y-1">
-              <p className="text-text-muted text-sm">$25 per draft pass</p>
-              {paymentMethod === 'usdc' && usdcTotal ? (
-                <p className="text-3xl font-bold text-banana">{formatUnits(usdcTotal, 6)} USDC</p>
-              ) : (
-                <p className="text-3xl font-bold text-banana">${totalPrice}</p>
-              )}
-              {paymentMethod === 'usdc' && user?.usdcBalance != null && (
-                <p className={`text-xs ${user.usdcBalance >= totalPrice ? 'text-success' : 'text-error'}`}>
-                  Wallet balance: {user.usdcBalance.toFixed(2)} USDC
-                  {user.usdcBalance < totalPrice && ' (insufficient)'}
-                </p>
+            {/* Order summary — line item + balance + total in one clean card.
+                Hidden once a purchase is in flight so the progress screen stays
+                focused on just the bar + steps. */}
+            {flowStep === 'idle' && (
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-bg-primary/60 border border-bg-tertiary p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text-secondary">{quantity} draft pass{quantity !== 1 ? 'es' : ''} × $25</span>
+                  <span className="text-text-primary font-mono tabular-nums">${totalPrice}</span>
+                </div>
+                {paymentMethod === 'usdc' && user?.usdcBalance != null && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Wallet balance</span>
+                    <span className={`font-mono tabular-nums ${user.usdcBalance >= totalPrice ? 'text-text-secondary' : 'text-error'}`}>
+                      {user.usdcBalance.toFixed(2)} USDC{user.usdcBalance < totalPrice ? ' (insufficient)' : ''}
+                    </span>
+                  </div>
+                )}
+                <div className="border-t border-bg-tertiary pt-2.5 flex items-center justify-between">
+                  <span className="text-text-primary font-semibold">Total</span>
+                  <span className="text-banana text-2xl font-bold tabular-nums">
+                    {paymentMethod === 'usdc' && usdcTotal && !isWeb2 ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
+                  </span>
+                </div>
+              </div>
+              {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
+                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
+                  <p className="text-text-secondary text-xs leading-relaxed">
+                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>. It&apos;s quick and easy.{' '}
+                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">Learn how →</Link>
+                  </p>
+                </div>
               )}
             </div>
+            )}
 
-            {/* CTA Button */}
-            <button
-              onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
-              disabled={isProcessing || quantity < 1 || (paymentMethod === 'usdc' && !mintActive)}
-              className={`
-                w-full py-5 rounded-2xl font-bold text-xl transition-all shadow-lg shadow-banana/20
-                ${isProcessing || quantity < 1
-                  ? 'bg-banana/50 text-black/50 cursor-not-allowed'
-                  : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
-                }
-              `}
-            >
-              {isProcessing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  {stepLabels[flowStep as FlowStep] || 'Processing…'}
-                </span>
-              ) : flowStep === 'success' ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span>✓ Purchase complete — Pick draft speed</span>
-                  <span aria-hidden>→</span>
-                </span>
-              ) : (
-                `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
-              )}
-            </button>
+            {/* Pinned action bar — stays stuck to the bottom of the modal so the
+                Buy button is always visible without scrolling, even on shorter
+                screens (the modal body scrolls above it). */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 mt-1 px-6 pt-3 pb-5 bg-bg-secondary/95 backdrop-blur border-t border-bg-tertiary/60">
+            {/* Transient "not enough USDC" notice — sits above the Buy button,
+                clears on close/change, re-checks live each tap. */}
+            {flowStep === 'idle' && usdcShortfall && (
+              <p className="text-center text-sm text-red-400 -mb-1">{usdcShortfall}</p>
+            )}
 
-            {/* Staging: Free Entry button */}
-            {isStagingMode() && (
+            {/* CTA — only on idle (Buy) and success (Start Drafting). While a
+                purchase is in flight the progress bar + steps carry the state,
+                so there's no loud processing button competing with them. */}
+            {(flowStep === 'idle' || flowStep === 'success') && (
               <button
-                onClick={async () => {
-                  try {
-                    const userId = walletAddress || user?.id || 'staging-user';
-                    // Use staging-mint API which does: Go mint + Firestore purchase + verify (promo updates)
-                    const res = await fetch('/api/purchases/staging-mint', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ userId, quantity }),
-                    });
-                    const data = await res.json();
-                    if (res.ok) {
-                      if (data.user) updateUser(data.user as Partial<import('@/types').User>);
-                      await refreshBalance();
-                      goToPickSpeed(quantity);
-                    } else {
-                      alert('Staging mint failed: ' + (data.error || JSON.stringify(data)));
-                    }
-                  } catch (err) {
-                    alert('Staging mint error: ' + (err instanceof Error ? err.message : 'Unknown'));
+                onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
+                disabled={quantity < 1 || (flowStep === 'idle' && paymentMethod === 'usdc' && !mintActive)}
+                className={`
+                  ${flowStep === 'success' ? 'mx-auto block w-fit min-w-[220px] px-8 py-3' : 'w-full py-3.5 sm:py-4'} rounded-xl font-bold text-base sm:text-lg transition-all
+                  ${quantity < 1
+                    ? 'bg-banana/50 text-black/50 cursor-not-allowed'
+                    : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
                   }
-                }}
-                className="w-full py-4 rounded-2xl font-bold text-lg bg-orange-500 text-black hover:brightness-110 transition-all"
+                `}
               >
-                🧪 Free Entry (Staging) — {quantity} Pass{quantity !== 1 ? 'es' : ''}
+                {flowStep === 'success' ? (
+                  <span className="flex items-center justify-center gap-2">
+                    Start Drafting
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                  </span>
+                ) : (
+                  `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
+                )}
+              </button>
+            )}
+
+            {/* Cancel — only while waiting on the card flow (pre-on-chain).
+                Lets the user back out without a hard refresh. */}
+            {(flowStep === 'funding' || flowStep === 'waiting-for-usdc') && (
+              <button
+                onClick={handleCancelCheckout}
+                className="w-full py-3 rounded-2xl border border-bg-elevated text-text-secondary hover:text-text-primary hover:border-text-muted text-sm font-semibold transition-all"
+              >
+                Cancel
               </button>
             )}
 
@@ -775,57 +1242,62 @@ export function BuyPassesModal({
                 Try again
               </button>
             )}
-
-            {/* Promo */}
-            <div className="pt-2 border-t border-bg-elevated/40">
-              <p className="text-sm text-text-muted text-center">
-                <span className="text-text-secondary font-medium">Promo: Buy 10, get a FREE Banana Wheel spin.</span>
-                {' '}<span className="text-banana font-medium">{(user?.draftPasses || 0) % 10}/10</span>
-              </p>
             </div>
           </>
         )}
 
-        {/* ═══ PHASE 2: PICK DRAFT SPEED ═══ */}
+        {/* ═══ PHASE 2: PICK DRAFT SPEED (matches in-app EntryFlowModal) ═══ */}
         {phase === 'pick-speed' && (
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="text-center">
-              <div className="text-4xl mb-3">✅</div>
-              <h3 className="text-2xl font-bold text-text-primary">
-                {mintedCount} Pass{mintedCount !== 1 ? 'es' : ''} Minted!
-              </h3>
-              <p className="text-text-muted mt-1">Pick your draft speed to enter immediately</p>
-            </div>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <p className="text-center text-white/50 text-sm mb-6">
+              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> purchased · pick a speed to enter
+            </p>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <button
                 onClick={() => handlePickSpeed('fast')}
                 disabled={isJoiningDraft}
-                className={`group relative p-6 rounded-xl border-2 text-left transition-all ${isJoiningDraft ? 'border-banana/20 bg-banana/5 opacity-60 cursor-not-allowed' : 'border-banana/40 bg-banana/5 hover:bg-banana/15 hover:border-banana'}`}
+                className="w-full group relative overflow-hidden rounded-xl border-2 border-yellow-500/30 bg-yellow-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-yellow-500/60 hover:bg-yellow-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="text-3xl mb-2">⚡</div>
-                <h4 className="text-lg font-bold text-text-primary">Fast Draft</h4>
-                <p className="text-text-muted text-sm mt-1">30-second picks</p>
-                <p className="text-text-muted text-xs mt-2">~15 min total</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Fast Draft</h3>
+                    <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </div>
               </button>
+
               <button
                 onClick={() => handlePickSpeed('slow')}
                 disabled={isJoiningDraft}
-                className={`group relative p-6 rounded-xl border-2 text-left transition-all ${isJoiningDraft ? 'border-blue-500/20 bg-blue-500/5 opacity-60 cursor-not-allowed' : 'border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/15 hover:border-blue-500'}`}
+                className="w-full group relative overflow-hidden rounded-xl border-2 border-blue-500/30 bg-blue-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-blue-500/60 hover:bg-blue-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="text-3xl mb-2">🐢</div>
-                <h4 className="text-lg font-bold text-text-primary">Slow Draft</h4>
-                <p className="text-text-muted text-sm mt-1">8-hour picks</p>
-                <p className="text-text-muted text-xs mt-2">Draft at your pace</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Slow Draft</h3>
+                    <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </div>
               </button>
             </div>
 
-            <button
-              onClick={onClose}
-              className="w-full text-center text-text-muted text-sm hover:text-text-secondary transition-colors py-2"
-            >
-              Skip — I&apos;ll draft later
-            </button>
+            {/* Footer */}
+            <div className="mt-6 flex items-center justify-between">
+              <button
+                onClick={onClose}
+                disabled={isJoiningDraft}
+                className="text-white/40 text-sm hover:text-white/60 transition-colors disabled:opacity-50"
+              >
+                Skip — I&apos;ll draft later
+              </button>
+              <p className="text-white/30 text-xs">1 pass will be used</p>
+            </div>
           </div>
         )}
 

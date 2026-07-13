@@ -1,0 +1,7 @@
+{
+  "_comment": "BBB season champions — winner wallet(s) per season. Keys are season numbers; values are arrays of lowercased winner wallet addresses. Awards bbb-champion-{season} in the badge sweep + admin grant. Add more winners as Boris provides them.",
+  "1": [],
+  "2": [],
+  "3": ["0xd95921dd61d4e65b2df3e4bd572e953022add564", "0x3236ddfc6a12222bef7f29fe192b2802c07c1cfe"],
+  "4": []
+}

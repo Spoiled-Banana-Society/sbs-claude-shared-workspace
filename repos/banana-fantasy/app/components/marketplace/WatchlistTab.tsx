@@ -2,6 +2,9 @@
 
 import Image from 'next/image';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
+import { hasSeasonStarted } from '@/lib/draftTypes';
+import { FallbackPassSvg } from './BuyTab';
 
 interface WatchlistItem {
   id: string;
@@ -14,21 +17,35 @@ interface WatchlistTabProps {
   watchlist: WatchlistItem[];
   watchlistSet: Set<string>;
   deduplicatedTeams: MarketplaceTeam[];
+  walletAddress: string | null;
+  /** tokenId → USD of the viewer's own live offer — same chip as the Buy grid. */
+  myMadeOffers?: Record<string, number>;
   onBrowseTeams: () => void;
   onViewTeam: (tokenId: string) => void;
   onToggleWatchlist: (tokenId: string, price?: number | null) => void;
   onOpenBuyModal: (team: MarketplaceTeam) => void;
+  onMakeOffer: (tokenId: string) => void;
+  onGoToSellTab: () => void;
   onViewAllTeams: () => void;
 }
 
+/**
+ * Watchlist grid — the SAME card visual as the Buy grid (image-fill card,
+ * overlay badges, bottom gradient with price + action). Keep the two in sync
+ * when the card design changes.
+ */
 export function WatchlistTab({
   watchlist,
   watchlistSet,
   deduplicatedTeams,
+  walletAddress,
+  myMadeOffers,
   onBrowseTeams,
   onViewTeam,
   onToggleWatchlist,
   onOpenBuyModal,
+  onMakeOffer,
+  onGoToSellTab,
   onViewAllTeams,
 }: WatchlistTabProps) {
   if (watchlist.length === 0) {
@@ -60,59 +77,123 @@ export function WatchlistTab({
         <div
           key={`wl-${team.id}-${team.orderHash}`}
           onClick={() => onViewTeam(team.tokenId)}
-          className={`bg-bg-secondary border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+          className={`group relative bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${(team.isJackpot || team.fillingWheelLevel === 'jackpot') ? 'border-error/30 hover:shadow-error/20' : (team.isHof || team.fillingWheelLevel === 'hof') ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
         >
-          <div className="relative h-80 bg-gradient-to-br from-bg-tertiary to-bg-secondary flex items-center justify-center">
-            {team.imageUrl ? (
-              <Image src={team.imageUrl} alt={team.name} width={230} height={300} className="rounded-2xl shadow-lg" />
+          <div className="relative aspect-[4/5] bg-[#0d0d12]">
+            {team.fillingWheelLevel ? (
+              <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+            ) : team.imageUrl ? (
+              <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
             ) : (
-              <div className="flex items-center justify-center">
-                <svg width="160" height="100" viewBox="0 0 160 100" className="drop-shadow-lg">
-                  <defs>
-                    <linearGradient id={`wlGrad-${team.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#FBBF24" />
-                      <stop offset="100%" stopColor="#D97706" />
-                    </linearGradient>
-                  </defs>
-                  <rect x="0" y="0" width="160" height="100" rx="12" fill={`url(#wlGrad-${team.id})`} />
-                  <circle cx="0" cy="50" r="10" fill="#1a1a2e" />
-                  <circle cx="160" cy="50" r="10" fill="#1a1a2e" />
-                  <text x="80" y="55" textAnchor="middle" fill="#1C1C1E" fontSize="13" fontWeight="bold" fontFamily="system-ui">Banana Best Ball IV</text>
-                </svg>
-              </div>
+              <div className="absolute inset-0 flex items-center justify-center"><FallbackPassSvg gradientId={`wlPassGrad-${team.id}`} /></div>
             )}
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                event.preventDefault();
-                onToggleWatchlist(team.tokenId, team.price);
-              }}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition-colors z-10"
-            >
-              <svg className="w-3.5 h-3.5 text-red-500" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-            </button>
+
+            <div className="absolute top-5 right-3 flex flex-col gap-3 z-10">
+              <button
+                onClick={event => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  onToggleWatchlist(team.tokenId, team.price);
+                }}
+                className="flex items-center justify-center transition-transform hover:scale-110"
+                title="Remove from watchlist"
+              >
+                <svg className="w-5 h-5 text-red-500 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={async event => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  if (!team.imageUrl) return;
+                  try {
+                    const res = await fetch(team.imageUrl);
+                    const blob = await res.blob();
+                    const objUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = objUrl;
+                    a.download = `SBS-Team-${team.tokenId}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(objUrl);
+                  } catch { /* ignore download failure */ }
+                }}
+                className="flex items-center justify-center transition-transform hover:scale-110"
+                title="Download card"
+              >
+                <svg className="w-5 h-5 text-white/85 hover:text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+              {team.fillingWheelLevel ? (
+                <span className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}>
+                  {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
+                </span>
+              ) : team.isJackpot ? (
+                <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
+              ) : team.isHof ? (
+                <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
+              ) : (
+                <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
+              )}
+              {team.rank >= 1 && team.rank <= 10 && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/60'}`}>#{team.rank}</span>
+              )}
+            </div>
+
           </div>
-          <div className="p-5">
-            <h3 className="text-lg font-semibold text-text-primary font-mono mb-1">{team.name}</h3>
-            <div className="flex items-center justify-between mt-3">
-              <div>
-                {team.price != null ? (
-                  <p className="text-text-primary font-mono text-lg font-bold">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+
+          {/* Footer below the card — price/name + action on their own row so the
+              button never covers the card's roster numbers (matches Buy/Sell). */}
+          <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+            <div className="min-w-0">
+              {team.price != null ? (
+                <>
+                  <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                  <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : team.name}</p>
+                  <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'From wheel · filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
+                </>
+              )}
+              {myMadeOffers?.[team.tokenId] != null && (
+                <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
+                  Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+              {walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
+                team.price != null ? (
+                  <span className="text-text-muted text-xs font-bold px-3 py-2">You</span>
                 ) : (
-                  <p className="text-text-muted text-xs">Not listed</p>
-                )}
-              </div>
-              {team.price != null && (
+                  <button
+                    onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                  >
+                    List
+                  </button>
+                )
+              ) : team.price != null ? (
                 <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenBuyModal(team);
-                  }}
-                  className="px-6 py-2.5 bg-banana text-black text-sm font-semibold rounded-xl hover:brightness-110 transition-all"
+                  onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
                 >
                   Buy Now
+                </button>
+              ) : (
+                <button
+                  onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                >
+                  Make Offer
                 </button>
               )}
             </div>

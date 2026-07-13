@@ -39,22 +39,23 @@ export async function listConversations(opts: {
   page?: number;
   filterUnread?: boolean;
   filterResolved?: boolean;
-} = {}): Promise<{ conversations: CrispConversation[]; configured: boolean }> {
+} = {}): Promise<{ conversations: CrispConversation[]; configured: boolean; authFailed?: boolean }> {
   const creds = getCrispCredentials();
   if (!creds) {
     return { conversations: [], configured: false };
   }
 
-  const page = opts.page ?? 1;
   const params = new URLSearchParams();
   if (opts.filterUnread) params.set('filter_unread', '1');
   if (opts.filterResolved === false) params.set('filter_resolved', '0');
-  const url = `${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversations/${page}${params.toString() ? `?${params}` : ''}`;
+  // No page segment: Crisp's new API rejects `/conversations/1` with a
+  // misleading invalid_session; bare `/conversations` returns page one.
+  const url = `${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversations${params.toString() ? `?${params}` : ''}`;
 
   // Tier can be overridden via env so you can switch between a User
   // Token (default — generated in Profile → Settings → User Tokens)
   // and a Plugin Token (Marketplace) without redeploying code.
-  const tier = (process.env.CRISP_TIER ?? 'user').trim();
+  const tier = (process.env.CRISP_TIER ?? 'website').trim();
 
   try {
     const res = await fetch(url, {
@@ -65,8 +66,10 @@ export async function listConversations(opts: {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      logger.warn('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200), tier });
-      return { conversations: [], configured: true };
+      logger.error('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200), tier });
+      // 401 invalid_session = the token was revoked/expired — surface it
+      // loudly in the admin Support tab instead of a silent empty inbox.
+      return { conversations: [], configured: true, authFailed: res.status === 401 };
     }
     const data = await res.json();
     const conversations = (data.data ?? []) as CrispConversation[];
@@ -92,3 +95,30 @@ export function crispConversationUrl(sessionId: string): string {
 export function crispInboxUrl(): string {
   return `https://app.crisp.chat/website/${CRISP_WEBSITE_ID}/inbox/`;
 }
+
+/**
+ * Conversation meta — nickname + the session data map we stamp from the
+ * widget (wallet, userId). Used by the webhook to route "team replied"
+ * bell notis to the right wallet.
+ */
+export async function getConversationMeta(sessionId: string): Promise<{ nickname: string | null; data: Record<string, unknown> } | null> {
+  const creds = getCrispCredentials();
+  if (!creds) return null;
+  const tier = (process.env.CRISP_TIER ?? 'website').trim();
+  try {
+    const res = await fetch(`${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversation/${encodeURIComponent(sessionId)}/meta`, {
+      headers: { Authorization: authHeader(creds), 'X-Crisp-Tier': tier },
+    });
+    if (!res.ok) {
+      logger.warn('crisp.conversation_meta.http_error', { status: res.status });
+      return null;
+    }
+    const body = await res.json();
+    const meta = (body?.data ?? {}) as { nickname?: string; data?: Record<string, unknown> };
+    return { nickname: meta.nickname ?? null, data: meta.data ?? {} };
+  } catch (err) {
+    logger.warn('crisp.conversation_meta.failed', { err: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+// env-bump 1781219734 — fresh deploy to load new CRISP_* env

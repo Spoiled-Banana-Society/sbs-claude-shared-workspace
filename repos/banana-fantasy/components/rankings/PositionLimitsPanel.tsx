@@ -11,14 +11,39 @@ import {
   totalCap,
   type Position,
 } from '@/lib/positionLimits';
-import { POSITION_COLORS } from '@/lib/draftRoomConstants';
+import { getPositionColorHex } from '@/lib/draftRoomConstants';
 
 const HELP_COPY =
-  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Manual picks are never restricted. Defaults: QB:3 RB:7 WR:7 TE:3 DST:3.';
+  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Only works while you have the draft open. Manual picks are never restricted. Defaults: QB:3 RB1:4 RB2:1 WR1:4 WR2:2 TE:3 DST:2.';
+
+/** True if a draft room is open right now (cross-tab heartbeat, fresh < 10s).
+ *  Used to warn that toggling caps won't change a draft you're already in. */
+function isInActiveDraft(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('draft-room-ws:')) {
+        const ts = Number(localStorage.getItem(k));
+        if (ts && Date.now() - ts < 10_000) return true;
+      }
+    }
+  } catch { /* ignore */ }
+  return false;
+}
 
 export function PositionLimitsPanel() {
-  const { limits, loaded, saving, setLimit, resetToDefaults } = usePositionLimits();
+  const { limits, enabled, loaded, saving, setLimit, setEnabled, resetToDefaults } = usePositionLimits();
   const [open, setOpen] = useState(true);
+  const [draftWarn, setDraftWarn] = useState(false);
+
+  const handleToggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    // Turning OFF while a draft is open: that draft keeps the setting it
+    // started with, so warn it only affects new drafts.
+    setDraftWarn(!next && isInActiveDraft());
+  };
 
   const sum = totalCap(limits);
   const underfilled = isUnderfilled(limits);
@@ -38,7 +63,7 @@ export function PositionLimitsPanel() {
         <div className="flex items-center gap-3">
           <span className="text-text-primary font-semibold">Auto-draft position limits</span>
           <span className="text-xs text-text-muted">
-            {loaded ? `QB ${limits.QB} · RB ${limits.RB} · WR ${limits.WR} · TE ${limits.TE} · DST ${limits.DST}` : 'loading…'}
+            {loaded ? POSITIONS.map(p => `${p} ${limits[p]}`).join(' · ') : 'loading…'}
           </span>
         </div>
         <svg
@@ -61,7 +86,32 @@ export function PositionLimitsPanel() {
         <div className="border-t border-white/10 px-4 py-4 space-y-4">
           <p className="text-xs text-text-muted leading-relaxed">{HELP_COPY}</p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {/* Master on/off */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Enforce these limits</p>
+              <p className="text-[11px] text-text-muted">Off = auto-draft ignores all caps and takes best available.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              onClick={handleToggle}
+              disabled={!loaded}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${enabled ? 'bg-banana' : 'bg-bg-elevated'}`}
+              aria-label="Toggle auto-draft position limits"
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+
+          {draftWarn && (
+            <p className="text-[11px] text-yellow-400 leading-relaxed">
+              Heads up — you&apos;re in a draft right now. This change won&apos;t affect that draft; it keeps the setting it started with. It applies to new drafts you enter.
+            </p>
+          )}
+
+          <div className={`grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 transition-opacity ${enabled ? '' : 'opacity-40'}`}>
             {POSITIONS.map(pos => (
               <div
                 key={pos}
@@ -70,7 +120,7 @@ export function PositionLimitsPanel() {
                 <div className="flex items-center gap-2">
                   <span
                     className="inline-block w-2 h-2 rounded-full"
-                    style={{ background: POSITION_COLORS[pos] }}
+                    style={{ background: getPositionColorHex(pos) }}
                     aria-hidden
                   />
                   <span className="text-sm font-bold text-text-primary">{pos}</span>

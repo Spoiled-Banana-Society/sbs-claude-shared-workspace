@@ -8,7 +8,7 @@ export function useRankings() {
   const swr = useSWRLike<TeamPosition[]>(
     'rankings',
     ({ signal }) => fetchJson<TeamPosition[]>('/api/rankings', { signal }),
-    { fallbackData: [] },
+    { fallbackData: [], persist: true },
   );
 
   return {

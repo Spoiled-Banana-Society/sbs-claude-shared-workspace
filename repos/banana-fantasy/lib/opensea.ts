@@ -2,12 +2,53 @@
  * OpenSea types, constants, and mapping helpers for the BBB4 marketplace.
  */
 
+import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
+
 // ── Constants ───────────────────────────────────────────────────────
-export const BBB4_CONTRACT = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
+// Single source of truth for the collection address is lib/contracts/bbb4.ts —
+// re-exported here so the many opensea.ts consumers stay unchanged.
+export const BBB4_CONTRACT: string = BBB4_CONTRACT_ADDRESS;
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 export const OPENSEA_API_BASE = 'https://api.opensea.io';
-export const COLLECTION_SLUG = 'sbs-draft-pass-bbb4';
+// MUST be the CURRENT contract's OpenSea collection. Verified 2026-06-23 against
+// OpenSea's contract→collection lookup: contract `0xadf5b9b4…` maps to the slug
+// `banana-best-ball-4` (owner `0xccdF79…`). The earlier guess `banana-best-ball-iv`
+// does NOT exist on OpenSea (returns "Collection not found") → the Buy grid found
+// zero listings. The old default `bbb4-staging` is the DEAD contract `0x781b…` and
+// leaked ghost teams/passes from a prior era into the marketplace, My Teams,
+// Exposure, everywhere. Collection queries are contract-scoped by this slug; never
+// point it at an old collection. Per-contract + supply backstops in the listings
+// route catch any cached stragglers regardless.
+export const COLLECTION_SLUG = process.env.NEXT_PUBLIC_OPENSEA_COLLECTION_SLUG || 'banana-best-ball-4';
 export const OPENSEA_CHAIN = 'base';
+
+/**
+ * Ask OpenSea to re-fetch a token's metadata (image/name/attrs) from our
+ * tokenURI. Fire after we change what the metadata endpoint will return — at
+ * mint (so a fresh pass shows the grey card live) and at draft close (so it
+ * flips to the team card). Best-effort; rate-limit-friendly small concurrency.
+ */
+export async function refreshOpenSeaTokens(tokenIds: Array<string | number>): Promise<number> {
+  const apiKey = process.env.OPENSEA_API_KEY || '';
+  if (!apiKey) return 0;
+  const ids = [...new Set(tokenIds.map((t) => String(t).trim()).filter((s) => /^\d+$/.test(s)))];
+  let ok = 0;
+  const CONCURRENCY = 4;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(async (id) => {
+      try {
+        const res = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${id}/refresh`,
+          { method: 'POST', headers: { accept: 'application/json', 'x-api-key': apiKey } },
+        );
+        return res.ok;
+      } catch { return false; }
+    }));
+    ok += results.filter(Boolean).length;
+  }
+  return ok;
+}
 
 // ── OpenSea API Response Types ──────────────────────────────────────
 
@@ -107,11 +148,30 @@ export interface MarketplaceTeam {
   imageUrl: string | null;
   orderHash: string | null;
   protocolAddress: string | null;
+  /** The league NUMBER for clean display ("League #N"), or null when the source
+   *  data doesn't carry a parseable one (e.g. playoff-named leagues). Team # is
+   *  always the tokenId; the same token is the draft pass # and the team #. */
+  leagueNumber?: number | null;
+  /** Seaport order endTime (Unix seconds string) for an active listing — used to show "expires in X". */
+  listingEndTime?: string | null;
+  /** Backend leagueId for this team's NFT — lets non-marketplace pages (My Teams) map a league to its token/listing. */
+  leagueId?: string | null;
   passType?: 'paid' | 'free';
   /** True iff our SBS Go API has a draft-token record for this NFT
    *  (deterministic cardId match). Lets the Sell tab hide ghost NFTs
    *  that exist on-chain but have no backend purpose. */
   hasBackendRecord?: boolean;
+  /** Set iff this is a wheel-won JP/HOF pass currently in a STILL-FILLING queue
+   *  round. While set, the pass is sellable on our marketplace even though it's a
+   *  free pass (the normal free-pass listing block is waived); once its draft
+   *  fills this clears and the standard "listable after the season" rule applies. */
+  fillingWheelLevel?: 'jackpot' | 'hof';
+  /** Live lobby fill for a wheel-won pass's special draft (members in its
+   *  queue round, out of 10). Lets cards show "In draft lobby — 6/10". */
+  lobbyCount?: number;
+  /** USD price the current owner paid for this team on the marketplace, if we
+   *  have a purchase record. Shown as "You paid $X" on the owner's own teams. */
+  pricePaid?: number | null;
 }
 
 export interface CollectionStats {
@@ -227,10 +287,60 @@ function nftDisplayName(
   tokenId: string,
   hasRoster: boolean,
 ): string {
-  if (leagueName) return leagueName;
-  // Skip OpenSea names that are just "#N" or bare numbers — not useful
-  if (openSeaName && !/^#?\d+$/.test(openSeaName.trim())) return openSeaName;
+  // Team # / Draft Pass # are ALWAYS the token id (same number; mint order). We
+  // never surface the raw league-name trait ("BBB #N" / "Playoffs Rd 1: #N") or
+  // "Token #N" as the title — the league number is shown separately as League #N.
   return hasRoster ? `Team #${tokenId}` : `Draft Pass #${tokenId}`;
+}
+
+/**
+ * The league NUMBER for clean "League #N" display. The NFT only carries a
+ * free-text LEAGUE-NAME trait — standard leagues are "BBB #N" / "League #N" → N.
+ * Non-standard names (e.g. playoff brackets like "Playoffs Rd 1: #69") have no
+ * trustworthy league number → null, so we show Team # only rather than a wrong
+ * number. Permanent fix = a clean stored league number at draft time (planned
+ * for the fresh-contract launch).
+ */
+function parseLeagueNumber(leagueName: string | null): number | null {
+  if (!leagueName) return null;
+  // The id is the number AFTER '#' ("Playoffs Rd 2: #29" → 29), never the first
+  // number in the name. Fall back to a bare number only for "BBB N"/"League N"/"N".
+  const hash = leagueName.match(/#\s*(\d+)/);
+  if (hash) return Number(hash[1]);
+  const simple = leagueName.trim().match(/^(?:bbb\s*)?(?:league\s*)?(\d+)$/i);
+  return simple ? Number(simple[1]) : null;
+}
+
+/**
+ * THE authoritative league number: the value baked into the obsidian card image
+ * URL (`/api/og/team-card?d=<base64 {…,leagueNo}>`). That `leagueNo` was derived
+ * from the BACKEND draft record when the card was generated, so reading it here
+ * makes the marketplace text === the card === the backend (same single source),
+ * and a metadata refresh re-derives it — correct in real time. Works for playoff
+ * leagues too (their card carries the real number even when the name doesn't).
+ * Env-safe decode (server Buffer / browser atob).
+ */
+function leagueNumberFromImageUrl(imageUrl: string | null): number | null {
+  if (!imageUrl || !imageUrl.includes('/api/og/team-card')) return null;
+  try {
+    const m = imageUrl.match(/[?&]d=([^&]+)/);
+    if (!m) return null;
+    let b64 = decodeURIComponent(m[1]).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const json = typeof Buffer !== 'undefined'
+      ? Buffer.from(b64, 'base64').toString('utf8')
+      : decodeURIComponent(escape(atob(b64)));
+    const n = Number((JSON.parse(json) as { leagueNo?: unknown }).leagueNo);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Single league-number resolver: card-image (backend-derived) first, then the
+ *  league-name trait for legacy/non-obsidian images. null when neither is clean. */
+export function resolveLeagueNumber(imageUrl: string | null, leagueName: string | null): number | null {
+  return leagueNumberFromImageUrl(imageUrl) ?? parseLeagueNumber(leagueName);
 }
 
 /**
@@ -263,6 +373,7 @@ export function mapOpenSeaListingToTeam(listing: OpenSeaListing, nft?: OpenSeaNf
     imageUrl: nft?.display_image_url ?? nft?.image_url ?? null,
     orderHash: listing.order_hash,
     protocolAddress: listing.protocol_address,
+    leagueNumber: resolveLeagueNumber(nft?.display_image_url ?? nft?.image_url ?? null, traits.name),
   };
 }
 
@@ -293,6 +404,7 @@ export function mapOpenSeaNftToTeam(nft: OpenSeaNft, ownerAddress: string): Mark
     imageUrl: nft.display_image_url ?? nft.image_url ?? null,
     orderHash: null,
     protocolAddress: null,
+    leagueNumber: resolveLeagueNumber(nft.display_image_url ?? nft.image_url ?? null, traits.name),
   };
 }
 

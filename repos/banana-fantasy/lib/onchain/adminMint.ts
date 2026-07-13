@@ -22,19 +22,99 @@ import { logger } from '@/lib/logger';
 
 const RECEIPT_TIMEOUT_MS = 60_000;
 
-// Base mainnet runs at ~0.005 gwei base fee + ~0.001 gwei priority.
-// Without pinned values, viem falls back to Ethereum-mainnet-like defaults
-// (~1.5 gwei priority) and demands the wallet pre-fund a worst case of
-// `gasLimit × maxFeePerGas` ≈ 0.0024 ETH per tx — 250–6000× the real
-// cost. Pin explicit Base-realistic values so a $5 admin wallet can
-// actually submit txs whose true cost is fractions of a cent.
+// Gas fees for admin txs (reserveTokens mint + USDC permit/transferFrom).
 //
-// Headroom: 0.1 gwei is ~20× the current base fee, plenty for Base spikes.
-// If Base ever sustains >0.05 gwei base fee for a stretch, bump these.
-const BASE_GAS_PARAMS = {
-  maxFeePerGas: parseGwei('0.1'),
-  maxPriorityFeePerGas: parseGwei('0.001'),
-} as const;
+// We do NOT let viem auto-estimate: on Base it falls back to Ethereum-mainnet
+// defaults (~1.5 gwei priority) and demands the wallet pre-fund a worst case of
+// `gasLimit × maxFeePerGas` — 250–6000× the real cost. Instead we set explicit,
+// Base-realistic fees with a SMALL priority tip.
+//
+// CRITICAL: maxFeePerGas must be ADAPTIVE to the live base fee. It used to be a
+// fixed 0.1 gwei, which silently worked while Base base fee stayed below that —
+// then on a congestion spike the base fee crossed 0.1 gwei and EVERY admin tx
+// failed with "max fee per gas less than block base fee" (lost a user's spin
+// reward). We now read the current base fee and set maxFee = 3× base fee +
+// priority, floored at 0.1 gwei (keeps the cheap-network behavior) and capped so
+// the wallet pre-fund demand stays bounded even at extreme base fees.
+const PRIORITY_FEE = parseGwei('0.001');
+const MAX_FEE_FLOOR = parseGwei('0.1'); // cheap-network behavior, unchanged
+const MAX_FEE_CEIL = parseGwei('10');   // bounds gasLimit×maxFee pre-fund demand
+
+async function resolveGasParams(publicClient: {
+  getBlock: (args: { blockTag: 'latest' }) => Promise<{ baseFeePerGas: bigint | null }>;
+}): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+  let baseFee = MAX_FEE_FLOOR; // safe fallback if the RPC read fails
+  try {
+    const block = await publicClient.getBlock({ blockTag: 'latest' });
+    if (typeof block.baseFeePerGas === 'bigint' && block.baseFeePerGas > 0n) {
+      baseFee = block.baseFeePerGas;
+    }
+  } catch (e) {
+    logger.warn('adminMint.basefee_read_failed', { err: (e as Error).message });
+  }
+  // 3× headroom covers the base fee rising between this read and inclusion.
+  let maxFeePerGas = baseFee * 3n + PRIORITY_FEE;
+  if (maxFeePerGas < MAX_FEE_FLOOR) maxFeePerGas = MAX_FEE_FLOOR;
+  if (maxFeePerGas > MAX_FEE_CEIL) maxFeePerGas = MAX_FEE_CEIL;
+  return { maxFeePerGas, maxPriorityFeePerGas: PRIORITY_FEE };
+}
+
+// The admin wallet is SHARED across all purchases, grants, and wheel spins, so
+// concurrent operations can grab the same nonce. The loser gets rejected with
+// "replacement transaction underpriced" / "nonce too low" — which, before this,
+// failed the whole mint AFTER the user's payment already went through (they paid
+// and got nothing). These errors are transient and safe to retry.
+const RETRIABLE_TX_ERRORS = [
+  'replacement transaction underpriced',
+  'replacement fee too low',
+  'nonce too low',
+  'already known',
+  'transaction underpriced',
+];
+function isRetriableTxError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return RETRIABLE_TX_ERRORS.some((s) => msg.includes(s));
+}
+
+type AdminPublicClient = {
+  getBlock: (args: { blockTag: 'latest' }) => Promise<{ baseFeePerGas: bigint | null }>;
+  getTransactionCount: (args: { address: Address; blockTag: 'pending' }) => Promise<number>;
+};
+
+/**
+ * Send an admin-wallet contract write with nonce-collision retry. On a
+ * retriable nonce/underpriced error we wait for the in-flight tx to mine,
+ * re-fetch the live pending nonce, BUMP the gas (so the retry can also replace a
+ * stuck pending tx), and resend. Up to 4 attempts. `send` receives the explicit
+ * nonce + gas overrides to spread into its writeContract call.
+ */
+async function sendAdminWriteWithRetry(
+  publicClient: AdminPublicClient,
+  account: { address: Address },
+  label: string,
+  send: (overrides: { nonce: number; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }) => Promise<Hex>,
+): Promise<Hex> {
+  const MAX_ATTEMPTS = 4;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const gas = await resolveGasParams(publicClient);
+      const factor = 100n + BigInt(attempt) * 30n; // +0%, +30%, +60%, +90%
+      const nonce = await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' });
+      return await send({
+        nonce,
+        maxFeePerGas: (gas.maxFeePerGas * factor) / 100n,
+        maxPriorityFeePerGas: (gas.maxPriorityFeePerGas * factor) / 100n,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isRetriableTxError(err) || attempt === MAX_ATTEMPTS - 1) throw err;
+      logger.warn('adminMint.tx.retry', { label, attempt: attempt + 1, err: (err as Error).message.slice(0, 140) });
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
 
 function loadPrivateKey(): Hex | null {
   const raw = process.env.BBB4_OWNER_PRIVATE_KEY?.trim();
@@ -91,13 +171,15 @@ export async function reserveTokensToWallet(opts: {
 
   const recipient = to.toLowerCase() as Address;
 
-  const txHash = await walletClient.writeContract({
-    address: BBB4_CONTRACT_ADDRESS,
-    abi: BBB4_ABI,
-    functionName: 'reserveTokens',
-    args: [recipient, BigInt(count)],
-    ...BASE_GAS_PARAMS,
-  });
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'reserveTokens', (ov) =>
+    walletClient.writeContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BBB4_ABI,
+      functionName: 'reserveTokens',
+      args: [recipient, BigInt(count)],
+      ...ov,
+    }),
+  );
 
   logger.info('adminMint.tx.sent', { to: recipient, count, txHash });
 
@@ -160,6 +242,40 @@ function buildWalletClients() {
   return { account, walletClient, publicClient };
 }
 
+const BASEURI_ABI = [
+  { name: 'setBaseURI', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'uri', type: 'string' }], outputs: [] },
+  { name: 'tokenURI', type: 'function', stateMutability: 'view', inputs: [{ name: 'id', type: 'uint256' }], outputs: [{ type: 'string' }] },
+] as const;
+
+/**
+ * Set the BBB4 collection's mutable baseURI (onlyOwner) → tokenURI(N) resolves
+ * to `${uri}${N}`, our /api/nft/metadata endpoint. Returns the tx hash and a
+ * sample tokenURI for verification.
+ */
+export async function setBbb4BaseURI(uri: string): Promise<{ txHash: string; tokenURISample: string }> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'setBaseURI', (ov) =>
+    walletClient.writeContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BASEURI_ABI,
+      functionName: 'setBaseURI',
+      args: [uri],
+      ...ov,
+    }),
+  );
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  let tokenURISample = '';
+  try {
+    tokenURISample = (await publicClient.readContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BASEURI_ABI,
+      functionName: 'tokenURI',
+      args: [811n],
+    })) as string;
+  } catch { /* best-effort verification */ }
+  return { txHash, tokenURISample };
+}
+
 /**
  * Submit an EIP-2612 USDC permit signed by the user. Admin wallet pays gas.
  * Returns the tx hash. Throws ApiError(400) if the permit is rejected (bad
@@ -174,16 +290,18 @@ export async function submitUsdcPermit(opts: {
   r: Hex;
   s: Hex;
 }): Promise<Hex> {
-  const { walletClient, publicClient } = buildWalletClients();
+  const { account, walletClient, publicClient } = buildWalletClients();
 
   try {
-    const txHash = await walletClient.writeContract({
-      address: BASE_SEPOLIA_USDC_ADDRESS,
-      abi: USDC_PERMIT_ABI,
-      functionName: 'permit',
-      args: [opts.owner, opts.spender, opts.value, opts.deadline, opts.v, opts.r, opts.s],
-      ...BASE_GAS_PARAMS,
-    });
+    const txHash = await sendAdminWriteWithRetry(publicClient, account, 'permit', (ov) =>
+      walletClient.writeContract({
+        address: BASE_SEPOLIA_USDC_ADDRESS,
+        abi: USDC_PERMIT_ABI,
+        functionName: 'permit',
+        args: [opts.owner, opts.spender, opts.value, opts.deadline, opts.v, opts.r, opts.s],
+        ...ov,
+      }),
+    );
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
       timeout: RECEIPT_TIMEOUT_MS,
@@ -201,6 +319,98 @@ export async function submitUsdcPermit(opts: {
 }
 
 /**
+ * Hex private key of the admin wallet, for callers that need a raw signer
+ * (the seaport-js marketplace relay). Server-side only.
+ */
+export function getAdminPrivateKeyHex(): Hex | null {
+  return loadPrivateKey();
+}
+
+/**
+ * Send USDC from the admin wallet to `to`. Used to refund a buyer when a
+ * relayed marketplace purchase fails after their USDC was already pulled.
+ */
+export async function transferUsdcFromAdmin(opts: {
+  to: Address;
+  amount: bigint;
+}): Promise<Hex> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'usdcTransfer', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'transfer',
+      args: [opts.to, opts.amount],
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `USDC transfer reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.usdcTransfer.ok', { to: opts.to, amount: opts.amount.toString(), txHash });
+  return txHash;
+}
+
+/**
+ * Ensure the admin wallet has at least `min` USDC allowance toward `spender`
+ * (the OpenSea conduit for relayed marketplace buys). Approves max once when
+ * short — a one-time setup tx, then a no-op read forever after.
+ */
+export async function ensureAdminUsdcAllowance(opts: {
+  spender: Address;
+  min: bigint;
+}): Promise<void> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const current = (await publicClient.readContract({
+    address: BASE_SEPOLIA_USDC_ADDRESS,
+    abi: USDC_ABI,
+    functionName: 'allowance',
+    args: [account.address, opts.spender],
+  })) as bigint;
+  if (current >= opts.min) return;
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'usdcApprove', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'approve',
+      args: [opts.spender, 2n ** 256n - 1n],
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `USDC approve reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.usdcApprove.ok', { spender: opts.spender, txHash });
+}
+
+/**
+ * Send a small amount of ETH from the admin wallet — the marketplace gas
+ * top-up that makes external-wallet txs (NFT approval, cancel, accept-offer)
+ * effectively free for the user. Amounts are capped by the calling route.
+ */
+export async function sendEthFromAdmin(opts: {
+  to: Address;
+  amountWei: bigint;
+}): Promise<Hex> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'ethTopup', (ov) =>
+    walletClient.sendTransaction({
+      to: opts.to,
+      value: opts.amountWei,
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `ETH top-up reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.ethTopup.ok', { to: opts.to, amountWei: opts.amountWei.toString(), txHash });
+  return txHash;
+}
+
+/**
  * Pull USDC from `owner` to `to` via ERC-20 transferFrom. Requires the
  * admin wallet to already have allowance (via a prior `submitUsdcPermit`
  * or an on-chain approve). Admin wallet pays gas.
@@ -210,15 +420,17 @@ export async function pullUsdcFromUser(opts: {
   to: Address;
   amount: bigint;
 }): Promise<Hex> {
-  const { walletClient, publicClient } = buildWalletClients();
+  const { account, walletClient, publicClient } = buildWalletClients();
 
-  const txHash = await walletClient.writeContract({
-    address: BASE_SEPOLIA_USDC_ADDRESS,
-    abi: USDC_ABI,
-    functionName: 'transferFrom',
-    args: [opts.owner, opts.to, opts.amount],
-    ...BASE_GAS_PARAMS,
-  });
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'transferFrom', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'transferFrom',
+      args: [opts.owner, opts.to, opts.amount],
+      ...ov,
+    }),
+  );
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
     timeout: RECEIPT_TIMEOUT_MS,

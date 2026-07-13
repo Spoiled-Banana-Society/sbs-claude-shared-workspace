@@ -114,6 +114,27 @@ export async function GET(req: Request) {
     const topSpins = [...all].sort((a, b) => b.spinsWon - a.spinsWon).slice(0, TOP_N);
     const topFreeDrafts = [...all].sort((a, b) => b.freeDraftsWon - a.freeDraftsWon).slice(0, TOP_N);
 
+    // Canonical name pass for the ranked entries only (≤ 4×TOP_N unique
+    // wallets). Events denormalize username at WRITE time, so stale/
+    // placeholder names leaked into the Top Users cards. Resolve through
+    // the SAME shared chain the rest of the site uses (getPublicUsers):
+    // v2_users.username → Go owner profile displayName (where Profile-page
+    // edits land — AeroSpace's case, his Firestore doc still had the
+    // 'User-0x…' seed placeholder) → canonical banana default. All
+    // placeholder/wallet-string names rejected inside the resolver.
+    const ranked = [...new Set([...topSpend, ...topPromos, ...topSpins, ...topFreeDrafts].map((e) => e.userId))]
+      .filter((id) => /^0x[0-9a-f]{40}$/.test(id));
+    if (ranked.length > 0) {
+      const { getPublicUsers } = await import('@/lib/friends');
+      const { bananaPlaceholderName } = await import('@/utils/helpers');
+      const profiles = await getPublicUsers(ranked).catch(() => new Map<string, { username?: string }>());
+      for (const list of [topSpend, topPromos, topSpins, topFreeDrafts]) {
+        for (const e of list) {
+          e.username = profiles.get(e.userId)?.username || bananaPlaceholderName(e.userId);
+        }
+      }
+    }
+
     logger.info('admin.heaviest_users.ok', {
       requestId,
       context: { scanned: snap.size, uniqueUsers: all.length },

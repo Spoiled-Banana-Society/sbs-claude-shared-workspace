@@ -14,13 +14,31 @@ const cache = new Map<string, CacheEntry<unknown>>();
 export interface UseSWRLikeOptions<T> {
   enabled?: boolean;
   fallbackData: T;
+  /** When true, the last successful payload is mirrored to localStorage and
+   *  hydrated on mount — so a HARD page refresh paints instantly from the last
+   *  snapshot (then revalidates live), instead of showing a skeleton while the
+   *  network round-trips. Opt-in per hook (data must be JSON-serializable). */
+  persist?: boolean;
+  /** Refetch when the tab regains focus / becomes visible. Opt-in. Makes a
+   *  view feel live without a websocket — you come back and it's fresh. */
+  revalidateOnFocus?: boolean;
+  /** Poll every N ms while mounted (0/undefined = off). Skips ticks while the
+   *  tab is hidden so we don't hammer the server in the background. Opt-in. */
+  refreshInterval?: number;
 }
+
+function lsKey(key: string): string { return `swr:${key}`; }
 
 export interface UseSWRLikeResult<T> {
   data: T;
   error: unknown;
   isLoading: boolean;
   isValidating: boolean;
+  /** True once a real answer exists — either cached from a prior fetch (survives
+   *  navigation via the module cache) or a completed fetch this mount. Lets a
+   *  consumer avoid flashing a skeleton when the data is already known (e.g.
+   *  navigating back to a page whose query resolved earlier). */
+  hasData: boolean;
   mutate: () => Promise<void>;
   usingMockData: boolean;
 }
@@ -39,15 +57,32 @@ export function useSWRLike<T>(
   const usingMockData = isMockDataEnabled();
 
   const enabled = (options.enabled ?? true) && !!key && !usingMockData;
+  const persist = options.persist ?? false;
 
   const cached = useMemo(() => {
     if (!key) return null;
-    return (cache.get(key) as CacheEntry<T> | undefined) ?? null;
-  }, [key]);
+    let entry = cache.get(key) as CacheEntry<T> | undefined;
+    // Hard-refresh hydration: seed the in-memory cache from localStorage so the
+    // first paint has data (no skeleton) before the network revalidation lands.
+    if (!entry && persist && typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(lsKey(key));
+        if (raw) {
+          entry = { data: JSON.parse(raw) as T, error: null, updatedAt: 0 };
+          cache.set(key, entry);
+        }
+      } catch { /* ignore corrupt/oversized localStorage */ }
+    }
+    return entry ?? null;
+  }, [key, persist]);
 
   const [data, setData] = useState<T>(() => (cached?.data ?? null) ?? options.fallbackData);
   const [error, setError] = useState<unknown>(() => cached?.error ?? null);
   const [isValidating, setIsValidating] = useState<boolean>(false);
+  // True once we have a real answer. Seeds from the module/localStorage cache so
+  // a navigation back to this page (cache already populated) is hasData=true on
+  // the very first render — no skeleton flash before the empty/data state.
+  const [hasData, setHasData] = useState<boolean>(() => cached != null);
 
   const isFirstLoadRef = useRef(true);
   const controllerRef = useRef<AbortController | null>(null);
@@ -75,20 +110,25 @@ export function useSWRLike<T>(
       const next = await fetcherRef.current({ signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       cache.set(key, { data: next, error: null, updatedAt: Date.now() });
+      if (persist && typeof window !== 'undefined') {
+        try { window.localStorage.setItem(lsKey(key), JSON.stringify(next)); } catch { /* quota/serialize — non-fatal */ }
+      }
       setData(next);
       setError(null);
+      setHasData(true);
     } catch (err) {
       if (ctrl.signal.aborted) return;
       cache.set(key, { data: fallbackRef.current, error: err, updatedAt: Date.now() });
       setData(fallbackRef.current);
       setError(err);
+      setHasData(true); // a completed (if failed) fetch still means we have an answer
     } finally {
       if (controllerRef.current === ctrl) {
         controllerRef.current = null;
         setIsValidating(false);
       }
     }
-  }, [enabled, key]);
+  }, [enabled, key, persist]);
 
   useEffect(() => {
     void runFetch();
@@ -98,6 +138,32 @@ export function useSWRLike<T>(
       controllerRef.current = null;
     };
   }, [key, enabled, runFetch]);
+
+  // Live-feel revalidation (opt-in). runFetch is stable (deps: enabled/key/
+  // persist) and carries no Privy-derived identity, so listing it here can't
+  // trigger the render-loop fetch storm the CLAUDE.md rule warns about.
+  const revalidateOnFocus = options.revalidateOnFocus ?? false;
+  const refreshInterval = options.refreshInterval ?? 0;
+
+  useEffect(() => {
+    if (!enabled || !revalidateOnFocus || typeof window === 'undefined') return;
+    const onFocus = () => { if (document.visibilityState !== 'hidden') void runFetch(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [enabled, revalidateOnFocus, runFetch]);
+
+  useEffect(() => {
+    if (!enabled || refreshInterval <= 0 || typeof window === 'undefined') return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return; // pause in background
+      void runFetch();
+    }, refreshInterval);
+    return () => window.clearInterval(id);
+  }, [enabled, refreshInterval, runFetch]);
 
   const isLoading = useMemo(() => {
     if (!enabled) return false;
@@ -115,6 +181,7 @@ export function useSWRLike<T>(
     error,
     isLoading,
     isValidating,
+    hasData,
     mutate: runFetch,
     usingMockData,
   };

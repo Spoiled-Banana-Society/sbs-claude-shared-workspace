@@ -1,18 +1,28 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
+import { useSafePrivy as usePrivy, usePrivyAvailable, useSafeCreateWallet, useSafeWallets } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
-import { ApiError as ClientApiError } from '@/lib/api/client';
+import { bananaDefaultName } from '@/utils/helpers';
+import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
+import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
+import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
+import { LOG_SOURCES } from '@/lib/logSources';
+import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { rememberSelfPfp, SELF_PFP_KEY } from '@/hooks/useSelfPfp';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
 const USER_STORAGE_KEYS = [
   USER_PROFILE_KEY,
   USER_BALANCE_KEY,
+  // Durable self-avatar cache — clear on logout so the next account on this
+  // browser doesn't inherit the previous user's pfp.
+  SELF_PFP_KEY,
   // NOTE: 'banana-active-drafts' intentionally NOT cleared on logout
   // so filling/in-progress drafts persist across login sessions
   'banana-completed-drafts',
@@ -27,6 +37,9 @@ const USER_STORAGE_KEYS = [
 // failures: a ~30-day age = clean Privy expiry; a MISSING record while
 // the session is dead = storage was cleared early (mobile eviction).
 const SESSION_STARTED_KEY = 'banana-session-started';
+// Debounce window before a transient Privy `!authenticated` blink wipes the
+// local user. Module-scoped so it's a stable reference (no effect-dep churn).
+const AUTH_WIPE_DEBOUNCE_MS = 1200;
 
 interface SavedProfile {
   username?: string;
@@ -101,6 +114,11 @@ interface AuthContextType {
   newUserPromoClaimed: boolean;
   claimNewUserPromo: () => Promise<void>;
   isBB3Holder: boolean;
+  /** True once the returning-user determination has fully settled (both the
+   *  on-chain/allowlist check and the social-identity check). Gate any
+   *  new-vs-returning UX (e.g. the onboarding tutorial) on this to avoid a
+   *  flash before isBB3Holder resolves. */
+  returningResolved: boolean;
   showMobileLoginModal: boolean;
   setShowMobileLoginModal: (show: boolean) => void;
 }
@@ -171,17 +189,60 @@ const MOCK_USER: User | null = MOCK_AUTH
       jackpotEntries: 0,
       hofEntries: 0,
       cardPurchaseCount: 0,
+      cardFeeCreditCents: 0,
       isVerified: true,
       createdAt: '2025-01-01T00:00:00Z',
     }
   : null;
 
 const REFERRAL_CODE_KEY = 'banana-referral-code';
+// How long a captured referral code stays valid for attribution. Long enough to
+// cover click → (close tab / switch app) → sign up later, short enough that a
+// stale code on a shared device can't attribute an unrelated signup forever.
+const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Durable referral-code storage. Previously this lived ONLY in sessionStorage,
+// which is per-tab and dies on tab close — so a referral link tapped in an
+// in-app browser (X/iMessage) then signed up in a different tab/app lost the
+// code, and the referrer never got credited (Boris 2026-06-25). Now we persist
+// to localStorage (survives tab close / navigation, same browser+origin) with a
+// TTL, and keep sessionStorage as the fast same-tab path. trackReferral is
+// idempotent server-side, so the existing "retry on every login when the user
+// has no referrer" logic now reliably attributes once the code is durable.
+function storeReferralCode(code: string) {
+  try { localStorage.setItem(REFERRAL_CODE_KEY, JSON.stringify({ code, ts: Date.now() })); } catch { /* storage blocked */ }
+  try { sessionStorage.setItem(REFERRAL_CODE_KEY, code); } catch { /* storage blocked */ }
+}
+function readReferralCode(): string | null {
+  // Same-tab value wins (freshest), then fall back to durable localStorage
+  // within the TTL window.
+  try { const ss = sessionStorage.getItem(REFERRAL_CODE_KEY); if (ss) return ss; } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(REFERRAL_CODE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { code?: string; ts?: number };
+    if (parsed?.code && typeof parsed.ts === 'number' && Date.now() - parsed.ts < REFERRAL_TTL_MS) {
+      return parsed.code;
+    }
+    // Expired or malformed — drop it so it can't attribute later.
+    localStorage.removeItem(REFERRAL_CODE_KEY);
+  } catch { /* malformed JSON — ignore */ }
+  return null;
+}
+function clearReferralCode() {
+  try { localStorage.removeItem(REFERRAL_CODE_KEY); } catch { /* ignore */ }
+  try { sessionStorage.removeItem(REFERRAL_CODE_KEY); } catch { /* ignore */ }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
+  // Live mirror of `user` for the desync self-heal interval (no dep churn).
+  const userStateRef = useRef<User | null>(MOCK_USER);
+  useEffect(() => { userStateRef.current = user; }, [user]);
+  // Bumped to force the Privy→user sync effect to re-run after a desync.
+  const [resyncTick, setResyncTick] = useState(0);
   const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showMobileLoginModal, setShowMobileLoginModal] = useState(false);
@@ -237,7 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
     if (refCode) {
-      sessionStorage.setItem(REFERRAL_CODE_KEY, refCode);
+      storeReferralCode(refCode);
     }
   }, []);
 
@@ -272,6 +333,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [twitterError, setTwitterError] = useState<string | null>(null);
   const [newUserPromoClaimed, setNewUserPromoClaimed] = useState(false);
   const [isBB3Holder, setIsBB3Holder] = useState(false);
+  // Returning-status resolution flags. The onboarding tutorial must NOT flash
+  // before we know whether this account is a returning/onboarded user — so we
+  // track when each of the two async determinations has settled. Both start
+  // false on a fresh load and flip true once their check completes; the
+  // onboarding gate (useOnboarding) waits for `returningResolved` (both done).
+  const [bb3Resolved, setBb3Resolved] = useState(false);   // on-chain / allowlist / viewAs
+  const [web2Resolved, setWeb2Resolved] = useState(false); // social-identity returning-check
+  const returningResolved = bb3Resolved && web2Resolved;
 
   // Verify Twitter link with backend (anti-sybil check + Firestore storage)
   const verifyTwitterWithBackend = useCallback(async (
@@ -308,8 +377,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
         }
       }
-    } catch {
+    } catch (err) {
       setTwitterError('Failed to verify X account');
+      reportClientError({
+        source: LOG_SOURCES.auth.TWITTER_VERIFY_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'auth',
+        actor: walletAddress ?? undefined,
+        context: { stage: 'verify-twitter-client' },
+      });
     } finally {
       setIsTwitterLinking(false);
     }
@@ -331,6 +407,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // useWallets() surfaces the embedded wallet (with a `ready` flag) often before
+  // privy.user.linkedAccounts repopulates — an extra wallet source, and the
+  // signal for when it's safe to force-create one.
+  const { wallets: privyWallets, ready: walletsReady } = useSafeWallets();
+  const { createWallet } = useSafeCreateWallet();
+
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
   const walletAddress = useMemo(() => {
     if (MOCK_AUTH) return MOCK_WALLET;
@@ -346,13 +428,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (a: { type: string }) => a.type === 'wallet'
     ) as { address?: string } | undefined;
     if (anyWallet?.address) return anyWallet.address;
-    // Last resort: wallet field
+    // wallet field
     const w = privy.user.wallet;
-    return w?.address ?? null;
-  }, [privy.user]);
+    if (w?.address) return w.address;
+    // Final source: useWallets() often surfaces the embedded wallet before
+    // linkedAccounts does (especially right after createWallet on mobile).
+    if (walletsReady && privyWallets?.length) {
+      const emb = privyWallets.find((x) => (x as { walletClientType?: string }).walletClientType === 'privy') ?? privyWallets[0];
+      if (emb?.address) return emb.address;
+    }
+    return null;
+  }, [privy.user, privyWallets, walletsReady]);
+
+  // ── New-user embedded-wallet creation (the mobile-signup fix) ──────────────
+  // Privy's createOnLogin auto-create silently fails for brand-new social users
+  // on mobile Safari, so the wallet never appears and the whole login pipeline
+  // stalls (the original bug). When the user is authenticated but has NO wallet,
+  // force-create one: immediately once Privy's wallet state is `ready` (fast
+  // path), or after a short grace if `ready` never flips (mobile fallback).
+  // Additive — desktop/external/returning users already have a wallet here, so
+  // this never runs for them.
+  const createWalletRef = useRef(createWallet);
+  createWalletRef.current = createWallet;
+  const walletCreateTriedRef = useRef(false);
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    if (!privy.authenticated) { walletCreateTriedRef.current = false; return; }
+    if (walletAddress) return;            // already have a wallet — nothing to do
+    if (walletCreateTriedRef.current) return;
+    const tryCreate = () => {
+      if (walletCreateTriedRef.current) return;
+      walletCreateTriedRef.current = true;
+      createWalletRef.current().catch(() => { walletCreateTriedRef.current = false; });
+    };
+    if (walletsReady) { tryCreate(); return; }      // fast path
+    const t = setTimeout(tryCreate, 1200);          // fallback if `ready` never flips
+    return () => clearTimeout(t);
+  }, [privy.authenticated, walletAddress, walletsReady]);
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
+  // Pending "wipe the local user" timer. Privy briefly reports
+  // `ready && !authenticated` during page load, route changes, and token
+  // refreshes (a transient blink). Wiping `user` on that blink pops a
+  // spurious login modal + flashes the join overlay. We debounce the wipe:
+  // only clear the user if Privy STAYS unauthenticated past AUTH_WIPE_DEBOUNCE_MS.
+  // A real logout stays unauthenticated, so it still wipes (just ~1.2s later).
+  const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear any pending wipe on unmount so it can't fire against a torn-down tree.
+  useEffect(() => () => {
+    if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current);
+  }, []);
 
   // Check for existing Twitter link on login (also triggers after linkTwitter OAuth redirect)
   useEffect(() => {
@@ -373,6 +499,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       checkExistingTwitterLink(walletAddress);
     }
   }, [walletAddress, privy.user, verifyTwitterWithBackend, checkExistingTwitterLink]);
+
+  // Web2 returning-player check (Boris 2026-06-10): old-prod Thirdweb players
+  // signing in with the SAME X/Gmail get a fresh Privy wallet, so the wallet
+  // snapshot can't see them. One auth'd server call per login matches their
+  // (server-derived) identities against the old player list; a hit flips the
+  // returning experience on (same switch as BBB3 holders). Rule #0: privy
+  // lives in a ref; effect deps are stable scalars only.
+  const privyRef2 = useRef(privy);
+  privyRef2.current = privy;
+  const returningCheckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!walletAddress) { setWeb2Resolved(true); return; }
+    if (returningCheckedRef.current === walletAddress) return;
+    returningCheckedRef.current = walletAddress;
+
+    let cancelled = false;
+    let retries = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // returning-check stamps firstLoginAt + the new-user bells (app-download,
+    // base-usdc-guide…). It's auth-gated, so for a brand-new social user it can
+    // briefly resolve `no-wallet` server-side while the Privy User API catches
+    // up to the just-created embedded wallet. Retry a few times so the bells +
+    // firstLoginAt actually land instead of being skipped for the whole session.
+    const run = async () => {
+      try {
+        // Call immediately, even before Privy's token is ready — send the wallet
+        // the browser already holds so the server stamps firstLoginAt + the
+        // new-user bells via its client-wallet fallback on the FIRST try (this is
+        // why they were being skipped: the old code bailed here when the token
+        // wasn't ready yet, and never called). Token is attached when available.
+        let token: string | null = null;
+        try { token = await privyRef2.current.getAccessToken(); } catch { /* token not ready yet */ }
+        const res = await fetch('/api/users/returning-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ wallet: walletAddress }),
+        });
+        const data = await res.json().catch(() => null);
+        // Keep retrying while the server couldn't verify us yet, so the
+        // returning-PLAYER identity match eventually runs once the token is
+        // ready (firstLoginAt + bells already landed via the wallet fallback).
+        if (data?.reason === 'no-wallet' || data?.reason === 'unauth-fallback') { scheduleRetry(); return; }
+        if (data?.returning) setIsBB3Holder(true);
+        if (!cancelled) setWeb2Resolved(true);
+      } catch {
+        if (!cancelled) setWeb2Resolved(true);
+      }
+    };
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      if (retries >= 4) { setWeb2Resolved(true); return; } // ~8s, then give up
+      retries += 1;
+      retryTimer = setTimeout(() => { if (!cancelled) run(); }, 2000);
+    };
+
+    run();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
+  }, [walletAddress]);
 
   // Tag Sentry with the current user so every frontend error / breadcrumb
   // is attributable to a specific wallet. Without this, admin sees
@@ -395,6 +580,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode
     if (privy.ready && privy.authenticated && privy.user && walletAddress) {
+      // Auth confirmed — cancel any pending blink-wipe. This is what turns a
+      // transient `!authenticated` flicker into a no-op: the wipe was scheduled,
+      // auth came back, we cancel before it ever fires.
+      if (wipeTimerRef.current) {
+        clearTimeout(wipeTimerRef.current);
+        wipeTimerRef.current = null;
+      }
       // Avoid duplicate fetches for the same wallet
       if (fetchingRef.current === walletAddress) return;
       fetchingRef.current = walletAddress;
@@ -410,6 +602,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         if (!localStorage.getItem(SESSION_STARTED_KEY)) {
           localStorage.setItem(SESSION_STARTED_KEY, String(Date.now()));
+          // Identity diagnostic (Boris's repeated session losses 2026-06-10):
+          // log the Privy DID + every linked wallet at session start. If two
+          // of his wallets show under ONE DID, the "logged out of my account"
+          // mystery is wallet-linking entanglement, not a session bug.
+          try {
+            const linkedWallets = (privy.user?.linkedAccounts ?? [])
+              .filter((a) => a.type === 'wallet')
+              .map((a) => ((a as { address?: string }).address ?? '').slice(0, 12));
+            reportClientEvent({
+              source: 'auth.session_started',
+              message: 'session start identity snapshot',
+              route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+              actor: walletAddress,
+              context: { did: privy.user?.id ?? null, linkedWallets, active: walletAddress.slice(0, 12) },
+            }, { skipThrottle: true });
+          } catch { /* diagnostic only */ }
         }
       } catch { /* ignore */ }
 
@@ -456,7 +664,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // here so we don't re-overwrite `referredBy` once it's set.
       const fireReferralTrack = (id: string, username: string) => {
         const refCode = typeof window !== 'undefined'
-          ? sessionStorage.getItem(REFERRAL_CODE_KEY)
+          ? readReferralCode()
           : null;
         if (!refCode) return;
         fetch('/api/referrals/track', {
@@ -468,8 +676,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             referredUsername: username,
           }),
         })
-          .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
-          .catch(() => { /* silent — referral tracking is best-effort */ });
+          .then(() => clearReferralCode())
+          .catch(() => { /* silent — referral tracking is best-effort; code stays for next-login retry */ });
+      };
+
+      // Resolve the SERVER-assigned unique handle for unnamed users. The
+      // instant client-side `defaultDisplayName` is a wallet hash with only
+      // 90k values — two users can compute the SAME "Banana#####", and on
+      // 2026-07-04 that mis-routed an admin pass grant to a name-twin. The
+      // display-batch route returns the counter-assigned number (unique,
+      // one per account, same one the draft room shows) and stamps/seeds
+      // the account on first sight — so brand-new users become findable in
+      // admin search immediately. One-shot fetch, replaces the username
+      // only while it's still a placeholder/computed default.
+      const adoptServerHandle = (wallet: string) => {
+        fetch('/api/users/display-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallets: [wallet.toLowerCase()] }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data: { users?: Record<string, { displayName?: string | null }> } | null) => {
+            const dn = data?.users?.[wallet.toLowerCase()]?.displayName;
+            if (!dn) return;
+            setUser((prev) => {
+              if (!prev || prev.walletAddress?.toLowerCase() !== wallet.toLowerCase()) return prev;
+              const cur = prev.username;
+              const replaceable = !cur || isPlaceholderName(cur, wallet)
+                || cur === defaultDisplayName(wallet)
+                || cur === bananaDefaultName(wallet); // old hash default (pre-fix cache)
+              return replaceable && cur !== dn ? { ...prev, username: dn } : prev;
+            });
+          })
+          .catch(() => { /* non-fatal — hash placeholder stays until next load */ });
       };
 
       // Try to fetch real SBS profile from backend
@@ -480,7 +719,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Filter savedProfile.username through the placeholder check —
           // older builds wrote the truncated wallet ("0x709.a4e9") here,
           // and that leaks across wallets on the same browser profile.
-          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+          const safeSavedName = savedProfile?.username
+            && !isPlaceholderName(savedProfile.username, walletAddress)
+            // A cached name equal to the wallet's old HASH default is the
+            // app's own invention (saved pre-fix), never a chosen name.
+            && savedProfile.username !== bananaDefaultName(walletAddress)
             ? savedProfile.username
             : undefined;
           const merged: User = {
@@ -491,16 +734,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
           setUser(merged);
+          // Unnamed user → swap the hash placeholder for the server-unique
+          // handle (and stamp/seed the account server-side).
+          if (
+            isPlaceholderName(merged.username, walletAddress)
+            || merged.username === defaultDisplayName(walletAddress)
+            || merged.username === bananaDefaultName(walletAddress) // old hash default (Go echo / pre-fix cache)
+          ) {
+            adoptServerHandle(walletAddress);
+          }
+          // Warm the durable self-pfp cache so the draft room shows our avatar
+          // immediately even on a cold mobile load / before the poll returns.
+          rememberSelfPfp(merged.profilePicture);
           setIsNewUser(false);
           setShowOnboarding(false);
-          // Lazy-load the equipped badge from our own backend (the Go
-          // API doesn't know about badges). Fire-and-forget — if it
-          // fails the avatar just renders without a badge overlay.
+          // Lazy-load the equipped badge + ripeness tier from our own backend
+          // (the Go API doesn't know about badges). Fire-and-forget — if it
+          // fails the avatar just renders the default (Unripe) banana.
           fetch(`/api/badges?userId=${encodeURIComponent(walletAddress.toLowerCase())}`)
             .then(r => r.ok ? r.json() : null)
             .then((data) => {
               if (data && typeof data.equipped !== 'undefined') {
-                setUser(prev => prev ? { ...prev, equippedBadge: data.equipped ?? null } : prev);
+                setUser(prev => prev ? {
+                  ...prev,
+                  equippedBadge: data.equipped ?? null,
+                  ripeness: data.ripeness ?? prev.ripeness ?? null,
+                } : prev);
               }
             })
             .catch(() => { /* non-fatal */ });
@@ -514,11 +773,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           // Backend unreachable or user not found — fall back to Privy-only profile
           const isNotFound = err instanceof ClientApiError && err.status === 404;
-          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+          const safeSavedName = savedProfile?.username
+            && !isPlaceholderName(savedProfile.username, walletAddress)
+            // A cached name equal to the wallet's old HASH default is the
+            // app's own invention (saved pre-fix), never a chosen name.
+            && savedProfile.username !== bananaDefaultName(walletAddress)
             ? savedProfile.username
             : undefined;
           const fallbackUser: User = {
-            id: privy.user!.id,
+            // Use the WALLET as the id (matching the normal getOwnerUser path),
+            // NOT the Privy DID. Other code keys per-user data + real-time
+            // streams off user.id; a DID here points them at a channel the
+            // server never writes to, silently breaking notifications/promos.
+            id: walletAddress ? normalizeWalletAddress(walletAddress) : privy.user!.id,
             username: safeSavedName || defaultDisplayName(walletAddress),
             walletAddress,
             loginMethod,
@@ -532,10 +799,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             jackpotEntries: 0,
             hofEntries: 0,
             cardPurchaseCount: 0,
+            cardFeeCreditCents: 0,
             isVerified: false,
             createdAt: new Date().toISOString(),
           };
           setUser(fallbackUser);
+          if (!safeSavedName) adoptServerHandle(walletAddress);
+          rememberSelfPfp(fallbackUser.profilePicture);
           if (isNotFound) {
             setIsNewUser(true);
             setShowOnboarding(true);
@@ -546,12 +816,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         });
     } else if (privy.ready && !privy.authenticated) {
-      setUser(null);
-      fetchingRef.current = null;
-      setIsNewUser(false);
-      setShowOnboarding(false);
+      // Privy says "not authenticated". Could be a real logout OR a transient
+      // blink (page load, route change, token refresh). DEBOUNCE the wipe: only
+      // clear the user if we're STILL unauthenticated after the debounce window.
+      // If auth recovers in time, the sync branch above cancels this timer and
+      // the blink becomes a no-op. Guard so we schedule at most one timer.
+      // (A spurious login modal that slips through is caught signal-only by
+      // auth.spurious_login_modal in providers.tsx.)
+      if (!wipeTimerRef.current) {
+        wipeTimerRef.current = setTimeout(() => {
+          wipeTimerRef.current = null;
+          // Breadcrumb for "I got logged out and didn't press Log Out"
+          // reports (Boris hit this on a fresh test wallet, 2026-06-10):
+          // Privy stayed unauthenticated past the debounce — a REAL session
+          // loss, not a blink. Context shows what the session looked like.
+          // Only when there was a user to lose — anonymous visitors (and bots
+          // hammering "/") sit unauthenticated forever and are not losses.
+          try {
+            if (userStateRef.current) reportClientError({
+              source: 'auth.session_lost',
+              message: 'Privy stayed unauthenticated past debounce — user wiped without explicit logout',
+              route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+              context: {
+                privyReady: privy.ready,
+                ua: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 80) : '',
+              },
+            });
+          } catch { /* breadcrumb only */ }
+          setUser(null);
+          fetchingRef.current = null;
+          setIsNewUser(false);
+          setShowOnboarding(false);
+        }, AUTH_WIPE_DEBOUNCE_MS);
+      }
     }
-  }, [privy.ready, privy.authenticated, privy.user, walletAddress]);
+  }, [privy.ready, privy.authenticated, privy.user, walletAddress, resyncTick]);
+
+  // SELF-HEAL auth desync (Boris 2026-06-10): Privy session alive but local
+  // `user` is null — the exact "looks logged out + Log In button does
+  // nothing until refresh" state. The sync effect's fetchingRef guard can
+  // wedge after a wipe/error, so it never re-fetches. Detect within ~4s,
+  // report (throttle-bypassed), unstick the guard, and re-run the sync.
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    const iv = setInterval(() => {
+      if (privy.ready && privy.authenticated && privy.user && walletAddress && !userStateRef.current) {
+        try {
+          reportClientEvent({
+            source: 'auth.desync_self_heal',
+            message: 'Privy authenticated but local user null — unsticking fetch guard and re-syncing',
+            route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+            actor: walletAddress,
+            context: { stuckFetchingRef: fetchingRef.current ?? null },
+          }, { skipThrottle: true });
+        } catch { /* diagnostic only */ }
+        fetchingRef.current = null;
+        setResyncTick((t) => t + 1);
+      }
+    }, 4000);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [privy.ready, privy.authenticated, walletAddress]);
 
   // Read on-chain NFT balance + USDC balance and sync to user
   // Runs on login, every 30s, and on network reconnect
@@ -559,7 +884,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (MOCK_AUTH) return; // Skip on-chain reads in mock mode
     if (!walletAddress || !user) return;
 
-    const BBB4_ADDRESS = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
+    const BBB4_ADDRESS = BBB4_CONTRACT_ADDRESS;
     const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
     const balanceOfSig = '0x70a08231'; // balanceOf(address)
     const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
@@ -629,12 +954,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [walletAddress, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Check BB3 (Eth mainnet) to identify returning players
+  // Identify returning (BBB3) players. Three inputs, in priority order:
+  //   1. Admin dev toggle (sessionStorage 'sbs-view-as') — lets an admin preview
+  //      the new vs returning experience from their own wallet. Admin-only.
+  //   2. Manual returning-wallet allowlist (lib/returningUsers.ts) — instant, no
+  //      fetch. Seeds the admin testing wallet, which holds no BBB3 on mainnet.
+  //   3. Live on-chain balanceOf against the BBB3 contract (Eth mainnet).
   useEffect(() => {
-    if (MOCK_AUTH) return;
-    if (!walletAddress) return;
+    if (MOCK_AUTH) { setBb3Resolved(true); return; }
+    if (!walletAddress) { setBb3Resolved(true); return; }
 
-    const BB3_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7';
+    // 1. Admin "view as" override.
+    if (typeof window !== 'undefined' && isWalletAdmin(walletAddress)) {
+      const viewAs = window.sessionStorage.getItem('sbs-view-as');
+      if (viewAs === 'returning') { setIsBB3Holder(true); setBb3Resolved(true); return; }
+      if (viewAs === 'new') { setIsBB3Holder(false); setBb3Resolved(true); return; }
+    }
+
+    // 2. Manual allowlist — treat as returning without an on-chain hit.
+    if (isReturningWalletSync(walletAddress)) { setIsBB3Holder(true); setBb3Resolved(true); return; }
+
+    // 3. Live on-chain check.
     const balanceOfSig = '0x70a08231';
     const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
 
@@ -643,7 +983,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 1, method: 'eth_call',
-        params: [{ to: BB3_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
+        params: [{ to: BBB3_CONTRACT_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
       }),
     })
       .then(res => res.json())
@@ -652,7 +992,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsBB3Holder(parseInt(result.result, 16) > 0);
         }
       })
-      .catch(() => { /* silent */ });
+      .catch(() => { /* silent */ })
+      .finally(() => { setBb3Resolved(true); });
   }, [walletAddress]);
 
   // Live balance sync — real-time push via Server-Sent Events.
@@ -698,7 +1039,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           jackpotEntries: (d.jackpotEntries as number) ?? prev.jackpotEntries,
           hofEntries: (d.hofEntries as number) ?? prev.hofEntries,
           cardPurchaseCount: (d.cardPurchaseCount as number) ?? prev.cardPurchaseCount,
+          cardFeeCreditCents: (d.cardFeeCreditCents as number) ?? prev.cardFeeCreditCents,
           draftPasses: typeof d.draftPasses === 'number' ? (d.draftPasses as number) : prev.draftPasses,
+          // First-purchase promo gating — now delivered live so the card hides
+          // after a purchase and unlocks for new users post free-drafts.
+          firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
+          firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
+          // Spin-explainer gating — so the "a spin wins up to 20" text hides
+          // once they've actually spun.
+          hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
         };
       });
       setIsBalanceLoaded(true);
@@ -745,17 +1094,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     connect();
     const onFocus = () => {
-      // On focus: if SSE was torn down, reconnect. Otherwise a no-op.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // Always pull a fresh balance snapshot immediately on focus. A
+      // backgrounded tab throttles the SSE, so it can be stale even while
+      // nominally "open" — this guarantees spins / free drafts / passes are
+      // current the instant you look at the device, not a poll cycle later.
+      void (async () => {
+        try {
+          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
+          if (res.ok) applyPayload(await res.json());
+        } catch { /* silent */ }
+      })();
+      // Reconnect the SSE if it was torn down while backgrounded.
       if (!eventSource || eventSource.readyState === 2 /* CLOSED */) {
         eventSource = null;
         connect();
       }
     };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
       if (eventSource) {
         eventSource.close();
         eventSource = null;
@@ -813,6 +1175,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profilePicture: updated.profilePicture,
         nflTeam: updated.nflTeam,
       });
+      // Keep the durable self-pfp cache in lockstep with edits.
+      rememberSelfPfp(updated.profilePicture);
       // Sync profile changes to Go API backend (best-effort, don't block UI)
       if (prev.walletAddress) {
         if (updates.username && updates.username !== prev.username) {
@@ -820,6 +1184,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (updates.profilePicture && updates.profilePicture !== prev.profilePicture) {
           updateOwnerPfpImage(prev.walletAddress, updates.profilePicture).catch(() => {});
+          // ALSO mirror the pfp into v2_users so the draft-room board/roster read
+          // it from the fast/reliable Firestore source (display-batch) instead of
+          // the flaky Go API. Keeps the avatar current on every edit → never
+          // stale or frozen. Best-effort like the Go sync above.
+          fetch('/api/user/metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: prev.walletAddress,
+              profilePicture: updates.profilePicture,
+            }),
+          }).catch(() => {});
         }
         // nflTeam lives in v2_users (Go API doesn't model it). Sync via
         // /api/user/metadata so it survives logout.
@@ -857,6 +1233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       jackpotEntries?: number;
       hofEntries?: number;
       cardPurchaseCount?: number;
+      cardFeeCreditCents?: number;
     } | null = null;
     try {
       const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
@@ -877,6 +1254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         jackpotEntries: typeof firestoreBalance!.jackpotEntries === 'number' ? firestoreBalance!.jackpotEntries : prev.jackpotEntries,
         hofEntries: typeof firestoreBalance!.hofEntries === 'number' ? firestoreBalance!.hofEntries : prev.hofEntries,
         cardPurchaseCount: typeof firestoreBalance!.cardPurchaseCount === 'number' ? firestoreBalance!.cardPurchaseCount : prev.cardPurchaseCount,
+        cardFeeCreditCents: typeof firestoreBalance!.cardFeeCreditCents === 'number' ? firestoreBalance!.cardFeeCreditCents : prev.cardFeeCreditCents,
       };
     });
   }, [user?.id]);
@@ -927,7 +1305,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // linkTwitter() redirects to Twitter — when user returns, privy.user updates
   // with the new linkedAccount, which our effect above detects and verifies.
   const handleLinkTwitter = useCallback(() => {
-    if (!privyAvailable || !walletAddress) return;
+    // Don't silently no-op when we're not ready yet — that invisible failure
+    // (user taps Connect, NOTHING happens, no error, no spinner) was a top
+    // cause of "I can't connect my X" reports. Always give feedback.
+    if (!privyAvailable) {
+      setTwitterError('Sign-in is still loading — give it a second and tap Connect again.');
+      return;
+    }
+    if (!walletAddress) {
+      setTwitterError('Finishing sign-in — give it a second, then tap Connect again.');
+      return;
+    }
     setIsTwitterLinking(true);
     setTwitterError(null);
     try {
@@ -942,22 +1330,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const claimNewUserPromo = useCallback(async () => {
     if (!walletAddress) return;
+    // Optimistic: flip the flag IMMEDIATELY so the New User box disappears the
+    // instant they claim (spin not required), and so a slow/failed PATCH can't
+    // leave the box lingering. The server PATCH below is the durable backstop.
+    setNewUserPromoClaimed(true);
     try {
       await fetch('/api/auth/verify-twitter', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress }),
       });
-      setNewUserPromoClaimed(true);
     } catch {
       // Silent — claim tracking is best-effort
     }
   }, [walletAddress]);
 
+  // Admin "View as → New user" preview (sessionStorage 'sbs-view-as'): also
+  // simulate NEVER-PURCHASED so the first-purchase promo (card + banner state
+  // + More Info) renders exactly as a new user sees it — without touching the
+  // admin's real account data (Boris 2026-07-10). Admin wallets only; the
+  // override is per-session and display-only (claims still hit the server,
+  // which uses the REAL flags).
+  const viewAsNewPreview =
+    typeof window !== 'undefined' &&
+    !!user &&
+    isWalletAdmin(walletAddress) &&
+    window.sessionStorage.getItem('sbs-view-as') === 'new';
+  const exposedUser = viewAsNewPreview && user
+    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true }
+    : user;
+
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: exposedUser,
         walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
         isLoading: MOCK_AUTH ? false : (!privy.ready || (privy.authenticated && !user)),
@@ -984,6 +1390,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         newUserPromoClaimed,
         claimNewUserPromo,
         isBB3Holder,
+        returningResolved,
         showMobileLoginModal,
         setShowMobileLoginModal,
       }}

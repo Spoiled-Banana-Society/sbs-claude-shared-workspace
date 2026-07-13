@@ -29,9 +29,52 @@ function isIOSSafari(): boolean {
   return /iphone|ipad|ipod/.test(ua) && /safari/.test(ua) && !/chrome|crios|fxios/.test(ua);
 }
 
+// ── Shared step blocks ──────────────────────────────────────────────────
+// One source of truth for each platform's steps so the copy is IDENTICAL
+// everywhere it appears (desktop modal, iOS Safari modal, iOS Chrome modal).
+
+const ShareGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+);
+const CheckGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+);
+const DotsHorizGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="19" cy="12" r="1.5" fill="#fbbf24" /></svg>
+);
+const DotsVertGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="19" r="1.5" fill="#fbbf24" /></svg>
+);
+const DownloadGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+);
+
+// iOS (Safari) — same 3 steps everywhere.
+function IOSSteps() {
+  return (
+    <div className="space-y-3.5">
+      <Step num={1} icon={DotsHorizGlyph} title={<>Tap the <span className="text-banana">three dots</span></>} desc="Bottom-right of Safari" />
+      <Step num={2} icon={ShareGlyph} title={<>Tap <span className="text-banana">Share</span></>} desc="" />
+      <Step num={3} icon={CheckGlyph} title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>} desc={'Don’t see it? Tap "More" first'} />
+    </div>
+  );
+}
+
+// Android (Chrome) — menu → Install app → confirm. Verified flow: tapping the
+// menu item opens a confirmation dialog with an Install button you must tap.
+function AndroidSteps() {
+  return (
+    <div className="space-y-3.5">
+      <Step num={1} icon={DotsVertGlyph} title={<>Tap the <span className="text-banana">menu (⋮)</span></>} desc="Top-right of Chrome" />
+      <Step num={2} icon={DownloadGlyph} title={<>Tap <span className="text-banana">Install app</span></>} desc={'Or "Add to Home screen"'} />
+      <Step num={3} icon={CheckGlyph} title={<>Tap <span className="text-banana">Install</span> to confirm</>} desc="On the popup that appears" />
+    </div>
+  );
+}
+
 // ── Install Steps Modal ─────────────────────────────────────────────────
 
-export function InstallModal({ onClose, browser, promoBanner }: { onClose: () => void; browser: 'safari' | 'chrome'; promoBanner?: React.ReactNode }) {
+export function InstallModal({ onClose, browser, promoBanner }: { onClose: () => void; browser: 'safari' | 'chrome' | 'both'; promoBanner?: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
@@ -49,14 +92,26 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
           </div>
           <h3 className="text-white font-bold text-lg">Install SBS</h3>
           <p className="text-white/40 text-xs mt-1">
-            {browser === 'safari' ? '3 simple steps' : 'Open in Safari first'}
+            {browser === 'both' ? 'Add it to your phone' : browser === 'safari' ? '3 simple steps' : 'Open in Safari first'}
           </p>
         </div>
 
         {/* Steps */}
         <div className="px-5 py-4">
-          {browser === 'chrome' ? (
-            /* Chrome on iOS — show Safari requirement + same 5 steps */
+          {browser === 'both' ? (
+            /* Desktop — phone type unknown, so cover iPhone + Android together. */
+            <div className="space-y-4">
+              <div>
+                <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5">iPhone — in Safari</p>
+                <IOSSteps />
+              </div>
+              <div className="pt-1 border-t border-white/[0.06]">
+                <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5 mt-3">Android — in Chrome</p>
+                <AndroidSteps />
+              </div>
+            </div>
+          ) : browser === 'chrome' ? (
+            /* Chrome on iOS — show Safari requirement + the same iOS steps */
             <div>
               {/* Safari required banner */}
               <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
@@ -67,7 +122,7 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
                   </svg>
                   <p className="text-white font-medium text-xs">Must be done in Safari</p>
                 </div>
-                <p className="text-white/40 text-[11px] mb-2">Open this page in Safari, then follow the 5 steps below.</p>
+                <p className="text-white/40 text-[11px] mb-2">Open this page in Safari, then follow the steps below.</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -82,67 +137,13 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
                 </div>
               </div>
 
-              {/* Same 4 steps as Safari */}
+              {/* Same steps as Safari */}
               <p className="text-white/25 text-[10px] uppercase tracking-wider mb-3">Then in Safari:</p>
-              <div className="space-y-3.5">
-                <Step
-                  num={1}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="19" cy="12" r="1.5" fill="#fbbf24" /></svg>}
-                  title={<>Tap the <span className="text-banana">three dots</span> next to the URL</>}
-                  desc="Bottom-right of your browser"
-                />
-                <Step
-                  num={2}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>}
-                  title={<>Tap <span className="text-banana">Share</span></>}
-                  desc=""
-                />
-                <Step
-                  num={3}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                  title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>}
-                  desc="Don&apos;t see it? Tap More first"
-                />
-              </div>
+              <IOSSteps />
             </div>
           ) : (
-            /* Safari — 4 step install flow */
-            <div className="space-y-3.5">
-              <Step
-                num={1}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="5" cy="12" r="1.5" fill="#fbbf24" />
-                    <circle cx="12" cy="12" r="1.5" fill="#fbbf24" />
-                    <circle cx="19" cy="12" r="1.5" fill="#fbbf24" />
-                  </svg>
-                }
-                title={<>Tap the <span className="text-banana">three dots</span> — bottom right</>}
-                desc=""
-              />
-              <Step
-                num={2}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                }
-                title={<>Tap <span className="text-banana">Share</span></>}
-                desc=""
-              />
-              <Step
-                num={3}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                }
-                title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>}
-                desc="Don&apos;t see it? Tap More first"
-              />
-            </div>
+            /* Safari — iOS install flow */
+            <IOSSteps />
           )}
         </div>
 
@@ -205,26 +206,42 @@ function CopyLinkButton() {
 export function AddToHomeScreenCard() {
   const { canInstall: _canInstall, isStandalone, triggerInstall } = useInstallPrompt();
   const [show, setShow] = useState(false);
-  const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | null>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | 'both' | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
-    if (isMobile && !isStandalone && !isDismissed()) {
+    setIsDesktop(!isMobile);
+    // Show on EVERY device (desktop too) so desktop users learn the app exists
+    // and how to install it on their phone. Hidden once installed (standalone)
+    // or after they engage with the steps.
+    if (!isStandalone && !isDismissed()) {
       setShow(true);
     }
   }, [isStandalone]);
 
   const handleInstall = useCallback(async () => {
-    localStorage.setItem(ENGAGED_KEY, '1');
-
+    // Clicking the card just opens the steps — it does NOT dismiss the banner.
+    // Only the X (dismiss) hides it. Desktop can't install the phone app and we
+    // don't know their phone OS — show iPhone + Android steps together.
+    if (isDesktop) {
+      setModalBrowser('both');
+      return;
+    }
     if (isIOS()) {
       setModalBrowser(isIOSSafari() ? 'safari' : 'chrome');
     } else {
       const installed = await triggerInstall();
       if (installed) setShow(false);
     }
-  }, [triggerInstall]);
+  }, [triggerInstall, isDesktop]);
+
+  // Only the X dismisses the banner — permanently, so it doesn't nag again.
+  const dismiss = useCallback(() => {
+    localStorage.setItem(ENGAGED_KEY, '1');
+    setShow(false);
+  }, []);
 
   if (!show) return null;
 
@@ -239,19 +256,38 @@ export function AddToHomeScreenCard() {
             <Image src="/icons/icon-192.png" alt="SBS" width={32} height={32} className="rounded-lg" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white font-semibold text-[13px]">Get the App</p>
-            <p className="text-white/40 text-[11px]">Add to home screen — works like a real app</p>
+            <p className="text-white font-semibold text-[13px]">
+              {isDesktop ? 'Get the App on Your Phone' : 'Get the App'}
+            </p>
+            <p className="text-white/40 text-[11px]">
+              {isDesktop
+                ? 'Add SBS to your phone — works on iPhone & Android'
+                : 'Add to home screen — works like a real app'}
+            </p>
           </div>
           <span className="px-4 py-1.5 bg-banana text-black text-xs font-bold rounded-full flex-shrink-0 pointer-events-none">
-            Install
+            {isDesktop ? 'How' : 'Install'}
           </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismiss(); }}
+            aria-label="Dismiss"
+            className="flex-shrink-0 -mr-1 w-6 h-6 flex items-center justify-center rounded-full text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors text-lg leading-none"
+          >
+            ×
+          </button>
         </div>
       </aside>
 
       {modalBrowser && (
         <InstallModal
           browser={modalBrowser}
-          onClose={() => { setModalBrowser(null); setShow(false); localStorage.setItem(ENGAGED_KEY, '1'); }}
+          promoBanner={isDesktop ? (
+            <div className="px-5 pt-4 -mb-1 text-center">
+              <p className="text-banana text-xs font-semibold">📱 Open SBS on your phone</p>
+              <p className="text-white/40 text-[11px] mt-0.5">Pull up this site on your phone, then follow your device&apos;s steps:</p>
+            </div>
+          ) : undefined}
+          onClose={() => setModalBrowser(null)}
         />
       )}
     </>

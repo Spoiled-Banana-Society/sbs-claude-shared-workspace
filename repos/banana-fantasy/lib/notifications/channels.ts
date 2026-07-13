@@ -25,19 +25,19 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Escape the small set of characters Telegram HTML mode cares about. */
+/** Escape the small set of characters HTML cares about. */
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Minimal transactional email body. */
-function emailHtml(title: string, body: string, url: string): string {
+/**
+ * Minimal transactional email body: just the clean line, plain black — no
+ * banana-yellow heading, no "Open draft" button, no link (Boris 2026-06-20).
+ */
+function emailHtml(title: string): string {
   return [
-    '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto">',
-    `<h2 style="color:#fbbf24;margin:0 0 12px">${escapeHtml(title)}</h2>`,
-    `<p style="font-size:16px;line-height:1.5;color:#111">${escapeHtml(body)}</p>`,
-    `<p><a href="${url}" style="display:inline-block;background:#fbbf24;color:#000;`,
-    'font-weight:700;text-decoration:none;padding:12px 20px;border-radius:8px">Open draft</a></p>',
+    '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;padding:8px 0">',
+    `<p style="font-size:18px;font-weight:600;line-height:1.5;color:#111;margin:0">${escapeHtml(title)}</p>`,
     '</div>',
   ].join('');
 }
@@ -104,8 +104,8 @@ export const sendEmail: ChannelSender = async (message, _event, prefs) => {
         from,
         to: [prefs.email],
         subject: message.title,
-        html: emailHtml(message.title, message.body, message.url),
-        text: `${message.body}\n\n${message.url}`,
+        html: emailHtml(message.title),
+        text: message.title,
       }),
     });
     if (!res.ok) {
@@ -131,13 +131,10 @@ export const sendTelegram: ChannelSender = async (message, _event, prefs) => {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // Clean copy only — no button, no link (Boris 2026-06-20).
       body: JSON.stringify({
         chat_id: prefs.telegramChatId,
-        text: `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}`,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[{ text: 'Open draft', url: message.url }]],
-        },
+        text: message.title,
       }),
     });
     if (!res.ok) {
@@ -187,11 +184,11 @@ export const sendDiscord: ChannelSender = async (message, _event, prefs) => {
     const dmChannelId = (await dmRes.json())?.id as string | undefined;
     if (!dmChannelId) return fail('discord', 'Discord DM open: no channel id');
 
-    // 2. Send the alert into that DM.
+    // 2. Send the alert into that DM — clean copy only, no link (Boris 2026-06-20).
     const msgRes = await fetch(`${api}/channels/${dmChannelId}/messages`, {
       method: 'POST',
       headers: auth,
-      body: JSON.stringify({ content: `**${message.title}**\n${message.body}\n${message.url}` }),
+      body: JSON.stringify({ content: message.title }),
     });
     if (!msgRes.ok) {
       return fail('discord', `Discord DM send ${msgRes.status}: ${await msgRes.text().catch(() => '')}`);

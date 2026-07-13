@@ -30,6 +30,39 @@ const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
 
 const NFT_LEAGUE_MAP_COLLECTION = 'nft_league_map';
 const TEAM_NICKNAMES_COLLECTION = 'userTeamNicknames';
+const MARKETPLACE_ACTIVITY_COLLECTION = 'marketplace_activity';
+
+/**
+ * Prior owners of a token, newest first, from our marketplace sale history.
+ *
+ * When an NFT is sold, the Go backend keeps the draft record under whoever
+ * drafted it — it does NOT move to the buyer. So a bought team won't resolve
+ * against the current owner. The original drafter is one of the past sellers,
+ * so we try them (a 'buy' event records the seller as `counterparty`; a 'sell'
+ * event records the seller as `walletAddress`). Capped to bound API calls.
+ */
+async function findPriorOwnersForToken(tokenId: string): Promise<string[]> {
+  if (!isFirestoreConfigured() || !tokenId) return [];
+  try {
+    const db = getAdminFirestore();
+    // Single-field equality — no composite index needed; sort in memory.
+    const snap = await db.collection(MARKETPLACE_ACTIVITY_COLLECTION).where('tokenId', '==', String(tokenId)).get();
+    const events = snap.docs
+      .map(d => ({ ...d.data(), _ts: d.data().timestamp?.toMillis?.() ?? 0 }))
+      .filter((e) => { const t = (e as { type?: string }).type; return t === 'buy' || t === 'sell'; })
+      .sort((a, b) => b._ts - a._ts);
+    const owners: string[] = [];
+    for (const e of events as Array<{ type?: string; counterparty?: string; walletAddress?: string }>) {
+      const seller = (e.type === 'buy' ? e.counterparty : e.walletAddress) ?? '';
+      const lower = String(seller).toLowerCase();
+      if (lower && !owners.includes(lower)) owners.push(lower);
+      if (owners.length >= 5) break;
+    }
+    return owners;
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Read a user's per-league nickname (if any) from Firestore. The owner
@@ -62,6 +95,9 @@ interface RosterPlayer {
 
 interface BackendDraftToken {
   _cardId?: string | number;
+  // The authoritative on-chain NFT tokenId for this draft record. Newer Go API
+  // records carry this directly — match on it instead of decoding _cardId.
+  realTokenId?: string | number;
   _leagueId?: string;
   _leagueDisplayName?: string;
   _level?: string;
@@ -70,6 +106,21 @@ interface BackendDraftToken {
   _weekScore?: string | number;
   _imageUrl?: string;
   roster?: Record<string, RosterPlayer[] | null | undefined>;
+}
+
+/**
+ * Resolve the backend draft record for an on-chain NFT tokenId.
+ * Prefer the authoritative `realTokenId` field (exact NFT match). Only when a
+ * record lacks it (older mints) fall back to the legacy cardId decoding. Doing
+ * realTokenId FIRST across all tokens avoids the legacy heuristic's false
+ * positives — an unused pass whose cardId merely *ends* in the tokenId used to
+ * match the wrong drafted team.
+ */
+function matchTokenForNft(tokens: BackendDraftToken[], tokenId: string): BackendDraftToken | null {
+  if (!tokenId) return null;
+  const byRealTokenId = tokens.find(t => String(t.realTokenId ?? '') === tokenId);
+  if (byRealTokenId) return byRealTokenId;
+  return tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId)) ?? null;
 }
 
 export interface TeamData {
@@ -122,7 +173,7 @@ async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<B
       ...(Array.isArray(data?.active) ? data.active : []),
       ...(Array.isArray(data?.available) ? data.available : []),
     ];
-    return tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId)) ?? null;
+    return matchTokenForNft(tokens, tokenId);
   } catch {
     return null;
   }
@@ -168,6 +219,26 @@ async function readNftLeagueMap(tokenId: string): Promise<{ leagueId: string; ow
     const mappedBy = snap.get('mappedBy') as string | undefined;
     if (mappedBy === 'auto-sync') return null;
     return { leagueId, ownerAtMap: snap.get('ownerAtMap') as string | undefined };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the current owner wallet for a token straight from our backend
+ * (Firestore `draftTokens/{tokenId}`, written by the WS server on draft close
+ * — `.Set(struct)` with no firestore tags, so the field is the Go field name
+ * `OwnerId`). Lets us serve a freshly-drafted team for ANY viewer during the
+ * few minutes OpenSea lags behind, without OpenSea telling us the owner.
+ */
+export async function getOwnerForToken(tokenId: string): Promise<string | null> {
+  if (!isFirestoreConfigured() || !tokenId) return null;
+  try {
+    const db = getAdminFirestore();
+    const snap = await db.collection('draftTokens').doc(String(tokenId)).get();
+    if (!snap.exists) return null;
+    const owner = snap.get('OwnerId') ?? snap.get('_ownerId') ?? snap.get('ownerId');
+    return owner ? String(owner) : null;
   } catch {
     return null;
   }
@@ -249,6 +320,19 @@ export async function getTeamForToken(tokenId: string, owner: string | null): Pr
     }
   }
 
+  // 3. Traded NFT — its draft record still sits under a PRIOR owner (the Go
+  //    backend doesn't move it on sale). Try the past sellers from our sale
+  //    history; the original drafter is the only one with a matching record.
+  const priorOwners = await findPriorOwnersForToken(tokenId);
+  for (const prior of priorOwners) {
+    if (owner && prior === owner.toLowerCase()) continue;
+    const token = await findTokenByCardIdMatch(prior, tokenId);
+    if (token) {
+      const data = backendTokenToTeamData(token, 'cardid_match');
+      if (data) return applyNickname(data);
+    }
+  }
+
   return null;
 }
 
@@ -256,6 +340,48 @@ export async function getTeamForToken(tokenId: string, owner: string | null): Pr
  * Bulk resolve team data for a list of (tokenId, owner) pairs. Groups by
  * owner so we hit `/owner/{wallet}/draftToken/all` at most once per owner.
  */
+/**
+ * Every on-chain BBB4 token id the owner holds per OUR draftTokens — the SAME
+ * authoritative source the Teams page uses (getOwnerLeaguesFromDraftTokens).
+ *
+ * The Sell tab enumerates ownership from Alchemy's getNFTsForOwner, which lags
+ * fresh mints — so a team that was just generated when a draft finished is
+ * missing from Sell for minutes even though it's already in our backend and
+ * already shows on the Teams page. Unioning these ids into the Sell list closes
+ * that gap so the two pages match. Best-effort: returns [] on any failure, so
+ * the Alchemy list still stands.
+ */
+export async function getOwnerOnchainTokenIds(owner: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const tokens: BackendDraftToken[] = [
+      ...(Array.isArray(data?.active) ? data.active : []),
+      ...(Array.isArray(data?.available) ? data.available : []),
+    ];
+    const ids: string[] = [];
+    for (const t of tokens) {
+      // Prefer the explicit realTokenId. When it's absent (common — the field
+      // isn't always stamped back onto the token record even though the NFT is
+      // minted), the numeric cardId IS the on-chain token id (e.g. cardId 110).
+      // Same fallback refresh-draft + teamNoFromToken use. Without this, a real
+      // minted team with no realTokenId never makes it into the Sell list.
+      let s = t.realTokenId != null ? String(t.realTokenId) : '';
+      if (!/^\d+$/.test(s)) {
+        const cid = t._cardId != null ? String(t._cardId) : '';
+        if (/^\d+$/.test(cid)) s = cid;
+      }
+      if (/^\d+$/.test(s)) ids.push(s); // minted on-chain NFT (team or pass)
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
 export async function getTeamsForTokens(
   pairs: Array<{ tokenId: string; owner: string | null }>,
 ): Promise<Map<string, TeamData>> {
@@ -293,7 +419,7 @@ export async function getTeamsForTokens(
 
   for (const { tokenIds, tokens, nicknames } of ownerTokenLists) {
     for (const tokenId of tokenIds) {
-      const found = tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId));
+      const found = matchTokenForNft(tokens, tokenId);
       if (!found) continue;
       const data = backendTokenToTeamData(found, 'cardid_match');
       if (!data) continue;
@@ -323,6 +449,44 @@ export async function getTeamsForTokens(
       result.set(p.tokenId, nickname ? { ...data, leagueDisplayName: nickname } : data);
     }),
   );
+
+  // 3. Traded NFTs whose draft record sits under a prior owner (seller). Only
+  //    tokens with sale history trigger this, so unused passes cost nothing.
+  const tradedMissing = pairs.filter(p => !result.has(p.tokenId));
+  if (tradedMissing.length > 0) {
+    const priorByToken = new Map<string, string[]>();
+    await Promise.all(tradedMissing.map(async (p) => {
+      priorByToken.set(p.tokenId, await findPriorOwnersForToken(p.tokenId));
+    }));
+
+    // Fetch each distinct prior owner's draft list once.
+    const priorOwners = new Set<string>();
+    for (const list of priorByToken.values()) for (const o of list) priorOwners.add(o);
+    const priorOwnerTokens = new Map<string, BackendDraftToken[]>();
+    await Promise.all([...priorOwners].map(async (owner) => {
+      try {
+        const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner}/draftToken/all`, { signal: AbortSignal.timeout(3000) });
+        if (!res.ok) { priorOwnerTokens.set(owner, []); return; }
+        const data = await res.json();
+        priorOwnerTokens.set(owner, [
+          ...(Array.isArray(data?.active) ? data.active : []),
+          ...(Array.isArray(data?.available) ? data.available : []),
+        ]);
+      } catch {
+        priorOwnerTokens.set(owner, []);
+      }
+    }));
+
+    for (const p of tradedMissing) {
+      for (const prior of priorByToken.get(p.tokenId) ?? []) {
+        const found = matchTokenForNft(priorOwnerTokens.get(prior) ?? [], p.tokenId);
+        if (!found) continue;
+        const data = backendTokenToTeamData(found, 'cardid_match');
+        if (data) result.set(p.tokenId, data);
+        break;
+      }
+    }
+  }
 
   return result;
 }

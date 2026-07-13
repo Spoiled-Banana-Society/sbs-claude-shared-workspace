@@ -18,10 +18,14 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getAdminDatabase } from '@/lib/firebaseAdmin';
+import { enrichChatIdentities } from '@/lib/chatProfiles';
+import { getPrivyUser } from '@/lib/auth';
+import { ApiError } from '@/lib/api/errors';
 
 interface ChatMessageRecord {
   walletAddress: string;
   username: string;
+  pfpUrl?: string;
   text: string;
   timestamp: number;
 }
@@ -55,12 +59,16 @@ export async function GET(
           id: child.key || `${v.timestamp ?? Date.now()}`,
           walletAddress: v.walletAddress,
           username: typeof v.username === 'string' ? v.username : v.walletAddress,
+          pfpUrl: typeof v.pfpUrl === 'string' ? v.pfpUrl : undefined,
           text: v.text,
           timestamp: typeof v.timestamp === 'number' ? v.timestamp : Date.now(),
         });
       }
     });
-    return NextResponse.json({ messages: out });
+    // Overlay each sender's live profile (name + picture) so chat never shows
+    // a stale wallet fragment or a missing avatar — see lib/chatProfiles.
+    const messages = await enrichChatIdentities(out);
+    return NextResponse.json({ messages });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'read failed';
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -76,20 +84,31 @@ export async function POST(
     return NextResponse.json({ error: 'invalid draftId' }, { status: 400 });
   }
 
-  let body: { walletAddress?: string; username?: string; text?: string };
+  // Author identity comes from the verified Privy token, NOT the request
+  // body — otherwise anyone could post messages as any wallet. The stored
+  // username is cosmetic (GET overlays the live profile via enrichChatIdentities).
+  let walletAddress: string;
+  try {
+    const user = await getPrivyUser(req);
+    if (!user.walletAddress || !/^0x[a-f0-9]{40}$/.test(user.walletAddress.toLowerCase())) {
+      return NextResponse.json({ error: 'wallet required' }, { status: 401 });
+    }
+    walletAddress = user.walletAddress.toLowerCase();
+  } catch (err) {
+    if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });
+    return NextResponse.json({ error: 'auth failed' }, { status: 401 });
+  }
+
+  let body: { username?: string; text?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
-  const walletAddress = String(body.walletAddress || '').toLowerCase();
   const username = String(body.username || '').slice(0, 60) || walletAddress;
   const text = String(body.text || '').trim().slice(0, TEXT_MAX);
 
-  if (!walletAddress || !/^0x[a-f0-9]{40}$/.test(walletAddress)) {
-    return NextResponse.json({ error: 'invalid wallet' }, { status: 400 });
-  }
   if (!text) {
     return NextResponse.json({ error: 'empty text' }, { status: 400 });
   }

@@ -106,7 +106,7 @@ gcloud run deploy sbs-drafts-server-staging --source /Users/borisvagner/SBS-Foot
 ### Key IDs
 - Privy App ID: `cmlg4vpxo01txl70dm0hr9t86`
 - Firebase Project: `sbs-prod-env`
-- BBB4 Contract: `0x14065412b3A431a660e6E576A14b104F1b3E463b`
+- BBB4 Contract: `0xadf5b9b46616de6d073F226e7b7C532aE2CFFB80` ("Banana Best Ball IV" / SBSBBB4, deployed 2026-06-22, owner 0xccdF79)
 - USDC on Base: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
 ## Git Commit Safety (ALL DEVELOPERS)

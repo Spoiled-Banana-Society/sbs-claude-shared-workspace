@@ -32,6 +32,10 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
     const userId = typeof body.userId === 'string' ? body.userId.trim() : '';
     if (!userId) throw new ApiError(400, 'Missing userId');
+    // 'promos' = balance-safe: clears ONLY the promo-gating flags so the
+    // first-purchase / wheel flow can be re-tested without wiping passes,
+    // free drafts, spins, JP/HOF. 'all' (default) = full counter reset.
+    const scope = body.scope === 'promos' ? 'promos' : 'all';
 
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
@@ -44,35 +48,65 @@ export async function POST(req: Request) {
       freeDrafts: data.freeDrafts ?? 0,
       wheelSpins: data.wheelSpins ?? 0,
       cardPurchaseCount: data.cardPurchaseCount ?? 0,
+      cardFeeCreditCents: data.cardFeeCreditCents ?? 0,
       jackpotEntries: data.jackpotEntries ?? 0,
       hofEntries: data.hofEntries ?? 0,
+      // Onboarding/promo gate flags — must reset too so the new-user flow
+      // (spin text → free drafts → first-purchase card/popup) can re-run.
+      hasSpunWheel: data.hasSpunWheel ?? false,
+      firstPurchaseBonusGranted: data.firstPurchaseBonusGranted ?? false,
+      firstPurchasePromoUnlocked: data.firstPurchasePromoUnlocked ?? false,
+      pendingWheelWinnings: data.pendingWheelWinnings ?? 0,
     };
 
-    await userRef.set(
-      {
-        draftPasses: 0,
-        freeDrafts: 0,
-        wheelSpins: 0,
-        cardPurchaseCount: 0,
-        jackpotEntries: 0,
-        hofEntries: 0,
-      },
-      { merge: true },
-    );
+    const PROMO_FLAGS = {
+      hasSpunWheel: false,
+      firstPurchaseBonusGranted: false,
+      firstPurchasePromoUnlocked: false,
+    };
+    const cleared = scope === 'promos'
+      ? PROMO_FLAGS
+      : {
+          draftPasses: 0,
+          freeDrafts: 0,
+          wheelSpins: 0,
+          cardPurchaseCount: 0,
+          cardFeeCreditCents: 0,
+          jackpotEntries: 0,
+          hofEntries: 0,
+          pendingWheelWinnings: 0,
+          ...PROMO_FLAGS,
+        };
+
+    await userRef.set(cleared, { merge: true });
+
+    // Re-enable the New User promo for re-testing: clear newUserPromoClaimed on
+    // the linked X account. Without this the promo stays claimed-forever (the
+    // box never reappears) even after the user-doc flags are reset, because the
+    // X-link doc is the source of truth for the new-user claim.
+    let twitterPromoReset = false;
+    try {
+      const linkSnap = await db
+        .collection('v2_twitter_links')
+        .where('walletAddress', '==', userId.toLowerCase())
+        .limit(1)
+        .get();
+      if (!linkSnap.empty) {
+        await linkSnap.docs[0].ref.update({ newUserPromoClaimed: false });
+        twitterPromoReset = true;
+      }
+    } catch (e) {
+      logger.warn('admin.reset_user.twitter_clear_failed', {
+        requestId, target: userId, err: e instanceof Error ? e.message : String(e),
+      });
+    }
 
     await logAdminAction({
       actor: actorWallet,
       action: 'reset-user',
       target: userId,
       before,
-      after: {
-        draftPasses: 0,
-        freeDrafts: 0,
-        wheelSpins: 0,
-        cardPurchaseCount: 0,
-        jackpotEntries: 0,
-        hofEntries: 0,
-      },
+      after: cleared,
       requestId,
     });
 
@@ -84,7 +118,7 @@ export async function POST(req: Request) {
       durationMs: Date.now() - start,
     });
 
-    return json({ success: true, userId, before, requestId });
+    return json({ success: true, userId, scope, before, twitterPromoReset, requestId });
   } catch (err) {
     logger.error('admin.reset_user.failed', {
       requestId,

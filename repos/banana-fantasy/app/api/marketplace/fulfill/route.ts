@@ -10,6 +10,27 @@ export const dynamic = 'force-dynamic';
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 const FULFILL_BASIC_ORDER_ALIAS = 'fulfillBasicOrder_efficient_6GL6yc';
 
+/** Canonical decimal token id (strips leading zeros) for queue comparisons. */
+function canonId(id: string): string {
+  try { return BigInt(id).toString(); } catch { return id; }
+}
+
+/** Pull the offered NFT's token id out of Seaport fulfillment input data,
+ *  whatever the order shape. Returns null when it can't be determined. */
+function extractOfferIdentifier(inputData: Record<string, unknown>): string | null {
+  try {
+    const basic = inputData.basicOrderParameters as { offerIdentifier?: unknown } | undefined;
+    if (basic?.offerIdentifier !== undefined) return canonId(String(basic.offerIdentifier));
+    const adv = inputData.advancedOrder as { parameters?: { offer?: Array<{ identifierOrCriteria?: unknown }> } } | undefined;
+    const advId = adv?.parameters?.offer?.[0]?.identifierOrCriteria;
+    if (advId !== undefined) return canonId(String(advId));
+    const ord = inputData.order as { parameters?: { offer?: Array<{ identifierOrCriteria?: unknown }> } } | undefined;
+    const ordId = ord?.parameters?.offer?.[0]?.identifierOrCriteria;
+    if (ordId !== undefined) return canonId(String(ordId));
+  } catch { /* fall through */ }
+  return null;
+}
+
 /**
  * POST /api/marketplace/fulfill
  *
@@ -105,6 +126,29 @@ export async function POST(req: Request) {
     }
 
     const encodedData = seaportInterface.encodeFunctionData(functionName, params);
+
+    // LOCK-AT-FILL GUARD: a wheel-won JP/HOF pass is only sellable while its
+    // special draft is still FILLING. The token id comes from the Seaport order
+    // itself (not the client), and the queue round is the source of truth — the
+    // round is either still 'filling' with an open seat (sale ok) or it isn't
+    // (draft started; the pass is locked to whoever owned it at fill). State-
+    // based, no clocks involved, so there is no timing edge to get wrong.
+    const tokenIdent = extractOfferIdentifier(inputData);
+    if (tokenIdent) {
+      const { checkWheelPassLock } = await import('@/lib/marketplace/wheelPassLock');
+      const lock = await checkWheelPassLock(tokenIdent);
+      if (lock?.locked) {
+        // Hide the dead listing from our marketplace going forward.
+        try {
+          const { recordCancelled } = await import('@/lib/marketplace/listingCache');
+          await recordCancelled(String(lock.tokenId), lock.wallet);
+        } catch { /* best-effort */ }
+        return jsonError(
+          'This draft already filled — the pass is locked and can no longer be bought.',
+          409,
+        );
+      }
+    }
 
     return json({
       to: transaction.to,

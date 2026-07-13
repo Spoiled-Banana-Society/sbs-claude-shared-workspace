@@ -21,7 +21,7 @@ export function usePurchases(opts?: { userId?: string }) {
   const swr = useSWRLike<Purchase[]>(
     userId ? `purchaseHistory:${userId}` : null,
     ({ signal }) => fetchJson<Purchase[]>('/api/purchases/history', { signal, query: { userId } }),
-    { enabled: !!userId, fallbackData: [] },
+    { enabled: !!userId, fallbackData: [], persist: true },
   );
 
   const [localHistory, setLocalHistory] = useState<Purchase[] | null>(null);

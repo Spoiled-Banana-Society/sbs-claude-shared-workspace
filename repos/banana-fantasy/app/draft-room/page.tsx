@@ -12,9 +12,10 @@ import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers, subscribeDraftRandomizeStartAt } from '@/lib/api/firebase';
-import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { setLeagueNumberInCache, useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -31,7 +32,7 @@ import {
   generateReelItemsForReel,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
-import { useNotifOptIn } from '@/app/providers';
+import { draftWordColor, draftWordShadow, founderWordColor } from '@/lib/draftBandStyle';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -56,7 +57,6 @@ function DraftRoomContent() {
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
-  const promoTypeParam = searchParams?.get('promoType') as 'jackpot' | 'hof' | 'pro' | null;
   const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | null;
   // Spectator mode: same URL flow as a live participant, but no actions
   // fire (no pick submit, no leave, no queue mutations) and a SPECTATOR
@@ -69,6 +69,33 @@ function DraftRoomContent() {
   const draftIdRef = useRef(draftId);
   draftIdRef.current = draftId;
   const isLiveMode = modeParam === 'live' && !!walletParam;
+
+  // Ownership gate for wheel-pass (queue) drafts. If this draftId belongs to a
+  // queue round but the connected wallet is NOT one of its members — e.g. they
+  // sold the pass while it was filling and the slot moved to the buyer — bounce
+  // them back to the lobby; they don't own this draft anymore. One-shot fetch,
+  // deps are stable scalars only (no Privy-derived callback) per Rule #0.
+  useEffect(() => {
+    if (!draftId || !walletParam || spectateParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/queues');
+        if (!res.ok) return;
+        const queues = (await res.json()) as Record<string, { rounds?: Array<{ draftId?: string | null; members?: Array<{ wallet?: string }> }> }>;
+        const me = walletParam.toLowerCase();
+        for (const q of Object.values(queues || {})) {
+          for (const r of q.rounds || []) {
+            if (!r.draftId || String(r.draftId) !== String(draftId)) continue;
+            const isMember = (r.members || []).some((m) => m.wallet?.toLowerCase() === me);
+            if (!isMember && !cancelled) router.replace('/drafting');
+            return; // found the round for this draft — done either way
+          }
+        }
+      } catch { /* best-effort — never block a legit user on a fetch error */ }
+    })();
+    return () => { cancelled = true; };
+  }, [draftId, walletParam, spectateParam, router]);
 
   // Wrap setDraftId to also update the URL so refresh rejoins the same draft.
   // Belt-and-suspenders:
@@ -89,7 +116,9 @@ function DraftRoomContent() {
       return;
     }
     params.set('id', resolved);
-    params.delete('passType');
+    // Keep `passType` in the URL — it's the durable record of which pass type
+    // (free/paid) this draft was entered with. Deleting it made isPaidDraft
+    // flip to true after join, which let FREE drafts wrongly earn promo credit.
     const newSearch = params.toString();
     const newUrl = `${pathname}?${newSearch}`;
     console.log('[DraftRoom] setDraftId → updating URL to', newUrl);
@@ -106,7 +135,7 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
   const { getAccessToken } = usePrivy();
   const {
     playSpinningSound,
@@ -114,10 +143,10 @@ function DraftRoomContent() {
     playCountdownTick,
     playWinSound,
     playYourTurnSound,
-    playNewPickSound,
+    resumeAudio,
+    primeAudio,
     cleanup: cleanupAudio,
   } = useDraftAudio();
-  const { triggerOptIn } = useNotifOptIn();
 
   useEffect(() => {
     return () => cleanupAudio();
@@ -137,7 +166,8 @@ function DraftRoomContent() {
     clientLog('league#', 'draftroom.subs.start', { draftId });
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
       clientLog('league#', 'draftroom.handler.fired', { draftId, name });
-      setContestName(name);
+      // User-facing always reads "League #N", never the internal "BBB #N".
+      setContestName(draftStore.normalizeContestName(name));
       const m = /^BBB\s*#(\d+)$/i.exec(name);
       if (m) {
         clientLog('league#', 'draftroom.handler.parsed', { draftId, n: Number(m[1]) });
@@ -149,7 +179,11 @@ function DraftRoomContent() {
     return () => { try { unsub(); } catch { /* ignore */ } };
   }, [draftId]);
 
-  const [fallbackLocal, setFallbackLocal] = useState(false);
+  // Never flips true anymore: a live draft that can't load waits on the live
+  // loader ("Reconnecting…") instead of starting a fake local bot draft. Kept as
+  // an always-false value because several reads below (engine mode, diagnostics,
+  // error-banner gate) still branch on it.
+  const [fallbackLocal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
@@ -175,7 +209,13 @@ function DraftRoomContent() {
   // it never spins to a wrong type. For pre-launch batches the hook
   // returns ready=true immediately, so existing UX is unchanged for old
   // batches. See docs/proof system overview in /how-it-works#fairness.
+  // Resolve the GLOBAL league number (DisplayName-backed) for this slot. The
+  // slot-id counter drifts from the global number once slow drafts run, so the
+  // proof/batch lookup must use this, not parseDraftNumber(slotId). Falls back
+  // to the slot parse only until the real number resolves (pre-fill).
+  const resolvedLeagueNumber = useLeagueNumberForSlot(draftId || undefined);
   const batchInfo = (() => {
+    if (resolvedLeagueNumber) return locateDraft(resolvedLeagueNumber);
     const candidates = [draftId, urlDraftId].filter(Boolean) as string[];
     for (const id of candidates) {
       const n = parseDraftNumber(id);
@@ -205,7 +245,10 @@ function DraftRoomContent() {
   // RTDB/poll reading right after join (our own count bump hasn't propagated
   // yet) while still letting genuine leaves lower the count live afterwards.
   // 0 = never joined here (a pure observer) → leaves show immediately.
-  const joinAtRef = useRef(0);
+  // Seeded from the `joinedAt` URL param on a fresh join-before-navigate entry
+  // so the grace window is already counting from the real join time — the
+  // count can't dip below the joined value before RTDB catches up.
+  const joinAtRef = useRef(Number(searchParams?.get('joinedAt')) || 0);
   // Shared randomize-bar anchor (epoch ms) from RTDB, written by the Go API at
   // fill-time so every client's bar runs on the same clock. 0 until it arrives.
   const randomizeStartAtRef = useRef(0);
@@ -222,11 +265,112 @@ function DraftRoomContent() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Fresh-join glitch tracking. A prior session wired draft.join_handoff_slow
+  // (below), but its 1.8s threshold misses the FAST-flash glitch ("saw 'Joining
+  // lobby' for a second then wasn't in the filling draft"). These refs let the
+  // watcher effect catch the actual symptom: the filling lobby vanishing right
+  // after a fresh join — regardless of hand-off speed.
+  const freshJoinAtRef = useRef<number | null>(null);
+  const handoffGapRef = useRef<number | null>(null);
+  const lobbyGlitchLoggedRef = useRef(false);
+
+  // Join hand-off gap: time from leaving /drafting (overlay) to this room
+  // painting. A large gap is the blank/flash users perceive as the "Joining
+  // lobby" screen glitching/skipping. Admin warning if slow.
+  useEffect(() => {
+    let navTs: number | null = null;
+    try {
+      const raw = sessionStorage.getItem('sbs-join-nav-ts');
+      if (raw) { navTs = Number(raw); sessionStorage.removeItem('sbs-join-nav-ts'); }
+    } catch { /* ignore */ }
+    if (!navTs || !Number.isFinite(navTs)) return;
+    const gapMs = Date.now() - navTs;
+    if (gapMs < 0 || gapMs > 60000) return; // stale / unrelated navigation
+    // Mark this mount as a fresh join so the lobby-glitch watcher below can tell
+    // whether the filling lobby actually held or flashed and vanished.
+    freshJoinAtRef.current = Date.now();
+    handoffGapRef.current = gapMs;
+    // The branded "Joining lobby" overlay now covers the whole hand-off (no more
+    // gray-skeleton flash), so a clean entry no longer glitches. But a SLOW room
+    // load (cold/uncached page) is the exact condition that USED to glitch — so
+    // we keep logging it as a recurrence + perf safety net, at a lower threshold
+    // than the old 1800ms so the glitch-prone slow loads get caught. Fast/warm
+    // entries stay under it → no noise. Context is rich enough to diagnose from a
+    // single event if it ever fires.
+    const SLOW_HANDOFF_MS = 1200;
+    if (gapMs > SLOW_HANDOFF_MS) {
+      reportClientError({
+        source: LOG_SOURCES.draft.JOIN_HANDOFF_SLOW,
+        message: `Join hand-off took ${gapMs}ms (overlay → lobby paint) — slow/cold room load`,
+        route: 'draft-room',
+        actor: walletParam,
+        context: { gapMs, draftId: urlDraftId, phase, playerCount, isLiveMode, fallbackLocal },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Lobby-glitch watcher — catches the fast-flash glitch the threshold above
+  // misses. After a fresh join, if we leave the filling lobby WITHOUT it having
+  // filled (playerCount < 10), or fall back to local mode, that's the glitch.
+  // Fires ONCE with the cause + context so it's finally visible in admin and we
+  // can tell a real skip apart from a legit fast fill (10 players).
+  useEffect(() => {
+    if (lobbyGlitchLoggedRef.current) return;
+    if (freshJoinAtRef.current == null) return;
+    const sinceJoinMs = Date.now() - freshJoinAtRef.current;
+    if (sinceJoinMs > 15000) { freshJoinAtRef.current = null; return; } // window closed, lobby held fine
+    const leftFilling = phase !== 'filling';
+    const filled = (playerCount ?? 0) >= 10;
+    if (fallbackLocal || (leftFilling && !filled)) {
+      lobbyGlitchLoggedRef.current = true;
+      reportClientError({
+        source: LOG_SOURCES.draft.JOIN_LOBBY_GLITCH,
+        message: `Filling lobby left ${sinceJoinMs}ms after join — phase=${phase}, players=${playerCount ?? 'null'}, fellToLocal=${fallbackLocal}, handoffGap=${handoffGapRef.current ?? 'n/a'}ms`,
+        route: 'draft-room',
+        actor: walletParam,
+        context: {
+          sinceJoinMs,
+          phase,
+          playerCount,
+          fellToLocal: fallbackLocal,
+          handoffGapMs: handoffGapRef.current,
+          draftId: urlDraftId,
+          classification: fallbackLocal ? 'fell_to_local' : 'left_filling_not_full',
+        },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, playerCount, fallbackLocal]);
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'playerCount.change', { playerCount, phase, draftId });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerCount]);
+
+  // Draft Alerts bell (Boris 2026-06-15): the FIRST time a user is in a draft
+  // lobby, fire the one-time "Set up Draft Alerts" bell — real-time, server-
+  // backed, deduped once-ever. Fires on lobby entry (filling phase), not on
+  // login. getAccessToken lives in a ref so this effect's deps stay stable
+  // scalars (render-loop rule).
+  const getAccessTokenRef = useRef(getAccessToken);
+  getAccessTokenRef.current = getAccessToken;
+  const draftAlertsFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isLiveMode || phase !== 'filling') return;
+    if (draftAlertsFiredRef.current) return;
+    draftAlertsFiredRef.current = true;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current?.();
+        if (!token) return;
+        await fetch('/api/users/draft-alerts-prompt', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch { /* best-effort — server dedupe makes it once-ever anyway */ }
+    })();
+  }, [isLiveMode, phase]);
   const [preSpinCountdown, setPreSpinCountdown] = useState(() => {
     if (stored?.preSpinStartedAt) return Math.max(0, Math.floor(15 - (Date.now() - stored.preSpinStartedAt) / 1000));
     return 15;
@@ -326,6 +470,8 @@ function DraftRoomContent() {
     firebaseRtdb,
     ws,
     bestTimeRemaining,
+    isSlowDraft,
+    isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
   } = useDraftLiveSync({
@@ -336,11 +482,9 @@ function DraftRoomContent() {
     walletParam,
     speedParam,
     passTypeParam,
-    promoTypeParam,
     phase,
     liveDataReady,
     setLiveDataReady,
-    setFallbackLocal,
     setPhase,
     setMainCountdown,
     setShowSlotMachine,
@@ -415,7 +559,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -466,7 +610,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -488,7 +632,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -518,10 +662,11 @@ function DraftRoomContent() {
             const selectedResult = (stored?.draftType || 'pro') as DraftType;
             const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
             setDraftType(selectedResult);
+            const reelSeed = draftId || urlDraftId;
             const generatedReels = [
-              generateReelItemsForReel(reelResults[0], 0),
-              generateReelItemsForReel(reelResults[1], 1),
-              generateReelItemsForReel(reelResults[2], 2),
+              generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+              generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+              generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
             ];
             setAllReelItems(generatedReels);
             const animOffset = (elapsed - 15) * 1000;
@@ -570,10 +715,11 @@ function DraftRoomContent() {
               const selectedResult = (stored.draftType || draftType || 'pro') as DraftType;
               const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
               setDraftType(selectedResult);
+              const reelSeed = draftId || urlDraftId;
               const generatedReels = [
-                generateReelItemsForReel(reelResults[0], 0),
-                generateReelItemsForReel(reelResults[1], 1),
-                generateReelItemsForReel(reelResults[2], 2),
+                generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+                generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+                generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
               ];
               setAllReelItems(generatedReels);
               const animOffset = (elapsed - 15) * 1000;
@@ -613,7 +759,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -694,10 +840,11 @@ function DraftRoomContent() {
       const selectedResult = (stored.draftType || draftType || 'pro') as DraftType;
       const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
       setDraftType(selectedResult);
+      const reelSeed = draftId || urlDraftId;
       const generatedReels = [
-        generateReelItemsForReel(reelResults[0], 0),
-        generateReelItemsForReel(reelResults[1], 1),
-        generateReelItemsForReel(reelResults[2], 2),
+        generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+        generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+        generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
       ];
       setAllReelItems(generatedReels);
       const animOffset = stored.preSpinStartedAt ? Math.max(0, Date.now() - stored.preSpinStartedAt - 3000) : 0;
@@ -739,18 +886,22 @@ function DraftRoomContent() {
   }, []);
 
   useEffect(() => {
-    // In LIVE mode, the server's Cloud Task makes the autopick (queue → rank → ADP,
-    // same priority the client used). Client submission is intentionally skipped so
-    // the user's pick still fires when their device is off. Local-mode drafts keep
-    // the immediate client-side draft so the practice flow continues to work without
-    // a backend.
+    // Airplane mode auto-picks the INSTANT it's your turn — both live and local,
+    // so it rips through your picks instead of burning the full clock each time
+    // (critical for slow drafts). LIVE: submit to the server via handleLiveDraft
+    // with isAuto=true (so it isn't treated as a manual pick); the server's
+    // timeout auto-pick stays the fallback for when your device is OFF. LOCAL:
+    // update engine state directly for the practice flow.
     if (!engine.airplaneMode || !engine.isUserTurn || phase !== 'drafting' || engine.draftStatus !== 'active') return;
-    if (isLiveMode) return;
 
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
-      engine.draftPlayer(pickId);
+      if (isLiveMode) {
+        handleLiveDraft(pickId, true);
+      } else {
+        engine.draftPlayer(pickId);
+      }
     }, 0);
 
     return () => clearTimeout(timeoutId);
@@ -819,6 +970,37 @@ function DraftRoomContent() {
     });
   }, [draftId, phase, draftType, engine.currentPickNumber, engine.isUserTurn, bestTimeRemaining, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickLength, engine.turnsUntilUserPick, engine.draftStatus, engine.picks.length, engine.picks, engine.queuedPlayers]);
 
+  // DIAGNOSTIC (first-pick timer lag): while the FIRST pick is active, log the
+  // room's phase + the timer inputs on every meaningful change, capped. Lets us
+  // see exactly WHEN the pick clock becomes visible relative to draftStartTime
+  // (the "first pick shows ~25 not 30" gap) and whether the displayed value
+  // matches pickEndTime − now. Pure logging, no behavior change.
+  const firstPickDiagRef = useRef<{ n: number; lastKey: string }>({ n: 0, lastKey: '' });
+  useEffect(() => {
+    const pickNum = engine.currentPickNumber ?? 0;
+    if (pickNum > 1) return;
+    const ds = firebaseRtdb.data?.draftStartTime ?? null;
+    const pe = firebaseRtdb.data?.pickEndTime ?? null;
+    const pl = firebaseRtdb.data?.pickLength ?? null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const key = `${phase}|${pickNum}|${bestTimeRemaining}|${pe}`;
+    const ref = firstPickDiagRef.current;
+    if (ref.lastKey === key || ref.n > 25) return;
+    ref.lastKey = key;
+    ref.n += 1;
+    clientLog('first-pick', 'draftroom.timer', {
+      phase,
+      pickNumber: pickNum,
+      draftStartTime: ds,
+      pickEndTime: pe,
+      pickLength: pl,
+      bestTimeRemaining,
+      nowSec,
+      sinceDraftStart: ds ? nowSec - ds : null,
+      expectedRemaining: pe ? pe - nowSec : null,
+    });
+  }, [phase, engine.currentPickNumber, bestTimeRemaining, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickLength]);
+
   const getPersistId = () => draftId || urlDraftId;
 
   useEffect(() => {
@@ -883,11 +1065,16 @@ function DraftRoomContent() {
   }, [engine.queuedPlayers, draftId]);
 
   useEffect(() => {
-    if (!engine.airplaneMode) return;
     const id = getPersistId();
     if (!id) return;
-    localStorage.setItem(`airplane:${id}`, '1');
-    draftStore.updateDraft(id, { airplaneMode: true });
+    // Persist BOTH states. The auto-OFF paths (initial-prefs-sync from the
+    // server on re-entry, manual-pick auto-off) only change the engine —
+    // when this wrote just the ON state, draftStore kept airplaneMode:true
+    // forever, so the drafting page showed a permanent ✈️ after a real
+    // airplane trip while the room itself was correct (mobile, 2026-07-04).
+    // Mounting with the engine off now also heals any stale stored flag.
+    localStorage.setItem(`airplane:${id}`, engine.airplaneMode ? '1' : '0');
+    draftStore.updateDraft(id, { airplaneMode: engine.airplaneMode });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.airplaneMode, draftId]);
 
@@ -900,46 +1087,60 @@ function DraftRoomContent() {
     }
   }, [engine.draftStatus, draftId]);
 
+  // New-user first-purchase gate — fire it promptly when the draft closes (the
+  // `firebaseRtdb.data.isDraftClosed` flag that also kicks off card generation,
+  // line ~1421), so the bell notification + home banner + promo box are unlocked
+  // and ready by the time the user lands on the home page. We keep
+  // `engine.draftStatus === 'completed'` as a secondary trigger for any path
+  // where isDraftClosed isn't set. When this was the user's LAST free draft, the
+  // server unlocks the promo + pushes the event (bell + live banner; box from
+  // state — no toast/modal). Idempotent per draftId (localStorage flag set only
+  // on HTTP 200 + server dedup); the roster page (/draft-results) fires the same
+  // call as a final fallback. Deps are stable scalars only — can't render-loop
+  // (shared-workspace CLAUDE.md Rule #0).
   useEffect(() => {
-    if (engine.draftStatus === 'completed') {
-      triggerOptIn('post-draft');
-    }
-  }, [engine.draftStatus, triggerOptIn]);
+    const draftClosed = !!firebaseRtdb.data?.isDraftClosed || engine.draftStatus === 'completed';
+    if (!draftClosed) return;
+    const id = draftId || urlDraftId;
+    if (!id) return;
+    const promoUserId = user?.id || walletParam?.toLowerCase();
+    if (!promoUserId) return;
+    const firedKey = `fp-finished:${id}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    void fetch('/api/promos/first-purchase-finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+    })
+      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .catch(() => { /* best-effort — roster page retries */ });
+  }, [firebaseRtdb.data?.isDraftClosed, engine.draftStatus, draftId, urlDraftId, user?.id, walletParam]);
 
   useEffect(() => {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
 
+    // Restore the user's last in-draft sort for THIS draft (device-local).
+    // This is the source of truth for "whatever you left it on" — the server
+    // read (/draft-actions/.../preferences) and write (/owner/.../state/sort)
+    // use different endpoints, so the server value can lag and reset to ADP.
+    try {
+      const savedSort = localStorage.getItem(`draftSort:${draftId}`);
+      if (savedSort === 'adp' || savedSort === 'rank') {
+        setSortPreference(savedSort);
+        engine.setAutoPickSortPreference(savedSort);
+      }
+    } catch { /* ignore */ }
+
     draftApi.getDraftPreferences(draftId, walletParam)
       .then((prefs) => {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
-        const sortOrder = (prefs.sortBy || 'ADP').toUpperCase();
-        let newSort = sortOrder === 'RANK' ? 'rank' as const : 'adp' as const;
-
-        // First-time entry into this draft: if the per-draft sortBy is still
-        // the system default 'ADP' AND the user's global default is 'rank',
-        // apply 'rank' and push it to the Go API so it sticks. localStorage
-        // marker stops the override from firing on subsequent reloads —
-        // otherwise the in-draft ADP toggle would never persist. Only mark
-        // applied when we actually apply the override — marking on the else
-        // path races with the initial 'adp' default returned before the user
-        // preference has truly loaded.
-        const appliedKey = `sortDefaultApplied:${draftId}`;
-        const alreadyApplied = typeof window !== 'undefined' && localStorage.getItem(appliedKey) === '1';
-        if (
-          !alreadyApplied
-          && defaultSortPreferenceLoaded
-          && defaultSortPreference === 'rank'
-          && newSort === 'adp'
-        ) {
-          newSort = 'rank';
-          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch(() => {});
-          try { localStorage.setItem(appliedKey, '1'); } catch {}
-        }
-
-        setSortPreference(newSort);
-        engine.setAutoPickSortPreference(newSort);
+        // NOTE: sort order is owned by the two effects below (per-draft
+        // localStorage memory + global-default application), NOT the server
+        // sortBy here — its read/write endpoints don't round-trip, and reading
+        // it here raced with the global-preference load, leaving re-joined
+        // drafts stuck on ADP.
         const initialMissed = prefs.numPicksMissedConsecutive || 0;
         setMissedPicksCount(initialMissed);
         // Seed engine counter from server on mount so a page refresh
@@ -986,7 +1187,27 @@ function DraftRoomContent() {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveMode, draftId, walletParam, defaultSortPreferenceLoaded, defaultSortPreference]);
+  }, [isLiveMode, draftId, walletParam]);
+
+  // Sort order, owned in one place and race-proof:
+  //  1) If you've toggled ADP/Rank in THIS draft, that choice is remembered
+  //     (localStorage `draftSort:{draftId}`) and always wins.
+  //  2) Otherwise (first-time entry, or after you left + re-joined, which clears
+  //     the per-draft memory) apply your global default — reactively, so it
+  //     lands even if the preference finished loading AFTER the draft did.
+  useEffect(() => {
+    if (!isLiveMode || !draftId || !defaultSortPreferenceLoaded) return;
+    try {
+      const saved = localStorage.getItem(`draftSort:${draftId}`);
+      if (saved === 'adp' || saved === 'rank') return; // your in-draft choice wins
+    } catch { /* ignore */ }
+    setSortPreference(defaultSortPreference);
+    engine.setAutoPickSortPreference(defaultSortPreference);
+    if (walletParam) {
+      draftApi.updateSortPreference(walletParam, draftId, defaultSortPreference.toUpperCase()).catch(() => { /* best-effort mirror */ });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, draftId, defaultSortPreferenceLoaded, defaultSortPreference]);
 
   // Re-sync server-authoritative preferences after each pick. Without this,
   // autoDraft / missedPicksCount / engine.airplaneMode only load once on
@@ -1042,6 +1263,45 @@ function DraftRoomContent() {
         const desiredAirplane = engine.airplaneMode || prefs.autoDraft;
 
         engine.setConsecutiveTimeouts(desiredCounter);
+
+        // RECONCILE UP: client airplane is ON but the server flag is OFF —
+        // the server is the only thing that can pick while this device is
+        // offline, so push the flag up. Two ways this divergence happens:
+        //   1. Legacy client-only toggles (pre-2026-07-11 the ✈️ button
+        //      outside the drafting phase never PATCHed) restored from
+        //      localStorage on mount.
+        //   2. The Go pick route clears AutoDraft on EVERY submitted pick,
+        //      including our own airplane auto-picks, so the flag dies the
+        //      moment an airplane pick lands (also re-PATCHed at the submit
+        //      site in useDraftLiveSync; this is the safety net).
+        // PATCH true is a pure idempotent prefs write server-side (no pick
+        // processing, no task scheduling, counter untouched) and nothing
+        // here feeds back into this effect's deps — no render-loop risk.
+        if (desiredAirplane && !prefs.autoDraft) {
+          draftApi.patchDraftPreferences(draftId, walletParam, true)
+            .then(() => {
+              reportClientEvent({
+                source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+                message: '[Airplane] server flag reconciled UP (client ON, server OFF)',
+                route: 'draft-room.post-pick-sync-effect',
+                actor: walletParam,
+                context: {
+                  event: 'reconcile_up_patched',
+                  draftId,
+                  pickNum: engine.currentPickNumber,
+                },
+              }, { skipThrottle: true });
+            })
+            .catch((e) => {
+              reportClientError({
+                source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+                message: e instanceof Error ? e.message : String(e),
+                route: 'draft-room.post-pick-sync-effect',
+                actor: walletParam,
+                context: { draftId, stage: 'reconcile-up' },
+              });
+            });
+        }
 
         if (autoDraft !== desiredAirplane) {
           logger.info('[Airplane] setAirplaneMode — source=post-pick-prefs-sync', {
@@ -1131,6 +1391,13 @@ function DraftRoomContent() {
       .catch((e) => {
         if (cancelled) return;
         console.warn('[Preferences] post-pick sync failed:', e);
+        reportClientError({
+          source: LOG_SOURCES.draft.PREFERENCES_LOAD_FAILED,
+          message: e instanceof Error ? e.message : String(e),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, stage: 'post-pick-sync' },
+        });
       });
 
     return () => { cancelled = true; };
@@ -1228,6 +1495,9 @@ function DraftRoomContent() {
   const handleSortChange = useCallback((sort: 'adp' | 'rank') => {
     setSortPreference(sort);
     engine.setAutoPickSortPreference(sort);
+    // Remember per-draft so re-entering keeps "whatever you left it on" even if
+    // the server round-trip lags (read/write hit different endpoints).
+    if (draftId) { try { localStorage.setItem(`draftSort:${draftId}`, sort); } catch { /* ignore */ } }
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
         .catch(e => {
@@ -1245,6 +1515,10 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
 
+  // Tracks the pick number whose your-turn ding the user has ALREADY heard
+  // (i.e. it fired while the tab was visible). Shared with the AFK-return
+  // handler below so we never re-ding a turn they actually heard.
+  const heardTurnAlertPickRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isLiveMode || isMuted || phase !== 'drafting' || engine.draftStatus !== 'active') return;
     const currentDrafter = engine.currentDrafterAddress;
@@ -1252,19 +1526,72 @@ function DraftRoomContent() {
     prevDrafterRef.current = currentDrafter;
 
     if (!prevDrafter || !currentDrafter || prevDrafter === currentDrafter) return;
-    if (currentDrafter.toLowerCase() === walletParam.toLowerCase()) playYourTurnSound();
+    if (currentDrafter.toLowerCase() === walletParam.toLowerCase()) {
+      playYourTurnSound();
+      // Only count it as "heard" if the tab is actually in front. If it's
+      // hidden the ding was likely swallowed, so leave it unmarked and the
+      // AFK-return handler will ding once when they come back.
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        heardTurnAlertPickRef.current = engine.currentPickNumber;
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
 
+  // iOS/PWA audio unlock. Draft sounds that fire on state changes (your-turn
+  // ding, countdown ticks) can only play on mobile once they've been triggered
+  // inside a real user gesture. Prime every sound on the FIRST tap anywhere in
+  // the room so later programmatic plays aren't silently blocked. Runs once.
+  const audioPrimedRef = useRef(false);
   useEffect(() => {
-    if (!isLiveMode || isMuted || phase !== 'drafting') return;
-    if (!engine.mostRecentPick) return;
-    // Only play sound for YOUR picks, not everyone else's
-    if (engine.mostRecentPick.ownerName.toLowerCase() === walletParam.toLowerCase()) {
-      playNewPickSound();
-    }
+    if (!isLiveMode) return;
+    const prime = () => {
+      if (audioPrimedRef.current) return;
+      audioPrimedRef.current = true;
+      primeAudio();
+      document.removeEventListener('pointerdown', prime);
+      document.removeEventListener('touchend', prime);
+      document.removeEventListener('click', prime);
+    };
+    document.addEventListener('pointerdown', prime);
+    document.addEventListener('touchend', prime);
+    document.addEventListener('click', prime);
+    return () => {
+      document.removeEventListener('pointerdown', prime);
+      document.removeEventListener('touchend', prime);
+      document.removeEventListener('click', prime);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.mostRecentPick?.pickNumber]);
+  }, [isLiveMode]);
+
+  // AFK audio recovery. Browsers suspend the AudioContext + can block HTML
+  // audio while the tab is backgrounded, so a your-turn ding fired while the
+  // user was away may have been silently swallowed. When they return (tab
+  // visible / window focused) we (1) resume the audio context so future ticks
+  // work, and (2) if it's STILL their live turn AND they never heard the ding
+  // for this pick, ding once so they don't sit on a dead clock. Gated on
+  // isUserTurn (never fires after the turn passes) and the heard-pick ref
+  // (never re-dings a turn they already heard, and never bursts on the
+  // visibilitychange+focus double-fire).
+  useEffect(() => {
+    if (!isLiveMode) return;
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible') return;
+      resumeAudio();
+      if (isMuted || phase !== 'drafting' || engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+      const pick = engine.currentPickNumber;
+      if (heardTurnAlertPickRef.current === pick) return;
+      heardTurnAlertPickRef.current = pick;
+      playYourTurnSound();
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, isMuted, phase, engine.draftStatus, engine.isUserTurn, engine.currentPickNumber]);
 
   const rankingsRefreshBucket = engine.mostRecentPick
     ? Math.floor(engine.mostRecentPick.pickNumber / 5)
@@ -1311,7 +1638,7 @@ function DraftRoomContent() {
       logger.debug('[DraftComplete] isDraftClosed=true, fetching generated card...');
       const fetchUrl = async () => {
         const { getDraftsApiUrl } = await import('@/lib/staging');
-        const FALLBACK_URL = process.env.NEXT_PUBLIC_DRAFTS_API_URL || 'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
+        const FALLBACK_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // never prod
         const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
         try {
           const res = await fetch(`${baseUrl}/owner/${walletParam}/drafts/${draftId}`);
@@ -1330,6 +1657,29 @@ function DraftRoomContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseActive, firebaseRtdb.data?.isDraftClosed, draftId, walletParam, generatedCardUrl]);
+
+  // Push an OpenSea metadata refresh for ALL 10 freshly-drafted teams the moment
+  // the draft closes, so the revealed roster + card art shows on OpenSea (and the
+  // marketplace, which reads owned NFTs from OpenSea). One client firing this
+  // covers every team in the draft — the route refreshes them all regardless of
+  // who triggered it. localStorage-guarded so it fires once per draft per client;
+  // the refresh itself is idempotent. Deps are stable scalars only (booleans /
+  // strings) — never a Privy-derived callback — so this cannot render-loop
+  // (shared-workspace CLAUDE.md Rule #0).
+  useEffect(() => {
+    const closed = !!firebaseRtdb.data?.isDraftClosed || engine.draftStatus === 'completed';
+    const id = draftId || urlDraftId;
+    if (!closed || !id) return;
+    const firedKey = `os-refresh:${id}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    // Set the guard optimistically so a flaky network can't hammer OpenSea with
+    // duplicate refreshes; the team is sellable regardless and OpenSea self-heals.
+    try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ }
+    void fetch(`/api/marketplace/refresh-draft/${id}`, { method: 'POST' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) console.log('[OpenSea] draft metadata refresh queued', data); })
+      .catch(() => { /* best-effort — non-critical */ });
+  }, [firebaseRtdb.data?.isDraftClosed, engine.draftStatus, draftId, urlDraftId]);
 
   // Refresh draft pass count after joining a draft
   useEffect(() => {
@@ -1433,7 +1783,7 @@ function DraftRoomContent() {
               return {
                 id: String(idx + 1),
                 name: entry.ownerId,
-                displayName: isUser ? 'You' : `${entry.ownerId.slice(0, 6)}...${entry.ownerId.slice(-4)}`,
+                displayName: isUser ? 'You' : bananaPlaceholderName(entry.ownerId),
                 isYou: isUser,
                 avatar: '🍌',
               };
@@ -1520,7 +1870,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.length > 10 ? `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}` : u.ownerId,
+            displayName: bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -1617,14 +1967,19 @@ function DraftRoomContent() {
 
     const id = draftId || urlDraftId;
     const promoUserId = user?.id || walletParam?.toLowerCase();
-    if (id && promoUserId && isPaidDraft) {
+    // Fire draft-complete for EVERY pass type (not just paid). The server
+    // credits paid drafts to daily-drafts as before, and routes free/jackpot/
+    // HOF drafts to the first-purchase popup gate only — existing promo logic
+    // is unchanged (the free branch earns no daily-drafts credit). The pick10
+    // call below stays paid-only.
+    if (id && promoUserId) {
       const trackedKey = `promo-tracked:${id}`;
       if (!localStorage.getItem(trackedKey)) {
         localStorage.setItem(trackedKey, '1');
         fetch('/api/promos/draft-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Failed to track draft:', err);
           reportClientError({
@@ -1637,8 +1992,14 @@ function DraftRoomContent() {
           });
         });
       }
-      // Badge sweep runs server-side on every /api/badges read (called
-      // by the badge notifier) so we don't need to fire it from here.
+      // Fill-moment badge sweep: the draft just hit 10/10, which is when the
+      // Go API binds tokens→league — i.e. when this paid draft starts counting
+      // toward banana ripeness. force=1 skips the 30s throttle so any tier
+      // unlock (bell + toast) lands right now instead of on the notifier's
+      // 5-minute poll. Fire-and-forget; a failure just means the next badges
+      // read catches up.
+      fetch(`/api/badges?userId=${encodeURIComponent(promoUserId)}&force=1`, { cache: 'no-store' })
+        .catch(() => { /* non-fatal */ });
     }
 
     if (id && promoUserId && isPaidDraft && userPos === 9) {
@@ -1648,7 +2009,7 @@ function DraftRoomContent() {
         fetch('/api/promos/pick10', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
           reportClientError({
@@ -1684,36 +2045,101 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverPollResult]);
 
-  // Jackpot-hit promo POST. Fires whenever the resolved draftType is
-  // 'jackpot' for a paid draft — independent of whether the user was on
-  // the page during the slot-machine animation. Idempotent via
-  // localStorage promo-jackpot:* + the server's draftId dedupe.
+  // Recover the revealed draft type when ENTERING a draft that's already in
+  // the drafting phase — e.g. opening/rejoining it on a second device or your
+  // phone. The normal filling→reveal flow sets draftType and caches it in
+  // draftStore, but that store is localStorage (per-device). A fresh device
+  // that lands straight into an in-progress draft has no cached type, and the
+  // token-level recovery above only runs while phase === 'filling'. The result
+  // was a null draftType during drafting → the band fell back to black with NO
+  // PRO/HOF word and no HOF/JP color (Boris 2026-06-13: "didn't say PRO/HOF, no
+  // HOF color on mobile"). Resolve it from the owner's token level — the same
+  // device-independent source the drafting list uses — so it's consistent
+  // across devices. Skipped for specialType (already known) and spectators
+  // (no owned token → level null → left as-is).
   useEffect(() => {
-    if (!isLiveMode || draftType !== 'jackpot') return;
+    // Run EVEN IF draftType is already set. The fill→draft transition can fall
+    // back to 'pro' before the real type is known (e.g. a 2nd device / phone
+    // that didn't run the reveal). The old `|| draftType` guard then skipped
+    // this, so that wrong 'pro' stuck — desktop showed HOF, phone showed PRO
+    // (Boris 2026-06-14). The owner's token level is the device-independent
+    // truth, so we reconcile draftType to it and override any stale fallback.
+    // specialType is already authoritative; spectators have no token (level
+    // null → left as-is).
+    if (!isLiveMode || specialTypeParam) return;
+    if (phase !== 'drafting') return;
     const id = draftId || urlDraftId;
-    if (!id || !isPaidDraft) return;
-    const promoUserId = user?.id || walletParam?.toLowerCase();
-    if (!promoUserId) return;
-    const jackpotKey = `promo-jackpot:${id}`;
-    if (localStorage.getItem(jackpotKey)) return;
-    localStorage.setItem(jackpotKey, '1');
-    fetch('/api/promos/jackpot-hit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id }),
-    }).catch(err => {
-      console.error('[Promo] Jackpot tracking failed:', err);
-      reportClientError({
-        source: LOG_SOURCES.draft.PROMO_JACKPOT_HIT_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'draft-room',
-        actor: walletParam,
-        context: { draftId: id, promoUserId },
-        stack: err instanceof Error ? err.stack : undefined,
+    if (!id || !walletParam) return;
+    let cancelled = false;
+    const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+    let attempt = 0;
+    // Retry until the owner-token level resolves. Right after the spin reveals
+    // the type, the backend may not have stamped the token's level for a beat,
+    // so a single fetch can come back null and leave the phone on a stale 'pro'
+    // (the desync Boris saw). Poll a few times (1.5s apart) so both devices
+    // reliably land on the SAME real Pro/HOF/Jackpot within a couple seconds.
+    const resolveType = () => {
+      if (cancelled) return;
+      getDraftTokenLevel(walletParam, id).then(level => {
+        if (cancelled) return;
+        if (!level) {
+          if (attempt++ < 6) setTimeout(resolveType, 1500);
+          return;
+        }
+        const mapped = typeMap[level] || 'pro';
+        setDraftType(prev => {
+          if (prev === mapped) return prev;
+          draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+          return mapped;
+        });
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id, recovery: 'drafting-entry', attempt },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        if (!cancelled && attempt++ < 6) setTimeout(resolveType, 1500);
       });
-    });
+    };
+    resolveType();
+    return () => { cancelled = true; };
+  // draftType kept in deps so a later stale 'pro' re-applied by the fill flow
+  // gets re-corrected; the prev===mapped check makes it converge (no loop).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
+  }, [phase, draftType, isLiveMode, walletParam, draftId, urlDraftId, specialTypeParam]);
+
+  // Real-time draft type from the shared RTDB draft node. When the server
+  // writes the revealed type onto realTimeDraftInfo.type (after the spin), BOTH
+  // devices read the exact same value live — true real-time sync, no per-device
+  // derivation. Harmless until the server build writes it (field is optional);
+  // until then the owner-token recovery above keeps the two devices in sync.
+  // DISPLAY is still gated by visibleDraftType, so this never spoils the spin.
+  useEffect(() => {
+    const rt = firebaseRtdb.data?.type;
+    if (!rt || specialTypeParam) return;
+    const norm: Record<string, DraftType> = {
+      pro: 'pro', hof: 'hof', jackpot: 'jackpot',
+      Pro: 'pro', 'Hall of Fame': 'hof', Jackpot: 'jackpot',
+    };
+    const mapped = norm[rt as string];
+    if (!mapped) return;
+    setDraftType(prev => {
+      if (prev === mapped) return prev;
+      const id = draftId || urlDraftId;
+      if (id) draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+      return mapped;
+    });
+  }, [firebaseRtdb.data?.type, specialTypeParam, draftId, urlDraftId]);
+
+  // Jackpot-hit promo crediting is owned ENTIRELY by the server-side VRF draw
+  // (`awardJackpotDraw`, fired on reveal-complete + the marketplace close
+  // backstop): it randomizes a winner from the PAID entrants only, credits the
+  // spins in real time, posts the on-chain receipt and sends the single bell.
+  // The old per-drafter POST to /api/promos/jackpot-hit was removed 2026-06-24 —
+  // running it alongside the draw could credit a second/duplicate winner.
 
   // Founder Draft promo POST. Fires once the draft is past filling.
   // Server validates that the draft actually qualifies (within window
@@ -1789,15 +2215,26 @@ function DraftRoomContent() {
     const startedAt = preSpinStartedAtRef.current;
     if (!startedAt) return;
 
+    // BOTH fast + slow: anchor the "draft starts in" countdown to the SHARED
+    // server draftStartTime so mobile and desktop match — never a per-device
+    // local anchor (preSpinStartedAt becomes a per-device Date.now() when two
+    // devices observe the fill seconds apart → the countdown diverged). draftStartTime
+    // is the same unix sec on every device (fill+60), so `ds − now` is identical
+    // everywhere. No-op for the common fast case (it already converges to
+    // draftStartTime); only removes the cross-device drift. Falls back to local
+    // elapsed ONLY before draftStartTime is live. Reveal animation
+    // (preSpinCountdown/preSpinStartedAtRef) untouched.
+    const ds = firebaseRtdb.data?.draftStartTime;
+    const anchor = typeof ds === 'number' && ds > 0;
     const tick = () => {
       const elapsed = (Date.now() - startedAt) / 1000;
       setPreSpinCountdown(Math.max(0, Math.floor(15 - elapsed)));
-      setMainCountdown(Math.max(0, Math.floor(60 - elapsed)));
+      setMainCountdown(anchor ? Math.max(0, Math.floor(ds - Date.now() / 1000)) : Math.max(0, Math.floor(60 - elapsed)));
     };
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [phase]);
+  }, [phase, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickLength]);
 
   useEffect(() => {
     if (phase !== 'pre-spin' || preSpinCountdown > 0) return;
@@ -1813,10 +2250,11 @@ function DraftRoomContent() {
         yourPosition: userDraftPosition >= 0 ? userDraftPosition + 1 : undefined,
       });
     }
+    const reelSeed = draftId || urlDraftId;
     setAllReelItems([
-      generateReelItemsForReel(reelResults[0], 0),
-      generateReelItemsForReel(reelResults[1], 1),
-      generateReelItemsForReel(reelResults[2], 2),
+      generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+      generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+      generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
     ]);
     setShowSlotMachine(true);
     slotActiveRef.current = true;
@@ -1830,9 +2268,12 @@ function DraftRoomContent() {
     const startedAt = preSpinStartedAtRef.current;
     if (!startedAt) return;
 
+    // BOTH fast + slow: shared server draftStartTime anchor (see pre-spin effect above).
+    const ds = firebaseRtdb.data?.draftStartTime;
+    const anchor = typeof ds === 'number' && ds > 0;
     const tick = () => {
       const elapsed = (Date.now() - startedAt) / 1000;
-      const main = Math.max(0, Math.floor(60 - elapsed));
+      const main = anchor ? Math.max(0, Math.floor(ds - Date.now() / 1000)) : Math.max(0, Math.floor(60 - elapsed));
       setMainCountdown(prev => {
         if (main < prev && main <= 10 && main > 0) playCountdownTick();
         return main;
@@ -1841,7 +2282,7 @@ function DraftRoomContent() {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [phase, playCountdownTick]);
+  }, [phase, playCountdownTick, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickLength]);
 
   useEffect(() => {
     if (phase !== 'pre-spin' && phase !== 'spinning' && phase !== 'result' && phase !== 'countdown') return;
@@ -1859,11 +2300,22 @@ function DraftRoomContent() {
         setPhase('drafting');
         if (draftId) draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
       } else {
-        setFallbackLocal(true);
-        setPhase('drafting');
-        if (draftOrder.length > 0) engine.initializeDraft(draftOrder);
-        setEngineReady(true);
-        if (draftId) draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
+        // Live draft data hasn't finished loading — the on-device countdown beat
+        // the network (classic backgrounded-tab / cold-backend race). We must NOT
+        // start a local bot-simulated draft here: it diverges from the real server
+        // draft and only a page refresh ever escaped it. Instead show the existing
+        // "Reconnecting…" loading screen and let the live loader (plus the
+        // visibility/pageshow retryLiveSync) bring in the REAL board — loadLiveData's
+        // success path flips us to 'drafting' with authoritative data. No fake draft.
+        setPhase('loading');
+        retryLiveSync(); // kick the loader in case its retry timer was frozen while backgrounded
+        reportClientError({
+          source: LOG_SOURCES.draft.LIVE_WAIT_AT_START,
+          message: 'Countdown ended before live engine ready — waiting for live (no local fallback)',
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, phase, playerCount, playersInOrder: draftOrder.length },
+        });
       }
     } else {
       setPhase('drafting');
@@ -1888,8 +2340,25 @@ function DraftRoomContent() {
   useEffect(() => {
     if (slotAnimationDone) {
       window.dispatchEvent(new CustomEvent('bbb:type-revealed'));
+      // Server-side reveal report: the slot machine + VRF just FINISHED.
+      // The server credits Pick 10 (the draft ORDER exists by now — it does
+      // NOT at raw fill, caught live on draft 1382) and, for Jackpot/HOF,
+      // unlocks the club badge for all 10 + credits Jackpot Hit at this
+      // exact moment (never at raw fill — that would spoil the reveal).
+      // Fired for EVERY draft type; the server verifies the type itself, so
+      // this call carries no information. localStorage-guarded so re-renders
+      // don't spam (server dedupes too).
+      const id = draftId || urlDraftId;
+      if (id) {
+        const revealKey = `reveal-reported:${id}`;
+        if (!localStorage.getItem(revealKey)) {
+          localStorage.setItem(revealKey, '1');
+          fetch(`/api/drafts/${encodeURIComponent(id)}/reveal-complete`, { method: 'POST' }).catch(() => {});
+        }
+      }
     }
-  }, [slotAnimationDone]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotAnimationDone, draftType, draftId, urlDraftId]);
 
   useEffect(() => {
     if (mainCountdown <= 15 && screenShake) setScreenShake(false);
@@ -2095,34 +2564,46 @@ function DraftRoomContent() {
 
   const bannerControls = (
     <div className="flex items-center justify-center gap-2 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
-      {visibleDraftType === 'hof' && (
-        <div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hof-logo.jpg" alt="Hall of Fame" className="w-[50px] mr-2 h-auto" style={{ filter: 'sepia(100%) saturate(400%) brightness(110%) hue-rotate(10deg)' }} />
-        </div>
-      )}
-      {visibleDraftType === 'jackpot' && (
-        <div style={{ marginRight: '5px' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/jackpot-logo.png" alt="Jackpot" className="w-[100px] mr-2 h-auto" />
-        </div>
-      )}
+      {/* Type word — plain TEXT, same line-height as the buttons, so the
+          banner row (and the colored band with it) is EXACTLY the same
+          height in every room (Boris 2026-06-10: the old jackpot-logo.png
+          image was ~60px tall and bloated the red band vs the pro room).
+          White JACKPOT on the red band, black HOF on the gold band, purple
+          PRO on black (Boris's pick 2026-06-10: clean flat word, no glow). */}
+      {visibleDraftType && (() => {
+        const wordEl = (
+          <span
+            className={`font-black uppercase mr-2 ${visibleDraftType !== 'pro' ? 'cursor-default' : ''}`}
+            style={{
+              fontSize: '18px',
+              lineHeight: 1,
+              letterSpacing: '0.14em',
+              color: draftWordColor(visibleDraftType),
+              textShadow: draftWordShadow(visibleDraftType),
+            }}
+          >
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
+          </span>
+        );
+        // No hover copy on the JP/HOF word (Boris 2026-06-16) — the band word stands alone.
+        return wordEl;
+      })()}
       {/* Founder pill — sits inline with the JP/HOF logo (when present) and
           the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
           premium tag alongside the larger JP/HOF artwork rather than a plain
           chip. Self-hides when the draft isn't a Founder Draft. */}
-      {(draftId || urlDraftId) && (
-        <div
-          className="flex items-center"
-          style={{ filter: 'drop-shadow(0 0 6px rgba(6,182,212,0.55))' }}
-        >
-          <FounderPill draftId={draftId || urlDraftId} size="md" />
+      {/* Founder tag — plain orange word, no glow. NEVER shown during filling
+          (Boris 2026-06-16: players can't know it's a founder draft until it
+          fills). Only renders once the draft is no longer filling. */}
+      {(draftId || urlDraftId) && phase !== 'filling' && (
+        <div className="flex items-center">
+          <FounderPill draftId={draftId || urlDraftId} size="md" color={founderWordColor(visibleDraftType)} />
         </div>
       )}
       <div>
         <button
-          onClick={() => router.push('/')}
-          title="Back to home — the draft keeps going without you here"
+          onClick={() => router.push('/drafting')}
+          title="Back to your drafts — the draft keeps going without you here"
           className="text-[12px] cursor-pointer flex items-center justify-center border border-gray-500 px-1 font-primary"
         >
           ← EXIT
@@ -2137,16 +2618,21 @@ function DraftRoomContent() {
         </button>
       </div>
       {(() => {
-        const isOn = (isLiveMode && phase === 'drafting') ? autoDraft : engine.airplaneMode;
-        const handler = (isLiveMode && phase === 'drafting') ? handleToggleAutoDraft : handleToggleAirplane;
+        // LIVE: always the server-backed toggle, in EVERY phase. The old
+        // phase === 'drafting' split meant a toggle on the fill/spin screen
+        // only wrote localStorage — the server flag stayed false, so with the
+        // tab closed nothing picked until the full slow-draft clock expired
+        // (root cause of "auto never picks until I log in", 2026-07-11).
+        const isOn = isLiveMode ? autoDraft : engine.airplaneMode;
+        const handler = isLiveMode ? handleToggleAutoDraft : handleToggleAirplane;
         return (
           <button
             onClick={handler}
-            disabled={isLiveMode && phase === 'drafting' && autoDraftLoading}
+            disabled={isLiveMode && autoDraftLoading}
             title={isOn ? 'Auto-draft ON — click to disable' : 'Auto-draft OFF — click to enable'}
             className={`cursor-pointer text-[12px] flex items-center justify-center border px-1 font-primary transition-all ${
               isOn ? 'border-emerald-500 text-emerald-400' : 'border-gray-500 text-white/60'
-            } ${isLiveMode && phase === 'drafting' && autoDraftLoading ? 'opacity-50 cursor-wait' : ''}`}
+            } ${isLiveMode && autoDraftLoading ? 'opacity-50 cursor-wait' : ''}`}
           >
             ✈️ {isOn ? 'ON' : 'OFF'}
           </button>
@@ -2157,23 +2643,18 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {/* Persistent edge treatment for special drafts — gold for HOF, red
-          for Jackpot. Pointer-events-none so clicks pass through; a gentle
-          pulse keeps it alive without being distracting. Thin 2px border
-          plus a soft inset glow that fades inward ~200px. */}
-      {visibleDraftType && (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') && (
-        <div
-          className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
-          style={{
-            boxShadow: visibleDraftType === 'jackpot'
-              ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
-              : 'inset 0 0 0 2px rgba(255,215,0,0.85)',
-          }}
-        />
-      )}
+      {/* No full-screen edge frame. A screen-edge line fights the desktop
+          scrollbar and the iOS notch/home-indicator/rounded corners, so it
+          never sat cleanly on the outer edge (Boris 2026-06-13). The draft
+          type is signaled by the top BAND color (red Jackpot / gold HOF) and
+          the type WORD (PRO / JACKPOT / HOF) in the banner — no outer line. */}
 
-      {/* Login gate — dims draft and blocks interaction when logged out */}
-      {!isLoggedIn && (
+      {/* Login gate — dims draft and blocks interaction when logged out.
+          Guard on !authLoading so it never flashes during Privy hydration:
+          on a fresh draft-room load `user` is briefly null while Privy
+          restores the session, which used to flash "Log in to Draft" over
+          the lobby/loading screen for already-signed-in users. */}
+      {!isLoggedIn && !authLoading && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center p-8 max-w-sm">
             <div className="text-5xl mb-4">🍌</div>
@@ -2198,7 +2679,13 @@ function DraftRoomContent() {
       )}
 
       {(phase === 'filling' || phase === 'countdown' || phase === 'loading' || engine.draftStatus === 'completed') && (
-        <div className="h-14 bg-black/30 border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0">
+        <div
+          className="h-14 bg-black/30 border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0"
+          // Drop below the notch on iOS (viewportFit:'cover'). Keep the 3.5rem
+          // bar height and add the inset on top so the contest name / type pill
+          // aren't hidden under the status bar (Boris 2026-06-13).
+          style={{ height: 'calc(3.5rem + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)' }}
+        >
           <div className="flex items-center gap-4">
             <span className="font-bold">{contestName}</span>
             {visibleDraftType && (phase !== 'filling' || specialTypeParam) && (
@@ -2214,8 +2701,9 @@ function DraftRoomContent() {
             {phase === 'filling' && !specialTypeParam && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-white/10 text-white/50">UNREVEALED</span>
             )}
-            {(draftId || urlDraftId) && (
-              <FounderPill draftId={draftId || urlDraftId} size="md" />
+            {/* Founder tag hidden during filling — only after the draft fills. */}
+            {(draftId || urlDraftId) && phase !== 'filling' && (
+              <FounderPill draftId={draftId || urlDraftId} size="md" color={founderWordColor(visibleDraftType)} />
             )}
           </div>
           <div className="flex items-center gap-4">
@@ -2249,7 +2737,9 @@ function DraftRoomContent() {
       )}
 
       {isLiveMode && liveError && !fallbackLocal && (
-        <div className="fixed top-[200px] left-1/2 -translate-x-1/2 z-30 w-full max-w-lg px-4">
+        // z-[60]: must sit ABOVE the fixed top strips (filling/drafting bands are
+        // z-[55]) — at z-30 the banner rendered clipped underneath them.
+        <div className="fixed top-[200px] left-1/2 -translate-x-1/2 z-[60] w-full max-w-lg px-4">
           <div className="bg-red-950/95 border border-red-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
             <div className="flex items-start gap-3">
               <span className="text-2xl flex-shrink-0">⚠️</span>
@@ -2302,6 +2792,7 @@ function DraftRoomContent() {
               serverWaitProgress={serverWaitProgress}
               randomizingProgressFromStore={randomizingProgressFromStore}
               user={user}
+              userWallet={walletParam}
               visibleDraftType={visibleDraftType}
               controls={bannerControls}
               usersMap={draftRoomUsers}
@@ -2367,6 +2858,8 @@ function DraftRoomContent() {
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}
             bestTimeRemaining={bestTimeRemaining}
+            isSlowDraft={isSlowDraft}
+            isSlowDraftPaused={isSlowDraftPaused}
             formatTime={formatTime}
             activeTab={activeTab}
             onTabChange={setActiveTab}
@@ -2537,13 +3030,20 @@ function DraftRoomContent() {
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                        body: JSON.stringify({ userId, passType, leagueId: draftId, tokenId: storedDraft?.cardId }),
                       });
                       await refreshBalance();
                     } catch (err) {
                       console.warn('[Leave] Refund pass failed:', err);
                     }
                     draftStore.removeDraft(draftId);
+                    // Actually leaving (pass returned) = forget this draft's
+                    // per-draft sort + the first-time-default marker, so a future
+                    // re-join starts fresh and honors your default sort again.
+                    try {
+                      localStorage.removeItem(`draftSort:${draftId}`);
+                      localStorage.removeItem(`sortDefaultApplied:${draftId}`);
+                    } catch { /* ignore */ }
                     window.location.href = '/drafting';
                   } catch (err) {
                     console.error('Failed to leave draft:', err);

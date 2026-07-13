@@ -1,68 +1,70 @@
 import { unlockBadge } from '@/lib/db';
+import { isPastPlayer } from '@/lib/returningUsers';
 import type { League } from '@/types';
+import bbbChampions from '@/lib/data/champions-bbb.json';
+import hofChampions from '@/lib/data/champions-hof.json';
 
 /**
- * Award the next-tier draft-count badge based on the user's current
- * completed-draft count. Each tier is its own badge (per the locked
- * design decision — tiers don't auto-replace). Idempotent via
- * unlockBadge's transactional check.
+ * Award the Club badges. Entering a Jackpot or HOF draft — PAID **or FREE** —
+ * earns the matching club badge. This is a PARTICIPATION / achievement badge for
+ * everyone who was in a special draft, NOT a promo (Boris 2026-07-01, reversing
+ * the brief paid-only gate): the club badge is cosmetic and celebrates that you
+ * were in a special draft, so every one of the 10 seats gets it. The MONETARY
+ * rewards — bonus spins / the jackpot draw — stay PAID-ONLY (unchanged); only
+ * the badge is universal. Wheel Jackpot/HOF PASS wins also grant the badge (see
+ * the wheel spin route). `unlockBadge` (not silent) fires the "Badge unlocked"
+ * bell + toast on a genuinely new unlock. Idempotent.
  */
-export async function awardDraftCountBadges(userId: string, completedDrafts: number): Promise<void> {
-  if (completedDrafts >= 1) await unlockBadge(userId, 'first-draft', { completedDrafts });
-  if (completedDrafts >= 20) await unlockBadge(userId, 'drafts-20', { completedDrafts });
-  if (completedDrafts >= 50) await unlockBadge(userId, 'drafts-50', { completedDrafts });
-  if (completedDrafts >= 100) await unlockBadge(userId, 'drafts-100', { completedDrafts });
-}
-
-/**
- * Inspect a user's leagues and award the regular-season badges:
- *   - league-winner-{type} for any 1st-place finish in a Pro/JP/HOF league
- *   - made-playoffs for any top-2 finish
- *
- * Run after week 14 closes (or when a league's regular-season standings
- * are final). Each unlock is idempotent.
- */
-export async function awardLeagueOutcomeBadges(
-  userId: string,
-  leagues: League[],
-): Promise<{ awards: string[] }> {
+export async function awardClubBadges(userId: string, leagues: League[]): Promise<string[]> {
   const awarded: string[] = [];
-  let madePlayoffs = false;
-  let proWinner = false;
-  let jpWinner = false;
-  let hofWinner = false;
-
-  for (const l of leagues) {
-    if (l.leagueRank === 1) {
-      if (l.type === 'jackpot') jpWinner = true;
-      else if (l.type === 'hof') hofWinner = true;
-      else proWinner = true; // 'pro' or 'regular'
-    }
-    if (l.leagueRank > 0 && l.leagueRank <= 2) madePlayoffs = true;
+  const hasJackpot = leagues.some(l => l.type === 'jackpot');
+  const hasHof = leagues.some(l => l.type === 'hof');
+  if (hasJackpot && (await unlockBadge(userId, 'jackpot-club', { source: 'entered-jackpot' }))) {
+    awarded.push('jackpot-club');
   }
-
-  if (proWinner && (await unlockBadge(userId, 'league-winner-pro'))) awarded.push('league-winner-pro');
-  if (jpWinner && (await unlockBadge(userId, 'league-winner-jp'))) awarded.push('league-winner-jp');
-  if (hofWinner && (await unlockBadge(userId, 'league-winner-hof'))) awarded.push('league-winner-hof');
-  if (madePlayoffs && (await unlockBadge(userId, 'made-playoffs'))) awarded.push('made-playoffs');
-
-  return { awards: awarded };
+  if (hasHof && (await unlockBadge(userId, 'hof-club', { source: 'entered-hof' }))) {
+    awarded.push('hof-club');
+  }
+  return awarded;
 }
 
 /**
- * Award beat-founder when the user's score exceeded the founder's score
- * in the same Founder draft. Caller passes the matched score pairs (one
- * per Founder league the user was in).
+ * Award the OG badge to returning players — anyone who played in a past SBS
+ * season (lib/returningUsers.ts: on-chain BBB holders + the all-time
+ * past-players snapshot). Idempotent.
  */
-export async function awardBeatFounderIfEarned(
-  userId: string,
-  pairs: Array<{ draftId: string; userScore: number; founderScore: number }>,
-): Promise<boolean> {
-  const beat = pairs.find(p => p.userScore > p.founderScore);
-  if (!beat) return false;
-  return unlockBadge(userId, 'beat-founder', {
-    draftId: beat.draftId,
-    userScore: beat.userScore,
-    founderScore: beat.founderScore,
-  });
+export async function awardOgIfReturning(userId: string): Promise<boolean> {
+  if (!isPastPlayer(userId)) return false;
+  return unlockBadge(userId, 'og', { source: 'past-player' });
+}
+
+/** Numeric season keys → winner wallets, skipping the `_comment` doc key and
+ *  any non-array value, so the JSON can stay self-documenting. */
+function championEntries(map: Record<string, unknown>): Array<[string, string[]]> {
+  return Object.entries(map)
+    .filter(([k, v]) => /^\d+$/.test(k) && Array.isArray(v))
+    .map(([k, v]): [string, string[]] => [k, (v as string[]).map(w => w.toLowerCase())]);
+}
+
+/**
+ * Award Champion badges from the winner-wallet snapshots
+ * (lib/data/champions-*.json). Empty until Boris supplies the lists — until
+ * then champions are admin-grant only. Idempotent.
+ */
+export async function awardChampionBadges(userId: string): Promise<string[]> {
+  const lower = userId.toLowerCase();
+  const awarded: string[] = [];
+  for (const [season, wallets] of championEntries(bbbChampions as Record<string, unknown>)) {
+    if (wallets.includes(lower)) {
+      const id = `bbb-champion-${season}`;
+      if (await unlockBadge(userId, id, { source: 'champion-snapshot' })) awarded.push(id);
+    }
+  }
+  for (const [season, wallets] of championEntries(hofChampions as Record<string, unknown>)) {
+    if (wallets.includes(lower)) {
+      const id = `hof-champion-${season}`;
+      if (await unlockBadge(userId, id, { source: 'champion-snapshot' })) awarded.push(id);
+    }
+  }
+  return awarded;
 }

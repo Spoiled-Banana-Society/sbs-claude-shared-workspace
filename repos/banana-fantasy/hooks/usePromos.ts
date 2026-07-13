@@ -7,6 +7,9 @@ import { pushNotification } from '@/components/NotificationCenter';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
+import { subscribeUserEvents } from '@/lib/api/firebase';
+import { requestBellRefetch } from '@/lib/localSurfaceDedupe';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -17,14 +20,24 @@ type ClaimPromoResponse = {
 type ClaimPromoResult = ClaimPromoResponse | Error | null;
 
 export function usePromos(opts?: { userId?: string }) {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, claimNewUserPromo, isLoading: authLoading } = useAuth();
   const { celebrate } = useClaimCelebration();
   const userId = opts?.userId ?? user?.id;
 
+  // While Privy is still rehydrating the session there's no userId yet —
+  // do NOT fall back to the anonymous default templates: they'd flash the
+  // generic order (incl. the new-user promo) for ~1s on every refresh before
+  // the personalized list replaced them (Boris 2026-06-10). null key = skip;
+  // anon promos only render for genuinely logged-out visitors.
+  const swrKey = userId ? `promos:${userId}` : authLoading ? null : 'promos:anon';
   const swr = useSWRLike<Promo[]>(
-    userId ? `promos:${userId}` : 'promos:anon',
+    swrKey,
     ({ signal }) => fetchJson<Promo[]>('/api/promos', { signal, query: userId ? { userId } : {} }),
-    { fallbackData: [] },
+    // persist: hard refreshes / fresh navigations paint the promo boxes
+    // INSTANTLY from the last snapshot (then revalidate live) instead of
+    // showing empty boxes while the slow /api/promos round-trip completes
+    // (Boris 2026-07-10: drafting-page promo boxes must load quick).
+    { fallbackData: [], persist: true },
   );
 
   // optimistic local update after claims
@@ -38,14 +51,29 @@ export function usePromos(opts?: { userId?: string }) {
   useEffect(() => {
     // keep local promos in sync with SWR source when it changes
     setLocalPromos(swr.data);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swr.data]);
+
+  // LIVE: any server promo credit (fill, pick-10, jackpot hit, purchase)
+  // pings the user-event stream → refetch within seconds, so an open promo
+  // modal shows progress + stats moving in real time. useStreamRefetch
+  // coalesces bursts and keeps its callback in a ref (Rule #0 — no
+  // Privy-derived deps enter an effect dep array).
+  const streamWallet = (user?.walletAddress || userId || '').toLowerCase() || null;
+  useStreamRefetch(streamWallet, () => { void mutateRef.current(); });
 
   const promos = useMemo(() => localPromos ?? swr.data, [localPromos, swr.data]);
 
   const claimPromo = useCallback(
     async (promoId: string): Promise<ClaimPromoResult> => {
       if (!userId) return null;
+
+      // New-user promo is one-time: the moment they claim, it's done forever.
+      // Mark it claimed up front so the box disappears INSTANTLY from every
+      // surface — every claim button across the app routes through this one
+      // function, so this is the single place that guarantees it (no spin
+      // needed). claimNewUserPromo also persists it server-side on the X-link.
+      const claimingType = (swr.data ?? []).find((p) => p.id === promoId)?.type;
+      if (claimingType === 'new-user') claimNewUserPromo();
 
       try {
         const res = await fetchJson<ClaimPromoResponse>('/api/promos/claim', {
@@ -76,19 +104,13 @@ export function usePromos(opts?: { userId?: string }) {
         // Revalidate in background (keeps everything consistent)
         void mutateRef.current();
 
-        // Notify user of claimed reward (persistent bell entry).
+        // The persistent "Promo Claimed!" bell entry is now created
+        // SERVER-SIDE in claimPromo (real-time content-carrying ping → instant
+        // on every device). Here we fire the local celebration modal and nudge
+        // THIS device's bell to refetch immediately — on mobile the RTDB ping
+        // may be dead (iOS PWA), and waiting on the 5s poll felt broken.
+        requestBellRefetch();
         if (res.spinsAdded > 0) {
-          const isBuyBonus = res.promo?.type === 'buy-bonus';
-          pushNotification({
-            type: 'promo',
-            title: 'Promo Claimed!',
-            message: `You earned ${res.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${res.spinsAdded !== 1 ? 's' : ''}!`,
-            link: isBuyBonus ? '/drafting' : '/banana-wheel',
-          });
-          // Banana-shower celebration modal — fires from any page that
-          // triggers a successful claim (homepage carousel, /promos,
-          // /drafting, /banana-wheel). Central wiring here means no
-          // per-page logic to keep in sync.
           celebrate({ count: res.spinsAdded, promoType: res.promo?.type });
         }
 
@@ -100,10 +122,15 @@ export function usePromos(opts?: { userId?: string }) {
           title: 'Claim failed',
           message: error.message,
         });
+        // A failed claim usually means the button was STALE (e.g. already
+        // claimed on another device/surface — server says "not claimable").
+        // Refetch immediately so the card self-corrects instead of leaving a
+        // dead Claim button (jetsonjets22 report, 2026-07-10).
+        void mutateRef.current();
         return error;
       }
     },
-    [userId, swr.data, updateUser, celebrate],
+    [userId, swr.data, updateUser, celebrate, claimNewUserPromo],
   );
 
   const verifyTweetEngagement = useCallback(
@@ -161,17 +188,34 @@ export function usePromos(opts?: { userId?: string }) {
 
   const refreshPromos = useCallback(() => mutateRef.current(), []);
 
-  // Refetch promos when the tab becomes visible and poll every 60s for updates.
+  // Keep all promo boxes (progress, claimable, etc.) live across devices:
+  //  - real-time refetch on any user-event stream ping (purchases fire one),
+  //    coalesced to one refetch per ~300ms burst (render-loop safe — deps are
+  //    scalar, mutate is in a ref),
+  //  - instant refetch on focus/visibility (covers "buy on desktop, look at phone"),
+  //  - 60s poll as a backstop.
   useEffect(() => {
     const refetch = () => { void mutateRef.current(); };
-    const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(refetch, 60_000);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => { if (timer) return; timer = setTimeout(() => { timer = null; refetch(); }, 300); };
+    const onVisible = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    // Mobile PWAs suspend the realtime websocket → poll tightly there so promo
+    // boxes stay near-real-time; desktop relies on the websocket + slow poll.
+    const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    const interval = setInterval(refetch, isMobile ? 6_000 : 60_000);
+    const unsub = userId ? subscribeUserEvents(userId, () => {
+      coalesced();
+    }) : () => {};
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       clearInterval(interval);
+      if (timer) clearTimeout(timer);
+      try { unsub(); } catch { /* ignore */ }
     };
-  }, []);
+  }, [userId]);
 
   return {
     ...swr,

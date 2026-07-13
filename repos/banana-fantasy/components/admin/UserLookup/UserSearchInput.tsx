@@ -148,7 +148,10 @@ export function UserSearchInput({ value, onPick, onClear }: Props) {
                     className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-800"
                   >
                     <span className="font-medium text-white">
-                      {u.username || u.email || 'Unnamed'}
+                      {/* Stored name or stored server number ONLY — never a
+                          wallet-computed handle (hash collisions mis-routed a
+                          pass grant on 7/4; the wallet suffix disambiguates). */}
+                      {u.username || (u.bananaNumber ? `Banana${u.bananaNumber}` : null) || u.email || 'Unnamed'}
                     </span>
                     {u.email && u.username && (
                       <span className="text-xs text-gray-400">{u.email}</span>

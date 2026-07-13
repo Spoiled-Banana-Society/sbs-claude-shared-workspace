@@ -2,9 +2,15 @@
 
 import { getDraftsApiUrl } from '@/lib/staging';
 
+// Safety net only — getDraftsApiUrl() now resolves the staging URL on the
+// server too (isStagingMode() returns true server-side). NEVER put
+// NEXT_PUBLIC_DRAFTS_API_URL in this chain: it points at the OLD PROD Go API,
+// and falling back to it made every server-side getDraftInfo/getDraftSummary
+// (refresh-draft card writer, pick-10 backstop, reveal-complete) silently 404
+// against prod (caught live on draft 2024-fast-draft-1382, 2026-06-10).
 const FALLBACK_URL =
-  process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
+  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
+  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 
 // ==================== TYPES ====================
@@ -147,8 +153,13 @@ export async function getQueue(
   walletAddress: string,
   draftId: string
 ): Promise<PlayerStateInfo[]> {
+  // Lowercase the wallet: the queue is stored at draftQueues/{wallet} and the
+  // server-side auto-pick reads it under the lowercased drafter address. A
+  // mixed-case (checksummed) write here would strand the queue so the auto-pick
+  // never finds it and falls back to ADP best-available. Keep write+read keys
+  // identical by always lowercasing.
   return apiFetch<PlayerStateInfo[]>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/queue`
+    `/owner/${walletAddress.toLowerCase()}/drafts/${draftId}/state/queue`
   );
 }
 
@@ -157,8 +168,10 @@ export async function updateQueue(
   draftId: string,
   queue: PlayerStateInfo[]
 ): Promise<void> {
+  // See getQueue: always lowercase so the stored queue key matches the
+  // server's lowercased auto-pick lookup.
   await apiFetch<void>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/queue`,
+    `/owner/${walletAddress.toLowerCase()}/drafts/${draftId}/state/queue`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

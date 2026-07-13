@@ -5,19 +5,17 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
 import { useBadges } from '@/hooks/useBadges';
 import { useToast } from '@/components/ui/Toast';
+import { ripenessFromCount, RIPENESS_TIERS } from '@/lib/badges/ripeness';
 import type { Badge, BadgeCategory } from '@/types';
 
-const CATEGORY_LABEL: Record<BadgeCategory, string> = {
-  drafts: 'Drafts',
-  league: 'League Performance',
-  finals: 'Playoffs & Finals',
-  wheel: 'Wheel',
-  founder: 'Founder',
-  legacy: 'Legacy Champions',
-  team: 'NFL Team Flair',
-};
-
-const CATEGORY_ORDER: BadgeCategory[] = ['drafts', 'league', 'finals', 'wheel', 'founder', 'legacy', 'team'];
+// Sections in display order, each with plain-English copy.
+const SECTIONS: Array<{ key: BadgeCategory; title: string; blurb: string }> = [
+  { key: 'ripeness', title: 'Your Banana', blurb: 'Your banana ripens as you do more paid BBB4 drafts — tiers unlock at 1 / 10 / 20 / 50 / 100 / 200. Equip whichever unlocked banana you want to show off.' },
+  { key: 'championship', title: 'Championships', blurb: 'Win a season — a BBB final or the HOF bracket.' },
+  { key: 'club', title: 'Clubs', blurb: 'Earned the moment you enter a Jackpot or HOF draft.' },
+  { key: 'status', title: 'Status', blurb: 'Special standing across SBS — top drafter, founders, and OGs.' },
+  { key: 'team', title: 'Team Flair', blurb: 'Cosmetic — rep your NFL team. Always available.' },
+];
 
 interface BadgeCatalogGridProps {
   /** When set, viewing another user's catalog read-only — equip controls hidden. */
@@ -25,12 +23,14 @@ interface BadgeCatalogGridProps {
 }
 
 /**
- * Renders the full catalog. Unlocked badges are colored, locked ones are
- * greyed with the unlock criteria visible on hover. Click an unlocked
- * badge to equip / unequip.
+ * The profile badge area. Organized into Your Banana → Championships →
+ * Clubs → Status → Team Flair, each with a one-line explainer. Unlocked
+ * badges are colored + click-to-equip; locked ones are dimmed with the
+ * unlock criteria on hover. The banana tiers work the same way — locked
+ * until you've bought enough paid drafts, then equippable like any badge.
  */
 export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
-  const { catalog, unlockedIds, equipped, equipBadge, isLoading } = useBadges(
+  const { catalog, unlockedIds, equipped, ripeness, equipBadge, isLoading } = useBadges(
     readOnlyForUserId ? { userId: readOnlyForUserId } : undefined,
   );
   const { show } = useToast();
@@ -43,44 +43,102 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
   }, [equipBadge, show]);
 
   const grouped = useMemo(() => {
-    const out: Record<BadgeCategory, Badge[]> = {
-      drafts: [], league: [], finals: [], wheel: [], founder: [], legacy: [], team: [],
+    const out: Record<string, Badge[]> = {
+      ripeness: [], championship: [], club: [], status: [], team: [],
     };
     for (const b of catalog) {
-      // Hidden badges (past-season champions) only show once unlocked.
-      // While locked, they're invisible — preserves the surprise.
+      // Hidden badges (champion trophies, OG) are winner-only/era-only — they
+      // never show as locked teasers, only in the catalogs of holders.
       if (b.hidden && !unlockedIds.has(b.id)) continue;
-      out[b.category].push(b);
+      if (out[b.category]) out[b.category].push(b);
     }
     return out;
   }, [catalog, unlockedIds]);
+
+  const tier = ripeness ?? ripenessFromCount(0);
+  const paidDone = tier.count ?? 0;
+  // The id of the banana the user is currently showing by default (their
+  // highest unlocked tier) — highlighted so they can see "this is my banana".
+  // The default banana is EARNED (≥1 paid draft); 0 paid drafts = no default.
+  const defaultBananaId = paidDone >= 1 ? `ripeness-${tier.label.toLowerCase()}` : null;
+  // Live progress toward the NEXT banana tier ("3 more paid drafts to Fresh").
+  const nextTier = RIPENESS_TIERS.find(t => paidDone < t.min) ?? null;
 
   if (isLoading && catalog.length === 0) {
     return <div className="text-sm text-text-secondary">Loading badges…</div>;
   }
 
   return (
-    <div className="space-y-6">
-      {CATEGORY_ORDER.map(cat => (
-        grouped[cat].length === 0 ? null : (
-          <section key={cat}>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-3">
-              {CATEGORY_LABEL[cat]}
+    <div className="space-y-8">
+      <p className="text-sm text-text-secondary">
+        Badges show what you&apos;ve done in SBS. Equip one to show it next to your
+        avatar across the site — or keep your banana.
+      </p>
+
+      {SECTIONS.map(section => {
+        const badges = grouped[section.key] ?? [];
+        if (badges.length === 0) return null;
+        return (
+          <section key={section.key}>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-1">
+              {section.title}
             </h4>
+            <p className="text-xs text-text-muted mb-3">{section.blurb}</p>
+            {/* Live ripeness progress — paid drafts filled + distance to the
+                next banana tier, with a hairline progress bar. Own profile
+                only. Refreshes on every badge read (each profile open runs the
+                server sweep, which recounts from the Go API). */}
+            {section.key === 'ripeness' && !readOnlyForUserId && (
+              <div className="mb-4 max-w-sm rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm text-white">
+                    <span className="font-bold tabular-nums">{paidDone}</span>
+                    <span className="text-text-secondary"> paid draft{paidDone === 1 ? '' : 's'}</span>
+                  </span>
+                  {nextTier ? (
+                    <span className="text-xs text-text-secondary whitespace-nowrap">
+                      <span className="font-semibold text-white tabular-nums">{nextTier.min - paidDone}</span> more to{' '}
+                      <span className="font-semibold" style={{ color: nextTier.color }}>{nextTier.label}</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold whitespace-nowrap" style={{ color: '#cca54f' }}>
+                      Spoiled · maxed out
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: nextTier ? `${Math.min(100, Math.round((paidDone / nextTier.min) * 100))}%` : '100%',
+                      background: nextTier ? nextTier.color : '#cca54f',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-              {grouped[cat].map(badge => {
+              {badges.map(badge => {
                 const isUnlocked = unlockedIds.has(badge.id);
-                const isEquipped = equipped === badge.id;
+                const isEquipped = equipped
+                  ? equipped === badge.id
+                  // Nothing explicitly equipped → the default banana is "active".
+                  : badge.id === defaultBananaId;
                 const clickable = !readOnlyForUserId && isUnlocked;
 
                 const inner = (
                   <button
                     type="button"
                     onClick={clickable
-                      ? () => handleEquip(isEquipped ? null : badge.id)
+                      ? () => handleEquip(isEquipped && equipped ? null : badge.id)
                       : undefined
                     }
-                    disabled={!clickable}
+                    // NOT the `disabled` attribute: browsers suppress ALL mouse/touch
+                    // events over disabled buttons, so the <Tooltip> wrapper never saw
+                    // hover/tap on locked badges (the recurring "King badge shows no
+                    // copy" bug — locked-for-you badges had dead tooltips everywhere).
+                    // Locked tiles are inert anyway (no onClick); aria keeps semantics.
+                    aria-disabled={!clickable}
                     className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition ${
                       isEquipped
                         ? 'border-banana bg-banana/15'
@@ -122,7 +180,7 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
                         </div>
                         {clickable && (
                           <div className="text-[10px] text-banana mt-1">
-                            {isEquipped ? 'Click to unequip' : 'Click to equip'}
+                            {isEquipped && equipped ? 'Click to unequip' : 'Click to equip'}
                           </div>
                         )}
                       </div>
@@ -134,8 +192,8 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
               })}
             </div>
           </section>
-        )
-      ))}
+        );
+      })}
 
       {!readOnlyForUserId && (
         <div className="text-xs text-text-muted">
@@ -146,7 +204,7 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
               onClick={() => handleEquip(null)}
               className="ml-3 underline hover:text-banana"
             >
-              Clear equipped badge
+              Clear equipped badge (back to your banana)
             </button>
           )}
         </div>

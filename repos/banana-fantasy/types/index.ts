@@ -13,7 +13,31 @@ export interface User {
   wheelSpins: number;
   jackpotEntries: number;
   hofEntries: number;
+  /**
+   * @deprecated Superseded by `cardFeeCreditCents`. The old "every 6 card
+   * purchases = 1 free draft" counter; no longer incremented or read.
+   */
   cardPurchaseCount: number;
+  /**
+   * Running card-fee credit toward the next free draft, in integer cents.
+   * Each card purchase adds the MoonPay fee for that quantity (see
+   * `feeForQty` in lib/pricing.ts); at `FREE_DRAFT_CREDIT_CENTS` ($25) the
+   * user earns 1 paid-type draft and the remainder rolls over.
+   */
+  cardFeeCreditCents: number;
+  // First-purchase bonus (every 4 passes on the first PAID purchase = 1 spin).
+  // `firstPurchaseBonusGranted` is the durable "has made a first paid purchase"
+  // flag — set once and never reset (cardPurchaseCount resets after 6, so it
+  // can't be used for this). `pendingWheelWinnings` counts welcome-wheel free
+  // drafts won but not yet completed; when it hits 0 the new-user popup unlocks
+  // via `firstPurchasePromoUnlocked`. See lib/promoMath.ts.
+  firstPurchaseBonusGranted?: boolean;
+  pendingWheelWinnings?: number;
+  firstPurchasePromoUnlocked?: boolean;
+  // True once the user has spun the Banana Wheel at least once. Drives the
+  // first-time "what's a spin?" explainer on promo cards — shown until their
+  // first spin, then hidden everywhere.
+  hasSpunWheel?: boolean;
   isVerified: boolean;
   referredBy?: string;
   createdAt: string;
@@ -21,10 +45,52 @@ export interface User {
   // avatar across the app. Null/undefined = no badge shown. The user
   // doesn't have to display one — they can clear this anytime.
   equippedBadge?: string | null;
+  // Permanent, server-assigned unique number for the default "Banana12345"
+  // handle (shown only to users who never set a username). Assigned once
+  // from the `counters/banana_user_number` counter and never changes, so
+  // no two users ever share a banana handle. See getOrAssignBananaNumbers.
+  bananaNumber?: number;
+  // Current "ripeness" — the dynamic banana badge everyone has, computed
+  // server-side from how many paid BBB4 passes they've bought. Surfaced so
+  // every render site can color the default banana per user. See
+  // lib/badges/ripeness.ts. Not stored — recomputed on read.
+  ripeness?: Ripeness;
+}
+
+/**
+ * The dynamic "ripeness" of a user's banana — the default badge everyone
+ * carries when they haven't equipped an earned one. Computed from the count
+ * of paid passes they've bought in BBB4 (see lib/badges/ripeness.ts).
+ */
+export interface Ripeness {
+  /** 0–5, lowest (Unripe) to highest (Spoiled). */
+  tier: number;
+  /** Human label, e.g. "Ripe". */
+  label: string;
+  /** Banana fill color for this tier (green → spoiled-brown). */
+  color: string;
+  /** Display range, e.g. "20–40". */
+  range: string;
+  /** Paid BBB4 passes bought (the value the tier was derived from). */
+  count: number;
 }
 
 // Badges
-export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder' | 'legacy' | 'team';
+//
+// The badge system is the "obsidian disc": a dark-glass center with a solid
+// colored rim and a flat icon (no glow). Each badge declares HOW its center
+// content renders via `contentKind`, plus the rim/content colors. See
+// components/badges/BadgeIcon.tsx (renderer) and lib/badges/catalog.ts.
+export type BadgeCategory = 'ripeness' | 'championship' | 'club' | 'status' | 'team';
+
+/** How the obsidian disc's center content is drawn. */
+export type BadgeContentKind =
+  | 'banana'        // vectorized SBS banana, filled with the ripeness tier color
+  | 'text'          // short letters (JP / HOF / OG)
+  | 'numeral-crown' // small filled crown above a roman numeral (BBB champion)
+  | 'hof-champ'     // small crown above "HOF" + season numeral (HOF champion)
+  | 'icon'          // a flat line icon (King crown outline / Founders key)
+  | 'logo';         // a full-color image (NFL team logo via iconUrl)
 
 export interface Badge {
   id: string;
@@ -33,26 +99,33 @@ export interface Badge {
   /** One-line text shown in the catalog when locked, e.g. "Complete 20 drafts". */
   criteria: string;
   category: BadgeCategory;
-  /** Tailwind-friendly hex used for the badge ring + glow. */
+  // ── Obsidian-disc render fields ──────────────────────────────────────
+  /** How the center content renders. Drives BadgeIcon. */
+  contentKind: BadgeContentKind;
+  /** Solid rim color around the disc. Grey (#48484f) by default; prestige
+   *  badges get a colored rim (blue/gold/red/purple). */
+  rimColor: string;
+  /** Color of the center content (text / icon stroke / crown fill). Unused
+   *  by `banana` (tier color) and `logo` (full-color image). */
+  contentColor?: string;
+  /** Which flat line icon to draw for `contentKind: 'icon'`. */
+  iconName?: 'crown' | 'key';
+  /** Short text drawn for `contentKind: 'text'` (e.g. "JP", "HOF", "OG"). */
+  text?: string;
+  /** Roman-numeral season for champion badges (e.g. "I", "IV"). */
+  numeral?: string;
+  /** Marks a computed badge whose appearance is derived at render time
+   *  rather than from a fixed unlock. 'ripeness' = the dynamic banana whose
+   *  fill color comes from the user's purchase tier. */
+  dynamic?: 'ripeness';
+  // ── Shared / back-compat ─────────────────────────────────────────────
+  /** Representative hex (mirrors rimColor) kept for back-compat with code
+   *  that still reads `badge.color`. */
   color: string;
-  /** Single-character / emoji glyph used inside the small circle when no
-   *  custom image asset is shipped. */
+  /** Emoji used in unlock toasts + bell notifications (NOT the disc render). */
   glyph: string;
-  /** Optional asset path. If unset, BadgeIcon renders the glyph instead. */
+  /** Image asset for `contentKind: 'logo'` (NFL team logo). */
   iconUrl?: string;
-  /** Secondary color — used for gradients and dual-tone treatments. */
-  accentColor?: string;
-  /** When true, the background fill blends color → accentColor. */
-  gradient?: boolean;
-  /** Ring style. 'solid' (default) is a single border. 'double' adds an
-   *  inner ring for high-tier badges. 'rainbow' uses an animated rainbow
-   *  ring for the rarest. */
-  ringStyle?: 'solid' | 'double' | 'rainbow';
-  /** Override ring color independently from fill. Useful for HOF-tier
-   *  variants of base medals. */
-  ringColor?: string;
-  /** Visual flair. 'soft' = static drop-shadow. 'pulse' = animated. */
-  glow?: 'none' | 'soft' | 'pulse';
   /** Hidden badges (past-season champions, secret unlocks) don't render
    *  in the catalog when locked — they only appear once unlocked. */
   hidden?: boolean;
@@ -93,6 +166,8 @@ export interface Contest {
   rosterFormat: RosterSlot[];
   scoringRules: ScoringRule[];
   prizeBreakdown: PrizeBreakdown[];
+  /** Number of paid drafts the example prize breakdown is modeled on (e.g. 5000). The real pool grows with entries. */
+  examplePaidDrafts?: number;
 }
 
 export interface RosterSlot {
@@ -110,6 +185,10 @@ export interface PrizeBreakdown {
   place: string;
   amount: number;
   percentage?: number;
+  /** Small qualifier shown next to the amount, e.g. "each" or "each · 200 leagues" */
+  note?: string;
+  /** Optional grouping header, e.g. "Finals", "League Prizes", "Hall of Fame" */
+  section?: string;
 }
 
 // Draft room types
@@ -274,7 +353,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share' | 'founder-draft';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -296,12 +375,20 @@ export interface ReferralReward {
 }
 
 export interface ReferralEntryRewards {
+  /** Friend verified X + used their spin — informational only since
+   *  2026-06-10 (no referrer payout; payouts start at bought1). */
   verified: 'pending' | 'claim' | 'claimed';
   bought1: 'pending' | 'claim' | 'claimed';
+  /** Friend's LIFETIME passes reached 4 (added 2026-06-10). */
+  bought4?: 'pending' | 'claim' | 'claimed';
   bought10: 'pending' | 'claim' | 'claimed';
 }
 
 export interface ReferralEntry {
+  /** ISO timestamps for when each bought milestone was hit (real history). */
+  milestoneDates?: { bought1?: string; bought4?: string; bought10?: string };
+  /** When the friend verified X + claimed their spin (unlocks the ladder). */
+  verifiedAt?: string;
   username: string;
   referredUserId?: string;
   dateJoined: string;
@@ -327,6 +414,13 @@ export interface Promo {
   claimCount?: number;
   completedDraftIds?: string[];
   isNew?: boolean;
+  /** Limited-time featured promo (FEATURED_PROMO_TYPE in promoFilter):
+   *  pinned to position 1 on every surface + big NEW badge treatment. */
+  featured?: boolean;
+  /** New-user promo only: admin force-granted to a returning player. Lets the
+   *  client filter show it despite isBB3Holder (returning) hiding it normally.
+   *  Set server-side in getPromos; claimed/spun still hide it. */
+  forced?: boolean;
   modalContent: {
     title: string;
     explanation: string;
@@ -336,12 +430,22 @@ export interface Promo {
     referralRewards?: ReferralReward[];
     referralHistory?: ReferralEntry[];
     twitterConnected?: boolean;
-    pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed' }[];
+    pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed'; slot?: number }[];
     totalPick10s?: number;
     jackpotHistory?: { date: string; draftName: string; amount: number }[];
     founderHistory?: { date: string; draftName: string; amount: number }[];
     mintHistory?: { date: string; quantity: number; status: 'pending' | 'claim' | 'claimed' }[];
     totalMinted?: number;
+    /** All-time 4-draft completions (daily-drafts promo) — never decrements. */
+    totalDailyClaims?: number;
+    /** One entry per completed 4-set (daily-drafts promo), newest first. */
+    dailyHistory?: { date: string; count: number }[];
+    /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
+    lifetimePaidDrafts?: number;
+    /** Jackpot promo: live cycle data stamped at read time. */
+    cycle?: { filledCount: number; position: number; tenLeft: number; fiveLeft: number };
+    /** Jackpot promo: most recent draw (social proof in the modal). */
+    latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
   };
 }
 
@@ -352,6 +456,10 @@ export type RoundStatus = 'filling' | 'ready' | 'drafting' | 'completed';
 export interface QueueMember {
   wallet: string;
   joinedAt: number;
+  // Set for wheel-won JP/HOF passes minted as a real NFT: the queue slot is tied
+  // to this token, and the draft is created for whoever owns it at fill time (so
+  // a sale-while-filling hands the slot to the buyer).
+  tokenId?: string;
 }
 
 export interface QueueRound {
@@ -359,6 +467,10 @@ export interface QueueRound {
   members: QueueMember[];
   status: RoundStatus;
   draftId: string | null;
+  /** Set (epoch ms) while one server request holds the right to create the Go
+   *  league for this round — prevents two simultaneous wheel winners creating
+   *  two leagues. Stale claims (>60s, create crashed) are taken over. */
+  creatingAt?: number | null;
 }
 
 export interface DraftQueue {
@@ -376,15 +488,22 @@ export interface DraftPassPurchase {
 }
 
 // FAQ types
+// Audience targeting for FAQ content. Omitted = 'all' (everyone sees it).
+// 'web3' = crypto-only (hidden from confirmed web2 / embedded-wallet users).
+// 'web2' = plain-language version shown ONLY to web2 users.
+export type FAQAudience = 'all' | 'web3' | 'web2';
+
 export interface FAQSection {
   id: string;
   title: string;
   items: FAQItem[];
+  audience?: FAQAudience;
 }
 
 export interface FAQItem {
   question: string;
   answer: string;
+  audience?: FAQAudience;
   link?: {
     label: string;
     href: string;
@@ -481,6 +600,10 @@ export interface ExposureEntry {
   bye?: number;
   adp?: number;
   projectedPoints?: number;
+  /** Avg overall pick number we actually drafted this team-position at,
+   *  averaged across all our drafts (from each draft's playerState pickNum).
+   *  Undefined when pick data wasn't available. Pairs with `adp`. */
+  avgPick?: number;
 }
 
 export interface UserExposure {

@@ -3,9 +3,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { subscribeGlobalChatPing } from '@/lib/api/firebase';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { ChatModerationMenu } from '@/components/chat/ChatModerationMenu';
 import { UserPopover } from '@/components/social/UserPopover';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 interface ChatMessage {
   id: string;
@@ -49,6 +51,15 @@ export function GlobalChat() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+
+  // Resolve sender names/pfps LIVE from each sender's current profile rather
+  // than trusting the username snapshotted onto the message at send time.
+  // Old messages stored the wallet prefix (0x…) as the name whenever the
+  // sender had no username loaded at send time; this backfills the real name
+  // retroactively. Cached + batched (useSWRLike) so it never re-fetches on
+  // re-render — safe under the render-loop rule.
+  const senderWallets = useMemo(() => messages.map((m) => m.walletAddress), [messages]);
+  const usersMap = useDraftRoomUsers(senderWallets);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [myMute, setMyMute] = useState<ActiveMute | null>(null);
@@ -68,6 +79,24 @@ export function GlobalChat() {
   const authHeadersRef = useRef(authHeaders);
   useEffect(() => { authHeadersRef.current = authHeaders; }, [authHeaders]);
 
+  // Optimistic echoes: your own just-sent messages render INSTANTLY and the
+  // poll reconciles. An echo survives merges until the server list contains
+  // its id (or 15s passes — abandoned echo from a failed write).
+  const echoesRef = useRef<Map<string, ChatMessage>>(new Map());
+  const mergeWithEchoes = (server: ChatMessage[]): ChatMessage[] => {
+    const now = Date.now();
+    for (const [id, echo] of echoesRef.current) {
+      if (server.some((m) => m.id === id) || now - echo.timestamp > 15_000) {
+        echoesRef.current.delete(id);
+      }
+    }
+    if (echoesRef.current.size === 0) return server;
+    return [...server, ...echoesRef.current.values()];
+  };
+
+  // Callable handle on the poll's fetch so the realtime ping can reuse it.
+  const fetchOnceRef = useRef<() => void>(() => {});
+
   // Poll messages every 2s.
   useEffect(() => {
     let cancelled = false;
@@ -77,13 +106,27 @@ export function GlobalChat() {
         if (!res.ok) return;
         const data = (await res.json()) as { messages?: ChatMessage[] };
         if (cancelled) return;
-        setMessages(Array.isArray(data.messages) ? data.messages : []);
+        setMessages(mergeWithEchoes(Array.isArray(data.messages) ? data.messages : []));
       } catch { /* network blip */ }
       finally { if (!cancelled) setIsLoading(false); }
     };
     void fetchOnce();
+    fetchOnceRef.current = fetchOnce;
     const id = setInterval(fetchOnce, POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Instant: the server bumps a shared RTDB node on every message — refetch
+  // within ~300ms (coalesced). The 2s poll stays as the fallback.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; fetchOnceRef.current(); }, 300);
+    };
+    const unsub = subscribeGlobalChatPing(coalesced);
+    return () => { if (timer) clearTimeout(timer); try { unsub(); } catch { /* ignore */ } };
   }, []);
 
   // Poll my mute status every 15s (and on mount). Cheap server check; if a
@@ -137,6 +180,20 @@ export function GlobalChat() {
         headers,
         body: JSON.stringify({ text, username, pfpUrl }),
       });
+      if (res.ok && walletAddress) {
+        // Instant local echo with the REAL id — next poll reconciles.
+        const data = (await res.json().catch(() => ({}))) as { id?: string };
+        const echo: ChatMessage = {
+          id: data.id || `echo-${Date.now()}`,
+          walletAddress,
+          username,
+          pfpUrl,
+          text,
+          timestamp: Date.now(),
+        };
+        echoesRef.current.set(echo.id, echo);
+        setMessages((prev) => (prev.some((m) => m.id === echo.id) ? prev : [...prev, echo]));
+      }
       if (!res.ok) {
         // 403 with { error: 'muted', mute: {...} } → reflect mute in UI
         const data = await res.json().catch(() => ({}));
@@ -220,27 +277,34 @@ export function GlobalChat() {
         )}
         {messages.map((msg) => {
           const isYou = !!myWallet && msg.walletAddress.toLowerCase() === myWallet;
-          const initial = (msg.username || msg.walletAddress).slice(0, 1).toUpperCase();
+          // Prefer the sender's current profile, then the message's stored
+          // username, then the wallet prefix. This is what fixes the "shows my
+          // wallet" case: a user who has since set a username now renders it
+          // even on messages that baked in the 0x… fallback.
+          const resolved = usersMap[msg.walletAddress.toLowerCase()];
+          const displayName = resolved?.displayName || msg.username || msg.walletAddress.slice(0, 8);
+          const avatarUrl = resolved?.imageUrl || msg.pfpUrl || '/banana-profile.png';
           return (
             <div key={msg.id} className="group flex items-start gap-3 px-2 py-1.5 rounded-lg hover:bg-white/[0.02]">
-              {/* Avatar — clickable, opens UserPopover with friend actions. */}
-              <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
-                {msg.pfpUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={msg.pfpUrl} alt={msg.username} className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all" />
-                ) : (
-                  <div className="w-9 h-9 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-sm hover:ring-2 hover:ring-banana/40 transition-all">
-                    {initial}
-                  </div>
-                )}
+              {/* Avatar — clickable, opens UserPopover with friend actions.
+                  Always a real picture or the banana default; never a wallet
+                  initial. onError swaps a broken pfp URL back to the banana. */}
+              <UserPopover walletAddress={msg.walletAddress} username={displayName} pfpUrl={avatarUrl}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  onError={(e) => { e.currentTarget.src = '/banana-profile.png'; }}
+                  className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all"
+                />
               </UserPopover>
 
               {/* Body */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
+                  <UserPopover walletAddress={msg.walletAddress} username={displayName} pfpUrl={avatarUrl}>
                     <span className={`text-sm font-semibold hover:underline ${isYou ? 'text-banana' : 'text-white'}`}>
-                      {msg.username || msg.walletAddress.slice(0, 8)}
+                      {displayName}
                     </span>
                   </UserPopover>
                   <span className="text-white/30 text-[10px]">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { DraftProofExplainerContent } from './DraftProofExplainerContent';
 
 interface DraftProofExplainerModalProps {
   open: boolean;
@@ -68,62 +69,8 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
           </svg>
         </button>
 
-        <div className="px-8 pt-9 pb-6 shrink-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-400 mb-3">
-            Provably Fair
-          </div>
-          <h2 className="text-[26px] font-semibold text-white tracking-tight leading-tight">
-            How draft types are verified
-          </h2>
-          <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            Every draft&apos;s type was randomized by Chainlink VRF and committed to Base before any draft happened.
-          </p>
-        </div>
-
-        <div className="px-8 pb-6 overflow-y-auto space-y-5">
-          <Step
-            num="1"
-            title="Chainlink VRF generated the outcomes"
-            body="A decentralized oracle supplied the randomness. SBS never saw or chose it."
-          />
-          <Step
-            num="2"
-            title="1 in 100 = Jackpot, 5 in 100 = HOF, 94 in 100 = Pro"
-            body="Every 100-draft window contains exactly that distribution."
-          />
-          <Step
-            num="3"
-            title="The full list was committed to Base"
-            body="A cryptographic fingerprint of every (position, draft type) pair was published on-chain before any draft happened. Outcomes are immutable after commit."
-          />
-          <Step
-            num="4"
-            title="Every draft includes a proof"
-            body="When your draft fills, the result comes with a Merkle proof — verified in your browser in milliseconds. That's the green Verified ✓ badge."
-          />
-        </div>
-
-        <div className="px-8 py-5 border-t border-white/[0.07] shrink-0">
-          <p className="text-white/80 text-[13.5px] leading-relaxed">
-            <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
-            Outcomes are cryptographically immutable from the moment of commit, and independently verifiable on-chain.
-          </p>
-          <a
-            href="/proof-feed"
-            className="inline-block mt-3 text-banana hover:underline text-[12px] font-medium"
-          >
-            See on-chain proof →
-          </a>
-          {contractAddress && (
-            <a
-              href={`https://basescan.org/address/${contractAddress}`}
-              target="_blank"
-              rel="noreferrer"
-              className="block mt-2 text-white/40 hover:text-white text-[11px] font-mono"
-            >
-              Contract: {contractAddress.slice(0, 8)}…{contractAddress.slice(-4)}
-            </a>
-          )}
+        <div className="px-8 pt-9 pb-7 overflow-y-auto">
+          <DraftProofExplainerContent contractAddress={contractAddress ?? null} showFeedLink />
         </div>
       </div>
 
@@ -135,18 +82,4 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
   );
 
   return createPortal(node, document.body);
-}
-
-function Step({ num, title, body }: { num: string; title: string; body: string }) {
-  return (
-    <div className="flex gap-3.5">
-      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/65 text-[12px] font-semibold">
-        {num}
-      </div>
-      <div className="min-w-0 flex-1 pt-0.5">
-        <h3 className="text-white text-[14.5px] font-semibold mb-1 leading-tight tracking-tight">{title}</h3>
-        <p className="text-white/55 text-[13px] leading-relaxed">{body}</p>
-      </div>
-    </div>
-  );
 }

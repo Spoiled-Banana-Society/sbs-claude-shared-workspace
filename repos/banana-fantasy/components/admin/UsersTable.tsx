@@ -9,11 +9,14 @@ import {
   useResetUser,
   useZeroFreeDrafts,
   useReconcilePasses,
+  useReturningWalletSet,
   AdminApiError,
   type AdminUser,
 } from '@/hooks/admin/useAdminApi';
 import { useToast } from '@/components/ui/Toast';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { Bbb3HoldersCard } from '@/components/admin/Bbb3HoldersCard';
+import { ViewAsToggle, PreviewBannersToggle, ResetAppBannerButton } from '@/components/admin/ViewAsToggle';
 
 const LIMIT = 50;
 
@@ -45,9 +48,14 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
   const query = useAdminUsers(enabled, offset, LIMIT, q);
   const users = query.data?.users ?? [];
   const total = query.data?.pagination.total ?? 0;
+  const { set: returningSet } = useReturningWalletSet(enabled);
 
   return (
     <div className="space-y-4">
+      <ViewAsToggle />
+      <PreviewBannersToggle />
+      <ResetAppBannerButton />
+      <Bbb3HoldersCard enabled={enabled} />
       <ZeroFreeDraftsBanner />
       <div className="flex items-center gap-3">
         <input
@@ -80,6 +88,7 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
           <thead className="bg-gray-800/80 text-gray-400 text-xs uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3">Wallet</th>
+              <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3 text-right">Paid</th>
@@ -96,12 +105,18 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
           <tbody>
             {users.length === 0 && !query.isLoading ? (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
                   {q ? `No users match "${q}"` : 'No users found'}
                 </td>
               </tr>
             ) : (
-              users.map((u) => <UserRow key={u.id} user={u} />)
+              users.map((u) => (
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  returning={returningSet.has((u.walletAddress || '').toLowerCase())}
+                />
+              ))
             )}
           </tbody>
         </table>
@@ -135,11 +150,25 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
   );
 }
 
-function UserRow({ user }: { user: AdminUser }) {
+function UserRow({ user, returning }: { user: AdminUser; returning: boolean }) {
   return (
     <tr className="border-t border-gray-800/50 hover:bg-gray-800/30 transition-colors">
       <td className="px-4 py-3 font-mono text-xs">
         <WalletLink wallet={user.walletAddress} bare className="hover:text-banana" />
+      </td>
+      <td className="px-4 py-3 text-xs">
+        {/* Returning if the wallet is an on-chain BBB3 holder OR the
+            returning-check matched a past identity (email/social) — the latter
+            catches web2 OGs whose new wallet isn't on-chain from last year. */}
+        {(returning || user.isReturningPlayer) ? (
+          <span className="inline-flex rounded-full px-2 py-0.5 border border-[#F3E216]/40 bg-[#F3E216]/10 text-[#F3E216] whitespace-nowrap">
+            Returning{returning ? ' · on-chain' : (user.returningVia ? ` · ${user.returningVia}` : '')}
+          </span>
+        ) : (
+          <span className="inline-flex rounded-full px-2 py-0.5 border border-gray-600/50 bg-gray-700/20 text-gray-300">
+            New
+          </span>
+        )}
       </td>
       <td className="px-4 py-3 text-gray-300 text-xs">{user.username || '—'}</td>
       <td className="px-4 py-3 text-gray-300 text-xs">{user.email || '—'}</td>
@@ -293,7 +322,7 @@ function ResetButton({ userId }: { userId: string }) {
   const reset = useResetUser();
   const { show } = useToast();
   const handle = async () => {
-    if (!window.confirm(`Reset ${formatWallet(userId)}? Clears draftPasses, freeDrafts, wheelSpins, cardPurchaseCount, JP/HOF entries.`)) {
+    if (!window.confirm(`Reset ${formatWallet(userId)}? Clears draftPasses, freeDrafts, wheelSpins, cardPurchaseCount, JP/HOF entries, onboarding flags (hasSpunWheel, firstPurchaseBonusGranted, firstPurchasePromoUnlocked), AND re-enables the New User promo (clears the X-link claim) so the full new-user flow can re-run.`)) {
       return;
     }
     try {

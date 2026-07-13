@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { formatScore } from '@/lib/formatters';
+import { getTruncatedAccountName } from '@/utils/helpers';
 import { useLeagueDetail } from '@/hooks/useStandings';
 import type { League } from '@/types';
 
@@ -159,7 +160,9 @@ export function LeagueStandingsView({ league, gameweek }: LeagueStandingsViewPro
     const e = entry as Record<string, unknown>;
     return {
       rank: typeof e.rank === 'number' ? e.rank : idx + 1,
-      displayName: String(e.displayName || e.ownerWallet || e.cardId || '-').slice(0, 20),
+      // Real name if there is one; otherwise the on-brand "Banana #1234"
+      // default — never a raw wallet address.
+      displayName: getTruncatedAccountName(String(e.displayName || ''), String(e.ownerWallet || e.cardId || '')) ?? '',
       weeklyScore: Number(e.weeklyScore ?? e.weekScore ?? e.scoreWeek ?? 0),
       seasonScore: Number(e.seasonScore ?? e.scoreSeason ?? 0),
       isCurrentUser: Boolean(e.isCurrentUser),
