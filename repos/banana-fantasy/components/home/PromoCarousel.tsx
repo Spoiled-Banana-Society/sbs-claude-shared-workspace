@@ -332,14 +332,17 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="text-sm whitespace-nowrap">{promoTitle}</span>
                       )}
                     </h4>
-                    {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): its full offer
-                        copy renders on the box front. No line-clamp — the
-                        whole line always shows (a clamp cut off the "$1,000"
-                        on mobile). Other promos stay title-only. */}
-                    {promo.type === 'first-purchase' && promo.description && (
-                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a]">
-                        {promo.description}
-                      </p>
+                    {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy
+                        on the box front as FIXED LINES — each line is one
+                        complete idea and can never wrap mid-phrase ("40" on
+                        one line, "Drafts" on the next read broken). */}
+                    {promo.type === 'first-purchase' && (
+                      <div className="mt-1.5 px-1 text-center text-[10px] leading-relaxed text-[#4a4a4a]">
+                        <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
+                        <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
+                        <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
+                        <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                      </div>
                     )}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
