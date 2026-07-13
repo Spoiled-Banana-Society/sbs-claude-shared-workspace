@@ -1478,6 +1478,11 @@ async function _incrementReferralPromosInTx(
   const buyerIsReturning = (buyerUser as { isReturningPlayer?: boolean }).isReturningPlayer === true
     || isReturningWalletSync(buyerUserId);
   if (buyerIsReturning) {
+    // Manual pin (Boris 2026-07-13): an entry stamped keepEvenIfReturning
+    // stays visible in the history even though it can never pay (e.g.
+    // RisBrian's family account). Earns nothing, isn't auto-removed.
+    const pinned = (entry as { keepEvenIfReturning?: boolean }).keepEvenIfReturning === true;
+    if (pinned) return { referralMilestonesEarned: 0 };
     const anythingClaimed = entry.rewards
       && Object.values(entry.rewards).some((v) => v === 'claimed');
     if (!anythingClaimed) {
