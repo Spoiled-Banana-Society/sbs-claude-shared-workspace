@@ -64,7 +64,7 @@ export function PromosSidebar({
           return (
             <div
               onClick={() => onSelectPromo(promo)}
-              className="relative rounded-[20px] p-5 h-56 bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
+              className="relative rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
             >
               {promo.isNew && (
                 <span className="absolute top-2 right-2 px-2 py-0.5 bg-banana text-[#1d1d1f] text-[10px] font-bold rounded-full tracking-wide">
@@ -84,10 +84,11 @@ export function PromosSidebar({
                   <span>{promo.title}</span>
                 )}
               </h4>
-              {/* Full promo copy on the box FRONT (Boris 2026-07-12) — same
-                  description the /promos page card shows. */}
-              {promo.description && (
-                <p className="mt-1.5 text-center text-[11px] leading-snug text-[#4a4a4a] line-clamp-3">
+              {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy on
+                  the box front, no clamp (a clamp cut off the "$1,000" on
+                  mobile). Other promos stay title-only. */}
+              {promo.type === 'first-purchase' && promo.description && (
+                <p className="mt-1.5 text-center text-[11px] leading-snug text-[#4a4a4a]">
                   {promo.description}
                 </p>
               )}

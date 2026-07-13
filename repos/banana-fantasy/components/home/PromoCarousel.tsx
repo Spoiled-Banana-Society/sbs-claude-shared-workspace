@@ -274,7 +274,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   className={`
-                    relative overflow-hidden rounded-[20px] p-5 w-52 h-64 flex-shrink-0 transition-all duration-200 cursor-pointer
+                    relative overflow-hidden rounded-[20px] p-5 w-52 h-56 flex-shrink-0 transition-all duration-200 cursor-pointer
                     bg-[#fbfbfd]
                     ${isHovered
                       ? 'border-2 border-banana shadow-[0_0_15px_rgba(251,191,36,0.3)]'
@@ -332,12 +332,13 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="text-sm whitespace-nowrap">{promoTitle}</span>
                       )}
                     </h4>
-                    {/* Full promo copy on the box FRONT (Boris 2026-07-12) —
-                        the same description the /promos page card shows, so
-                        users get the whole offer without clicking in. */}
-                    {promo.description && (
-                      <p className="mt-1.5 px-1 text-center text-[11px] leading-snug text-[#4a4a4a] line-clamp-3">
-                        {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
+                    {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): its full offer
+                        copy renders on the box front. No line-clamp — the
+                        whole line always shows (a clamp cut off the "$1,000"
+                        on mobile). Other promos stay title-only. */}
+                    {promo.type === 'first-purchase' && promo.description && (
+                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a]">
+                        {promo.description}
                       </p>
                     )}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
