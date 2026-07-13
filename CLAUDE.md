@@ -204,7 +204,7 @@ Not random odds — guaranteed distribution per 100 drafts. Users don't know typ
 - Product should feel like a polished web2 fantasy app with web3 superpowers under the hood.
 
 ## Smart Contract
-- **BBB4 draft pass NFT:** `0x14065412b3A431a660e6E576A14b104F1b3E463b` on Base.
+- **BBB4 draft pass NFT:** `0x781B2E6fE9A615C2680A51Ef88f309ddC2e0D73F` on Base.
 - **USDC on Base:** `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
 - Public `mint(numberOfTokens)` — user pays $25 USDC per pass.
 - `reserveTokens(address, numberOfTokens)` — `onlyOwner` admin mint, no USDC. Used for admin grants + wheel prize + promo rewards.
@@ -264,8 +264,10 @@ All at `~/borisvagner/`:
 ### Chain + payments
 - Entry fee is $25 USDC on Base. Never hard-code 0x1234… mock wallets into user resolution — admin grant must mint to the admin-typed recipient.
 
-### Marketplace listing rule
-- `team.passType === 'free'` + `isDraftingOpen()` → block listing with "Available After Season" (`components/marketplace/SellTab.tsx`, `app/marketplace/page.tsx`). Needs server-side enforcement before real volume — currently client-only.
+### Marketplace listing rule (updated 2026-06-17)
+- Block listing only for an **UNDRAFTED free pass** — i.e. `passType === 'free'` that has NOT yet been drafted into a team. A **drafted** team is sellable even pre-season, free or paid (Richard's call 2026-06-17 — drafting a free pass "unlocks" it for sale).
+- Enforced server-side in `app/api/marketplace/listings/route.ts`: `classifyToken` is authoritative (undrafted free pass → 403); the `listFreeOriginTokenIds` season-open backstop only fires when the classifier can't confirm a drafted team (Go API down). Client mirrors this in `SellTab.tsx` (`canSellTeam`) + `marketplace/page.tsx` (`handleList`).
+- Do NOT reinstate a blanket "all free-origin tokens blocked during `isDraftingOpen()`" rule — that wrongly blocked drafted free teams (sign → server-reject).
 
 ---
 

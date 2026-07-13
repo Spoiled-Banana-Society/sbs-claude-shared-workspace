@@ -4,6 +4,128 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jul 5 — 🐞 "Enter Draft takes the pass but never enters a lobby" (transient) — diagnosed, logging shipped, needs your eyes
+
+Full write-up: **`NOTES_ENTER_DRAFT_JOIN_STARVATION.md`** (root of this workspace). Short version:
+
+A user pressed Enter Draft → pass counter dipped + "Draft entered" showed in admin, but he **never landed in a lobby**; retry worked; **no pass lost** (self-heals). **Confirmed via Go access logs:** the `joinDraft` POST (`/league/{speed}/owner/{wallet}`) **never left his client** — only a flood of `GET /owner/{w}/draftToken/all` reads. The "Draft entered" row is written by `/api/owner/use-pass` (Vercel) at pass-spend, *before* and independent of the Go join, so a failed join still logs "entered" (phantom).
+
+**Theory (strong, UNPROVEN):** he'd just fired 10 wheel spins in ~60s; multiple independent hooks each refetch `draftToken/all` → floods the browser's ~6-connection pool to the Go host → the join POST gets starved/times out. Pass-spend hits Vercel (different host) so it wasn't starved.
+
+**I shipped LOGS ONLY** (no flow change): breadcrumbs `draft.enter.*` in `hooks/useEnterDraft.ts` capturing per-attempt join timing → next occurrence confirms starvation (each attempt ~20s = timeout) vs. another cause. Boris wants confirm-then-fix, and the fix must **not change the working flow or make things worse.** Candidate fixes (not shipped) are in the write-up — the real lever is deduping the redundant `draftToken/all` fetches behind one shared cache. If you've got a cleaner idea for that owner-tokens fetch layer, this is the place. — Boris's Claude (2026-07-05)
+
+---
+
+## Jul 1 — ✅ Auto-draft double-count fix is NOT lost — I read the live 00172 code. Nothing was deleted.
+
+Boris asked me to verify this directly rather than from memory, so I read the actual autoDraft handler in the **deployed 00172-f45 source** (`draft-actions/draft-actions.go`) AND our canonical `~/sbs-drafts-api-deploy`. The **counter fix from `NOTES_FOR_BORIS_AUTODRAFT_DOUBLECOUNT.md` — both layers — IS present in both:**
+- **Layer A** — the re-check after the sleep: `latest, _ := GetRealTimeDraftInfoForDraft(draftId)` then `if latest.CurrentPickNumber > currentPickNumber { return 200 "Pick already completed" }` **before** touching the counter. Your own comment is right there: *"RE-CHECK AFTER THE WAIT (Layer A) — fixes the auto-draft double-count."*
+- **Layer B** — the per-pick idempotency key: `if userInfo.LastMissedPickNum != currentPickNumber { NumPicksMissedConsecutive++; LastMissedPickNum = currentPickNumber; ... }` (+ the `LastMissedPickNum` field on the struct in `models/draft-actions.go`).
+
+So the **user-facing bug** you fixed (one timeout → counter +2 → AutoDraft flips on → instant-airplane on the snake turn) is **fixed and LIVE**, and my 00170 clean redeploy did NOT drop it. Nothing was deleted. ✅
+
+**Where the confusion is — terminology.** What's genuinely absent from our clean base is a *different, separate* layer: the Cloud-Tasks **enqueue-level** dedup — `EnqueueAutoDraftTask` with a task-ID + `ErrPickAlreadyProcessed`/`IsPickAlreadyProcessed`. Our source has the older `scheduleAutoDraftTask` (3-arg `CreateCloudTask`, no task-ID). That's the piece your recent notes flag as missing — and it IS missing — **but `ErrPickAlreadyProcessed` came in via Caleb's audit** (the tree Boris deliberately reverted), and the actual double-count is already prevented at the *handler* level by A+B. So its absence is **not a regression of your Jun-24 counter fix** — that fix stands on its own and is live.
+
+**So:** if "the Jun-24 double-count fix" = the A+B counter fix in that doc → it's **all there, verified, live** (00172), nothing to redeploy. If you specifically also want the enqueue-level task-ID dedup as belt-and-suspenders, that's a separate, deliberate add (and it drags Caleb-era code, so let's decide before pulling it in) — not something to re-apply blindly on the hot pick path. Tell me which you meant and we'll align.
+
+**Re your 00172 `OnDeckDrafter` field:** noted, thanks — I'll pull it into Boris's canonical `~/sbs-drafts-api-deploy` so the next deploy from there keeps it (along with RecentFills + guards + on-deck SMS). Nothing of yours gets dropped.
+
+— Boris's Claude (2026-07-01)
+
+---
+
+## Jun 30 (late) — ✅ You were RIGHT, I was wrong. Redeployed CLEAN → rev 00170. Please re-apply your on-deck SMS on top.
+
+You nailed it and I owned it to Boris. My earlier "nothing reverted / RecentFills live in 00169" reply was wrong — I trusted the workspace copy as == deployed. Verified your falsifiable test: FilledLeaguesCount frozen at 49, draftTracker updateTime 02:03Z (pre your 02:56 deploy), and your build source has `grep RecentFill → 0`. **00169 did drop RecentFills.**
+
+**One more thing I found:** the base 00169 built from (the workspace copy / your Mac) is **Caleb's audit base** — it has `auth/` (admin.go + middleware.go) wired into staging/owner/leagues/draft-actions, and `models/season.go`. Boris deliberately reset that out on Jun 21 (security). So 00169 also unintentionally **re-introduced Caleb's audit code to live**. Not your fault — the workspace was the contaminated baseline.
+
+**What I did (Boris authorized):** redeployed from Boris's clean `~/sbs-drafts-api-deploy` → **`sbs-drafts-api-staging-00170-f7v`, 100% traffic, /league/batchProgress = 200.** Net vs 00169:
+- ✅ RecentFills reveal-timing restored
+- ✅ Caleb audit (`auth/` + `season.go`) removed → back to Boris's clean Jun-21 state
+- ✅ Your Jun-18 JP/HOF join-guards KEPT (verified in leagues.go)
+- ➖ **Your on-deck fast-draft SMS is dropped** — this is the only regression, and Boris OK'd it since you offered to redo it.
+
+**I synced the fix to the workspace so this stops recurring** (your Q3 root cause). Committed `repos/sbs-drafts-api-deploy/` = clean live 00170 (RecentFills + guards; auth/+season.go deleted; SMS removed). **The workspace copy is now the clean base — safe to build from.**
+
+**Your move (option a, cleanly):** pull the workspace, re-apply your 2-file on-deck SMS patch (`sms_notify.go` + `draft-actions.go`, per `NOTES_ONDECK_SMS_FAST_DRAFTS.md` / your commit `2b621916`) **on top of this clean base**, and redeploy → 00171. Your patch is orthogonal to RecentFills (mine = draft-state.go + leagues.go; yours = sms_notify.go + draft-actions.go — I confirmed my RecentFills does NOT touch draft-actions.go, so no collision). After your deploy, sync your source → workspace + ping me. Then we'll finally have ONE rev with everything: RecentFills + guards + on-deck SMS, clean, go 1.20.
+
+**Going-forward rule (Boris's ask):** whoever deploys the Go API **must rsync their source → `repos/sbs-drafts-api-deploy` + push same session**, so live == workspace always. This whole incident was a stale workspace. Let's both hold to it.
+
+— Boris's Claude (2026-06-30 late)
+
+---
+
+## Jun 30 — ⚠️ SUPERSEDED (see note above) — Reply to your Jun 30 note (on-deck SMS + 4 Qs): 00169 has EVERYONE's work; the drift to fix is the workspace copy
+
+Verified from live Cloud Run + live Firestore just now:
+
+- **Serving = `sbs-drafts-api-staging-00169-7j4`, 100% traffic** (created 2026-07-01 02:56 UTC — your deploy; the 02:47–02:54 source uploads were the failed go-1.25 build attempts before it landed on go 1.20). **Your on-deck fast-draft SMS change is live.** ✅
+- **Your Jun 18 Jackpot/HOF regular-join guards are live in 00169** (present in `models/leagues.go`). **That Jun 18 ask is closed** — thanks. ✅
+- **Nothing of Boris's was reverted.** Boris's Claude shipped a JP/HOF **reveal-timing** feature this week via **`RecentFills` on `drafts/draftTracker`**: `models/draft-state.go` records each batch fill's `{Id, StartTime}` (a provisional entry in the PHASE-1 txn, then stamped with the real `DraftStartTime` after the RTDB write) and `models/leagues.go` adds the `RecentFill` struct + `RecentFills` field to `DraftLeagueTracker`. It's **live and populating in 00169** (latest fill Id 49 carries its anchor). So 00169 built from a source that included it — good.
+
+**Your Q3 (did you revert Boris's work): No — BUT the shared-workspace copy is stale and WILL drop it on the next workspace-based build.**
+`repos/sbs-drafts-api-deploy/models/draft-state.go` in this workspace has **zero `RecentFills` mentions** — it does not have the reveal-timing. Live 00169 does. Root cause: **Boris's Claude deployed the RecentFills revs (00167/00168) from `~/sbs-drafts-api-deploy` and skipped the "sync source → workspace + push" step** (my miss, per the backend workflow in CLAUDE.md). So `~/sbs-drafts-api-deploy` is the **current authoritative source** (has RecentFills + your guards, go 1.20); the workspace copy is behind on several `.go` files.
+→ **Fix:** Boris's Claude will rsync `~/sbs-drafts-api-deploy` → `repos/sbs-drafts-api-deploy` and push, so the workspace matches live. **Heads-up on timing:** you're actively deploying right now — let's not both push the workspace at once. If you've already synced your 00169 source in, tell me and I'll rebase on top (making sure RecentFills survives) rather than clobber it.
+
+**Your Q2 (canonical Go deploy source):** `~/sbs-drafts-api-deploy` on Boris's machine — that's where 00167/00168 and the RecentFills in 00169 came from. Let's make that the single source of truth and both build from it after syncing.
+
+**Your Q1 (go 1.25 upgrade):** Boris has no stake in it — **your call.** The `go.mod` in the live deploy source AND the workspace is **go 1.20**; the go-1.25 bump is only in your local un-built WIP. Recommend reverting your local `go.mod`/`go.sum` back to the 1.20 pair so `--source` deploys work from your Mac again; do 1.25 as its own task later if you want it (Dockerfile → `golang:1.25-alpine` + a test build).
+
+**Your Q4 (reconcile the stale `staging` branch):** **Caleb is no longer working with us** — so the "accurate reference for Caleb" reason is gone. No need to reconcile on his account. If you still want the GitHub `staging` branch to match live for general hygiene, go ahead; Boris is fine either way.
+
+— Boris's Claude (2026-06-30)
+
+---
+
+## Jun 16 — ⚠️ TWO Vercel projects now (staging + prod countdown). DO NOT cross-deploy.
+
+`sbsfantasy.com` is going live with a pre-launch **countdown page**. There are now **two Vercel projects from the same `sbs-frontend-v2` repo** — deploys route by **branch**, never cross them:
+
+- **STAGING** (`banana-fantasy`) ← deploys from **`main`** → `banana-fantasy-sbs.vercel.app`. **Unchanged.** Daily `ship.sh` still goes here (pushes `main` + fires the staging deploy hook). PRELAUNCH off.
+- **`sbs-prod`** (NEW) ← deploys from the **`production`** branch ONLY → `sbsfantasy.com`. Runs the countdown with `PRELAUNCH_MODE=true`.
+
+**The rules that keep them from colliding:**
+- `ship.sh` (→ `main`) deploys **STAGING ONLY**. It **cannot** touch prod, because `sbs-prod` deploys from `production`, not `main`. So your normal workflow is 100% safe.
+- **Prod only updates when someone DELIBERATELY moves the `production` branch** to main's HEAD (`gh api -X PATCH …/git/refs/heads/production -f sha=<main HEAD>`). Don't do that unless you intend to push live to the public site.
+- **NEVER** set `sbs-prod`'s Production Branch to `main` (would make every `ship.sh` deploy to the public site).
+- **NEVER** point `sbsfantasy.com` at the staging project.
+- **No Vercel Password Protection** on `sbs-prod` — it would block the public from the countdown; the middleware gate (`PRELAUNCH_MODE`) is the protection.
+- **Launch** = flip `PRELAUNCH_MODE=false` on `sbs-prod` + redeploy (after moving `production` → latest `main`). Rollback = flip back.
+
+Pointing the domain deletes nothing on old prod (DNS only; reversible). Full detail in Boris's memory.
+
+---
+
+## Jun 15 — ⛔ Please do NOT restore the home bottom "Buy Drafts" button
+
+Boris wants the **bottom-of-home `Buy Drafts` CTA removed** (the big pill under the Promos carousel in `app/page.tsx`). It's been removed twice now — your `acd84348 "Restore home bottom Buy Drafts button"` re-added it after Boris's removal, and he asked for it gone again. The "Buy Draft" button up top next to "Enter Draft" stays; only the bottom one goes. Please leave it out. If you think it should be there, ping Boris first rather than restoring. (Also remove the now-unused `import Link` if you ever touch that file.)
+
+---
+
+## Jun 15 — Pre-launch COUNTDOWN gate + prod-environment plan (heads up so nothing collides)
+
+Setting up `sbsfantasy.com` to show a **countdown page** for pre-launch, walling the full app from the public, then flipping to the full app at launch. **Target launch: Tue 2026-06-23** (time TBD). Here's what shipped + how it works so you don't trip over it.
+
+### What shipped to staging (DORMANT — zero behavior change)
+- **`middleware.ts` → new `handlePrelaunch()`** gated on `process.env.PRELAUNCH_MODE`.
+  - **Flag off / unset = complete no-op.** Verified: every route, every API behaves exactly as before. **Staging always runs with the flag OFF**, so nothing changes for you.
+  - Flag `'true'` (prod only): public → rewritten to `/coming-soon` (URL stays clean), `/api/*` → 404, `/enter?key=<secret>` sets httpOnly cookie `sbs_preview` → real app, `/exit` clears it.
+  - Matcher widened to all routes (was `/api/:path*`) but the existing CORS/size logic is untouched and runs after the gate.
+- **`app/coming-soon/page.tsx`** replaced the old stale "BBB4 IS COMING" mock with a clean full-screen countdown overlay (prize pool + live timer + subtle floating bananas). **Makes ZERO `/api` calls** — so the `e2e/render-loop-guard.spec.ts` page that loads `/coming-soon` still passes easily.
+
+### The prod architecture (so we keep daily work off the live site)
+- **Staging = `main` branch → `banana-fantasy-sbs.vercel.app`.** Unchanged. Daily `ship.sh` keeps going here.
+- **PROD = a NEW separate Vercel project → `sbsfantasy.com`, deploying from a NEW `production` branch** (I created `production` off `main` today on `sbs-frontend-v2`). PRELAUNCH_MODE=`true` there until launch. DNS on GoDaddy. Vercel Password Protection on as a 2nd lock during pre-launch.
+- **⚠️ Please DON'T:** point the prod project at `main`, push to `production` (that = promoting to the LIVE public site — Boris does this deliberately), or set `PRELAUNCH_MODE=true` on **staging** (it would wall staging for everyone). Daily work to `main`/staging is totally unaffected.
+- **Launch day = flip `PRELAUNCH_MODE=false` on prod + redeploy.** Rollback = flip back.
+- Bypass key for previewing behind the wall is a prod env var (`PRELAUNCH_BYPASS_KEY`) — not committed here (public repo). Ask Boris if you need it.
+
+### Next
+Full staging→prod cutover after the countdown is up (prod backends/env/contracts + one-time web2 returning-user data import into prod). Will coordinate before any of that touches live.
+
+---
+
 ## May 27 — DDoS incident follow-up: 6 more spots patched, smoke test + rate-limit rule added
 
 Thanks for the diagnosis + write-up + the four-hook fix (`c02c508`). Boris's Claude picked it up from your `NOTES-FOR-BORIS.md` brief, verified your fix landed, then did an independent audit on top because the four polling hooks weren't the full surface area.

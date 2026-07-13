@@ -146,6 +146,10 @@ type MintTokensRequestBody struct {
 	MinId     int    `json:"minId"`
 	MaxId     int    `json:"maxId"`
 	PromoCode string `json:"promoCode"`
+	// PassType ('paid'|'free') — set by the caller (e.g. reconcilePasses, which
+	// derives it from pass_origin) so the registered token carries its real
+	// type. Empty defaults to 'paid' in MintDraftTokenInDb.
+	PassType string `json:"passType"`
 }
 
 func (or *OwnerResources) CreateTokensInDatabase(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +172,7 @@ func (or *OwnerResources) CreateTokensInDatabase(w http.ResponseWriter, r *http.
 	tokens := make([]models.DraftToken, 0)
 	for i := request.MinId; i <= request.MaxId; i++ {
 		tokenId := strconv.Itoa(i)
-		token, err := models.MintDraftTokenInDb(tokenId, ownerId)
+		token, err := models.MintDraftTokenInDb(tokenId, ownerId, request.PassType)
 		if err != nil {
 			fmt.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -335,7 +339,7 @@ func (or *OwnerResources) ReturnUserRankings(w http.ResponseWriter, r *http.Requ
 	stats := models.StatsMap{
 		Players: make(map[string]models.StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

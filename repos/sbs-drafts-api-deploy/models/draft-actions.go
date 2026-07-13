@@ -27,6 +27,19 @@ type RealTimeDraftInfo struct {
 	LastPick          PlayerStateInfo `json:"lastPick"`
 	IsDraftComplete   bool            `json:"isDraftComplete"`
 	IsDraftClosed     bool            `json:"isDraftClosed"`
+	// Draft type ("Pro"/"Hall of Fame"/"Jackpot"), set once at fill so both
+	// mobile and desktop read the SAME value live off this node instead of
+	// each device deriving it from its own owner-token lookup (the source of
+	// the HOF-shows-as-PRO desync). It's a struct field — not a sibling write —
+	// so the per-pick Update() below re-serializes it every pick and it never
+	// gets wiped. omitempty keeps it out of any theoretical fresh-struct write.
+	Type string `json:"type,omitempty"`
+	// OnDeckDrafter is the OwnerId of the user who picks right AFTER the current
+	// on-clock pick. Written every advance so the onPickAdvance Cloud Function
+	// (which only sees this RTDB node, not the draftOrder) can send fast-draft
+	// Discord/Telegram/push alerts to the ON-DECK player a pick early. Empty at
+	// the final pick. omitempty keeps it out of fresh-struct writes.
+	OnDeckDrafter string `json:"onDeckDrafter,omitempty"`
 }
 
 func GetRealTimeDraftInfoForDraft(draftId string) (*RealTimeDraftInfo, error) {
@@ -70,6 +83,17 @@ func CheckIfPlayerIsPickedAlready(draftId, playerId string) error {
 	return nil
 }
 
+// logCriticalDraftError emits a structured ERROR line for draft-breaking
+// failures. Cloud Logging parses the severity, and the admin error-sync cron
+// (severity>=ERROR) surfaces it in the admin Logs feed within ~5 minutes.
+// The plain-text prints alone were INVISIBLE to alerting — the 2026-06-10
+// freeze of 2024-fast-draft-1381 (60s Firestore DeadlineExceeded on the
+// playerState write mid-pick → advance + next auto-pick task lost) never
+// reached admin. Use for failures that can stall a draft, not benign races.
+func logCriticalDraftError(event, draftId string, pick int, err error) {
+	fmt.Printf(`{"severity":"ERROR","event":"%s","draftId":"%s","pick":%d,"error":%q}`+"\n", event, draftId, pick, err.Error())
+}
+
 func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) error {
 	realTimeDraftInfo, err := GetRealTimeDraftInfoForDraft(draftId)
 	if err != nil {
@@ -102,33 +126,55 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		return err
 	}
 
-	// Update Draft State in database
-	err = pickInfo.UpdateDraftSummary(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdateDraftSummary): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		return err
-	}
+	// Persist the pick to its three INDEPENDENT state docs (summary, rosters,
+	// playerState) CONCURRENTLY instead of one-after-another, and read draftInfo
+	// + league (needed for the advance) alongside them. Each write touches a
+	// separate document and none reads another's write, so this is safe — it
+	// just shrinks the time before we write realTimeDraftInfo (the signal the
+	// draft page + the other device read) from ~3 sequential round-trips to ~1,
+	// so they keep up near-instantly instead of lagging 1-2s.
+	//
+	// SAFETY UNCHANGED: we still wait for ALL saves to succeed BEFORE advancing
+	// realTimeDraftInfo below. Any save error returns here (no advance), and the
+	// Cloud-Tasks retry re-runs every step — each is replay-idempotent (summary
+	// replay guard, roster rosterHasPlayer guard, playerState overwrite). So the
+	// freeze/lost-pick protection (save-then-advance) is preserved exactly.
+	var (
+		summaryErr, rosterErr, playerErr, draftInfoErr, leagueReadErr error
+		draftInfo                                                     *DraftInfo
+		league                                                        League
+	)
+	var pickWg sync.WaitGroup
+	pickWg.Add(5)
+	go func() { defer pickWg.Done(); summaryErr = pickInfo.UpdateDraftSummary(draftId) }()
+	go func() {
+		defer pickWg.Done()
+		rosterErr = UpdateRosterFromPick(draftId, pickInfo.OwnerAddress, pickInfo.Team, pickInfo.Position, pickInfo.PlayerId, pickInfo.DisplayName, pickInfo.Round)
+	}()
+	go func() { defer pickWg.Done(); playerErr = pickInfo.UpdatePlayerInDraft(draftId) }()
+	go func() { defer pickWg.Done(); draftInfo, draftInfoErr = ReturnDraftInfoForDraft(draftId) }()
+	go func() { defer pickWg.Done(); leagueReadErr = utils.Db.ReadDocument("drafts", draftId, &league) }()
+	pickWg.Wait()
 
-	err = UpdateRosterFromPick(draftId, pickInfo.OwnerAddress, pickInfo.Team, pickInfo.Position, pickInfo.PlayerId, pickInfo.DisplayName, pickInfo.Round)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdateRosterFromPick): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		return err
+	if summaryErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdateDraftSummary): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, summaryErr)
+		logCriticalDraftError("pick_summary_write_failed", draftId, pickInfo.PickNum, summaryErr)
+		return summaryErr
 	}
-
-	err = pickInfo.UpdatePlayerInDraft(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdatePlayerInDraft): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		return err
+	if rosterErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdateRosterFromPick): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, rosterErr)
+		logCriticalDraftError("pick_roster_write_failed", draftId, pickInfo.PickNum, rosterErr)
+		return rosterErr
 	}
-
-	draftInfo, err := ReturnDraftInfoForDraft(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (ReturnDraftInfoForDraft): draftId=%s err=%v\n", draftId, err)
-		return err
+	if playerErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdatePlayerInDraft): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, playerErr)
+		logCriticalDraftError("pick_player_state_write_failed", draftId, pickInfo.PickNum, playerErr)
+		return playerErr
 	}
-
-	var league League
-	leagueReadErr := utils.Db.ReadDocument("drafts", draftId, &league)
+	if draftInfoErr != nil {
+		fmt.Printf("ProcessNewPick error (ReturnDraftInfoForDraft): draftId=%s err=%v\n", draftId, draftInfoErr)
+		return draftInfoErr
+	}
 	if leagueReadErr != nil {
 		fmt.Printf("ProcessNewPick warning (ReadDocument league): draftId=%s err=%v — using non-slow pick end semantics\n", draftId, leagueReadErr)
 	}
@@ -162,16 +208,21 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		}
 		realTimeDraftInfo.CurrentDrafter = draftInfo.DraftOrder[index].OwnerId
 		draftInfo.CurrentDrafter = realTimeDraftInfo.CurrentDrafter
+		// Stamp the ON-DECK player (whoever picks after the new on-clock pick) so
+		// onPickAdvance can fire fast-draft alerts a pick early. "" at the last pick.
+		realTimeDraftInfo.OnDeckDrafter = onDeckOwnerForNextPick(draftInfo)
 	}
 
 	err = realTimeDraftInfo.Update(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (realTimeDraftInfo.Update): draftId=%s err=%v\n", draftId, err)
+		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 	err = draftInfo.Update(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (draftInfo.Update): draftId=%s err=%v\n", draftId, err)
+		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 
@@ -189,12 +240,77 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		leagueDisplayName := draftInfo.DisplayName
 		// Pick reminder runs only after a pick is recorded, so the first on-clock user is notified by
 		// draft-start SMS at room fill, not here (avoids duplicate "your turn" right after the blast).
-		go NotifyPickReminderSMS(draftId, leagueDisplayName, nextDrafter)
+		if leagueReadErr == nil && strings.EqualFold(league.DraftType, "slow") {
+			// Slow drafts (8h/pick): alert the user now on the clock.
+			go NotifyPickReminderSMS(draftId, leagueDisplayName, nextDrafter)
+		} else {
+			// Fast drafts (30s/pick): the on-the-clock user has no time to react to an
+			// alert sent at their turn, so instead alert the ON-DECK user (whoever picks
+			// right after nextDrafter) a full pick early — "your pick is next". Picks 1-2
+			// are already covered by the draft-start blast; there is no on-deck user past
+			// the final pick.
+			if onDeck := onDeckOwnerForNextPick(draftInfo); onDeck != "" && !strings.HasPrefix(strings.ToLower(onDeck), "bot-") {
+				go NotifyOnDeckSMS(draftId, leagueDisplayName, onDeck)
+			}
+		}
 	} else {
 		go CloseDraftForAllUsers(draftId)
 	}
 
 	return nil
+}
+
+// onDeckOwnerForNextPick returns the OwnerId of the user who is ON DECK — i.e.
+// who picks immediately after the pick currently on the clock — or "" if the
+// current pick is the last one (15 rounds x 10 = 150). It mirrors the snake
+// index math used above to advance CurrentDrafter, applied to the next pick.
+// draftInfo.CurrentRound / PickInRound / CurrentPickNumber reflect the pick now
+// on the clock at this point in ProcessNewPick.
+func onDeckOwnerForNextPick(draftInfo *DraftInfo) string {
+	if draftInfo == nil || draftInfo.CurrentPickNumber >= 150 {
+		return ""
+	}
+	nextRound := draftInfo.CurrentRound
+	nextPickInRound := draftInfo.PickInRound + 1
+	if nextPickInRound > 10 {
+		nextRound++
+		nextPickInRound = 1
+	}
+	var index int
+	if nextRound%2 == 0 {
+		index = len(draftInfo.DraftOrder) - nextPickInRound
+	} else {
+		index = nextPickInRound - 1
+	}
+	if index < 0 || index >= len(draftInfo.DraftOrder) {
+		return ""
+	}
+	return draftInfo.DraftOrder[index].OwnerId
+}
+
+// AutoDraftMissThreshold returns how many consecutive timer-expired (missed)
+// picks flip a drafter into permanent auto-draft. The two snake turn-ends —
+// draft slots 1 and 10 — get one extra miss (3) because their back-to-back
+// picks at each round flip make a single disconnect costlier; every other slot
+// uses 2 (the standard). On ANY uncertainty (lookup error, owner not found,
+// empty order) it returns 2, so the worst case is identical to prior behavior.
+func AutoDraftMissThreshold(draftId, ownerId string) int {
+	const defaultThreshold = 2
+	const turnEndThreshold = 3
+	info, err := ReturnDraftInfoForDraft(draftId)
+	if err != nil || info == nil || len(info.DraftOrder) == 0 {
+		return defaultThreshold
+	}
+	last := len(info.DraftOrder) - 1
+	for i, u := range info.DraftOrder {
+		if strings.EqualFold(u.OwnerId, ownerId) {
+			if i == 0 || i == last {
+				return turnEndThreshold
+			}
+			return defaultThreshold
+		}
+	}
+	return defaultThreshold
 }
 
 // scheduleAutoDraftTask schedules a Cloud Task to trigger auto-draft 5 seconds before the pick end time
@@ -604,6 +720,7 @@ type SortByObj struct {
 	SortBy                    string `json:"sortBy"`
 	AutoDraft                 bool   `json:"autoDraft"`
 	NumPicksMissedConsecutive int    `json:"numPicksMissedConsecutive"`
+	LastMissedPickNum         int    `json:"lastMissedPickNum"` // per-pick idempotency key for the miss counter (auto-draft double-count fix)
 }
 
 // GetSortByADPPreference checks if the user has "sort by adp" enabled for the draft

@@ -8,6 +8,67 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// selectTokensByType: honor the user's chosen pass type at entry — pick the
+// lowest-numbered tokens of that type. A token's empty PassType counts as paid
+// (legacy/backfill). Numeric id sort (not Firestore's text sort).
+// ---------------------------------------------------------------------------
+
+func TestSelectTokensByType_PaidPicksLowestPaid(t *testing.T) {
+	tokens := []DraftToken{
+		{CardId: "10", PassType: "paid"},
+		{CardId: "2", PassType: "free"},
+		{CardId: "4", PassType: "paid"},
+		{CardId: "1", PassType: "free"},
+	}
+	got, err := selectTokensByType(tokens, "paid", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].CardId != "4" {
+		t.Fatalf("want lowest paid = 4, got %+v", got)
+	}
+}
+
+func TestSelectTokensByType_FreePicksFree(t *testing.T) {
+	tokens := []DraftToken{
+		{CardId: "10", PassType: "paid"},
+		{CardId: "7", PassType: "free"},
+		{CardId: "3", PassType: "free"},
+	}
+	got, err := selectTokensByType(tokens, "free", 1)
+	if err != nil || got[0].CardId != "3" {
+		t.Fatalf("want lowest free = 3, got %+v err %v", got, err)
+	}
+}
+
+func TestSelectTokensByType_NumericSortNotText(t *testing.T) {
+	// Text sort would order "1","10","2"; numeric must give 1,2,10.
+	tokens := []DraftToken{{CardId: "10", PassType: "paid"}, {CardId: "2", PassType: "paid"}, {CardId: "1", PassType: "paid"}}
+	got, err := selectTokensByType(tokens, "paid", 2)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got[0].CardId != "1" || got[1].CardId != "2" {
+		t.Fatalf("want [1,2] numeric, got %s,%s", got[0].CardId, got[1].CardId)
+	}
+}
+
+func TestSelectTokensByType_EmptyPassTypeCountsAsPaid(t *testing.T) {
+	tokens := []DraftToken{{CardId: "5"}, {CardId: "3", PassType: "free"}} // "5" has no PassType
+	got, err := selectTokensByType(tokens, "paid", 1)
+	if err != nil || got[0].CardId != "5" {
+		t.Fatalf("legacy empty PassType should count as paid; got %+v err %v", got, err)
+	}
+}
+
+func TestSelectTokensByType_NotEnoughOfTypeErrors(t *testing.T) {
+	tokens := []DraftToken{{CardId: "1", PassType: "paid"}}
+	if _, err := selectTokensByType(tokens, "free", 1); err == nil {
+		t.Fatal("expected error when no tokens of the requested type exist")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // selectLowestPartialLeague: concurrent fan-out + same selection as the old
 // sequential scanForPartialLeague (lowest-numbered partial league this owner
 // is not already in, within the lookback window).

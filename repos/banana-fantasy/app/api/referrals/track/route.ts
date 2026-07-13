@@ -96,6 +96,24 @@ export async function POST(req: NextRequest) {
       referredUsername || `User${referredUserId}`,
     );
 
+    // Will this referral actually credit the friend? A "new player" who earns
+    // their referrer credit is someone who (a) has NOT drafted yet, and (b) is
+    // NOT a returning player from a previous season (the imported list). Account
+    // age / balances don't matter — only those two things.
+    let eligible = true;
+    try {
+      const userRef = db.collection('v2_users').doc(referredUserId);
+      const [snap, draftedSnap] = await Promise.all([
+        userRef.get(),
+        userRef.collection('draftHistory').limit(1).get(),
+      ]);
+      const u = (snap.data() ?? {}) as { isReturningPlayer?: boolean };
+      const { isReturningWalletSync } = await import('@/lib/returningUsers');
+      const isReturning = u.isReturningPlayer === true || isReturningWalletSync(referredUserId);
+      const hasDrafted = !draftedSnap.empty;
+      eligible = !hasDrafted && !isReturning;
+    } catch { /* default eligible:true on read error */ }
+
     return NextResponse.json({
       ...result,
       eligible,

@@ -1,11 +1,9 @@
 package models
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
 
@@ -76,7 +74,7 @@ func GetUserRankingsFromDrafts(ownerId string) (*UserRankings, error) {
 	if err != nil {
 		if ok := strings.Contains(strings.ToLower(err.Error()), "notfound"); ok {
 
-			err := utils.Db.ReadDocument("playerStats2024", "rankings", &r)
+			err := utils.Db.ReadDocument("playerStats2026", "rankings", &r)
 			if err != nil {
 				return nil, err
 			}
@@ -91,7 +89,7 @@ func GetUserRankingsFromDrafts(ownerId string) (*UserRankings, error) {
 
 	} else if len(r.Ranking) == 0 {
 		fmt.Println("made it into the second if statement")
-		err := utils.Db.ReadDocument("playerStats2024", "rankings", &r)
+		err := utils.Db.ReadDocument("playerStats2026", "rankings", &r)
 		if err != nil {
 			return nil, err
 		}
@@ -129,7 +127,7 @@ func ReturnPlayerStateWithRankings(ownerId string, draftId string) ([]DraftPlaye
 	stats := StatsMap{
 		Players: make(map[string]StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +174,18 @@ func (pick *PlayerStateInfo) UpdateDraftSummary(draftId string) error {
 		return nil
 	}
 
+	// Replay of OUR OWN identical pick (same player, owner, slot) — happens
+	// when a mid-pick failure is retried after the summary write already
+	// landed. That's a success, not a conflict: the slot already holds
+	// exactly what we came to write. Part of the 2026-06-10 freeze fix —
+	// retries are only safe if every step treats its own replay as done.
+	existing := summary.Summary[pick.PickNum-1].PlayerInfo
+	if existing.PlayerId == pick.PlayerId && existing.OwnerAddress == pick.OwnerAddress && existing.PickNum == pick.PickNum {
+		fmt.Printf("Draft summary already holds this exact pick (replay) — treating as success. Pick %d: %v\r", pick.PickNum-1, pick.PlayerId)
+		return nil
+	}
+
+	// A DIFFERENT pick occupies the slot — real conflict, keep rejecting.
 	fmt.Printf("New Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
 	return fmt.Errorf("new Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
 }
@@ -214,16 +224,8 @@ func (pick *PlayerStateInfo) UpdatePlayerInDraft(draftId string) error {
 	if pick.PlayerId == "" {
 		return fmt.Errorf("cannot update this pick in the draft player state as the pick object is nil")
 	}
-	ctx := context.Background()
-
-	_, err := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/state", draftId)).Doc("playerState").Update(ctx, []firestore.Update{
-		{
-			Path:  pick.PlayerId,
-			Value: pick,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	return nil
+	// Routed through the timed wrapper (slow>2s WARN / failure ERROR with
+	// path+ms) — this exact write hit a 60s DeadlineExceeded on 2026-06-10
+	// and froze draft 2024-fast-draft-1381, invisibly.
+	return utils.Db.UpdateDocumentField(fmt.Sprintf("drafts/%s/state", draftId), "playerState", pick.PlayerId, pick)
 }

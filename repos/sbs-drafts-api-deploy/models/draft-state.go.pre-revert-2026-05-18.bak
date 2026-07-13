@@ -91,12 +91,7 @@ func (info *DraftInfo) Update(draftId string) error {
 
 type DraftSummaryObject struct {
 	PlayerInfo PlayerStateInfo `json:"playerInfo"`
-	// PfpInfo intentionally NOT stored on each pick. Embedding the
-	// owner's PfpInfo into all 150 pick slots blew the 1 MB Firestore
-	// doc-size limit when a user had a base64 data: URL as their avatar
-	// (15 picks × 126 KB ≈ 1.9 MB → fill aborted, 10th joiner rolled back).
-	// Frontend joins ownerAddress → owner doc for PFP at render time.
-	PfpInfo PfpInfo `json:"pfpInfo,omitempty" firestore:"-"`
+	PfpInfo    PfpInfo         `json:"pfpInfo"`
 }
 
 type DraftSummary struct {
@@ -111,78 +106,28 @@ func ReturnDraftSummaryForDraft(draftId string) (*DraftSummary, error) {
 		return nil, err
 	}
 
-	// Self-heal: a pick can be absent from the summary doc even though it was
-	// saved to playerState + rosters (seen on the final pick, when the summary
-	// write loses a race with draft completion — the card + roster come out
-	// fine but the board renders a blank slot). The board reads the summary,
-	// so backfill any empty slot from playerState (the source of truth) and
-	// persist the repair so it's fixed for good. Enrichment only — this never
-	// clears or overwrites a slot that already has a player.
-	missing := false
-	for i := range sum.Summary {
-		if sum.Summary[i].PlayerInfo.PlayerId == "" {
-			missing = true
-			break
-		}
-	}
-	if missing {
-		state := make(map[string]PlayerStateInfo)
-		if sErr := utils.Db.ReadDocument(collectionString, "playerState", &state); sErr == nil {
-			byPick := make(map[int]PlayerStateInfo, len(state))
-			for _, p := range state {
-				if p.PlayerId != "" && p.PickNum >= 1 {
-					byPick[p.PickNum] = p
-				}
-			}
-			healed := false
-			for i := range sum.Summary {
-				slot := &sum.Summary[i]
-				if slot.PlayerInfo.PlayerId != "" {
-					continue
-				}
-				p, ok := byPick[slot.PlayerInfo.PickNum]
-				if !ok {
-					continue
-				}
-				// Keep the slot's prefilled OwnerAddress/Round/PickNum; fill the player.
-				slot.PlayerInfo.PlayerId = p.PlayerId
-				slot.PlayerInfo.DisplayName = p.DisplayName
-				slot.PlayerInfo.Team = p.Team
-				slot.PlayerInfo.Position = p.Position
-				if slot.PlayerInfo.OwnerAddress == "" {
-					slot.PlayerInfo.OwnerAddress = p.OwnerAddress
-				}
-				if slot.PlayerInfo.Round == 0 {
-					slot.PlayerInfo.Round = p.Round
-				}
-				healed = true
-			}
-			if healed {
-				if wErr := sum.Update(draftId); wErr != nil {
-					fmt.Printf("WARN could not persist healed summary for %s: %v\r", draftId, wErr)
-				} else {
-					fmt.Printf("INFO healed missing summary slot(s) for %s from playerState\r", draftId)
-				}
-			}
-		} else {
-			fmt.Printf("WARN summary has empty slot but playerState read failed for %s: %v\r", draftId, sErr)
-		}
-	}
-
 	return &sum, nil
 }
 
 func CreateDraftSummaryForDraft(draftId string, draftOrder []LeagueUser) (*DraftSummary, error) {
-	// Summary stores only PlayerInfo per pick. Each pick carries the
-	// OwnerAddress, and the frontend looks up the avatar + display name
-	// from the owner doc at render time. Embedding the full PfpInfo into
-	// all 150 slots was the source of the 1 MB Firestore-doc-size overflow
-	// when any user had a large avatar (notably base64 data: URLs).
 	sum := &DraftSummary{
 		Summary: make([]DraftSummaryObject, 0),
 	}
 
+	pfpMap := make(map[string]PfpInfo, 0)
+
+	for i := 0; i < len(draftOrder); i++ {
+		ownerId := draftOrder[i].OwnerId
+		owner, err := ReturnOwnerObjectById(ownerId)
+		if err != nil {
+			fmt.Println("ERROR returning owner from ownerId: ", err)
+			return nil, err
+		}
+		pfpMap[ownerId] = owner.PFP
+	}
+
 	pickNum := 1
+
 	for i := 1; i <= 15; i++ {
 		round := i
 		for j := 1; j <= 10; j++ {
@@ -200,7 +145,11 @@ func CreateDraftSummaryForDraft(draftId string, draftOrder []LeagueUser) (*Draft
 				Round:        round,
 			}
 
-			sum.Summary = append(sum.Summary, DraftSummaryObject{PlayerInfo: obj})
+			data := DraftSummaryObject{
+				PlayerInfo: obj,
+				PfpInfo:    pfpMap[drafter],
+			}
+			sum.Summary = append(sum.Summary, data)
 			pickNum++
 		}
 	}
@@ -357,7 +306,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 	stats := StatsMap{
 		Players: make(map[string]StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +371,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 func GetDefaultPlayerState() (map[string]PlayerStateInfo, error) {
 	data := make(map[string]PlayerStateInfo)
 
-	err := utils.Db.ReadDocument("playerStats2026", "defaultPlayerDraftState", &data)
+	err := utils.Db.ReadDocument("playerStats2024", "defaultPlayerDraftState", &data)
 	if err != nil {
 		return nil, err
 	}
@@ -492,26 +441,12 @@ type Players struct {
 }
 
 func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
-	fillStart := time.Now()
-	defer func() {
-		fmt.Printf("[fill-timing] CreateLeagueDraftStateUponFilling(%s) total %v\n", draftId, time.Since(fillStart))
-	}()
 	var leagueInfo League
 	err := utils.Db.ReadDocument("drafts", draftId, &leagueInfo)
 	if err != nil {
 		fmt.Println("Error in reading the league document")
 		return err
 	}
-
-	// Wheel-won special drafts have their Jackpot/HOF Level set BEFORE fill. They
-	// run in their OWN lane: they never enter the per-100 batch (no
-	// FilledLeaguesCount, no VRF JP/HOF slot assignment, no batch proof), get
-	// their own counter + "Special Draft Jackpot/HOF #N" name, and KEEP the level
-	// they were won with. This keeps the guaranteed 1 JP + 5 HOF per 100 a pure
-	// paid-draft pool, which is the only way to honor it under VRF (batch
-	// positions are committed before fills, so a special can't be slotted as Pro).
-	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame"
-	specialLevel := leagueInfo.Level
 
 	// PHASE 1: atomic increment of the global tracker.
 	//
@@ -535,22 +470,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		} else {
 			counts.CurrentSlowDraftCount++
 		}
-		if isSpecialDraft {
-			counts.SpecialDraftCount++ // own lane — NOT the per-100 batch
-		} else {
-			counts.FilledLeaguesCount++
-			// Provisional reveal-anchor, recorded ATOMICALLY with the count so the
-			// batch dashboard holds this draft's JP/HOF deduction + odds from the
-			// instant the count moves — no flicker, and never revealed early (even
-			// across the up-to-120s VRF wait at a batch boundary). StartTime=0 is a
-			// "filled, slot not yet timed" sentinel; the real DraftStartTime is
-			// stamped in after the live node is written (see reveal-anchor stamp
-			// below). The batch-progress stream treats a 0-StartTime entry as held.
-			counts.RecentFills = append(counts.RecentFills, RecentFill{Id: counts.FilledLeaguesCount, StartTime: 0})
-			if len(counts.RecentFills) > 10 {
-				counts.RecentFills = counts.RecentFills[len(counts.RecentFills)-10:]
-			}
-		}
+		counts.FilledLeaguesCount++
 		return tx.Set(trackerRef, &counts)
 	})
 	if err != nil {
@@ -576,7 +496,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	positionInBatch := (postIncrement - 1) % batchproof.BatchSize
 
 	var batchJpGlobals, batchHofGlobals []int
-	if mgr := batchproof.Default(); mgr != nil && !isSpecialDraft {
+	if mgr := batchproof.Default(); mgr != nil {
 		if disabled, msg := mgr.Disabled(); disabled {
 			fmt.Printf("[batchproof] disabled, skipping batch %d derivation: %s\n", batchNumber, msg)
 		} else {
@@ -623,39 +543,34 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		}
 	}
 
-	// The per-card Level stamp (MakeLeagueJackpot/HOF) is DEFERRED below until
-	// after RTDB + the first Cloud Task — those do ~10 sequential Firestore
-	// writes, and running them before RTDB risks a stuck/frozen draft. Per-card
-	// Level is cosmetic; we set the league doc's Level here and fan out later.
+	leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
+
+	// Decide JP/HOF type now (sets leagueInfo.Level in memory) but DEFER
+	// the per-card Level write until after RTDB + first Cloud Task are
+	// scheduled. MakeLeagueJackpot/HOF do ~10 sequential Firestore writes
+	// to drafts/{draftId}/cards. Letting that run before RTDB is written
+	// risks the draft staying stuck at pick 1 if anything errors — RTDB
+	// never gets initialized → auto-pick guard fails → draft freezes.
+	// Per-card Level is cosmetic; the draft is fully functional without
+	// it. So: set Level in memory, persist it via the leagueInfo write
+	// below (so the league doc reflects the type), but run the per-card
+	// fan-out only after the critical-path state is good. See note on
+	// the deferred call near the end of this function.
 	isJackpot := false
 	isHOF := false
-	if isSpecialDraft {
-		// Own lane: its own name + counter, KEEP the wheel level, NO slot reveal.
-		tierName := "Jackpot"
-		if specialLevel == "Hall of Fame" {
-			tierName = "HOF"
+	for i := 0; i < len(counts.HofLeagueIds); i++ {
+		if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
+			leagueInfo.Level = "Hall of Fame"
+			isHOF = true
+			break
 		}
-		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from Wheel)", tierName, counts.SpecialDraftCount)
-		leagueInfo.Level = specialLevel
-		isJackpot = specialLevel == "Jackpot"
-		isHOF = specialLevel == "Hall of Fame"
-	} else {
-		leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
-		// Slot reveal — the guaranteed 1 JP / 5 HOF ride these committed positions.
-		for i := 0; i < len(counts.HofLeagueIds); i++ {
-			if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
-				leagueInfo.Level = "Hall of Fame"
-				isHOF = true
-				break
-			}
-		}
-		for i := 0; i < len(counts.JackpotLeagueIds); i++ {
-			if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
-				leagueInfo.Level = "Jackpot"
-				isJackpot = true
-				isHOF = false
-				break
-			}
+	}
+	for i := 0; i < len(counts.JackpotLeagueIds); i++ {
+		if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
+			leagueInfo.Level = "Jackpot"
+			isJackpot = true
+			isHOF = false
+			break
 		}
 	}
 
@@ -664,44 +579,40 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		return err
 	}
 
-	// Per-user draft state: read the card, stamp league info + display name,
-	// and seed an empty queue. Each user is independent (different token doc,
-	// different queue doc), so run all 10 concurrently instead of ~30
-	// sequential Firestore round-trips — this is the main 10th-joiner latency
-	// win. Stays synchronous: we wait for all of them before returning.
-	userStart := time.Now()
-	userFns := make([]func() error, len(leagueInfo.CurrentUsers))
-	for i := range leagueInfo.CurrentUsers {
-		i := i
-		userFns[i] = func() error {
-			rosterObj := NewEmptyRoster(leagueInfo.CurrentUsers[i].OwnerId)
-			token := DraftToken{
-				Roster: rosterObj,
-			}
-			if err := utils.Db.ReadDocument("draftTokens", leagueInfo.CurrentUsers[i].TokenId, &token); err != nil {
-				return err
-			}
-
-			if token.LeagueId == "" {
-				token.LeagueId = draftId
-				token.DraftType = draftType
-			}
-
-			token.LeagueDisplayName = leagueInfo.DisplayName
-			if err := token.updateInUseDraftTokenInDatabase(draftId); err != nil {
-				return err
-			}
-			fmt.Println("Updated display name on card ", leagueInfo.CurrentUsers[i].TokenId)
-
-			// add queues
-			var emptyQueue DraftQueue
-			return UpdateQueueForDraft(draftId, leagueInfo.CurrentUsers[i].OwnerId, emptyQueue)
-		}
-	}
-	if err = runConcurrently(userFns...); err != nil {
+	err = utils.Db.CreateOrUpdateDocument("drafts", draftId, &leagueInfo)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("[fill-timing] per-user state for %d users in %v (draft %s)\n", len(leagueInfo.CurrentUsers), time.Since(userStart), draftId)
+
+	for i := 0; i < len(leagueInfo.CurrentUsers); i++ {
+		rosterObj := NewEmptyRoster(leagueInfo.CurrentUsers[i].OwnerId)
+		token := DraftToken{
+			Roster: rosterObj,
+		}
+		err = utils.Db.ReadDocument("draftTokens", leagueInfo.CurrentUsers[i].TokenId, &token)
+		if err != nil {
+			return err
+		}
+
+		if token.LeagueId == "" {
+			token.LeagueId = draftId
+			token.DraftType = draftType
+		}
+
+		token.LeagueDisplayName = leagueInfo.DisplayName
+		err = token.updateInUseDraftTokenInDatabase(draftId)
+		if err != nil {
+			return err
+		}
+		fmt.Println("Updated display name on card ", leagueInfo.CurrentUsers[i].TokenId)
+
+		// add queues
+		var emptyQueue DraftQueue
+		err = UpdateQueueForDraft(draftId, leagueInfo.CurrentUsers[i].OwnerId, emptyQueue)
+		if err != nil {
+			return err
+		}
+	}
 
 	// Tracker increments + batch lists were already persisted atomically
 	// in PHASE 1 / PHASE 3 above. No bare CreateOrUpdate here — that would
@@ -802,79 +713,17 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		CurrentRound:      1,
 		PickInRound:       1,
 		DraftStartTime:    info.DraftStartTime,
-		PickStartTime:     info.DraftStartTime,
+		PickEndTime:       info.DraftStartTime + info.PickLength,
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
 	}
-	// Stamp the resolved type onto the live node so both devices read the same
-	// Pro/HOF/Jackpot the instant the slot reveal lands — no per-device owner
-	// lookup, no desync. Derived from the same isJackpot/isHOF decision above
-	// (which already folds in wheel-won special drafts via specialLevel).
-	if isJackpot {
-		firstPickInfo.Type = "Jackpot"
-	} else if isHOF {
-		firstPickInfo.Type = "Hall of Fame"
-	} else {
-		firstPickInfo.Type = "Pro"
-	}
-	if strings.ToLower(leagueInfo.DraftType) == "slow" {
-		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
-	} else {
-		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength
-	}
 
-	fmt.Printf("[league#] rtdb.write.start draftId=%s displayName=%q numPlayers=%d\n", draftId, leagueInfo.DisplayName, leagueInfo.NumPlayers)
 	if err := ref.Set(context.TODO(), map[string]interface{}{
 		"numPlayers":        leagueInfo.NumPlayers,
 		"realTimeDraftInfo": firstPickInfo,
-		"displayName":       leagueInfo.DisplayName,
 	}); err != nil {
-		fmt.Printf("[league#] rtdb.write.error draftId=%s err=%v\n", draftId, err)
+		fmt.Println("ERROR in setting real time database when user joins league: ", err)
 		return err
-	}
-	fmt.Printf("[league#] rtdb.write.ok draftId=%s displayName=%q\n", draftId, leagueInfo.DisplayName)
-
-	// Reveal-anchor stamp: now that the live node is written and DraftStartTime is
-	// final, replace this draft's provisional (StartTime=0) RecentFills entry with
-	// its real DraftStartTime. The batch dashboard then reveals its JP/HOF
-	// deduction + odds exactly when the slot machine lands (DraftStartTime-39s =
-	// fill+21s). Runs AFTER the RTDB write so it never delays the draft start, and
-	// is best-effort/cosmetic — a failure just leaves the entry held (revealed
-	// late once it rolls out of the window), never early, and never affects the
-	// fill, picks, or VRF distribution. Only batch drafts have a provisional entry.
-	if !isSpecialDraft {
-		fillId := counts.FilledLeaguesCount
-		startTime := info.DraftStartTime
-		if rfErr := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
-			doc, err := tx.Get(trackerRef)
-			if err != nil {
-				return err
-			}
-			var fresh DraftLeagueTracker
-			if err := doc.DataTo(&fresh); err != nil {
-				return err
-			}
-			found := false
-			for i := range fresh.RecentFills {
-				if fresh.RecentFills[i].Id == fillId {
-					fresh.RecentFills[i].StartTime = startTime
-					found = true
-					break
-				}
-			}
-			if !found {
-				// Provisional entry already rolled out of the 10-deep window
-				// (only under an implausible burst). Re-add the real anchor so the
-				// reveal still gates correctly.
-				fresh.RecentFills = append(fresh.RecentFills, RecentFill{Id: fillId, StartTime: startTime})
-				if len(fresh.RecentFills) > 10 {
-					fresh.RecentFills = fresh.RecentFills[len(fresh.RecentFills)-10:]
-				}
-			}
-			return tx.Set(trackerRef, &fresh)
-		}); rfErr != nil {
-			fmt.Printf("[reveal-anchor] failed to stamp DraftStartTime for fill id=%d: %v\n", fillId, rfErr)
-		}
 	}
 
 	fmt.Printf("First pick info: %v\n for draft %s has created the real time draft info\n", firstPickInfo, draftId)
@@ -924,26 +773,8 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 			fmt.Printf("[deferred] MakeLeagueHOF for draft %s failed (non-fatal — RTDB already up): %v\n", draftId, mlErr)
 		}
 	}
-	ownerIDs := make([]string, len(leagueInfo.CurrentUsers))
-	for i := range leagueInfo.CurrentUsers {
-		ownerIDs[i] = leagueInfo.CurrentUsers[i].OwnerId
-	}
-	go NotifyDraftStartingSMS(draftId, leagueInfo.DisplayName, ownerIDs)
 
 	return nil
-}
-
-// rosterHasPlayer: true if this exact player is already on the position list.
-// Makes a re-run of a half-saved pick (retry after a mid-pick failure)
-// harmless — the player can never be added twice. Part of the 2026-06-10
-// freeze fix: retries are only safe if every step is safe to repeat.
-func rosterHasPlayer(list []RosterPlayer, playerId string) bool {
-	for _, p := range list {
-		if p.PlayerId == playerId {
-			return true
-		}
-	}
-	return false
 }
 
 func UpdateRosterFromPick(draftId, address, teamName, position, playerId, displayName string, roundNum int) error {
@@ -956,28 +787,16 @@ func UpdateRosterFromPick(draftId, address, teamName, position, playerId, displa
 		return err
 	}
 
-	newPlayer := RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName}
-	switch strings.ToLower(position) {
-	case "qb":
-		if !rosterHasPlayer(data.Rosters[address].QB, playerId) {
-			data.Rosters[address].QB = append(data.Rosters[address].QB, newPlayer)
-		}
-	case "rb":
-		if !rosterHasPlayer(data.Rosters[address].RB, playerId) {
-			data.Rosters[address].RB = append(data.Rosters[address].RB, newPlayer)
-		}
-	case "wr":
-		if !rosterHasPlayer(data.Rosters[address].WR, playerId) {
-			data.Rosters[address].WR = append(data.Rosters[address].WR, newPlayer)
-		}
-	case "te":
-		if !rosterHasPlayer(data.Rosters[address].TE, playerId) {
-			data.Rosters[address].TE = append(data.Rosters[address].TE, newPlayer)
-		}
-	case "dst":
-		if !rosterHasPlayer(data.Rosters[address].DST, playerId) {
-			data.Rosters[address].DST = append(data.Rosters[address].DST, newPlayer)
-		}
+	if strings.ToLower(position) == "qb" {
+		data.Rosters[address].QB = append(data.Rosters[address].QB, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
+	} else if strings.ToLower(position) == "rb" {
+		data.Rosters[address].RB = append(data.Rosters[address].RB, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
+	} else if strings.ToLower(position) == "wr" {
+		data.Rosters[address].WR = append(data.Rosters[address].WR, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
+	} else if strings.ToLower(position) == "te" {
+		data.Rosters[address].TE = append(data.Rosters[address].TE, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
+	} else if strings.ToLower(position) == "dst" {
+		data.Rosters[address].DST = append(data.Rosters[address].DST, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
 	}
 
 	size := 0

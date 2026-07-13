@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
@@ -42,6 +43,21 @@ type DraftToken struct {
 	// (Restored 2026-05-28: lost in the rev-00124→00130 deploy that shipped
 	// the fill-time notification change from a branch missing this field.)
 	NumPlayers int `json:"numPlayers,omitempty" firestore:"-"`
+	// PassType is 'paid' or 'free' — the source of truth for which kind of
+	// draft pass this token is. Set at mint time (free = wheel/admin grant,
+	// paid = purchase). Drives: which pool the user's chosen pass type draws
+	// from at entry, which counter a refund returns to, and promo eligibility
+	// (free-pass drafts earn NO promo credit). Defaults to 'paid' when unset
+	// (legacy tokens are backfilled from pass_origin).
+	PassType string `json:"passType,omitempty"`
+	// RealTokenId preserves the true on-chain BBB4 tokenId in the case where
+	// the spendable token had to be registered under a synthetic CardId. That
+	// happens when the on-chain id collides with a stale global draftTokens row
+	// owned by a *different* wallet (e.g. a number reused across a contract
+	// redeploy). CardId then holds a unique synthetic id (so the keyspace never
+	// blocks a legitimate owner) while RealTokenId keeps the on-chain link.
+	// Empty when CardId already equals the on-chain id (the common case).
+	RealTokenId string `json:"realTokenId,omitempty"`
 }
 
 type UsersTokens struct {
@@ -131,7 +147,113 @@ type Attributetrait_type struct {
 	Value      string `json:"value"`
 }
 
-func MintDraftTokenInDb(tokenId, ownerId string) (*DraftToken, error) {
+// generateUniqueTokenId returns a numeric-string id guaranteed not to collide
+// with an existing global draftTokens row. It MUST be numeric because
+// ReturnAllDraftTokensForOwner skips non-numeric CardIds (so a non-numeric id
+// would never be spendable). Uses a nanosecond timestamp base — astronomically
+// far above real on-chain ids and other synthetic ids — plus an existence-check
+// loop as belt-and-suspenders against the (vanishingly small) chance of a clash.
+func generateUniqueTokenId() string {
+	base := time.Now().UnixNano()
+	for i := int64(0); i < 1000; i++ {
+		candidate := strconv.FormatInt(base+i, 10)
+		var existing DraftToken
+		if err := utils.Db.ReadDocument(utils.GetDraftTokenCollectionName(), candidate, &existing); err != nil {
+			// ReadDocument errors when the doc does not exist → id is free.
+			return candidate
+		}
+	}
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+
+// findOwnerTokenByRealTokenId returns this owner's already-registered spendable
+// token for a given on-chain (real) token id, if one exists. This makes
+// registration idempotent for recycled ids that go through the collision path:
+// the mint route and the Alchemy reconcile webhook can both fire for the same
+// mint, and without this they would each create a separate synthetic record →
+// duplicate passes for one on-chain NFT.
+func findOwnerTokenByRealTokenId(ownerId, realTokenId string) (*DraftToken, bool) {
+	if realTokenId == "" {
+		return nil, false
+	}
+	path := fmt.Sprintf("owners/%s/validDraftTokens", strings.ToLower(ownerId))
+	docs, err := utils.Db.Client.Collection(path).Where("RealTokenId", "==", realTokenId).Documents(context.Background()).GetAll()
+	if err != nil {
+		fmt.Printf("findOwnerTokenByRealTokenId: query error owner=%s realTokenId=%s: %v\n", ownerId, realTokenId, err)
+		return nil, false
+	}
+	if len(docs) == 0 {
+		return nil, false
+	}
+	var t DraftToken
+	if err := docs[0].DataTo(&t); err != nil {
+		return nil, false
+	}
+	return &t, true
+}
+
+// allDigits reports whether s is a non-empty run of ASCII digits.
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// decodeOnchainTokenId resolves the on-chain BBB4 token id from a stored record.
+// realTokenId when set; otherwise the cardId is either the bare on-chain id
+// (<=7 digits) or the staging form <10-digit unix-seconds><tokenId>.
+func decodeOnchainTokenId(cardId, realTokenId string) string {
+	if rt := strings.TrimSpace(realTokenId); allDigits(rt) {
+		return rt
+	}
+	c := strings.TrimSpace(cardId)
+	if allDigits(c) {
+		if len(c) <= 7 {
+			return c
+		}
+		if len(c) >= 11 && len(c) <= 17 {
+			return c[10:]
+		}
+	}
+	return ""
+}
+
+// findOwnerUsedTokenByOnchainId returns the owner's USED (drafted) record for a
+// given on-chain id, matching across the differing cardId schemes. Used to stop
+// registration from re-adding an already-drafted token to the spendable pool.
+func findOwnerUsedTokenByOnchainId(ownerId, onchainId string) (*DraftToken, bool) {
+	if onchainId == "" {
+		return nil, false
+	}
+	path := fmt.Sprintf("owners/%s/usedDraftTokens", strings.ToLower(ownerId))
+	docs, err := utils.Db.Client.Collection(path).Documents(context.Background()).GetAll()
+	if err != nil {
+		fmt.Printf("findOwnerUsedTokenByOnchainId: query error owner=%s onchainId=%s: %v\n", ownerId, onchainId, err)
+		return nil, false
+	}
+	for _, d := range docs {
+		var t DraftToken
+		if err := d.DataTo(&t); err != nil {
+			continue
+		}
+		if decodeOnchainTokenId(t.CardId, t.RealTokenId) == onchainId {
+			return &t, true
+		}
+	}
+	return nil, false
+}
+
+func MintDraftTokenInDb(tokenId, ownerId, passType string) (*DraftToken, error) {
+	// Normalize: only 'free' is special; anything else (incl. empty/legacy) is paid.
+	if passType != "free" {
+		passType = "paid"
+	}
 	cardNum, _ := strconv.ParseInt(tokenId, 10, 64)
 	if Environment == "prod" {
 		fmt.Println("Inside of prod")
@@ -146,11 +268,53 @@ func MintDraftTokenInDb(tokenId, ownerId string) (*DraftToken, error) {
 		}
 	}
 
+	// GUARD (critical): if this owner has ALREADY DRAFTED this on-chain token
+	// (it lives in usedDraftTokens), do NOT re-register it as a spendable pass —
+	// a used pass must never return to the pool. Catches bulk reconciles /
+	// backfills that re-register on-chain-owned tokens, including drafted teams
+	// the owner still holds on-chain (BBB4 isn't burned on draft). The legit
+	// "leave a draft -> get your pass back" path goes through RemoveTokenFromLeague
+	// (which REMOVES from usedDraftTokens), so it is unaffected by this check.
+	if used, found := findOwnerUsedTokenByOnchainId(ownerId, tokenId); found {
+		fmt.Printf("MintDraftTokenInDb: on-chain id %s already DRAFTED for %s (usedDraftTokens cardId %s) — refusing to re-add as a pass\n", tokenId, ownerId, used.CardId)
+		return used, nil
+	}
+
+	// Resolve the id this spendable token will be stored under. Normally that
+	// is the on-chain tokenId. If a row already exists for that id we must NOT
+	// blindly 500 (the old behavior) — that silently dropped legitimately-owned
+	// tokens and let the user-facing counter drift above real inventory.
+	realTokenId := ""
 	var oldToken DraftToken
 	err := utils.Db.ReadDocument(utils.GetDraftTokenCollectionName(), tokenId, &oldToken)
 	if err == nil {
-		fmt.Printf("The passed in tokenId %s has already been created in the database and thus cannot be minted again\r", tokenId)
-		return nil, fmt.Errorf("error this token already exists in the database and cannot be minted again")
+		if strings.EqualFold(oldToken.OwnerId, ownerId) {
+			// Same owner already holds this exact token (available OR already in
+			// a league). Re-registering would double-credit them. Idempotent:
+			// return the existing record without writing a duplicate.
+			fmt.Printf("MintDraftTokenInDb: tokenId %s already owned by %s — idempotent skip\r", tokenId, ownerId)
+			return &oldToken, nil
+		}
+		// Cross-owner id collision: a stale row holds this number for a
+		// different wallet (typically a tokenId reused across a contract
+		// redeploy), but `ownerId` genuinely owns the on-chain token now.
+		// Register a spendable token under a guaranteed-unique numeric CardId,
+		// keeping the real on-chain id on the doc, instead of failing the mint.
+		realTokenId = tokenId
+		// IDEMPOTENCY (critical): before minting a brand-new synthetic record,
+		// check whether this owner ALREADY holds a spendable token for this
+		// on-chain id. The direct mint path and the Alchemy reconcile webhook can
+		// both register the same freshly-minted token within a second or two; the
+		// old code created a fresh synthetic record on every call, so a recycled
+		// id that hit this branch twice produced TWO passes for ONE on-chain token
+		// (duplicate passes / inflated counter). Firestore queries are strongly
+		// consistent, so the first registration's write is always visible here.
+		if existing, found := findOwnerTokenByRealTokenId(ownerId, realTokenId); found {
+			fmt.Printf("MintDraftTokenInDb: owner %s already holds realTokenId %s under cardId %s — idempotent skip (no duplicate)\n", ownerId, realTokenId, existing.CardId)
+			return existing, nil
+		}
+		tokenId = generateUniqueTokenId()
+		fmt.Printf("MintDraftTokenInDb: on-chain id %s collides (held by %s); registering under synthetic id %s for %s\r", realTokenId, oldToken.OwnerId, tokenId, ownerId)
 	}
 
 	// can hardcode the image to the draft token image we will use before the draft has been complete
@@ -158,6 +322,7 @@ func MintDraftTokenInDb(tokenId, ownerId string) (*DraftToken, error) {
 		Roster:            NewEmptyRoster(strings.ToLower(ownerId)),
 		DraftType:         "",
 		CardId:            tokenId,
+		RealTokenId:       realTokenId,
 		ImageUrl:          "https://storage.googleapis.com/sbs-draft-token-images/thumbnails/draft-token-image-default_350x490.png",
 		Level:             "Pro",
 		OwnerId:           strings.ToLower(ownerId),
@@ -166,6 +331,7 @@ func MintDraftTokenInDb(tokenId, ownerId string) (*DraftToken, error) {
 		Rank:              "N/A",
 		WeekScore:         "0",
 		SeasonScore:       "0",
+		PassType:          passType,
 	}
 
 	fmt.Println("Token inside of function: ", draftToken)
@@ -436,7 +602,7 @@ func CheckTokenOwnershipForDraftTokens() error {
 					return err
 				}
 
-				_, err = MintDraftTokenInDb(fmt.Sprintf("%d", i), strings.ToLower(ownerId))
+				_, err = MintDraftTokenInDb(fmt.Sprintf("%d", i), strings.ToLower(ownerId), "paid")
 				if err != nil {
 					fmt.Println("Error minting draft token: ", err)
 					return err
