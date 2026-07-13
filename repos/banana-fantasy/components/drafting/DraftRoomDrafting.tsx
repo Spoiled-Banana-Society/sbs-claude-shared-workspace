@@ -156,6 +156,19 @@ export function DraftRoomDrafting({
     };
   };
 
+  // Desktop sidebar follows the page scroll (the document scrolls; the player
+  // list is not its own scroll pane — see overflow note on the page root).
+  // Stick it just below the fixed top banner: drafting reserves 290px
+  // (310px JP/HOF) via its spacer; the filling/countdown lobby header
+  // (showBanner=false) lands 1rem lower — in-flow h-14 bar + the shorter
+  // fillingSpacer in DraftRoomFilling.
+  const sidebarBannerBase =
+    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' ? '310px' : '290px';
+  const sidebarStickyTop =
+    engine.draftStatus === 'completed'
+      ? '0px'
+      : `calc(${sidebarBannerBase}${showBanner ? '' : ' + 1rem'} + env(safe-area-inset-top))`;
+
   return (
     <>
       {/* New HOF/JP look: the gold/red lives on the top BANNER (below),
@@ -459,7 +472,11 @@ export function DraftRoomDrafting({
         </>
       )}
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* No overflow-hidden on this wrapper or the flex row below — either
+          would become a scroll container and break the sticky sidebar. The
+          page root uses min-h-screen, so nothing here is height-capped anyway
+          (the document itself scrolls). */}
+      <div className="flex-1 flex flex-col">
         {(() => {
           // Spectators (zero-address wallet) own no team, so the wallet-keyed
           // "Generating your team" card-ready wait never resolves and the bar
@@ -468,7 +485,7 @@ export function DraftRoomDrafting({
           // the completed draft for review.
           const isCompleted = phase === 'drafting' && engine.draftStatus === 'completed' && !spectator;
           return (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1">
             {/* Main tab content (left) — tabs centered above player list */}
             <div className="relative flex-1 overflow-auto flex flex-col min-w-0">
               {/* Draft completion screen — generates the team card and
@@ -592,8 +609,16 @@ export function DraftRoomDrafting({
 
             {/* Right sidebar: Queue + My Team previews (desktop only).
                 Toggle lives in the top tab row (Show/Hide Panel button)
-                — no edge rail. ⌘\ / Ctrl+\ also toggles. */}
-            <div className={`hidden xl:flex flex-col flex-shrink-0 border-l border-white/[0.06] overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0 border-l-0'}`}>
+                — no edge rail. ⌘\ / Ctrl+\ also toggles.
+                sticky + self-start: follows the page scroll instead of
+                scrolling away with the (document-scrolled) player list;
+                self-start stops the default flex stretch, which would make
+                the column as tall as the whole list and leave sticky no
+                room to move. */}
+            <div
+              className={`hidden xl:flex flex-col flex-shrink-0 sticky self-start border-l border-white/[0.06] overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0 border-l-0'}`}
+              style={{ top: sidebarStickyTop, height: `calc(100dvh - ${sidebarStickyTop})` }}
+            >
               {/* Queue preview — compact, just enough for the list */}
               {(() => {
                 const draftedIds = new Set(engine.picks.map(p => p.playerId));

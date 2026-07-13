@@ -2642,7 +2642,12 @@ function DraftRoomContent() {
   );
 
   return (
-    <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
+    // overflow-x-clip (NOT overflow-hidden): `hidden` makes this div a scroll
+    // container, which silently disables position:sticky for everything
+    // inside — the desktop Queue/My Team sidebar relies on sticky to follow
+    // the page scroll. `clip` still cuts off horizontal overflow (confetti,
+    // screen-shake) without creating a scroll container.
+    <div className={`min-h-screen text-white overflow-x-clip flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
       {/* No full-screen edge frame. A screen-edge line fights the desktop
           scrollbar and the iOS notch/home-indicator/rounded corners, so it
           never sat cleanly on the outer edge (Boris 2026-06-13). The draft
