@@ -165,6 +165,21 @@ export default function PromosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
 
+  // The Locked tab holds ONLY the X-gated promos (new-user + tweet-engagement
+  // before X verification, or everything when logged out). Once the user
+  // connects X there is nothing locked left — hide the tab entirely rather
+  // than show an empty bucket (Boris 2026-07-13).
+  const lockedCount = useMemo(() => visiblePromos.filter(p =>
+    ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) ||
+    !isLoggedIn).length,
+    [visiblePromos, isTwitterVerified, isLoggedIn]);
+
+  // If they verify X while sitting ON the Locked tab, it empties + disappears —
+  // land them back on All instead of a vanished tab.
+  useEffect(() => {
+    if (filter === 'locked' && lockedCount === 0) setFilter('all');
+  }, [filter, lockedCount]);
+
   // Spendable balances for the stat row.
   const freeSpins = user?.wheelSpins ?? 0;
   const freeDrafts = user?.freeDrafts ?? 0;
@@ -305,7 +320,9 @@ export default function PromosPage() {
             ['all',       'All',       visiblePromos.length],
             ['claimable', 'Claimable', claimableCount],
             ['active',    'In progress', null],
-            ['locked',    'Locked',    null],
+            // Locked only exists while something IS locked (X not connected /
+            // logged out) — it vanishes cleanly once X is verified.
+            ...(lockedCount > 0 ? [['locked', 'Locked', null]] : []),
             ['activity',  'Activity',  null],
           ] as [FilterKey, string, number | null][]).map(([key, label, count]) => (
             <button

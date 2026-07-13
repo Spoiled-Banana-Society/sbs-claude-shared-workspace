@@ -123,13 +123,7 @@ export function FirstPurchasePromoModal() {
           }}
           className="mt-6 w-full rounded-full bg-banana py-3 text-sm font-bold text-[#1d1d1f] transition-transform hover:scale-[1.03]"
         >
-          Buy Drafts
-        </button>
-        <button
-          onClick={dismiss}
-          className="mt-2 w-full rounded-full py-2 text-xs font-semibold text-white/50 hover:text-white/80"
-        >
-          Maybe later
+          Buy Now
         </button>
       </div>
     </div>
