@@ -120,12 +120,15 @@ function AppContent({ children }: { children: React.ReactNode }) {
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
         {/* First-purchase popup — REINSTATED 2026-07-12 (Boris): new users
-            must see the offer before they leave after their free draft. It
-            waits a few seconds after the team reveal (the abruptness that got
-            the old one removed), shows once per account, and has a
-            reload-safe fallback. The bell + promo box still announce it too.
-            Never in the draft room (component also self-guards). */}
-        {!isDraftRoom && <FirstPurchasePromoModal />}
+            must see the offer at their team reveal, before they leave. Mounted
+            UNCONDITIONALLY (not gated on !isDraftRoom): the unlock event can
+            fire while the user is still IN the draft room (the room pings
+            first-purchase-finished at isDraftClosed, before they navigate to
+            /draft-results) — the always-mounted listener catches it and holds
+            `open`, and the component renders nothing until they leave the
+            room, so the popup appears the moment the roster page shows. Once
+            per account, reload-safe fallback, never renders in-room. */}
+        <FirstPurchasePromoModal />
         {/* The floating "Chat with us" launcher was removed — the only entry
             point is now "Chat with us" in the profile dropdown. */}
       </div>
