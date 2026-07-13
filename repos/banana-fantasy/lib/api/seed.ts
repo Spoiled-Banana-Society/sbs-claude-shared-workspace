@@ -320,7 +320,7 @@ const seedPromos: Promo[] = [
     id: '11',
     type: 'first-purchase',
     title: 'First Purchase → WIN UP TO $1K IN DRAFTS',
-    description: 'Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts',
+    description: 'Buy 1 Pass → 2 Free Spins: 2 Free Drafts GTD · shot at $1,000 (40 Free Drafts)',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -335,7 +335,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Win up to $1,000 in Drafts',
       explanation:
-        '• Every Draft Pass you buy: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts.\n• Buy 1 → 2 Free Drafts guaranteed — win up to $1,000.\n• Buy 2 → 4 Free Drafts guaranteed — win up to $2,000.\n• Buy 4 → 8 Free Drafts guaranteed — win up to $4,000.\n• No cap — every pass adds 2 more.\n• One-time offer: your first purchase only.\n• After you buy, your Free Spins land right here — claim them and spin to collect your Drafts.',
+        '• Buy 1 Draft Pass → get 2 Free Spins: 2 Free Drafts guaranteed — and a shot at $1,000 in Drafts (40 Free Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to $2,000 (80 Free Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to $4,000 (160 Free Drafts).\n• No cap — every pass = 2 more Spins.\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
     },
   },
   {
