@@ -541,7 +541,9 @@ function drawTeamBlueprint(rand) {
 
 exports.onBotTurn = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 180, memory: '256MB' })
+  // 300s: a countdown-phase pick 1 can now sleep up to ~60s (rest of the
+  // countdown) + 90s (slow-draft max human delay) before its lookups.
+  .runWith({ timeoutSeconds: 300, memory: '256MB' })
   .database.ref('drafts/{draftId}/realTimeDraftInfo')
   // onWrite, NOT onUpdate (2026-07-12): pick 1 of every draft arrives as the
   // CREATION of this node at draft start — onUpdate never fired for it, so a
@@ -583,14 +585,26 @@ exports.onBotTurn = functions
     const maxD = Number(isFast ? cfg.fastMaxDelaySec ?? 30 : cfg.slowMaxDelaySec ?? 90);
     let delaySec = minD + Math.random() * (Math.max(maxD, minD) - minD);
 
-    // Leave ≥5s of headroom before the buzzer so the engine's own auto-pick
-    // path is never raced at the wire.
+    // Pick 1's RTDB node is CREATED at league fill — 60s before the pick
+    // window opens (pickStartTime = draftStartTime). The Go engine accepts
+    // early picks, so a bot holding pick 1 that submits during the countdown
+    // drags the whole draft ahead of every client's "Starting soon" clock
+    // (BBB #143 + #144, 2026-07-14: seat 3 humans saw ~11s of a 30s pick).
+    // Anchor the bot's human-like delay to the window OPENING, not to this
+    // wake-up: sleep out the rest of the countdown first, then the delay.
     const pickNumberAtStart = Number(after.pickNumber ?? 0);
-    const headroom = Number(after.pickEndTime || 0) - Date.now() / 1000 - 5;
+    const nowSec = Date.now() / 1000;
+    const windowOpensSec = Number(after.pickStartTime || 0);
+    const untilOpenSec = Math.max(0, windowOpensSec - nowSec);
+
+    // Leave ≥5s of headroom before the buzzer so the engine's own auto-pick
+    // path is never raced at the wire. Headroom is measured from when the
+    // window opens (= now for every pick except a countdown-phase pick 1).
+    const headroom = Number(after.pickEndTime || 0) - Math.max(nowSec, windowOpensSec) - 5;
     if (headroom <= 1) return null; // window already nearly over — engine handles it
     if (delaySec > headroom) delaySec = Math.max(1, headroom);
 
-    await sleepMs(delaySec * 1000);
+    await sleepMs((untilOpenSec + delaySec) * 1000);
 
     // COMPUTE AT SUBMIT: fresh read after the sleep. If the world moved on
     // (bot already picked via engine, pick advanced, draft over) — walk away.
@@ -600,6 +614,10 @@ exports.onBotTurn = functions
     if (String(live.currentDrafter || '').toLowerCase() !== drafter) return null;
     if (Number(live.pickNumber ?? -1) !== pickNumberAtStart) return null;
     if (Date.now() / 1000 > Number(live.pickEndTime || 0) - 3) return null;
+    // NEVER submit before the pick window opens — even if the sleep math
+    // above is ever wrong, an early pick desyncs the draft from every
+    // client's countdown. The engine's auto-pick covers a skipped turn.
+    if (Date.now() / 1000 < Number(live.pickStartTime || 0)) return null;
 
     try {
       // Availability = all slots minus summary picks. Same construction the
