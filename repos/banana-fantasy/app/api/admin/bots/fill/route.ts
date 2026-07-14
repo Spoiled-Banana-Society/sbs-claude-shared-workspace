@@ -136,11 +136,42 @@ export async function POST(req: NextRequest) {
       picks.push(m.address);
     }
 
+    // FREEZE GUARD (2026-07-13, 2026-fast-draft-128 post-mortem): a bot must
+    // NEVER reach the engine join without an `owners/{wallet}` profile doc.
+    // Draft-start (Go CreateEmptyRosterState) reads that doc per member just
+    // for the PFP and silently SKIPS anyone whose read fails — the skipped
+    // member's first pick then nil-panics the engine and the draft freezes.
+    // A wallet minted by THIS call (both modes can mint one when the pool is
+    // exhausted) raced that read by ~1s. GET /owner/{id} is the engine's own
+    // bootstrap: it creates the doc when missing, no-ops when present. We
+    // then require the doc to actually exist — checked with the EXACT id the
+    // engine will seat, since the roster read is case-sensitive — and fail
+    // CLOSED: an unverified bot is dropped from the join. Its minted pass
+    // stays registered + unused, so the next click simply reuses it.
+    const verified: string[] = [];
+    const profileFailures: string[] = [];
+    for (const addr of picks) {
+      try {
+        const boot = await fetch(`${GO_API}/owner/${addr}`);
+        const exists = boot.ok && (await db.collection('owners').doc(addr).get()).exists;
+        if (exists) verified.push(addr);
+        else profileFailures.push(`${addr.slice(0, 10)}…: no owners doc after bootstrap (GET /owner → ${boot.status})`);
+      } catch (e) {
+        profileFailures.push(`${addr.slice(0, 10)}…: ${(e as Error).message}`);
+      }
+    }
+    if (profileFailures.length > 0) {
+      logger.warn('bots.fill.profile_guard', { leagueId, dropped: profileFailures, minted });
+    }
+    if (verified.length === 0) {
+      return jsonError(`No bot joined — profile guard dropped every candidate: ${profileFailures.join('; ')}`, 502, { minted });
+    }
+
     // The engine-side join — same transaction as a real player's join.
     const res = await fetch(`${GO_API}/staging/add-bots-to-league`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-bot-secret': goSecret },
-      body: JSON.stringify({ leagueId, ownerIds: picks }),
+      body: JSON.stringify({ leagueId, ownerIds: verified }),
     });
     const goBody = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -158,7 +189,10 @@ export async function POST(req: NextRequest) {
     if (joined === 0) {
       return jsonError(`No bot joined — ${errors.join('; ') || 'engine returned no results'}`, 502, { minted });
     }
-    return json({ success: true, leagueId, mode, joined, minted, requested: count, results }, 200);
+    return json(
+      { success: true, leagueId, mode, joined, minted, requested: count, results, profileGuardDropped: profileFailures },
+      200,
+    );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('bots.fill.unhandled', { route: '/api/admin/bots/fill', err, minted });
