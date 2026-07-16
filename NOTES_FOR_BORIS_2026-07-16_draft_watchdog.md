@@ -16,7 +16,7 @@ Each sweep first arms the next TWO per-minute sweeps as named tasks (`draft-watc
 `curl -X POST "$API/draft-actions/admin/watchdog/sweep" -H "X-Admin-Key: $ADMIN_API_KEY"`
 
 ## Guardrails
-- **`2026-fast-draft-156` is hard-excluded** (`watchdogExcludedDrafts` map) — Richard is entering its last 5 picks manually. Remove the entry after that's done.
+- **`2026-fast-draft-156` exclusion is now INERT** — Richard's 5 collected picks were entered 7/16 ~1:51pm PT and the draft closed cleanly (10× close.card_done, zero errors; the rev-00179 counter-sync healed the stale state/info doc 145→150 in production). Delete the `watchdogExcludedDrafts` entry in `models/draft-watchdog.go` whenever you next touch the repo — it does nothing now (complete drafts are skipped before the exclusion check).
 - 48h zombie cutoff (never revives old wreckage), fast-prefix only, 30-draft window, structured `watchdog_*` ERROR events on every action so repairs show in the admin Logs feed.
 - Verified live: dry-run + real sweep both report 156 as `excluded_skipped` and everything else healthy; 156 confirmed byte-identical before/after.
 
