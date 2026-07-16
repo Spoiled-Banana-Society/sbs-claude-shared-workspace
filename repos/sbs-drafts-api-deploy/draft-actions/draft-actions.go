@@ -61,7 +61,27 @@ func (dra *DraftActionResources) Routes() chi.Router {
 	// with X-Admin-Key — also called by the daily reconciliation cron.
 	r.Post("/{draftId}/owner/{ownerId}/admin/recover-card", requireAdminKey(dra.recoverCard))
 
+	// Stuck-draft watchdog sweep (fast drafts only). Normally invoked by its
+	// own self-re-arming Cloud Task chain every minute; can be curled by an
+	// admin any time. ?dryRun=true reports without writing; ?chain=false
+	// runs one sweep without re-arming the chain.
+	r.Post("/admin/watchdog/sweep", requireAdminKey(dra.watchdogSweep))
+
 	return r
+}
+
+// watchdogSweep runs one watchdog pass over recent fast drafts and (unless
+// dryRun or chain=false) re-arms the next two per-minute sweep tasks FIRST,
+// so a crash mid-sweep can never kill the chain.
+func (dra *DraftActionResources) watchdogSweep(w http.ResponseWriter, r *http.Request) {
+	dryRun := r.URL.Query().Get("dryRun") == "true"
+	chain := r.URL.Query().Get("chain") != "false"
+	if !dryRun && chain {
+		models.ArmWatchdogChain()
+	}
+	report := models.WatchdogSweep(dryRun)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(report)
 }
 
 // recoverCard is the HTTP wrapper around models.RecoverCardForOwner. Returns

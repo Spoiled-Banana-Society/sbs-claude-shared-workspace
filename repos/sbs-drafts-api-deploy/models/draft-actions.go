@@ -407,6 +407,19 @@ func getCloudRunServiceURL() (string, error) {
 // The URL points to this API's own endpoint, not an external server
 // It first tries environment variables, then falls back to Cloud Run metadata if available
 func buildAutoDraftURL(draftId, ownerId string) (string, error) {
+	baseURL, err := resolveAPIBaseURL()
+	if err != nil {
+		return "", err
+	}
+	// Construct the full endpoint URL pointing to this API's endpoint
+	fullURL := fmt.Sprintf("%s/draft-actions/%s/owner/%s/actions/autoDraft", baseURL, draftId, ownerId)
+	return fullURL, nil
+}
+
+// resolveAPIBaseURL returns this API's own base URL (no trailing slash) —
+// extracted from buildAutoDraftURL so other self-addressed Cloud Tasks (the
+// draft watchdog sweep chain) resolve it identically.
+func resolveAPIBaseURL() (string, error) {
 	// Use ENVIRONMENT environment variable (standardized across codebase)
 	env := utils.GetenvOrDefault("ENVIRONMENT", "dev")
 	// Normalize environment name
@@ -455,9 +468,7 @@ func buildAutoDraftURL(draftId, ownerId string) (string, error) {
 	// Remove trailing slash if present
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	// Construct the full endpoint URL pointing to this API's endpoint
-	fullURL := fmt.Sprintf("%s/draft-actions/%s/owner/%s/actions/autoDraft", baseURL, draftId, ownerId)
-	return fullURL, nil
+	return baseURL, nil
 }
 
 func GetQueuedPickForUser(pick *PlayerStateInfo, draftInfo *DraftInfo) error {
