@@ -52,7 +52,7 @@
     },
     {
       "path": "/api/crons/reconcile-stuck-drafts",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/2 * * * *"
     }
   ]
 }
