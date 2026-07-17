@@ -208,11 +208,12 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   // Drop a special from the line once it's been hit (no "0.00%"), and omit the
   // whole line once ALL specials in the batch are hit — it reappears on its own
   // when the next 100-batch begins. Highest % first (so if Jackpot ever exceeds
-  // HOF it leads); stable sort keeps HOF before Jackpot on a tie.
+  // HOF it leads); Jackpot is pushed first so the stable sort puts it ahead of
+  // HOF on a tie (Richard 2026-07-16).
   const buildOddsLine = (o: Odds): string | null => {
     const parts: { label: string; pct: number }[] = [];
-    if (o.hofPercent !== null) parts.push({ label: `HOF - ${o.hofPercent.toFixed(2)}%`, pct: o.hofPercent });
     if (o.jackpotPercent !== null) parts.push({ label: `Jackpot - ${o.jackpotPercent.toFixed(2)}%`, pct: o.jackpotPercent });
+    if (o.hofPercent !== null) parts.push({ label: `HOF - ${o.hofPercent.toFixed(2)}%`, pct: o.hofPercent });
     parts.sort((a, b) => b.pct - a.pct);
     return parts.length ? parts.map((p) => p.label).join(' ') : null;
   };
