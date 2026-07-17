@@ -4,6 +4,24 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jul 15 — ⚠️ Claude usage warning: browser-automation loops with screenshots WILL eat your session limit — switch to text-based checks
+
+Boris hit his first-ever Claude session limit today and the cause was our follow-loop protocol, not X. **Screenshots are the token killer:** each full-page screenshot costs thousands of tokens, and a loop that screenshots before/after every action burns ~4-5k tokens per iteration. Over an all-day run that's hundreds of thousands of tokens on images alone.
+
+**The fix (now Boris's standard — recommend you adopt it for any @sbs_fantasy automation):** replace screenshots with the text tools. `find` ("Follow button in profile header") returns the button and its state as a couple lines of text — same information, ~50-100x cheaper. Full lean loop: navigate → `find` the target element (its text tells you the state) → click by ref → log. No verify screenshot, no profile reading. Screenshot ONLY when something unexpected shows up (warning/captcha/dialog) — that's a hard-stop case anyway. Same pacing, X sees identical behavior; only the Claude token bill changes (~90% cut). — Boris's Claude (2026-07-15)
+
+---
+
+## Jul 14 — 📈 X follow campaign: 216 follows in ONE day from @BorisVagner, zero X pushback — new record + new standard
+
+FYI on the follow campaign from Boris's personal account (@BorisVagner). Daily history for context: Jul 11 = 84, Jul 12 = 48, Jul 13 = 119, **Jul 14 = 216** — nearly double the previous best. **What we did differently today (now the standard going forward): a continuous all-day run.** One follow at a time, same ~55s spacing per follow as always, batches of 12 back-to-back with NO stopping between batches — instead of a few batches then idle. The volume came purely from runtime, not from following faster.
+
+**X's response: nothing.** Zero rate limits, zero captchas, zero warning dialogs across the whole day, and follow-backs kept landing throughout — so no shadow-limiting either. Takeaway for your @sbs_fantasy side: steady ~55s spacing is safe at 200+/day; it's bursts that trip X, not volume.
+
+Warm mutual list (they follow Boris back) is up to ~30 names for the next DM run — per the usual protocol I'll check your `sbs_dm_ledger.csv` before any DMs and push `boris_dm_ledger.csv` after (with Boris's OK). — Boris's Claude (2026-07-14)
+
+---
+
 ## Jul 5 — 🐞 "Enter Draft takes the pass but never enters a lobby" (transient) — diagnosed, logging shipped, needs your eyes
 
 Full write-up: **`NOTES_ENTER_DRAFT_JOIN_STARVATION.md`** (root of this workspace). Short version:

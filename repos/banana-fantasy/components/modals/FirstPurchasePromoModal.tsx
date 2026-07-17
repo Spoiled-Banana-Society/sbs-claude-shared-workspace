@@ -87,9 +87,13 @@ export function FirstPurchasePromoModal() {
   if (!open) return null;
   if (inDraftRoom && !liveOpenRef.current) return null;
 
+  // Overlay: moderate dim, NO blur (Boris 2026-07-14) — the popup is the
+  // clear focus, but the generating-team animation stays lightly visible and
+  // moving behind it. No backdrop-blur: blur hides "what's going on".
+
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
       onClick={dismiss}
     >
       <div
@@ -107,15 +111,18 @@ export function FirstPurchasePromoModal() {
           🍌
         </div>
         <h2 className="text-xl font-bold tracking-tight text-white">First Purchase Promo</h2>
-        <p className="mt-3 text-sm leading-relaxed text-white/70">
-          <span className="font-semibold text-white">Every Draft Pass = 2 Free Spins.</span>{' '}
-          Buy 1 → <span className="font-semibold text-white">2 Free Drafts guaranteed</span> — win up to{' '}
-          <span className="font-semibold text-banana">40 Free Drafts</span> ($1,000 in Drafts).
-        </p>
-        <p className="mt-3 text-xs leading-relaxed text-white/45">
-          Buy 2 → 4 Spins · Buy 4 → 8 Spins — no cap.
-          One-time offer: your first purchase only.
-        </p>
+        {/* Fixed lines — each one a complete idea, never wrapping mid-phrase
+            ("40" / "Drafts" on separate lines read broken). Sized to fit a
+            320px-wide phone inside the card padding. */}
+        <div className="mt-3 text-sm leading-relaxed text-white/70">
+          <span className="block whitespace-nowrap font-semibold text-white">Every Draft Pass = 2 Free Spins</span>
+          <span className="block whitespace-nowrap">Buy 1 → <span className="font-semibold text-white">2 Free Drafts guaranteed</span></span>
+          <span className="block whitespace-nowrap">Win up to <span className="font-semibold text-banana">40 Free Drafts</span> ($1,000 in Drafts)</span>
+        </div>
+        <div className="mt-3 text-xs leading-relaxed text-white/45">
+          <span className="block whitespace-nowrap">Buy 2 → 4 Spins · Buy 4 → 8 Spins — no cap</span>
+          <span className="block whitespace-nowrap">One-time offer: your first purchase only</span>
+        </div>
         <button
           onClick={() => {
             dismiss();

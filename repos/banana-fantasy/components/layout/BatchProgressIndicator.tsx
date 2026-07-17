@@ -125,10 +125,14 @@ export function BatchProgressIndicator() {
   // jackpotPct/hofPct are already null once that special is hit, so a hit one
   // never pulses. The special's number + label + % scales + glows in place;
   // pulse speed AND glow both ramp with its heat. No pill, no outer box glow.
+  // Crossing the trigger must be INSTANTLY visible (Boris 2026-07-16: at 10%
+  // the old ramp started from zero — a 1.07x pulse nobody could see). So heat
+  // FLOORS at 0.35 the moment odds hit 10%, then ramps to full by ~35%.
+  const HEAT_FLOOR = 0.35;
   const heatFor = (pct: number | null): number =>
     pct == null || pct < HEAT_TRIGGER_PCT
       ? 0
-      : Math.min(1, (pct - HEAT_TRIGGER_PCT) / (HEAT_MAX_PCT - HEAT_TRIGGER_PCT));
+      : HEAT_FLOOR + (1 - HEAT_FLOOR) * Math.min(1, (pct - HEAT_TRIGGER_PCT) / (HEAT_MAX_PCT - HEAT_TRIGGER_PCT));
   const jpHeat = heatFor(jackpotPct);
   const hofHeat = heatFor(hofPct);
   const a2 = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
