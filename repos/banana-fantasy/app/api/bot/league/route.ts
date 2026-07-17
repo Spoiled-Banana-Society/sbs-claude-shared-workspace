@@ -66,6 +66,12 @@ import { logger } from '@/lib/logger';
 interface AbbrevLeague {
   leagueId: string;
   displayName: string;
+  // Same as displayName but with NO bananas ever (no repeat-🍌 suffix, no
+  // end-of-batch ladder) — odds line kept. For the Discord template: Discord
+  // is a webhook with no duplicate filter, so it doesn't need the uniqueness
+  // bananas that X does (Richard 2026-07-16). Unused until the bot's Discord
+  // template is pointed at it.
+  displayNameClean: string;
   numPlayers: number;
   maxPlayers: number;
   draftType: string;
@@ -348,6 +354,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       leagues.push({
         leagueId: p.leagueId,
         displayName: held,
+        displayNameClean: pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart,
         numPlayers: stored ? stored.numPlayers : maxPlayers - 1,
         maxPlayers,
         draftType,
@@ -413,6 +420,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     leagues.push({
       leagueId: p.leagueId,
       displayName,
+      displayNameClean: draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart,
       numPlayers,
       maxPlayers,
       draftType,
