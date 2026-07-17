@@ -2,6 +2,8 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { createHash } from 'crypto';
+
 import { json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
@@ -33,7 +35,20 @@ import { logger } from '@/lib/logger';
  *   • When the odds line is absent (all batch specials already hit), a
  *     trailing banana line ("🍌🍌🍌…", one more per draft) takes its place to
  *     keep every message's text unique so X's duplicate-content filter can't
- *     silently swallow the countdown tweets. Never both at once.
+ *     silently swallow the countdown tweets.
+ *   • REPEAT bananas (Richard 2026-07-16): X silently rejects a post whose
+ *     text matches a recent one. The odds line only keeps the countdown
+ *     unique while the count moves FORWARD — when a player LEAVES, the count
+ *     bounces back to a text that was already posted ("4 more…" → join →
+ *     "3 more…" → leave → "4 more…" again) and X swallows it, which is why
+ *     Twitter appeared to only announce joins while Discord (a webhook,
+ *     no dup filter) showed both. Now every countdown text that would be a
+ *     byte-copy of one already served gets a banana suffix — 1 🍌 on the
+ *     first repeat, 2 on the second, and so on. Also covers two same-speed
+ *     lobbies open at once repeating each other's texts (seen 2026-07-11).
+ *     The "already served" ledger lives in Firestore (bot_feed_state/state,
+ *     its own collection so nothing that iterates `drafts` ever sees it) —
+ *     NOT in module memory, see the cache warning below.
  *
  * The raw numbers are ALSO exposed as their own fields (leagueNumber, state,
  * hofPercent, jackpotPercent) so the bot can later switch to real tokens
@@ -51,6 +66,12 @@ import { logger } from '@/lib/logger';
 interface AbbrevLeague {
   leagueId: string;
   displayName: string;
+  // Same as displayName but with NO bananas ever (no repeat-🍌 suffix, no
+  // end-of-batch ladder) — odds line kept. For the Discord template: Discord
+  // is a webhook with no duplicate filter, so it doesn't need the uniqueness
+  // bananas that X does (Richard 2026-07-16). Unused until the bot's Discord
+  // template is pointed at it.
+  displayNameClean: string;
   numPlayers: number;
   maxPlayers: number;
   draftType: string;
@@ -87,7 +108,31 @@ interface Odds {
   jackpotPercent: number | null;
 }
 
-const NO_ODDS: Odds = { hofRemaining: 0, jackpotRemaining: 0, hofPercent: null, jackpotPercent: null };
+const NO_ODDS: Odds = { hofRemaining: 0, hofPercent: null, jackpotRemaining: 0, jackpotPercent: null };
+
+// Ledger for the repeat-🍌 suffix (see header). `seen` counts how many times
+// each exact countdown text (keyed by remaining-count + rendered name, since
+// the bot's message is "{remaining} more to fill {displayName}") has been
+// served; `lastServed` pins each filling draft's current text so it stays
+// byte-stable between changes and the rename-race hold can replay it exactly.
+interface ServedEntry {
+  numPlayers: number;
+  base: string; // text before any repeat-banana suffix
+  final: string; // text actually served (base, or base + 🍌 suffix)
+}
+interface FeedState {
+  seen: Record<string, { n: number; at: number }>;
+  lastServed: Record<string, ServedEntry>;
+}
+
+// X's duplicate filter only looks back so far; no need to remember texts
+// forever (and the ledger must stay far under Firestore's 1 MB doc cap).
+const SEEN_TTL_MS = 48 * 60 * 60 * 1000;
+const SEEN_MAX_ENTRIES = 3000;
+const REPEAT_BANANA_CAP = 40; // keep well inside X's 280-char limit
+
+const seenKey = (remaining: number, base: string) =>
+  createHash('sha1').update(`${remaining}|${base}`).digest('hex').slice(0, 16);
 
 /**
  * Current-batch HOF / Jackpot odds = remaining specials ÷ remaining slots in
@@ -132,10 +177,26 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
 
 async function loadLeagues(): Promise<AbbrevLeague[]> {
   const db = getAdminFirestore();
-  const [trackerSnap, snap] = await Promise.all([
+  const stateRef = db.collection('bot_feed_state').doc('state');
+  const [trackerSnap, snap, stateSnap] = await Promise.all([
     db.collection('drafts').doc('draftTracker').get(),
     db.collection('drafts').get(),
+    // Ledger read failing must never take the feed down — degrade to serving
+    // plain texts (and skip the write, so a bad read can't wipe the ledger).
+    stateRef.get().catch((err) => {
+      logger.error('[api/bot/league] feed-state read failed', err);
+      return null;
+    }),
   ]);
+
+  const stateOk = stateSnap !== null;
+  const rawState = stateSnap?.data() as Partial<FeedState> | undefined;
+  const state: FeedState = {
+    seen: rawState?.seen && typeof rawState.seen === 'object' ? rawState.seen : {},
+    lastServed:
+      rawState?.lastServed && typeof rawState.lastServed === 'object' ? rawState.lastServed : {},
+  };
+  let stateDirty = false;
 
   const trackerData = trackerSnap.data() as Record<string, unknown> | undefined;
   const filledCount = Number(trackerData?.FilledLeaguesCount ?? 0) || 0;
@@ -153,11 +214,12 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   // Drop a special from the line once it's been hit (no "0.00%"), and omit the
   // whole line once ALL specials in the batch are hit — it reappears on its own
   // when the next 100-batch begins. Highest % first (so if Jackpot ever exceeds
-  // HOF it leads); stable sort keeps HOF before Jackpot on a tie.
+  // HOF it leads); Jackpot is pushed first so the stable sort puts it ahead of
+  // HOF on a tie (Richard 2026-07-16).
   const buildOddsLine = (o: Odds): string | null => {
     const parts: { label: string; pct: number }[] = [];
-    if (o.hofPercent !== null) parts.push({ label: `HOF - ${o.hofPercent.toFixed(2)}%`, pct: o.hofPercent });
     if (o.jackpotPercent !== null) parts.push({ label: `Jackpot - ${o.jackpotPercent.toFixed(2)}%`, pct: o.jackpotPercent });
+    if (o.hofPercent !== null) parts.push({ label: `HOF - ${o.hofPercent.toFixed(2)}%`, pct: o.hofPercent });
     parts.sort((a, b) => b.pct - a.pct);
     return parts.length ? parts.map((p) => p.label).join(' ') : null;
   };
@@ -184,6 +246,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   };
 
   interface ParsedDraft {
+    docId: string;
     leagueId: string;
     numPlayers: number;
     maxPlayers: number;
@@ -246,6 +309,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     if (isFilled && leagueNumber !== null && !renamePending) renamedFillCount++;
 
     parsed.push({
+      docId: doc.id,
       leagueId: String(d.LeagueId ?? doc.id),
       numPlayers,
       maxPlayers,
@@ -273,18 +337,25 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   for (const p of parsed) {
     const { numPlayers, maxPlayers, draftType, isFilled, label, rawName, leagueNumber } = p;
 
-    // Rename still pending → keep reporting the draft as one short of full,
-    // exactly as the bot last saw it, so it announces the fill ONCE — with the
-    // final league number — on the next poll after the rename lands.
+    // Rename still pending → keep reporting the draft exactly as the bot last
+    // saw it, so it announces the fill ONCE — with the final league number —
+    // on the next poll after the rename lands. The ledger's lastServed entry
+    // IS the last text the bot saw (repeat bananas included), so replay it
+    // verbatim; fall back to reconstructing the "1 more to fill" text if the
+    // ledger has no entry (fresh ledger, or the read failed this poll).
     if (p.renamePending) {
+      const stored = stateOk ? state.lastServed[p.docId] : undefined;
       const namePart = `Draft Lobby (${label})`;
-      const held = pendingOddsLine
-        ? `${namePart}\n\n${pendingOddsLine}`
-        : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`;
+      const held =
+        stored?.final ??
+        (pendingOddsLine
+          ? `${namePart}\n\n${pendingOddsLine}`
+          : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`);
       leagues.push({
         leagueId: p.leagueId,
         displayName: held,
-        numPlayers: maxPlayers - 1,
+        displayNameClean: pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart,
+        numPlayers: stored ? stored.numPlayers : maxPlayers - 1,
         maxPlayers,
         draftType,
         isFilled: false,
@@ -313,15 +384,43 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
 
     // Blank line between the name and the odds line (matches the original
     // message spacing — two newlines render as a blank line in Discord).
-    // Odds line and banana ladder are mutually exclusive: bananas only step
-    // in as the uniqueness fallback when the odds line is gone.
-    const displayName = draftOddsLine
+    // Odds line and the slot banana LADDER are mutually exclusive: the ladder
+    // only steps in as the uniqueness fallback when the odds line is gone.
+    // (Repeat bananas below are separate — they CAN sit under an odds line,
+    // that's their whole job.)
+    const base = draftOddsLine
       ? `${namePart}\n\n${draftOddsLine}`
       : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`;
+
+    let displayName = base;
+    if (stateOk && !isFilled) {
+      const stored = state.lastServed[p.docId];
+      if (stored && stored.numPlayers === numPlayers && stored.base === base) {
+        // Nothing changed since the last poll — serve the exact same text
+        // (repeat bananas included) so the bot stays silent.
+        displayName = stored.final;
+      } else {
+        // Text changed → the bot will post this. If this exact message
+        // (remaining count + text) was already served recently, suffix one
+        // banana per prior serving so X never sees a byte-duplicate.
+        const key = seenKey(maxPlayers - numPlayers, base);
+        const prior = state.seen[key]?.n ?? 0;
+        displayName =
+          prior > 0 ? `${base}\n\n${'🍌'.repeat(Math.min(prior, REPEAT_BANANA_CAP))}` : base;
+        state.seen[key] = { n: prior + 1, at: Date.now() };
+        state.lastServed[p.docId] = { numPlayers, base, final: displayName };
+        stateDirty = true;
+      }
+    } else if (stateOk && state.lastServed[p.docId]) {
+      // Filled and renamed — its countdown is over; drop the pin.
+      delete state.lastServed[p.docId];
+      stateDirty = true;
+    }
 
     leagues.push({
       leagueId: p.leagueId,
       displayName,
+      displayNameClean: draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart,
       numPlayers,
       maxPlayers,
       draftType,
@@ -331,6 +430,34 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       hofPercent: draftOdds.hofPercent,
       jackpotPercent: draftOdds.jackpotPercent,
     });
+  }
+
+  // Persist the ledger (only when something changed — most polls change
+  // nothing and stay read-only). Prune expired text keys and pins for drafts
+  // that no longer exist so the doc can't grow without bound. A failed write
+  // just means a repeat might slip through unbanana'd next poll — never
+  // worth failing the feed over.
+  if (stateOk && stateDirty) {
+    const cutoff = Date.now() - SEEN_TTL_MS;
+    for (const [k, v] of Object.entries(state.seen)) {
+      if (!v || typeof v.at !== 'number' || v.at < cutoff) delete state.seen[k];
+    }
+    const seenKeys = Object.keys(state.seen);
+    if (seenKeys.length > SEEN_MAX_ENTRIES) {
+      seenKeys
+        .sort((a, b) => state.seen[a].at - state.seen[b].at)
+        .slice(0, seenKeys.length - SEEN_MAX_ENTRIES)
+        .forEach((k) => delete state.seen[k]);
+    }
+    const liveDocIds = new Set(parsed.map((p) => p.docId));
+    for (const k of Object.keys(state.lastServed)) {
+      if (!liveDocIds.has(k)) delete state.lastServed[k];
+    }
+    try {
+      await stateRef.set(state);
+    } catch (err) {
+      logger.error('[api/bot/league] feed-state write failed', err);
+    }
   }
 
   // Stable, human-sensible order (numeric-aware on the league id).
