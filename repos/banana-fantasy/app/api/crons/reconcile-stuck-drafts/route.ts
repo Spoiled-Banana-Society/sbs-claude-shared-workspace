@@ -83,9 +83,10 @@ export async function GET(req: Request) {
   const draftLevel = new Map<string, string>();
   for (const doc of draftsSnap.docs) {
     if (!isRealDraft(doc.id)) continue;
-    const data = doc.data() as { CurrentUsers?: Array<{ OwnerId?: string; TokenId?: unknown }>; Level?: string };
+    const data = doc.data() as { CurrentUsers?: Array<{ OwnerId?: string; TokenId?: unknown }>; Level?: string; NumPlayers?: number };
     draftLevel.set(doc.id, String(data.Level ?? ''));
     const roster = data.CurrentUsers ?? [];
+    const numPlayers = data.NumPlayers ?? roster.length;
     const seated = new Set(roster.map((u) => `${lc(u.OwnerId)}|${String(u.TokenId ?? '')}`));
 
     // Type A: a token bound to this league whose owner is NOT seated.
@@ -95,13 +96,23 @@ export async function GET(req: Request) {
         current.push({ type: 'A', wallet, cardId, league: doc.id });
       }
     }
-    // Type B: a seated player with NO backing token record.
-    for (const u of roster) {
-      const wallet = lc(u.OwnerId);
-      const cardId = String(u.TokenId ?? '');
-      if (!validCard(cardId)) continue;
-      if (!hasTokenRecord.has(`${wallet}|${cardId}|${doc.id}`)) {
-        current.push({ type: 'B', wallet, cardId, league: doc.id });
+    // Type B: a seated player with NO backing token record — but ONLY in a
+    // FILLING lobby (numPlayers < 10). A full/completed draft's roster is
+    // history: the same card is legitimately re-used in a LATER draft, so its
+    // token record moved on (LeagueId now points elsewhere) — that is NOT a
+    // broken join, and flagging it would spam the reconciler forever. We further
+    // confirm the token still points at THIS draft before flagging (the exact
+    // half-finished-join signature), so a reused card is never mistaken for a bug.
+    if (numPlayers < 10) {
+      for (const u of roster) {
+        const wallet = lc(u.OwnerId);
+        const cardId = String(u.TokenId ?? '');
+        if (!validCard(cardId)) continue;
+        if (hasTokenRecord.has(`${wallet}|${cardId}|${doc.id}`)) continue;
+        const tok = (await db.collection('draftTokens').doc(cardId).get()).data();
+        if (tok && lc(tok.OwnerId) === wallet && tok.LeagueId === doc.id) {
+          current.push({ type: 'B', wallet, cardId, league: doc.id });
+        }
       }
     }
   }

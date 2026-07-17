@@ -128,6 +128,11 @@ async function main() {
     if (doc.id.startsWith('_') || doc.id.includes('test')) continue;
     const d = doc.data();
     const roster = d.CurrentUsers || [];
+    // Only FILLING lobbies (numPlayers < 10). A full/completed draft's roster is
+    // history — its cards are legitimately re-used in later drafts, so a missing
+    // token record there is NOT a broken join (false positive). See the reconcile
+    // cron for the full rationale.
+    if ((d.NumPlayers ?? roster.length) >= 10) continue;
     for (const u of roster) {
       const owner = lc(u.OwnerId);
       if (walletArg && owner !== walletArg) continue;
@@ -135,7 +140,13 @@ async function main() {
       // Skip malformed roster entries (missing/invalid token id) — not a real seat.
       if (!cardId || cardId === 'undefined' || !/^\d+$/.test(cardId)) continue;
       const usedDoc = await db.collection(`owners/${owner}/usedDraftTokens`).doc(cardId).get();
-      if (!usedDoc.exists) seatNoToken.push({ owner, cardId, league: doc.id });
+      if (usedDoc.exists) continue;
+      // Confirm the token still points at THIS draft (real half-finished join),
+      // not a card that has moved on to a later draft.
+      const tok = (await db.collection('draftTokens').doc(cardId).get()).data();
+      if (tok && lc(tok.OwnerId) === owner && tok.LeagueId === doc.id) {
+        seatNoToken.push({ owner, cardId, league: doc.id });
+      }
     }
   }
 
