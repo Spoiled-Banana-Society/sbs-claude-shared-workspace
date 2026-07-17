@@ -1,4 +1,10 @@
-# Discord/X fill-bot: template experiment tonight (7/16 ~10pm ET) — how to check it + revert in 30 seconds if it broke
+# Discord/X fill-bot: template experiment tonight (7/16 ~10pm ET) — RESOLVED, no action needed
+
+**UPDATE 10:15pm: the experiment failed and was ALREADY REVERTED + save-verified the same night.** The 11:06pm Discord ping rendered the token literally (`6 more to fill {{leagueDisplayNameClean}}`) — the bot's template tokens are hardcoded in its code, it doesn't map arbitrary feed fields. Discord template is back to the original `{{leagueDisplayName}}`; expect one ugly ping in the channel history from 11:06pm and normal pings after. Nothing for you to do. Takeaway: Discord-only banana-free names need a bot-code change, and the bot has no dev (Richard: there is no Caleb; a different outside guy built it and is gone) — so Discord keeps sharing X's banana-suffixed name unless someone gets Render/repo access to the bot. The repeat-🍌 fix itself is working great (that's what makes X post leave/rejoin bounces).
+
+Original note kept below for context:
+
+---
 
 **TL;DR: if the Discord fill pings look broken this morning (literal `{{leagueDisplayNameClean}}` text or a missing draft name), revert with the 3 steps below. X is untouched either way.**
 
