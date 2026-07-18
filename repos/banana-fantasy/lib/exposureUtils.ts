@@ -261,12 +261,12 @@ export const depthCharts: { [team: string]: TeamDepthChart } = {
   },
 };
 
-// Bye week mapping for all NFL teams
+// Bye week mapping for all NFL teams — 2026 season (byes run weeks 5–14, no team is on bye week 12)
 export const teamByeWeeks: { [team: string]: number } = {
-  ARI: 11, ATL: 12, BAL: 14, BUF: 7, CAR: 11, CHI: 7, CIN: 12, CLE: 10,
-  DAL: 7, DEN: 14, DET: 5, GB: 10, HOU: 14, IND: 14, JAX: 12, KC: 6,
-  LAC: 5, LAR: 6, LV: 10, MIA: 6, MIN: 6, NE: 14, NO: 12, NYG: 11,
-  NYJ: 12, PHI: 5, PIT: 9, SEA: 10, SF: 9, TB: 11, TEN: 5, WAS: 14,
+  ARI: 14, ATL: 11, BAL: 13, BUF: 7, CAR: 5, CHI: 10, CIN: 6, CLE: 11,
+  DAL: 14, DEN: 10, DET: 6, GB: 11, HOU: 8, IND: 13, JAX: 7, KC: 5,
+  LAC: 7, LAR: 11, LV: 13, MIA: 6, MIN: 6, NE: 11, NO: 8, NYG: 8,
+  NYJ: 13, PHI: 10, PIT: 9, SEA: 11, SF: 8, TB: 10, TEN: 9, WAS: 7,
 };
 
 // Get exposure by position
