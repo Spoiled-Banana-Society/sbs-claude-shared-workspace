@@ -32,10 +32,10 @@ import { logger } from '@/lib/logger';
  *     computed from the current 100-draft batch (1 Jackpot + 5 HOF per 100),
  *     so it climbs automatically as drafts fill without a hit — no more manual
  *     edits in the bot's AdminJS config.
- *   • When the odds line is absent (all batch specials already hit), a
- *     trailing banana line ("🍌🍌🍌…", one more per draft) takes its place to
- *     keep every message's text unique so X's duplicate-content filter can't
- *     silently swallow the countdown tweets.
+ *   • When the odds line is absent (all batch specials already hit), the
+ *     name stands alone — end-of-batch uniqueness for X is handled by the
+ *     repeat bananas below (the old one-per-draft slot ladder grew into a
+ *     40-banana wall by slot ~179 and was removed 2026-07-18).
  *   • REPEAT bananas (Richard 2026-07-16): X silently rejects a post whose
  *     text matches a recent one. The odds line only keeps the countdown
  *     unique while the count moves FORWARD — when a player LEAVES, the count
@@ -226,24 +226,11 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
-  // 🍌 ladder — FALLBACK ONLY, used when there is no odds line (Richard
-  // 2026-07-08: bananas come OFF whenever the odds line is showing). X
-  // silently rejects a post whose text is identical to a recent one; the
-  // odds line keeps countdown tweets unique (it moves every fill), but when
-  // all the batch specials hit the line drops out (2026-07-07) and every
-  // "1 more to fill Draft Lobby (Fast)" becomes a duplicate → bot goes
-  // quiet. The ladder (one more 🍌 per draft) covers exactly that tail of
-  // the batch; it disappears again when the next batch's line returns.
-  // Keyed to the draft's SLOT index so a draft's bananas never change
-  // mid-countdown and the rename-race hold below stays byte-identical to
-  // the bot's last message. The anchor is the slot that was filling when
-  // this shipped (= 1 banana); the count wraps back to 1 after 50 so the
-  // tweet never outgrows X's 280-char limit.
-  const BANANA_ANCHOR: Record<string, number> = { fast: 90, slow: 5 };
-  const bananaLine = (draftType: string, slot: number) => {
-    const n = Math.max(1, slot - (BANANA_ANCHOR[draftType] ?? 0) + 1);
-    return '🍌'.repeat(((n - 1) % 50) + 1);
-  };
+  // (The old slot-keyed 🍌 ladder that used to stand in when the odds line
+  // was absent is GONE — by slot ~179 it had grown into a 40-banana wall
+  // (2026-07-18). Its only job was keeping end-of-batch texts unique for X,
+  // and the repeat-🍌 ledger below now does that properly: bananas appear
+  // only when a text actually repeats, starting at one.)
 
   interface ParsedDraft {
     docId: string;
@@ -347,10 +334,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       const stored = stateOk ? state.lastServed[p.docId] : undefined;
       const namePart = `Draft Lobby (${label})`;
       const held =
-        stored?.final ??
-        (pendingOddsLine
-          ? `${namePart}\n\n${pendingOddsLine}`
-          : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`);
+        stored?.final ?? (pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart);
       leagues.push({
         leagueId: p.leagueId,
         displayName: held,
@@ -384,13 +368,10 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
 
     // Blank line between the name and the odds line (matches the original
     // message spacing — two newlines render as a blank line in Discord).
-    // Odds line and the slot banana LADDER are mutually exclusive: the ladder
-    // only steps in as the uniqueness fallback when the odds line is gone.
-    // (Repeat bananas below are separate — they CAN sit under an odds line,
-    // that's their whole job.)
-    const base = draftOddsLine
-      ? `${namePart}\n\n${draftOddsLine}`
-      : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`;
+    // No odds line (all batch specials hit) → just the name; the repeat-🍌
+    // ledger below keeps end-of-batch texts unique for X, which is what the
+    // old 40-banana slot ladder used to do.
+    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
 
     let displayName = base;
     if (stateOk && !isFilled) {
