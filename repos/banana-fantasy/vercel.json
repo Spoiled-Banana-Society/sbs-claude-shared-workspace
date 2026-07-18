@@ -49,6 +49,10 @@
     {
       "path": "/api/crons/founder-teaser",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/crons/reconcile-stuck-drafts",
+      "schedule": "*/2 * * * *"
     }
   ]
 }
