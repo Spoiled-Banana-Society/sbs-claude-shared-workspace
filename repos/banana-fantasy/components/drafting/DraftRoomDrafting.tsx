@@ -156,18 +156,54 @@ export function DraftRoomDrafting({
     };
   };
 
-  // Desktop sidebar follows the page scroll (the document scrolls; the player
-  // list is not its own scroll pane — see overflow note on the page root).
-  // Stick it just below the fixed top banner: drafting reserves 290px
-  // (310px JP/HOF) via its spacer; the filling/countdown lobby header
-  // (showBanner=false) lands 1rem lower — in-flow h-14 bar + the shorter
-  // fillingSpacer in DraftRoomFilling.
+  // The top banner is position:fixed, so the page must reserve its height —
+  // but the banner's height is content-driven: the slow-draft overnight pause
+  // adds a "⏸ Paused · 5am PT" line to the on-clock card, which pushed the
+  // banner past the old hardcoded 290px and clipped the DRAFT/QUEUE/… tab bar
+  // every night 10pm–5am PT (ticket-2661, 2026-07-18). So measure the real
+  // rendered height and reserve exactly that; the hardcoded values remain only
+  // as the pre-measure fallback (and the !showBanner lobby layout).
+  const [bannerEl, setBannerEl] = useState<HTMLDivElement | null>(null);
+  const [bannerBoxH, setBannerBoxH] = useState<number | null>(null);
+  useEffect(() => {
+    if (!bannerEl) {
+      setBannerBoxH(null);
+      return;
+    }
+    const update = () =>
+      setBannerBoxH((prev) => {
+        const h = bannerEl.offsetHeight;
+        return prev !== null && Math.abs(prev - h) < 1 ? prev : h;
+      });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bannerEl);
+    return () => ro.disconnect();
+  }, [bannerEl]);
+
+  // JP/HOF keep a ~20px black gap between the colored band and the tab menu
+  // (flush edges made the colors visually touch); black drafts sit flush.
+  const bannerGapPx =
+    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' ? 20 : 0;
   const sidebarBannerBase =
     visibleDraftType === 'jackpot' || visibleDraftType === 'hof' ? '310px' : '290px';
+  // Measured height already includes the safe-area padding inside the fixed div.
+  const reservedBannerHeight =
+    bannerBoxH !== null
+      ? `${bannerBoxH + bannerGapPx}px`
+      : `calc(${sidebarBannerBase} + env(safe-area-inset-top))`;
+
+  // Desktop sidebar follows the page scroll (the document scrolls; the player
+  // list is not its own scroll pane — see overflow note on the page root).
+  // Stick it just below the fixed top banner (= the reserved height above);
+  // the filling/countdown lobby header (showBanner=false) lands 1rem lower —
+  // in-flow h-14 bar + the shorter fillingSpacer in DraftRoomFilling.
   const sidebarStickyTop =
     engine.draftStatus === 'completed'
       ? '0px'
-      : `calc(${sidebarBannerBase}${showBanner ? '' : ' + 1rem'} + env(safe-area-inset-top))`;
+      : showBanner
+        ? reservedBannerHeight
+        : `calc(${sidebarBannerBase} + 1rem + env(safe-area-inset-top))`;
 
   return (
     <>
@@ -181,7 +217,7 @@ export function DraftRoomDrafting({
 
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
-          <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
+          <div ref={setBannerEl} className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
         background: draftBandBackground(visibleDraftType),
         boxShadow: draftBandShadow(visibleDraftType),
         // Drop the type-colored band + player strip below the notch on iOS
@@ -462,13 +498,15 @@ export function DraftRoomDrafting({
             {controls}
           </div>
 
-          {/* Spacer reserves the space under the position:fixed banner above.
-              The banner's content (~290px) sits flush against this. For the
-              colored draft types (jackpot/HOF) the banner has a red/gold
+          {/* Spacer reserves the space under the position:fixed banner above —
+              the banner's MEASURED height (see reservedBannerHeight), so a
+              content change (e.g. the overnight-pause line on the on-clock
+              card) can never make the banner overlap the tab menu below. For
+              the colored draft types (jackpot/HOF) the banner has a red/gold
               background, so a flush edge makes the colored bar visually touch
-              the tab menu below it — add a little extra height so a clean black
-              gap separates them. Black drafts need no gap (black-on-black). */}
-          <div style={{ height: `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`, flexShrink: 0, backgroundColor: '#000' }} />
+              the tab menu — bannerGapPx adds a clean black gap. Black drafts
+              need no gap (black-on-black). */}
+          <div style={{ height: reservedBannerHeight, flexShrink: 0, backgroundColor: '#000' }} />
         </>
       )}
 
