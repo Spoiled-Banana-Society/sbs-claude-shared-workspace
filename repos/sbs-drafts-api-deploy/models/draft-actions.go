@@ -184,7 +184,6 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		realTimeDraftInfo.IsDraftComplete = true
 	} else {
 		realTimeDraftInfo.CurrentPickNumber++
-		draftInfo.CurrentPickNumber++
 		nowUnix := time.Now().Unix()
 		realTimeDraftInfo.PickStartTime = nowUnix
 		if leagueReadErr == nil && strings.EqualFold(league.DraftType, "slow") {
@@ -193,13 +192,18 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 			realTimeDraftInfo.PickEndTime = nowUnix + realTimeDraftInfo.PickLength
 		}
 		realTimeDraftInfo.PickInRound++
-		draftInfo.PickInRound++
 		if realTimeDraftInfo.PickInRound > 10 {
 			realTimeDraftInfo.CurrentRound++
-			draftInfo.CurrentRound++
-			draftInfo.PickInRound = 1
 			realTimeDraftInfo.PickInRound = 1
 		}
+		// Sync the Firestore doc's counters FROM the just-advanced live state
+		// instead of incrementing them independently. If the docs ever diverge
+		// (2026-07-15 draft-156: the state/info write timed out AFTER the RTDB
+		// advance landed), independent ++ keeps them one apart forever;
+		// assigning heals the drift on the next successful pick.
+		draftInfo.CurrentPickNumber = realTimeDraftInfo.CurrentPickNumber
+		draftInfo.CurrentRound = realTimeDraftInfo.CurrentRound
+		draftInfo.PickInRound = realTimeDraftInfo.PickInRound
 		var index int
 		if draftInfo.CurrentRound%2 == 0 {
 			index = len(draftInfo.DraftOrder) - draftInfo.PickInRound
@@ -219,15 +223,13 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
-	err = draftInfo.Update(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (draftInfo.Update): draftId=%s err=%v\n", draftId, err)
-		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
-		return err
-	}
 
-	// Schedule cloud task to trigger auto draft 5 seconds before pick end time
-	// This runs asynchronously so it doesn't block the pick processing
+	// Arm the next pick's auto-draft task IMMEDIATELY after the live-state
+	// advance, BEFORE the fallible Firestore draftInfo write below. The task
+	// is the draft's heartbeat: on 2026-07-15 (draft-156) the draftInfo write
+	// timed out and this scheduling — which used to sit after it — never ran,
+	// leaving the draft with no timer at all. Everything else self-heals;
+	// a missing heartbeat does not.
 	if !realTimeDraftInfo.IsDraftComplete {
 		go scheduleAutoDraftTask(
 			draftId,
@@ -236,6 +238,16 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 			realTimeDraftInfo.CurrentRound,
 			realTimeDraftInfo.PickEndTime,
 		)
+	}
+
+	err = draftInfo.Update(draftId)
+	if err != nil {
+		fmt.Printf("ProcessNewPick error (draftInfo.Update): draftId=%s err=%v\n", draftId, err)
+		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
+		return err
+	}
+
+	if !realTimeDraftInfo.IsDraftComplete {
 		nextDrafter := realTimeDraftInfo.CurrentDrafter
 		leagueDisplayName := draftInfo.DisplayName
 		// Pick reminder runs only after a pick is recorded, so the first on-clock user is notified by
@@ -407,6 +419,19 @@ func getCloudRunServiceURL() (string, error) {
 // The URL points to this API's own endpoint, not an external server
 // It first tries environment variables, then falls back to Cloud Run metadata if available
 func buildAutoDraftURL(draftId, ownerId string) (string, error) {
+	baseURL, err := resolveAPIBaseURL()
+	if err != nil {
+		return "", err
+	}
+	// Construct the full endpoint URL pointing to this API's endpoint
+	fullURL := fmt.Sprintf("%s/draft-actions/%s/owner/%s/actions/autoDraft", baseURL, draftId, ownerId)
+	return fullURL, nil
+}
+
+// resolveAPIBaseURL returns this API's own base URL (no trailing slash) —
+// extracted from buildAutoDraftURL so other self-addressed Cloud Tasks (the
+// draft watchdog sweep chain) resolve it identically.
+func resolveAPIBaseURL() (string, error) {
 	// Use ENVIRONMENT environment variable (standardized across codebase)
 	env := utils.GetenvOrDefault("ENVIRONMENT", "dev")
 	// Normalize environment name
@@ -455,9 +480,7 @@ func buildAutoDraftURL(draftId, ownerId string) (string, error) {
 	// Remove trailing slash if present
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	// Construct the full endpoint URL pointing to this API's endpoint
-	fullURL := fmt.Sprintf("%s/draft-actions/%s/owner/%s/actions/autoDraft", baseURL, draftId, ownerId)
-	return fullURL, nil
+	return baseURL, nil
 }
 
 func GetQueuedPickForUser(pick *PlayerStateInfo, draftInfo *DraftInfo) error {

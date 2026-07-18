@@ -9,6 +9,8 @@ import (
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -106,6 +108,62 @@ func CreateCloudTask(url, payload string, scheduleTime int64) error {
 		return fmt.Errorf("failed to create cloud task: %w", err)
 	}
 
+	return nil
+}
+
+// CreateNamedCloudTask is CreateCloudTask with an explicit task name and
+// custom headers. Cloud Tasks deduplicates on name: creating a task whose
+// name already exists returns AlreadyExists, which this function treats as
+// SUCCESS — that is the point (e.g. the draft watchdog arms the same
+// per-minute sweep task from two consecutive sweeps; only one is kept).
+func CreateNamedCloudTask(name, url, payload string, headers map[string]string, scheduleTime int64) error {
+	if cloudTasksClient == nil {
+		return fmt.Errorf("cloud tasks client not initialized - call InitCloudTasksClient first")
+	}
+
+	ctx := context.Background()
+
+	projectID := GetenvOrDefault("GCP_PROJECT_ID", "")
+	location := GetenvOrDefault("GCP_LOCATION", "us-central1")
+	queueName := GetenvOrDefault("CLOUD_TASKS_QUEUE_NAME", "auto-draft-queue")
+	if projectID == "" {
+		return fmt.Errorf("GCP_PROJECT_ID environment variable is required")
+	}
+	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
+
+	scheduleTimestamp := time.Unix(scheduleTime, 0)
+	if scheduleTimestamp.Before(time.Now()) {
+		scheduleTimestamp = time.Now().Add(1 * time.Second)
+	}
+
+	taskHeaders := map[string]string{"Content-Type": "application/json"}
+	for k, v := range headers {
+		taskHeaders[k] = v
+	}
+
+	req := &cloudtaskspb.CreateTaskRequest{
+		Parent: queuePath,
+		Task: &cloudtaskspb.Task{
+			Name: fmt.Sprintf("%s/tasks/%s", queuePath, name),
+			MessageType: &cloudtaskspb.Task_HttpRequest{
+				HttpRequest: &cloudtaskspb.HttpRequest{
+					HttpMethod: cloudtaskspb.HttpMethod_POST,
+					Url:        url,
+					Headers:    taskHeaders,
+					Body:       []byte(payload),
+				},
+			},
+			ScheduleTime: timestamppb.New(scheduleTimestamp),
+		},
+	}
+
+	_, err := cloudTasksClient.CreateTask(ctx, req)
+	if err != nil {
+		if status.Code(err) == codes.AlreadyExists {
+			return nil // dedup hit — the task is already armed
+		}
+		return fmt.Errorf("failed to create named cloud task %s: %w", name, err)
+	}
 	return nil
 }
 

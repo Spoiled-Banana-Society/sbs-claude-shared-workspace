@@ -14,7 +14,10 @@
 - **Draft neutralized:** RTDB `realTimeDraftInfo` → `isDraftComplete:true, isDraftClosed:true, pickNumber:151`; Firestore `state/info.CurrentPickNumber:151`. The autoDraft handler's "pick already completed → 200" guard drains the Cloud Tasks retries; onBotTurn bails on the complete flag.
 - **Draft hidden, counter intact:** drafts doc + state kept (JP/HOF audit). `draftTracker` untouched — FilledLeaguesCount stays 133, batch 33/100, 1 JP + 4 HOF remaining. No member's token list references the draft anymore.
 
-## Fixes needed (please review — none applied yet)
+## Fix status (updated 2026-07-13 evening)
+**Fix #4 SHIPPED by Richard** (commit `25a94dbf`, deployed to live): the bot fill route now bootstraps every bot via the engine's own `GET /owner/{id}` (auto-creates the profile doc) and verifies the doc exists BEFORE the Go join — fail-closed, unverified bots are dropped and their minted pass stays reusable. Covers both `+ Bot` and `+ New` (heads-up: `+ Bot` mode 'existing' ALSO mints a brand-new wallet when the whole registry is already seated in the target draft — that's the click that froze 128). Fixes #1–3 below are deliberately NOT shipped (Richard's call: no engine deploys for this) — treat them as ride-along hardening whenever you next deploy the Go API.
+
+## Fixes needed (please review — #4 done, #1–3 pending as ride-alongs)
 1. **`CreateEmptyRosterState` (models/draft-state.go ~299):** never `continue` on owners read failure — the doc only supplies the PFP. Create the roster entry with an empty PFP instead. A missing avatar must never cost a seat. (This also covers ANY transient Firestore error at fill time — real users are exposed to that too, not just bots.)
 2. **`UpdateRosterFromPick` (draft-state.go ~949):** nil-check `data.Rosters[address]` and create an empty entry instead of dereferencing. Belt for #1's suspenders.
 3. **`ProcessNewPick.func2` goroutine (models/draft-actions.go:150):** add `defer recover()` — an uncaught panic in a goroutine kills the whole process; one bad pick should never take down every live draft on the instance.

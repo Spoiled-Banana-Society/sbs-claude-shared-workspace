@@ -61,7 +61,27 @@ func (dra *DraftActionResources) Routes() chi.Router {
 	// with X-Admin-Key — also called by the daily reconciliation cron.
 	r.Post("/{draftId}/owner/{ownerId}/admin/recover-card", requireAdminKey(dra.recoverCard))
 
+	// Stuck-draft watchdog sweep (fast drafts only). Normally invoked by its
+	// own self-re-arming Cloud Task chain every minute; can be curled by an
+	// admin any time. ?dryRun=true reports without writing; ?chain=false
+	// runs one sweep without re-arming the chain.
+	r.Post("/admin/watchdog/sweep", requireAdminKey(dra.watchdogSweep))
+
 	return r
+}
+
+// watchdogSweep runs one watchdog pass over recent fast drafts and (unless
+// dryRun or chain=false) re-arms the next two per-minute sweep tasks FIRST,
+// so a crash mid-sweep can never kill the chain.
+func (dra *DraftActionResources) watchdogSweep(w http.ResponseWriter, r *http.Request) {
+	dryRun := r.URL.Query().Get("dryRun") == "true"
+	chain := r.URL.Query().Get("chain") != "false"
+	if !dryRun && chain {
+		models.ArmWatchdogChain()
+	}
+	report := models.WatchdogSweep(dryRun)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(report)
 }
 
 // recoverCard is the HTTP wrapper around models.RecoverCardForOwner. Returns
@@ -329,23 +349,21 @@ func (dra *DraftActionResources) submitPick(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get draft info to get current pick number and round
-	draftInfo, err := models.ReturnDraftInfoForDraft(draftId)
-	if err != nil {
-		fmt.Printf("submitPick error (ReturnDraftInfoForDraft): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Create PlayerStateInfo from request
+	// Create PlayerStateInfo from request. PickNum/Round come from the SAME
+	// doc ProcessNewPick validates against (RTDB realTimeDraftInfo) — they
+	// used to come from the Firestore state/info doc, so whenever the two
+	// diverged (2026-07-15 draft-156: state/info write timed out mid-pick
+	// while the RTDB advance landed) every manual/bot pick was built one
+	// behind and auto-rejected forever. Same-doc = a divergence can no longer
+	// reject picks.
 	pickInfo := &models.PlayerStateInfo{
 		PlayerId:     req.PlayerId,
 		DisplayName:  req.DisplayName,
 		Team:         req.Team,
 		Position:     req.Position,
 		OwnerAddress: ownerId,
-		PickNum:      draftInfo.CurrentPickNumber,
-		Round:        draftInfo.CurrentRound,
+		PickNum:      realTimeDraftInfo.CurrentPickNumber,
+		Round:        realTimeDraftInfo.CurrentRound,
 	}
 
 	// Process the pick (isUserPick = true for manual picks)
