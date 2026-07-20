@@ -147,8 +147,12 @@ export function generateReelItemsForReel(
   const items: DraftType[] = [];
   for (let i = 0; i < totalItems; i++) {
     const rand = fillerRand();
-    if (rand < 0.15) items.push('jackpot');
-    else if (rand < 0.35) items.push('hof');
+    // JackHOF rides the filler stream too (rare) so every spin teases that
+    // the dual-type exists — before this, the symbol could only ever appear
+    // as the landed result and nobody knew it was possible.
+    if (rand < 0.04) items.push('jackhof');
+    else if (rand < 0.19) items.push('jackpot');
+    else if (rand < 0.39) items.push('hof');
     else items.push('pro');
   }
   const landingIndex = totalItems - 8;
