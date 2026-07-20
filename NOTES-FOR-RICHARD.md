@@ -1070,3 +1070,24 @@ Frontend: also pulled all your latest into Boris's local banana-fantasy and conf
 - **Token-bound seats**: join-special-draft now passes the wheel-pass `tokenId` so Go binds RealTokenId + consumes the spendable doc (applies to JP/HOF too).
 - **Wheel VRF**: config change invalidates the active period's committed root, so period 1 is being closed at its current spinCount (844) — the keeper cron auto-rolls to period 2 with a fresh salt+VRF commit that snapshots the NEW 12-segment config (incl. jackhof) and auto-reveals period 1's salt. Spins in the gap fall back to legacy RNG on the new config (wheel never blocks).
 - Deployed: sbs-frontend-v2 `c6b66f4c` (includes the rolling-lane draw-window math + JackHOF spend-lock from Phase 1).
+
+---
+
+## 2026-07-20 (later) — ERA MODEL: seed provenance change for the rolling lanes (Boris's call — verifier spec UPDATE)
+
+Boris required the lanes pre-randomize a ~10k-draft horizon in ONE ceremony (like the live 10k merkle rounds), not one VRF request per window. **Your derivation formula is untouched** — only where the seed comes from changed. Deployed as Go rev 00182; live + verified end-to-end tonight.
+
+**What changed for your verifier:**
+- ONE `combinedSeed = sha256(salt ‖ vrfRandomness)` per lane **ERA** (150 consecutive cycles ≈ 7.5–15k drafts), not per cycle. jp and hof each have their own independent era sequence.
+- On-chain: the **BBB4BatchProofMerkle contract `0x1E7cE8c44922f226a52893D85AfF79156859eEB6`** (same one as the 10k rounds), NOT the vrf-commit contract. Keys: `eraKey = base + era` — jp base 3,000,000; hof base 4,000,000. Ceremony = `requestRandomnessAndCommit(eraKey, saltHash)` → `commitMerkleRoot(eraKey, root)` → salt revealed only at era END.
+- Per-cycle derivation: `DeriveLaneSlots(eraCombinedSeed, lane, cycle, n)` — exact same tags `"<lane>:<cycle>:<i>"`, HMAC-SHA256, first-8-bytes-BE mod 100, +1 collision walk. Cycle numbers are GLOBAL (era 1 = cycles 1–150, era 2 = 151–300 …), so tags never repeat.
+- Merkle leaves (leafIndex = cycle − eraCycleStart): `leaf = keccak256("<lane>:<cycle>:<p0>[,<p1>…]")`, positions in DERIVATION order (0-indexed in-window). Tree = sorted-pair keccak (OpenZeppelin-style, same as 10k rounds).
+- Per-cycle reveal (at hit): `lane_proofs/{lane}-{cycle}` gets `leaf` + `merkleProof[]` (status `revealed`) — verify the published positions against the era's ON-CHAIN root. No per-cycle tx.
+- Era-end: `revealSalt(eraKey, salt)` → re-derive all 150 cycles from public data.
+- Firestore: `lane_eras/{lane}-era-{n}` (root, leaves, txs public; serverSalt secret until era end). `lane_proofs/{lane}-{cycle}` docs now `variant: "era-merkle"` with `era` + `leafIndex` (note: leafIndex omitted when 0 — firestore omitempty).
+
+**Live state (all verified):** jp-era-1 key 3000001 root `0xfcd9611c…` (commit `0x239c2787…`, root tx `0xeae79bbf…`); hof-era-1 key 4000001 root `0xf18354f5…` (commit `0x947ca917…`, root tx `0x44a77f1b…`). Cycle-1 docs for both lanes rewritten from era seeds (window 201–300, positions hidden). Independent Node re-implementation reproduced both roots + all 300 leaves + cycle-1 positions exactly; on-chain fulfilled/rootCommitted/saltHash all match Firestore. Fill path fails safe (falls back to tracker lists on lane error). Go tests: era boundaries, leaf encoding vectors, 150-cycle proof roundtrip + forged-positions rejection, determinism — all green.
+
+**Orphaned artifacts (harmless, ignore):** the earlier per-cycle commits at laneKeys 1,000,001 / 2,000,001 on the vrf-commit contract are superseded and unused. LINK note: eras cut VRF spend ~100× (one request per ~10k drafts per lane); subscription at 5.92 LINK, 19 lifetime requests.
+
+**Wheel:** JackHOF wedge is REVERTED until draft 201 (Boris's call) — wheel period 3 active on the original 12-wedge config. At draft-200 fill: wedge swap → ship → new wheel period (jackhof plumbing already live + dormant). Public spin feed is now ALL-TIME (every period + pre-VRF spins) — period rolls never hide history.
