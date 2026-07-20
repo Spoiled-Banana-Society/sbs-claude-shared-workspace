@@ -68,6 +68,12 @@ export interface StreamEventPayload {
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
   /**
+   * promo-card-free-draft only: true when the award includes the FRONTED
+   * first-card-purchase draft (fee covered up front), so the bell explains
+   * the program instead of the "$25 reached" copy.
+   */
+  fronted?: boolean;
+  /**
    * For the `'notification'` ping: the bell entry's content, so receiving
    * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
    * (generic copy — no balances/PII), same bar as the rest of this payload.

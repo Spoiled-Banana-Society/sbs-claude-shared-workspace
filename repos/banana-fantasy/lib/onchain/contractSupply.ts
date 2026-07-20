@@ -1,4 +1,5 @@
 import { BASE_RPC_URL, BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 
 /**
  * The current BBB4 contract's `totalSupply()` — i.e. the highest real on-chain
@@ -40,6 +41,40 @@ async function readTotalSupply(rpc: string): Promise<number> {
   return j?.result && j.result !== '0x' ? Number(BigInt(j.result)) : 0;
 }
 
+// Cross-instance monotonic floor, persisted in Firestore. The in-memory
+// monotonic cache above only protects ONE warm instance — a COLD instance whose
+// first RPC reads all come back stale-low serves a low cap for a full TTL and
+// hides real teams (observed again 2026-07-19: an instance capped at ~808 while
+// the chain was at 2601 — Team # search returned nothing for newer teams). The
+// floor is read once per instance and raised (fire-and-forget) whenever a
+// fresh read exceeds it, so no instance can ever cap below the best value any
+// instance has already proven on-chain.
+const SUPPLY_FLOOR_DOC = 'v2_config/contract_supply';
+let floorPromise: Promise<number> | null = null;
+function storedSupplyFloor(): Promise<number> {
+  if (!floorPromise) {
+    floorPromise = (async () => {
+      if (!isFirestoreConfigured()) return 0;
+      try {
+        const snap = await getAdminFirestore().doc(SUPPLY_FLOOR_DOC).get();
+        const v = Number(snap.get('maxTokenId') || 0);
+        return Number.isFinite(v) && v > 0 ? v : 0;
+      } catch {
+        return 0;
+      }
+    })();
+  }
+  return floorPromise;
+}
+function raiseSupplyFloor(max: number, prevFloor: number): void {
+  if (!isFirestoreConfigured() || max <= prevFloor) return;
+  floorPromise = Promise.resolve(max);
+  getAdminFirestore()
+    .doc(SUPPLY_FLOOR_DOC)
+    .set({ maxTokenId: max, updatedAt: new Date().toISOString() }, { merge: true })
+    .catch(() => { /* best-effort — next successful read retries */ });
+}
+
 export async function currentMaxTokenId(): Promise<number> {
   if (cache && Date.now() - cache.ts < TTL_MS) return cache.max;
 
@@ -51,20 +86,25 @@ export async function currentMaxTokenId(): Promise<number> {
   // can then never cap the supply low and hide real teams (League-4 bug,
   // 2026-06-13). Both run concurrently; failures resolve to 0 and are ignored.
   const rpcs = [...new Set([BASE_RPC_URL, ...FALLBACK_RPCS])];
-  const reads = await Promise.allSettled(rpcs.map((u) => readTotalSupply(u)));
+  const [reads, floor] = await Promise.all([
+    Promise.allSettled(rpcs.map((u) => readTotalSupply(u))),
+    storedSupplyFloor(),
+  ]);
   let supply = 0;
   for (const r of reads) if (r.status === 'fulfilled' && r.value > supply) supply = r.value;
 
   if (supply > 0) {
     // Monotonic: supply never shrinks, so never accept a cap below one we've
-    // already established — bulletproofs against any future stale-low read.
-    const max = Math.max(supply + MARGIN, cache?.max ?? 0);
+    // already established — in this instance's memory OR the Firestore floor
+    // any instance has already proven. Bulletproofs against stale-low reads.
+    const max = Math.max(supply + MARGIN, cache?.max ?? 0, floor);
     cache = { ts: Date.now(), max };
+    raiseSupplyFloor(max, floor);
     return max;
   }
-  // Both reads failed — keep a prior cap if we have one, else show everything
+  // All reads failed — keep a prior cap if we have one, else show everything
   // (better to briefly show a ghost than drop a real token).
-  return cache?.max ?? Number.MAX_SAFE_INTEGER;
+  return cache?.max ?? (floor > 0 ? floor : Number.MAX_SAFE_INTEGER);
 }
 
 /**

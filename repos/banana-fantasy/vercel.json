@@ -53,6 +53,10 @@
     {
       "path": "/api/crons/reconcile-stuck-drafts",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/crons/link-wheel-teams",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

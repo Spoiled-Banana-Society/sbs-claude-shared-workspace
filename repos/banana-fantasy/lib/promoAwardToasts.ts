@@ -77,8 +77,8 @@ export function surfacePurchasePromoAwards(
     toast(
       show,
       cardFree === 1
-        ? '🎁 You earned a free draft — your card fees covered it!'
-        : `🎁 You earned ${cardFree} free drafts — your card fees covered them!`,
+        ? '🎁 You earned a free Paid Draft Pass — your card fees covered it!'
+        : `🎁 You earned ${cardFree} free Paid Draft Passes — your card fees covered them!`,
       '/drafting',
     );
   }

@@ -356,10 +356,15 @@ export async function POST(req: Request) {
     // 4. Card-fee credit → free draft (card payments only). Credit the MoonPay
     //    fee for this quantity (feeForQty) toward a free draft; once accumulated
     //    card fees reach $25, grant paid-type draft(s) and roll over the
-    //    remainder. Atomic + idempotent per mint txHash (marker doc) so a retry
+    //    remainder. Since 2026-07-19 the reward is FRONTED one step: the user's
+    //    first-ever card purchase grants a bonus draft immediately (before any
+    //    fees accumulate), tracked by the once-only `cardFeeFrontGranted` flag;
+    //    the $25 accumulator then keeps granting the NEXT one as before.
+    //    Atomic + idempotent per mint txHash (marker doc) so a retry
     //    can never double-credit or double-grant. USDC purchases pay no card
     //    fee, so they never accrue credit.
     let rewardEarned = 0;
+    let rewardFronted = 0;
     let rewardRolloverCents = 0;
     let rewardTokenIds: string[] = [];
     let rewardMintTxHash: string | undefined;
@@ -374,31 +379,35 @@ export async function POST(req: Request) {
       try {
         const res = await db.runTransaction(async (tx) => {
           const marker = await tx.get(markerRef);
-          if (marker.exists) return { duplicate: true, earned: 0, rolloverCents: 0 };
+          if (marker.exists) return { duplicate: true, earned: 0, fronted: 0, rolloverCents: 0 };
           const userSnap = await tx.get(userRef);
-          const cur = Math.max(0, (userSnap.data()?.cardFeeCreditCents as number | undefined) ?? 0);
+          const udata = userSnap.data() ?? {};
+          const cur = Math.max(0, (udata.cardFeeCreditCents as number | undefined) ?? 0);
           const credit = cur + feeCents;
-          const earned = Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
+          const fronted = udata.cardFeeFrontGranted === true ? 0 : 1;
+          const earned = fronted + Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
           const rolloverCents = credit % FREE_DRAFT_CREDIT_CENTS;
-          tx.set(userRef, { cardFeeCreditCents: rolloverCents }, { merge: true });
+          tx.set(userRef, { cardFeeCreditCents: rolloverCents, cardFeeFrontGranted: true }, { merge: true });
           tx.set(markerRef, {
             txHash: mintResult.txHash.toLowerCase(),
             userId,
             quantity,
             feeCents,
             earned,
+            fronted,
             status: earned > 0 ? 'pending' : 'credited',
             createdAt: FieldValue.serverTimestamp(),
           });
-          return { duplicate: false, earned, rolloverCents };
+          return { duplicate: false, earned, fronted, rolloverCents };
         });
         if (res.duplicate) {
           logger.info(LOG_SOURCES.payment.REWARD_DUPLICATE_SKIPPED, { userId, txHash: mintResult.txHash });
         } else {
           rewardEarned = res.earned;
+          rewardFronted = res.fronted;
           rewardRolloverCents = res.rolloverCents;
           logger.info(LOG_SOURCES.payment.FEE_CREDITED, {
-            userId, quantity, feeCents, rolloverCents: res.rolloverCents, earned: res.earned,
+            userId, quantity, feeCents, rolloverCents: res.rolloverCents, earned: res.earned, fronted: res.fronted,
           });
         }
       } catch (creditErr) {
@@ -505,7 +514,10 @@ export async function POST(req: Request) {
         txHash: rewardMintTxHash ?? null,
         metadata: {
           source: 'card_fee_reward',
-          creditConsumedCents: FREE_DRAFT_CREDIT_CENTS * rewardEarned,
+          // Only threshold-earned drafts consume accumulated credit — the
+          // fronted first-purchase draft is granted ahead of any credit.
+          creditConsumedCents: FREE_DRAFT_CREDIT_CENTS * (rewardEarned - rewardFronted),
+          fronted: rewardFronted,
           rolloverCents: rewardRolloverCents,
           sourceTxHash: mintResult.txHash,
         },
@@ -572,7 +584,7 @@ export async function POST(req: Request) {
     // Post-commit: fire the synced bell + bottom toast when a free draft was
     // earned from card-fee credit. Best-effort; never blocks the response.
     if (rewardEarned > 0) {
-      pushStreamEventBg(userId, 'promo-card-free-draft', { awardedCount: rewardEarned });
+      pushStreamEventBg(userId, 'promo-card-free-draft', { awardedCount: rewardEarned, fronted: rewardFronted > 0 });
     }
 
     return json({

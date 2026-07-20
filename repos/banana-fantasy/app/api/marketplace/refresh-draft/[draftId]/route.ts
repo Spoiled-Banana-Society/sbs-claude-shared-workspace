@@ -367,7 +367,7 @@ export async function POST(
       logger.info('marketplace.refresh_draft_done', { draftId, refreshed });
     }
 
-    return json({ ok: true, draftId, refreshed, total: tokenIds.length, failed, imagesWritten });
+    return json({ ok: true, draftId, refreshed, total: tokenIds.length, failed, imagesWritten, eligible });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error(LOG_SOURCES.marketplace.REFRESH_DRAFT_FAILED, { err, draftId });

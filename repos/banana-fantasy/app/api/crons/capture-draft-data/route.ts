@@ -128,16 +128,40 @@ async function checkDraft(db: Firestore, draftId: string, maxTokenId: number): P
 
 // Canonical "draft finished" signal: RTDB drafts/{id}/realTimeDraftInfo.isDraftClosed,
 // set true by the Go close routine (and read by the draft-room client trigger).
-// Absent node → true (an old draft whose RTDB was cleaned up is certainly done;
-// never strand it). Read error → true for the same safety reason.
 async function isDraftClosed(draftId: string): Promise<boolean> {
   try {
     const snap = await getAdminDatabase()
       .ref(`drafts/${draftId}/realTimeDraftInfo`)
       .once('value');
     const v = snap.val();
-    if (!v) return true; // node absent → assume closed (don't strand finished drafts)
-    return v.isDraftClosed === true || v.isDraftComplete === true;
+    if (v) return v.isDraftClosed === true || v.isDraftComplete === true;
+  } catch {
+    return true; // RTDB read error → don't strand a finished draft
+  }
+  // Node ABSENT. That used to mean "old cleaned-up draft → closed" — but a
+  // FILLING lobby also has no node yet (it appears at draft start), and treating
+  // it as closed burned the whole 8-attempt budget before the draft even began.
+  // Every draft whose lobby outlived ~40 min of sweeps then gave up forever the
+  // moment it actually closed (BBB #162 / #195 / all slow drafts, 2026-07-19).
+  // Disambiguate via the Go engine's state:
+  //   JSON            → closed only when every pick is in
+  //   non-JSON text   → "draft state not yet initialized" → still filling
+  //   request failure → engine evicted it → genuinely old → closed
+  try {
+    const base =
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
+      process.env.STAGING_DRAFTS_API_URL ||
+      'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const res = await fetch(`${base.replace(/\/$/, '')}/draft/${encodeURIComponent(draftId)}/state/info`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return true;
+    const txt = await res.text();
+    if (!txt.trim().startsWith('{')) return false; // not yet initialized → filling
+    const d = JSON.parse(txt) as { pickNumber?: number; draftOrder?: unknown[] };
+    const seats = Array.isArray(d.draftOrder) && d.draftOrder.length > 0 ? d.draftOrder.length : 10;
+    return typeof d.pickNumber === 'number' && d.pickNumber >= seats * 15;
   } catch {
     return true;
   }
@@ -196,6 +220,13 @@ export async function GET(req: Request) {
             signal: AbortSignal.timeout(25_000),
           });
           logger.info('cron.capture_draft_data_fired', { draftId: c.draftId, status: res.status, attempt: attempts + 1 });
+          // Premature fire (nothing capturable yet — the draft turned out to be
+          // filling/mid-draft despite the closed check): refund the attempt so
+          // the FULL budget still applies to the real post-close window.
+          const body = (await res.json().catch(() => null)) as { eligible?: number; imagesWritten?: number } | null;
+          if (res.ok && body && Number(body.eligible ?? -1) === 0 && Number(body.imagesWritten ?? -1) === 0) {
+            await guardRef.set({ attempts, lastPrematureAt: new Date().toISOString() }, { merge: true });
+          }
         } catch (err) {
           logger.warn('cron.capture_draft_data_fire_failed', { draftId: c.draftId, error: String(err) });
         }

@@ -1040,6 +1040,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           hofEntries: (d.hofEntries as number) ?? prev.hofEntries,
           cardPurchaseCount: (d.cardPurchaseCount as number) ?? prev.cardPurchaseCount,
           cardFeeCreditCents: (d.cardFeeCreditCents as number) ?? prev.cardFeeCreditCents,
+          // Live so the one-time card-fee explainer hides the moment the
+          // fronted draft is granted (first card purchase / backfill).
+          cardFeeFrontGranted: typeof d.cardFeeFrontGranted === 'boolean' ? d.cardFeeFrontGranted : prev.cardFeeFrontGranted,
           draftPasses: typeof d.draftPasses === 'number' ? (d.draftPasses as number) : prev.draftPasses,
           // First-purchase promo gating — now delivered live so the card hides
           // after a purchase and unlocks for new users post free-drafts.
@@ -1234,6 +1237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hofEntries?: number;
       cardPurchaseCount?: number;
       cardFeeCreditCents?: number;
+      cardFeeFrontGranted?: boolean;
     } | null = null;
     try {
       const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
@@ -1255,6 +1259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hofEntries: typeof firestoreBalance!.hofEntries === 'number' ? firestoreBalance!.hofEntries : prev.hofEntries,
         cardPurchaseCount: typeof firestoreBalance!.cardPurchaseCount === 'number' ? firestoreBalance!.cardPurchaseCount : prev.cardPurchaseCount,
         cardFeeCreditCents: typeof firestoreBalance!.cardFeeCreditCents === 'number' ? firestoreBalance!.cardFeeCreditCents : prev.cardFeeCreditCents,
+        cardFeeFrontGranted: typeof firestoreBalance!.cardFeeFrontGranted === 'boolean' ? firestoreBalance!.cardFeeFrontGranted : prev.cardFeeFrontGranted,
       };
     });
   }, [user?.id]);

@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
+      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
     }
 
     const db = getAdminFirestore();
@@ -87,6 +87,9 @@ export async function GET(req: Request) {
       draftPasses: paidPasses,
       cardPurchaseCount: nonNeg(data.cardPurchaseCount),
       cardFeeCreditCents: nonNeg(data.cardFeeCreditCents),
+      // Gates the one-time "we cover your card fees" explainer in the buy
+      // modal — false until the user's fronted card-fee draft has been granted.
+      cardFeeFrontGranted: !!data.cardFeeFrontGranted,
       nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
       // First-purchase promo gating flags — the promo carousel / banner / popup
       // read these off the client user object. Without them the first-purchase
