@@ -21,6 +21,9 @@ interface BalancePayload {
   draftPasses: number;
   cardPurchaseCount: number;
   cardFeeCreditCents: number;
+  // Fronted card-fee draft flag — pushed live so the buy modal's one-time
+  // "we cover your card fees" explainer disappears right after the grant.
+  cardFeeFrontGranted: boolean;
   // First-purchase promo gating — pushed live so the promo card hides the
   // moment a purchase is recorded, and unlocks when a new user finishes their
   // free drafts. Without these on the client the first-purchase flow is blind.
@@ -41,6 +44,7 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
     draftPasses: nonNeg(d.draftPasses),
     cardPurchaseCount: nonNeg(d.cardPurchaseCount),
     cardFeeCreditCents: nonNeg(d.cardFeeCreditCents),
+    cardFeeFrontGranted: !!d.cardFeeFrontGranted,
     firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
     hasSpunWheel: !!d.hasSpunWheel,
@@ -73,7 +77,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
-      firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false,
+      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false,
     };
     const stream = new ReadableStream({
       start(controller) {

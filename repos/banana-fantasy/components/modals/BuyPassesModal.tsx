@@ -133,6 +133,25 @@ export function BuyPassesModal({
   // Mobile MetaMask USDC buy: interstitial shown before handing off to MetaMask's
   // in-app browser, so the user understands the (MetaMask-side) few-second load.
   const [showMetaMaskHandoff, setShowMetaMaskHandoff] = useState(false);
+
+  // One-time "we cover your card fees" explainer — first-time card buyers only
+  // (server flag `cardFeeFrontGranted` flips after their fronted draft lands;
+  // localStorage stops re-showing it across modal opens before they buy).
+  // No fetch in this effect — scalar deps only (Rule #0 safe).
+  const [showFeeIntro, setShowFeeIntro] = useState(false);
+  const feeIntroKey = walletAddress ? `sbs-card-fee-intro-seen:${walletAddress.toLowerCase()}` : null;
+  const hasFrontedDraft = user?.cardFeeFrontGranted === true;
+  useEffect(() => {
+    if (!isOpen || paymentMethod !== 'card' || hasFrontedDraft || !feeIntroKey) return;
+    try {
+      if (localStorage.getItem(feeIntroKey)) return;
+    } catch { /* storage unavailable → still show once per mount */ }
+    setShowFeeIntro(true);
+  }, [isOpen, paymentMethod, hasFrontedDraft, feeIntroKey]);
+  const dismissFeeIntro = () => {
+    setShowFeeIntro(false);
+    try { if (feeIntroKey) localStorage.setItem(feeIntroKey, '1'); } catch { /* best-effort */ }
+  };
   const applyReferral = async () => {
     const code = referralCode.trim();
     const userId = walletAddress || user?.id;
@@ -907,6 +926,42 @@ export function BuyPassesModal({
           </button>
         </div>
       )}
+      {/* One-time card-fee explainer — first-time card buyers only. Explains the
+          full mechanic BEFORE the MoonPay popup (which we can't put copy inside):
+          fee is covered by a free pass now, and every $25 in fees earns another. */}
+      {showFeeIntro && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-2xl bg-bg-primary/95 backdrop-blur-sm px-6 py-8 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-banana/15 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" className="w-6 h-6 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+              <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+            </svg>
+          </div>
+          <h3 className="text-text-primary text-lg font-bold leading-snug">Card fees? We cover them.</h3>
+          <div className="space-y-3 max-w-[320px] text-left">
+            <div className="flex gap-2.5">
+              <span className="text-banana font-bold text-sm shrink-0 mt-px">1.</span>
+              <p className="text-text-secondary text-sm leading-relaxed">
+                Card purchases carry a small processing fee. To make up for it, your first card purchase comes with a <span className="text-banana font-semibold">FREE bonus Draft Pass</span> — it lands right away.
+              </p>
+            </div>
+            <div className="flex gap-2.5">
+              <span className="text-banana font-bold text-sm shrink-0 mt-px">2.</span>
+              <p className="text-text-secondary text-sm leading-relaxed">
+                After that, every fee you pay is credited to you. Each time your fees add up to <span className="text-banana font-semibold">$25, another free Draft Pass</span> lands — automatically.
+              </p>
+            </div>
+            <p className="text-text-muted text-xs leading-relaxed">
+              Bonus passes are real paid-type passes — they count for promos too.
+            </p>
+          </div>
+          <button
+            onClick={dismissFeeIntro}
+            className="mt-1 w-full max-w-[320px] rounded-xl bg-banana py-3.5 text-black font-bold text-[15px] active:brightness-95 hover:brightness-110 transition-all"
+          >
+            Got it
+          </button>
+        </div>
+      )}
       <div className="space-y-3.5">
 
         {/* ═══ PHASE 1: PURCHASE ═══ */}
@@ -1000,16 +1055,35 @@ export function BuyPassesModal({
             </>
             )}
 
-            {/* Card-fee credit → free draft banner (live $ progress) */}
+            {/* Card-fee credit → free draft banner. First-time card buyers see
+                the fronted-pass pitch (this purchase includes a free draft);
+                returning buyers see live $ progress toward the next one. */}
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
               const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
+              const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+              if (!hasFrontedDraft) {
+                return (
+                <div className="bg-banana/[0.08] border border-banana/20 rounded-xl p-3">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+                      <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+                    </svg>
+                    <p className="text-white/85 text-[12px] font-semibold">
+                      This purchase includes a FREE bonus Draft Pass — your card fee&apos;s on us
+                    </p>
+                  </div>
+                  <p className="text-white/40 text-[10px] mt-1.5">
+                    After that, every $25 in card fees earns you another free Draft Pass — automatically.
+                  </p>
+                </div>
+                );
+              }
               // Bar reflects ACTUAL accumulated credit — empty at $0, fills live
               // as real card purchases accrue (cardFeeCreditCents streams in).
               const current = Math.min(threshold, user?.cardFeeCreditCents || 0);
               const earnsNow = current + feeForQty(quantity || 1) >= threshold;
               const curPct = Math.min(100, (current / threshold) * 100);
               const remaining = Math.max(0, threshold - current);
-              const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
               return (
               <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -1018,8 +1092,8 @@ export function BuyPassesModal({
                   </svg>
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
-                      ? 'This purchase earns you a draft pass!'
-                      : "Your card fee is credited forward — at $25 it's a draft pass"
+                      ? 'This purchase earns you a free draft pass!'
+                      : 'Every $25 in card fees = another free Draft Pass'
                     }
                   </p>
                 </div>

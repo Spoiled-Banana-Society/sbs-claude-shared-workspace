@@ -79,12 +79,26 @@ export function eventNotificationContent(
     }
     case 'promo-card-free-draft': {
       const count = payload.awardedCount ?? 1;
+      // Fronted = the first-card-purchase bonus draft. Explain the program:
+      // this one came with the purchase, and every $25 in card fees earns
+      // the next one automatically.
+      if (payload.fronted) {
+        return {
+          type: 'promo',
+          title: count === 1 ? 'Bonus Draft Pass — card fee covered' : `${count} Bonus Draft Passes — card fees covered`,
+          message: count === 1
+            ? 'We cover card fees: your purchase came with a free Draft Pass. Every $25 you rack up in card fees earns you another one, automatically.'
+            : `We cover card fees: your purchase came with ${count} free Draft Passes. Every $25 you rack up in card fees earns you another one, automatically.`,
+          link: '/drafting',
+          icon: 'gift',
+        };
+      }
       return {
         type: 'promo',
         title: count === 1 ? 'Draft Pass earned' : `${count} Draft Passes earned`,
         message: count === 1
-          ? 'Your card fees added up to $25 — a Draft Pass is on us. Tap to play.'
-          : `Your card fees earned you ${count} Draft Passes — on us. Tap to play.`,
+          ? 'Your card fees reached $25 — a free Draft Pass just landed. Every $25 in fees earns the next one.'
+          : `Your card fees earned you ${count} Draft Passes — on us. Every $25 in fees earns the next one.`,
         link: '/drafting',
         // 'gift' = a FREE draft (earned/won), distinct from a PURCHASED pass
         // ('ticket'). Matches the wheel-win free-draft bell (Boris 2026-06-20).

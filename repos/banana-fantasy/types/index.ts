@@ -25,6 +25,14 @@ export interface User {
    * user earns 1 paid-type draft and the remainder rolls over.
    */
   cardFeeCreditCents: number;
+  /**
+   * True once the user has received their FRONTED card-fee draft — the free
+   * pass granted on their first-ever card purchase (or via the 2026-07-19
+   * backfill for users who had already paid card fees). While false, the buy
+   * flow shows the one-time "we cover your card fees" explainer and the next
+   * card purchase grants the fronted pass. Set once, never reset.
+   */
+  cardFeeFrontGranted?: boolean;
   // First-purchase bonus (every 4 passes on the first PAID purchase = 1 spin).
   // `firstPurchaseBonusGranted` is the durable "has made a first paid purchase"
   // flag — set once and never reset (cardPurchaseCount resets after 6, so it

@@ -238,7 +238,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'Do I need ETH for gas?',
-        answer: 'Not to play. Every transaction on SBS - minting passes, buying and selling on the marketplace - is gas-free, we cover it. The only fees you might ever pay are outside SBS: if you swap or bridge on another site (like Relay or Coinbase), their small network fee applies and is shown in their quote. You can also skip crypto entirely and pay with a debit card at checkout - card purchases carry a processing fee, but it\'s credited back to you, and at $25 in credit you get a draft pass (a real paid pass - it counts for promos).',
+        answer: 'Not to play. Every transaction on SBS - minting passes, buying and selling on the marketplace - is gas-free, we cover it. The only fees you might ever pay are outside SBS: if you swap or bridge on another site (like Relay or Coinbase), their small network fee applies and is shown in their quote. You can also skip crypto entirely and pay with a debit card at checkout - card purchases carry a processing fee, but we cover it: your first card purchase comes with a free bonus draft pass, and after that every $25 you accumulate in card fees earns you another one automatically (real paid passes - they count for promos).',
       },
       {
         question: 'I have ETH on Ethereum Mainnet - how do I play?',
