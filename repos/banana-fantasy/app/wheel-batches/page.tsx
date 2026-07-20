@@ -30,15 +30,17 @@ const BASESCAN_ADDRESS = (a: string) => `https://basescan.org/address/${a}`;
 
 interface FeedSpin {
   spinId: string;
-  spinIndex: number;
+  /** In-round spin index — null for spins from before the VRF rounds. */
+  spinIndex: number | null;
   result: string;
   timestamp: string;
 }
 
 interface FeedResponse {
-  periodNumber: number;
+  periodNumber: number | null;
   count: number;
   nextCursor: number | null;
+  nextCursorTs: string | null;
   spins: FeedSpin[];
 }
 
@@ -54,7 +56,9 @@ export default function WheelBatchesPage() {
   const [period, setPeriod] = useState<PeriodSummary | null>(null);
   const [contractAddress, setContractAddress] = useState<string | null>(null);
   const [spins, setSpins] = useState<FeedSpin[]>([]);
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  // Timestamp cursor for the ALL-TIME feed (every spin since the contest
+  // started — rolling to a new VRF round never hides history).
+  const [nextCursorTs, setNextCursorTs] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +79,26 @@ export default function WheelBatchesPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Initial load: the ALL-TIME feed (all rounds + pre-round spins). The SSE
+  // stream below only carries the current round's head — merging the two keeps
+  // the full history visible while new spins still appear instantly.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/wheel/feed?limit=${PAGE_SIZE}`, { cache: 'no-store' });
+        const body = (await res.json()) as FeedResponse;
+        if (cancelled || !res.ok) return;
+        setSpins((current) => {
+          const seen = new Set(current.map((s) => s.spinId));
+          return [...current, ...body.spins.filter((s) => !seen.has(s.spinId))];
+        });
+        setNextCursorTs(body.nextCursorTs);
+      } catch { /* SSE still populates the head; Load-older just won't appear */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Live spin feed via SSE — server pushes the moment a spin completes
   // (wheel_periods/{N}.spinCount increments). Pagination still uses the
   // REST endpoint for "load older spins" since SSE only streams the head.
@@ -88,11 +112,13 @@ export default function WheelBatchesPage() {
     const applyPayload = (raw: string) => {
       try {
         const body = JSON.parse(raw) as { spins: FeedSpin[] };
-        setSpins(body.spins);
-        // SSE only delivers the head — pagination cursor needs PAGE_SIZE-level
-        // resolution. Use null when we have less than PAGE_SIZE; otherwise
-        // last index lets users keep paginating back via the REST endpoint.
-        setNextCursor(body.spins.length === PAGE_SIZE ? body.spins[body.spins.length - 1].spinIndex : null);
+        // SSE delivers only the CURRENT round's head — merge it on top of the
+        // all-time history already loaded instead of replacing the list (the
+        // replace was what made past rounds' spins vanish on a round roll).
+        setSpins((current) => {
+          const seen = new Set(body.spins.map((s) => s.spinId));
+          return [...body.spins, ...current.filter((s) => !seen.has(s.spinId))];
+        });
         setError(null);
       } catch (err) {
         setError((err as Error).message);
@@ -122,11 +148,11 @@ export default function WheelBatchesPage() {
   }, [period]);
 
   const loadMore = useCallback(async () => {
-    if (!period || nextCursor === null || loading) return;
+    if (nextCursorTs === null || loading) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/wheel/feed?period=${period.periodNumber}&limit=${PAGE_SIZE}&before=${nextCursor}`,
+        `/api/wheel/feed?limit=${PAGE_SIZE}&beforeTs=${encodeURIComponent(nextCursorTs)}`,
         { cache: 'no-store' },
       );
       const body = (await res.json()) as FeedResponse & { error?: string };
@@ -134,14 +160,17 @@ export default function WheelBatchesPage() {
         setError(body.error || `Request failed (${res.status})`);
         return;
       }
-      setSpins((current) => [...current, ...body.spins]);
-      setNextCursor(body.nextCursor);
+      setSpins((current) => {
+        const seen = new Set(current.map((s) => s.spinId));
+        return [...current, ...body.spins.filter((s) => !seen.has(s.spinId))];
+      });
+      setNextCursorTs(body.nextCursorTs);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [period, nextCursor, loading]);
+  }, [nextCursorTs, loading]);
 
   const segmentById = new Map(wheelSegments.map((s) => [s.id, s]));
 
@@ -259,10 +288,14 @@ export default function WheelBatchesPage() {
                       const seg = segmentById.get(s.result);
                       return (
                         <tr key={s.spinId} className="border-t border-white/5 hover:bg-white/5">
-                          <td className="px-4 py-2 text-white/60 font-mono">#{s.spinIndex}</td>
+                          <td className="px-4 py-2 text-white/60 font-mono">{s.spinIndex !== null ? `#${s.spinIndex}` : '—'}</td>
                           <td className="px-4 py-2 font-semibold" style={{ color: seg?.color ?? '#fff' }}>{seg?.label ?? s.result}</td>
                           <td className="px-4 py-2 text-right">
-                            <Link href={`/spin-proof/${s.spinId}`} className="text-banana hover:underline">Verify →</Link>
+                            {s.spinIndex !== null ? (
+                              <Link href={`/spin-proof/${s.spinId}`} className="text-banana hover:underline">Verify →</Link>
+                            ) : (
+                              <span className="text-white/25">pre-VRF</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -271,7 +304,7 @@ export default function WheelBatchesPage() {
                 </table>
               </div>
             )}
-            {nextCursor !== null && (
+            {nextCursorTs !== null && (
               <div className="border-t border-white/5 p-3 text-center">
                 <button
                   onClick={loadMore}

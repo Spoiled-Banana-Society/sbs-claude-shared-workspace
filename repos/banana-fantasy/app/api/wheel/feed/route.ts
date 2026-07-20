@@ -28,13 +28,24 @@ export async function GET(req: Request) {
     const periodRaw = url.searchParams.get('period');
     const limitRaw = url.searchParams.get('limit');
     const beforeRaw = url.searchParams.get('before');
-
-    const periodNumber = periodRaw ? parseInt(periodRaw, 10) : NaN;
-    if (!Number.isInteger(periodNumber) || periodNumber < 1) {
-      throw new ApiError(400, 'Missing or invalid `period` query param');
-    }
+    const beforeTsRaw = url.searchParams.get('beforeTs');
 
     const limit = limitRaw ? Math.min(200, Math.max(1, parseInt(limitRaw, 10))) : 50;
+
+    // ALL-TIME mode (`period=all` or omitted): every spin since the contest
+    // started, across every VRF round AND the pre-round era, ordered by
+    // timestamp. This is what the public feed shows — rolling to a new VRF
+    // round must never make historical spins disappear. Cursor is the ISO
+    // timestamp of the last row (`beforeTs`).
+    if (!periodRaw || periodRaw === 'all') {
+      return await allTimeFeed(limit, beforeTsRaw);
+    }
+
+    const periodNumber = parseInt(periodRaw, 10);
+    if (!Number.isInteger(periodNumber) || periodNumber < 1) {
+      throw new ApiError(400, 'Invalid `period` query param');
+    }
+
     const before = beforeRaw ? parseInt(beforeRaw, 10) : null;
 
     const db = getAdminFirestore();
@@ -117,4 +128,74 @@ export async function GET(req: Request) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     return jsonError('Internal Server Error', 500);
   }
+}
+
+/**
+ * All-time spin feed: collection-group over every user's wheelSpins ordered
+ * by timestamp (ISO strings sort chronologically). Rows carry their round
+ * number + in-round index when they have one (VRF-era spins are verifiable);
+ * pre-round spins render without a proof link. Same reveal-grace filtering
+ * as the per-round mode.
+ */
+async function allTimeFeed(limit: number, beforeTs: string | null): Promise<Response> {
+  const db = getAdminFirestore();
+  let query = db
+    .collectionGroup('wheelSpins')
+    .orderBy('timestamp', 'desc')
+    .limit(limit * 2);
+  if (beforeTs) {
+    query = db
+      .collectionGroup('wheelSpins')
+      .orderBy('timestamp', 'desc')
+      .startAfter(beforeTs)
+      .limit(limit * 2);
+  }
+
+  let snap;
+  try {
+    snap = await query.get();
+  } catch (err) {
+    const msg = (err as { message?: string })?.message ?? String(err);
+    const code = (err as { code?: number })?.code;
+    if (code === 9 || /FAILED_PRECONDITION|requires an index/i.test(msg)) {
+      logger.error('wheel.feed.missing_index', { route: '/api/wheel/feed', mode: 'all', err: new Error(msg) });
+      return json({ periodNumber: null, count: 0, nextCursor: null, nextCursorTs: null, spins: [] }, 200);
+    }
+    throw err;
+  }
+
+  const REVEAL_BACKSTOP_MS = 30_000;
+  const cutoff = Date.now() - REVEAL_BACKSTOP_MS;
+  const spins: Array<{
+    spinId: string;
+    spinIndex: number | null;
+    periodNumber: number | null;
+    result: string;
+    timestamp: string;
+  }> = [];
+  for (const d of snap.docs) {
+    const data = d.data() as {
+      spinId?: string;
+      result?: string;
+      timestamp?: string;
+      periodNumber?: number | null;
+      spinIndexInPeriod?: number | null;
+      feedRevealedAt?: number | null;
+    };
+    if (!data.spinId || !data.result || !data.timestamp) continue;
+    const isExplicitlyRevealed = !!data.feedRevealedAt;
+    const isOldEnough = new Date(data.timestamp).getTime() < cutoff;
+    if (!isExplicitlyRevealed && !isOldEnough) continue;
+    spins.push({
+      spinId: data.spinId,
+      spinIndex: typeof data.spinIndexInPeriod === 'number' ? data.spinIndexInPeriod : null,
+      periodNumber: typeof data.periodNumber === 'number' ? data.periodNumber : null,
+      result: data.result,
+      timestamp: data.timestamp,
+    });
+    if (spins.length >= limit) break;
+  }
+
+  const nextCursorTs = spins.length === limit ? spins[spins.length - 1].timestamp : null;
+  return json({ periodNumber: null, count: spins.length, nextCursor: null, nextCursorTs, spins }, 200);
 }
