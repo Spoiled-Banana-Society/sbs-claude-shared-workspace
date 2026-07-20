@@ -115,6 +115,21 @@ export async function GET(req: Request) {
         const tokenId = String(m.tokenId);
         const wallet = m.wallet.toLowerCase();
         try {
+          // COLLISION GUARD: if this token is already a DIFFERENT team, never
+          // relabel it. Early wheel passes (pre level-lock) could be spent into
+          // a regular draft while their queue seat kept the stale token binding
+          // — token 873 was both BBB #104 and an HOF #12 seat, and blind linking
+          // corrupted the real team's card (2026-07-19). Such a seat has no NFT
+          // of its own; flag it for a human instead.
+          const ix = await db.collection('marketplace_index').doc(tokenId).get();
+          if (ix.exists && ix.get('status') === 'team') {
+            logger.error('link_wheel_teams.token_already_team', {
+              type, draftId, tokenId, wallet,
+              existingLeagueNumber: ix.get('leagueNumber') ?? null,
+              note: 'wheel seat token already belongs to another team (pre-lock double-spend) — needs manual resolution, skipping',
+            });
+            continue;
+          }
           const card = cards.find(c => String(c.data.OwnerId ?? '').toLowerCase() === wallet);
           if (!card) throw new Error('no card doc for seat wallet');
           const cardId = String(card.data.CardId ?? card.id);
