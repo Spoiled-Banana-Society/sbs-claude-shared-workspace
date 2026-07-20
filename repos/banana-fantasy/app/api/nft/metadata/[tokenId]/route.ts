@@ -95,7 +95,13 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
         const rawAttrs = (d.Attributes ?? d.attributes ?? []) as Array<Record<string, unknown>>;
         const mapped = rawAttrs
           .map((a) => ({ trait_type: String(a.Trait_Type ?? a.trait_type ?? ''), value: String(a.Value ?? a.value ?? '') }))
-          .filter((a) => a.trait_type);
+          .filter((a) => a.trait_type)
+          // Special-draft finalize docs write roster values as dash playerIds
+          // ("LAR-WR2") where regular docs write "LAR WR2" — normalize to the
+          // space form so OpenSea trait filters don't split into two buckets.
+          .map((a) => /^(QB|RB|WR|TE|DST)\d+$/i.test(a.trait_type.trim())
+            ? { ...a, value: a.value.trim().split(/[\s-]+/).join(' ') }
+            : a);
         if (mapped.length) rawAttributes = mapped;
       }
     } catch { /* keep built */ }

@@ -25,9 +25,16 @@ async function playersWithPicks(id: string, fallback: CardPlayer[]): Promise<Car
   try {
     if (!isFirestoreConfigured() || !/^\d+$/.test(id)) return fallback;
     const dt = await getAdminFirestore().collection('draftTokens').doc(id).get();
-    if (!dt.exists) return fallback;
-    const leagueId = String(dt.get('LeagueId') ?? dt.get('_leagueId') ?? '');
-    const owner = String(dt.get('OwnerId') ?? dt.get('_ownerId') ?? '').toLowerCase();
+    let leagueId = String(dt.get('LeagueId') ?? dt.get('_leagueId') ?? '');
+    let owner = String(dt.get('OwnerId') ?? dt.get('_ownerId') ?? '').toLowerCase();
+    if (!leagueId || !owner) {
+      // Wheel-won JP/HOF tokens have NO draftTokens doc (the Go engine seats
+      // special drafts with a synthetic `special-…` token) — their league+owner
+      // binding lives in nft_league_map, written by link-wheel-teams.
+      const map = await getAdminFirestore().collection('nft_league_map').doc(id).get();
+      leagueId = String(map.get('leagueId') ?? '');
+      owner = String(map.get('ownerAtMap') ?? '').toLowerCase();
+    }
     if (!leagueId || !owner) return fallback;
     const picks: Array<{ playerId: string; pickNum: number }> = [];
     // 1) Live Go summary (fast when the draft is recent / still in Redis).
@@ -57,7 +64,10 @@ async function playersWithPicks(id: string, fallback: CardPlayer[]): Promise<Car
         picks.push({ playerId: info.PlayerId, pickNum: Number(info.PickNum) || 0 });
       }
     }
-    if (picks.length < 10) return fallback;
+    // A partially back-filled summary (e.g. a slow draft whose close routine
+    // missed rows) must not DROP roster spots — a 13-row card is worse than a
+    // 15-row card without pick numbers. Heal only from a complete pick list.
+    if (picks.length < Math.max(10, fallback.length)) return fallback;
     return picks
       .sort((a, b) => a.pickNum - b.pickNum)
       .map((p) => {
@@ -114,20 +124,32 @@ function leagueNoFromAttrs(attrs: Array<{ tt: string; val: string }>): string {
   return simple ? simple[1] : '';
 }
 
-/** Build card players from the Go-written metadata roster attributes
- *  (trait_type "RB1", value "MIN RB1"). bye/ADP from ALL_POSITIONS. */
+/** The only slots that exist: playerIds are `${team}-${slot}` with NO digit on
+ *  QB/TE/DST ("BAL-QB") and a digit on RB/WR ("LAR-WR2"). */
+const CANONICAL_SLOT = /^(QB|RB1|RB2|WR1|WR2|TE|DST)$/;
+
+/** Build card players from the Go-written metadata roster attributes.
+ *  bye/ADP from ALL_POSITIONS.
+ *
+ *  Two facts about these attrs (ticket-3325):
+ *  - The trait_type is the ROSTER INDEX ("WR4" = 4th WR drafted, "QB2" = 2nd
+ *    QB), NOT the depth-chart slot. The TRUE slot is inside the value.
+ *  - The value comes in TWO formats — regular Go finalize docs write
+ *    "MIN RB1" (space), the special-draft lane writes playerIds "MIN-RB1"
+ *    (dash) — and a single doc can MIX both.
+ *  The old parse split the value on whitespace only (a dash value left the
+ *  whole "MIN-RB1" as the team → rows rendered "MIN-RB1-RB1") and displayed/
+ *  keyed the roster index (→ "LAR-WR2" showed as WR4; "BAL-QB" looked up
+ *  "BAL-QB1" and missed PLAYER_META → blank bye/ADP on every QB/TE/DST row). */
 function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardPlayer[] {
   return attrs
     .filter((a) => ROSTER_TRAIT.test(a.tt))
     .map((a) => {
-      const team = a.val.trim().split(/\s+/)[0] || '';
-      // KEY ON THE CANONICAL SLOT (a.tt = "RB1"/"WR1"/...), NOT the position
-      // re-parsed from the value. PLAYER_META is keyed `${team}-${slot}` and the
-      // trait_type is ALWAYS the exact slot; parsing it back out of the value
-      // string ("MIN RB1") was fragile — a value missing the slot digit ("MIN RB")
-      // produced "MIN-RB", missing PLAYER_META entirely → blank bye/ADP. Using
-      // a.tt makes the lookup bulletproof, so bye/ADP always resolve.
-      const slot = a.tt.toUpperCase();
+      const [team = '', valSlot = ''] = a.val.trim().toUpperCase().split(/[\s-]+/);
+      // Prefer the value's slot; fall back to the trait's position letters
+      // when the value doesn't carry a canonical slot (defensive — a bare
+      // "MIN RB" degrades to pos "RB" with '-' bye/ADP instead of lying).
+      const slot = CANONICAL_SLOT.test(valSlot) ? valSlot : a.tt.toUpperCase().replace(/\d+$/, '');
       const m = PLAYER_META.get(`${team}-${slot}`);
       return { team, pos: slot, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' as const };
     });
