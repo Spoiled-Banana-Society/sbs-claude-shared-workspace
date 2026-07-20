@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 
-import { wheelSegments } from '@/lib/wheelConfig';
+import { allKnownSegmentsById } from '@/lib/wheelConfig';
 
 interface PeriodSummary {
   periodNumber: number;
@@ -41,6 +41,9 @@ interface FeedResponse {
   count: number;
   nextCursor: number | null;
   nextCursorTs: string | null;
+  /** All-time spin count — powers the global row numbering that keeps
+   *  counting up across VRF round rolls (#845, #846, …). */
+  totalSpins?: number | null;
   spins: FeedSpin[];
 }
 
@@ -59,8 +62,14 @@ export default function WheelBatchesPage() {
   // Timestamp cursor for the ALL-TIME feed (every spin since the contest
   // started — rolling to a new VRF round never hides history).
   const [nextCursorTs, setNextCursorTs] = useState<string | null>(null);
+  // All-time spin total — row numbering continues across round rolls (the
+  // newest spin is #totalSpins, the one below #totalSpins-1, …).
+  const [totalSpins, setTotalSpins] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Every spinId ever seen in this session — dedupe source for the SSE
+  // total-count increments (state updaters must stay side-effect-free).
+  const seenSpinIdsRef = useRef<Set<string>>(new Set());
 
   // Load current period state for the header card.
   useEffect(() => {
@@ -89,11 +98,13 @@ export default function WheelBatchesPage() {
         const res = await fetch(`/api/wheel/feed?limit=${PAGE_SIZE}`, { cache: 'no-store' });
         const body = (await res.json()) as FeedResponse;
         if (cancelled || !res.ok) return;
+        for (const s of body.spins) seenSpinIdsRef.current.add(s.spinId);
         setSpins((current) => {
           const seen = new Set(current.map((s) => s.spinId));
           return [...current, ...body.spins.filter((s) => !seen.has(s.spinId))];
         });
         setNextCursorTs(body.nextCursorTs);
+        if (typeof body.totalSpins === 'number') setTotalSpins(body.totalSpins);
       } catch { /* SSE still populates the head; Load-older just won't appear */ }
     })();
     return () => { cancelled = true; };
@@ -115,6 +126,11 @@ export default function WheelBatchesPage() {
         // SSE delivers only the CURRENT round's head — merge it on top of the
         // all-time history already loaded instead of replacing the list (the
         // replace was what made past rounds' spins vanish on a round roll).
+        // Ref (not the updater) counts the never-seen spins so the global
+        // numbering advances exactly once per new spin (StrictMode-safe).
+        const fresh = body.spins.filter((s) => !seenSpinIdsRef.current.has(s.spinId)).length;
+        for (const s of body.spins) seenSpinIdsRef.current.add(s.spinId);
+        if (fresh > 0) setTotalSpins((t) => (t === null ? t : t + fresh));
         setSpins((current) => {
           const seen = new Set(body.spins.map((s) => s.spinId));
           return [...body.spins, ...current.filter((s) => !seen.has(s.spinId))];
@@ -160,11 +176,13 @@ export default function WheelBatchesPage() {
         setError(body.error || `Request failed (${res.status})`);
         return;
       }
+      for (const s of body.spins) seenSpinIdsRef.current.add(s.spinId);
       setSpins((current) => {
         const seen = new Set(current.map((s) => s.spinId));
         return [...current, ...body.spins.filter((s) => !seen.has(s.spinId))];
       });
       setNextCursorTs(body.nextCursorTs);
+      if (typeof body.totalSpins === 'number') setTotalSpins(body.totalSpins);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -172,7 +190,9 @@ export default function WheelBatchesPage() {
     }
   }, [nextCursorTs, loading]);
 
-  const segmentById = new Map(wheelSegments.map((s) => [s.id, s]));
+  // Union across every wedge generation — the all-time feed spans periods
+  // with different wedge sets (classic + JackHOF era).
+  const segmentById = allKnownSegmentsById;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
@@ -284,11 +304,14 @@ export default function WheelBatchesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {spins.map((s) => {
+                    {spins.map((s, i) => {
                       const seg = segmentById.get(s.result);
+                      // Global all-time number: newest row = #totalSpins,
+                      // counting down — never resets across round rolls.
+                      const globalNo = totalSpins !== null ? totalSpins - i : null;
                       return (
                         <tr key={s.spinId} className="border-t border-white/5 hover:bg-white/5">
-                          <td className="px-4 py-2 text-white/60 font-mono">{s.spinIndex !== null ? `#${s.spinIndex}` : '—'}</td>
+                          <td className="px-4 py-2 text-white/60 font-mono">{globalNo !== null ? `#${globalNo}` : s.spinIndex !== null ? `#${s.spinIndex}` : '—'}</td>
                           <td className="px-4 py-2 font-semibold" style={{ color: seg?.color ?? '#fff' }}>{seg?.label ?? s.result}</td>
                           <td className="px-4 py-2 text-right">
                             {s.spinIndex !== null ? (

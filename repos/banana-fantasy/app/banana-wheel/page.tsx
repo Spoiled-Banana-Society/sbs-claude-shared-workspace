@@ -16,7 +16,8 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { pushNotification } from '@/components/NotificationCenter';
 import { useWheelHistory, useSpin, type WheelSpinOutcome } from '@/hooks/useWheelData';
 import { usePromos } from '@/hooks/usePromos';
-import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
+import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
+import { useWheelSegments } from '@/hooks/useWheelSegments';
 import { SPIN_DURATION_MS } from '@/components/wheel/BananaWheel';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -183,7 +184,15 @@ export default function BananaWheelPage() {
 
   const spinsAvailable = Math.max(0, user?.wheelSpins ?? 0);
 
-  const segmentMap = useMemo(() => new Map(wheelSegments.map((segment) => [segment.id, segment])), []);
+  // Active-period wedge set (falls back to the static classic config).
+  const { segments: activeSegments } = useWheelSegments();
+  // History rows can reference wedge ids from OLDER config generations —
+  // resolve against every id that has ever existed, current set winning.
+  const segmentMap = useMemo(() => {
+    const map = new Map(allKnownSegmentsById);
+    for (const segment of activeSegments) map.set(segment.id, segment);
+    return map;
+  }, [activeSegments]);
 
   const handleSpin = useCallback(async (): Promise<WheelSpinOutcome | null> => {
     // Freeze global spin-reveal updates for the duration of the wheel
@@ -381,7 +390,7 @@ export default function BananaWheelPage() {
 
   const prizeSummary = useMemo(() => {
     const summary = new Map<string, { label: string; color: string; probability: number }>();
-    for (const segment of wheelSegments) {
+    for (const segment of activeSegments) {
       const key = `${segment.prizeType}:${segment.prizeValue ?? ''}:${segment.label}`;
       const existing = summary.get(key);
       if (existing) {
@@ -391,7 +400,7 @@ export default function BananaWheelPage() {
       }
     }
     return Array.from(summary.values()).sort((a, b) => b.probability - a.probability);
-  }, []);
+  }, [activeSegments]);
 
   const getPrizeLabel = (segmentId: string): string => segmentMap.get(segmentId)?.label ?? '';
   const getPrizeColor = (segmentId: string): string => segmentMap.get(segmentId)?.color ?? '#94a3b8';

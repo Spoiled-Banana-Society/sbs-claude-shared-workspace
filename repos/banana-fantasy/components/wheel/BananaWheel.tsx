@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { wheelSegments, WHEEL_SEGMENT_ANGLE, type WheelSegment } from '@/lib/wheelConfig';
+import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
+import { useWheelSegments } from '@/hooks/useWheelSegments';
 import type { WheelSpinOutcome } from '@/hooks/useWheelData';
 import { startSpinSound, playWinSound, getWinTier } from '@/lib/wheelSounds';
 import { verifySpinProof } from '@/lib/wheelMerkleClient';
@@ -225,7 +226,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const wheelRef = useRef<HTMLDivElement>(null);
   const resumedRef = useRef(false);
 
-  const segmentAngle = WHEEL_SEGMENT_ANGLE;
+  // The wedge set + geometry follow the ACTIVE VRF period's committed
+  // snapshot (server derives outcomes from the same source), so a new
+  // config generation flips the rendered wheel without a client deploy.
+  const { segments: wheelSegments, segmentAngle } = useWheelSegments();
 
   // On mount: check for a pending/completed spin that was interrupted
   React.useEffect(() => {
@@ -236,7 +240,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       if (!raw) return;
       const pending: PendingSpin = JSON.parse(raw);
       const elapsed = Date.now() - pending.startedAt;
-      const segment = pending.segmentId ? wheelSegments.find(s => s.id === pending.segmentId) ?? null : null;
+      const segment = pending.segmentId
+        ? wheelSegments.find(s => s.id === pending.segmentId) ?? allKnownSegmentsById.get(pending.segmentId) ?? null
+        : null;
 
       if (elapsed < SPIN_DURATION_MS) {
         // Spin still in progress — resume the landing animation
@@ -394,7 +400,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     setSpinPhase('landing');
     setRotation(newRotation);
 
-    const segment = wheelSegments.find((seg) => seg.id === outcome?.result) ?? null;
+    const segment =
+      wheelSegments.find((seg) => seg.id === outcome?.result)
+      ?? (outcome?.result ? allKnownSegmentsById.get(outcome.result) : undefined)
+      ?? null;
 
     // Persist spin state so it survives navigation
     try {
@@ -505,14 +514,26 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         >
           <svg viewBox="0 0 100 100" className="w-full h-full">
             <defs>
-              {/* Refined gradient for each segment */}
-              {wheelSegments.map((segment, index) => (
-                <linearGradient key={`grad-${index}`} id={`gradient-${index}`} x1="50%" y1="0%" x2="50%" y2="100%">
-                  <stop offset="0%" stopColor={segment.color} stopOpacity="0.95" />
-                  <stop offset="50%" stopColor={segment.color} stopOpacity="1" />
-                  <stop offset="100%" stopColor={segment.color} stopOpacity="0.85" />
-                </linearGradient>
-              ))}
+              {/* Refined gradient for each segment. JackHOF is the one
+                  two-tone wedge: a RADIAL Jackpot-red → HOF-gold blend
+                  (red at the hub flowing to gold at the rim) so it reads as
+                  a single fused wedge, not two half-wedges side by side. */}
+              {wheelSegments.map((segment, index) =>
+                segment.id === 'jackhof' ? (
+                  <radialGradient key={`grad-${index}`} id={`gradient-${index}`} gradientUnits="userSpaceOnUse" cx="50" cy="50" r="50">
+                    <stop offset="12%" stopColor="#b91c1c" />
+                    <stop offset="40%" stopColor="#ef4444" />
+                    <stop offset="68%" stopColor="#e9a13b" />
+                    <stop offset="100%" stopColor="#D4AF37" />
+                  </radialGradient>
+                ) : (
+                  <linearGradient key={`grad-${index}`} id={`gradient-${index}`} x1="50%" y1="0%" x2="50%" y2="100%">
+                    <stop offset="0%" stopColor={segment.color} stopOpacity="0.95" />
+                    <stop offset="50%" stopColor={segment.color} stopOpacity="1" />
+                    <stop offset="100%" stopColor={segment.color} stopOpacity="0.85" />
+                  </linearGradient>
+                )
+              )}
               {/* Subtle text shadow */}
               <filter id="textShadow" x="-50%" y="-50%" width="200%" height="200%">
                 <feDropShadow dx="0" dy="0.3" stdDeviation="0.2" floodColor="#000" floodOpacity="0.5"/>
@@ -580,6 +601,32 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                     {segment.label}
                   </text>
                 </g>
+              );
+            })}
+
+            {/* Crisp unifying outline around the JackHOF wedge (no glow —
+                Boris). Drawn AFTER all segments so neighboring wedge strokes
+                can't dim its edges. One clean shape = one prize. */}
+            {wheelSegments.map((segment, index) => {
+              if (segment.id !== 'jackhof') return null;
+              const startAngle = index * segmentAngle;
+              const endAngle = (index + 1) * segmentAngle;
+              const startRad = (startAngle - 90) * (Math.PI / 180);
+              const endRad = (endAngle - 90) * (Math.PI / 180);
+              const x1 = 50 + 50 * Math.cos(startRad);
+              const y1 = 50 + 50 * Math.sin(startRad);
+              const x2 = 50 + 50 * Math.cos(endRad);
+              const y2 = 50 + 50 * Math.sin(endRad);
+              const path = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
+              return (
+                <path
+                  key={`jackhof-outline-${index}`}
+                  d={path}
+                  fill="none"
+                  stroke="rgba(255,243,196,0.85)"
+                  strokeWidth="0.8"
+                  strokeLinejoin="round"
+                />
               );
             })}
 

@@ -6,7 +6,7 @@
 
 import { keccak256, encodeAbiParameters, toHex, type Hex } from 'viem';
 import { pickWeighted } from './rng';
-import { wheelSegments } from './wheelConfig';
+import { wheelSegments, type WheelSegment } from './wheelConfig';
 import { createHash } from 'node:crypto';
 
 /**
@@ -30,10 +30,18 @@ export function spinSeedHex(saltHex: string, vrfHex: string, spinIndex: number):
  * probability distribution is unchanged. Verifiable: anyone with (salt, vrf)
  * can re-derive every outcome.
  */
-export function deriveSpinOutcome(saltHex: string, vrfHex: string, spinIndex: number) {
+export function deriveSpinOutcome(
+  saltHex: string,
+  vrfHex: string,
+  spinIndex: number,
+  // MUST be the period's committed segmentsSnapshot when deriving inside a
+  // period — never the deployed static config, which may be a newer
+  // generation than the one the period's Merkle root was built from.
+  segments: WheelSegment[] = wheelSegments,
+) {
   const seed = spinSeedHex(saltHex, vrfHex, spinIndex);
   const { value, index, roll } = pickWeighted(
-    wheelSegments.map((s) => ({ value: s, probability: s.probability })),
+    segments.map((s) => ({ value: s, probability: s.probability })),
     seed,
   );
   return { segment: value, segmentIndex: index, roll, seed };

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
 import { verifySpinProof } from '@/lib/wheelMerkleClient';
-import { wheelSegments } from '@/lib/wheelConfig';
+import { allKnownSegmentsById } from '@/lib/wheelConfig';
 
 interface ProofData {
   spinId: string;
@@ -75,7 +75,7 @@ export default function SpinProofPage() {
     return () => { cancelled = true; };
   }, [spinId]);
 
-  const segment = data ? wheelSegments.find((s) => s.id === data.result) : null;
+  const segment = data ? allKnownSegmentsById.get(data.result) ?? null : null;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">

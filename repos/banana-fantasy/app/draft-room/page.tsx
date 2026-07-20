@@ -214,6 +214,10 @@ function DraftRoomContent() {
   // proof/batch lookup must use this, not parseDraftNumber(slotId). Falls back
   // to the slot parse only until the real number resolves (pre-fill).
   const resolvedLeagueNumber = useLeagueNumberForSlot(draftId || undefined);
+  // JackHOF may only appear in the slot reels from the rolling-windows era on
+  // (Richard 2026-07-21: nothing JackHOF shows before draft 201). Unresolved
+  // league number → conservatively no JackHOF filler.
+  const allowJackhofReels = (resolvedLeagueNumber ?? 0) >= 201;
   const batchInfo = (() => {
     if (resolvedLeagueNumber) return locateDraft(resolvedLeagueNumber);
     const candidates = [draftId, urlDraftId].filter(Boolean) as string[];
@@ -664,9 +668,9 @@ function DraftRoomContent() {
             setDraftType(selectedResult);
             const reelSeed = draftId || urlDraftId;
             const generatedReels = [
-              generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
-              generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
-              generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
+              generateReelItemsForReel(reelResults[0], 0, 50, reelSeed, allowJackhofReels),
+              generateReelItemsForReel(reelResults[1], 1, 50, reelSeed, allowJackhofReels),
+              generateReelItemsForReel(reelResults[2], 2, 50, reelSeed, allowJackhofReels),
             ];
             setAllReelItems(generatedReels);
             const animOffset = (elapsed - 15) * 1000;
@@ -717,9 +721,9 @@ function DraftRoomContent() {
               setDraftType(selectedResult);
               const reelSeed = draftId || urlDraftId;
               const generatedReels = [
-                generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
-                generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
-                generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
+                generateReelItemsForReel(reelResults[0], 0, 50, reelSeed, allowJackhofReels),
+                generateReelItemsForReel(reelResults[1], 1, 50, reelSeed, allowJackhofReels),
+                generateReelItemsForReel(reelResults[2], 2, 50, reelSeed, allowJackhofReels),
               ];
               setAllReelItems(generatedReels);
               const animOffset = (elapsed - 15) * 1000;
@@ -842,9 +846,9 @@ function DraftRoomContent() {
       setDraftType(selectedResult);
       const reelSeed = draftId || urlDraftId;
       const generatedReels = [
-        generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
-        generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
-        generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
+        generateReelItemsForReel(reelResults[0], 0, 50, reelSeed, allowJackhofReels),
+        generateReelItemsForReel(reelResults[1], 1, 50, reelSeed, allowJackhofReels),
+        generateReelItemsForReel(reelResults[2], 2, 50, reelSeed, allowJackhofReels),
       ];
       setAllReelItems(generatedReels);
       const animOffset = stored.preSpinStartedAt ? Math.max(0, Date.now() - stored.preSpinStartedAt - 3000) : 0;
@@ -2252,9 +2256,9 @@ function DraftRoomContent() {
     }
     const reelSeed = draftId || urlDraftId;
     setAllReelItems([
-      generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
-      generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
-      generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
+      generateReelItemsForReel(reelResults[0], 0, 50, reelSeed, allowJackhofReels),
+      generateReelItemsForReel(reelResults[1], 1, 50, reelSeed, allowJackhofReels),
+      generateReelItemsForReel(reelResults[2], 2, 50, reelSeed, allowJackhofReels),
     ]);
     setShowSlotMachine(true);
     slotActiveRef.current = true;

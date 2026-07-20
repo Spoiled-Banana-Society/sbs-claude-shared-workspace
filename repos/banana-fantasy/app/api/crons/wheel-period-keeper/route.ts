@@ -12,6 +12,7 @@ import {
   getCurrentPeriod,
   generatePeriodSalt,
   getPeriod,
+  periodSegments,
   recordPeriodActivated,
   recordPeriodClosed,
   recordPeriodFulfilled,
@@ -28,6 +29,20 @@ import {
   readPeriodOnchain,
 } from '@/lib/wheelProofContract';
 import { commitPendingBatches } from '@/lib/wheelAssignmentJournal';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { jackhofWheelSegments, wheelSegments, JACKHOF_WHEEL_FROM_FILLED, type WheelSegment } from '@/lib/wheelConfig';
+
+/**
+ * The wedge set for a NEWLY-opened period, chosen at open time from the live
+ * draft counter: once the rolling era is reached (draft 200 filled), every
+ * new period carries the JackHOF wedge. Existing periods are never touched —
+ * their outcomes stay locked to the snapshot committed at their open.
+ */
+async function segmentsForNewPeriod(): Promise<WheelSegment[]> {
+  const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
+  const filled = Number((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
+  return filled >= JACKHOF_WHEEL_FROM_FILLED ? jackhofWheelSegments : wheelSegments;
+}
 
 /**
  * Vercel cron — runs every 5 minutes. Two responsibilities:
@@ -77,6 +92,7 @@ export async function GET(req: Request) {
         saltHash,
         vrfRequestId: requestId,
         commitTxHash: txHash,
+        segments: await segmentsForNewPeriod(),
       });
       summary.bootstrapped = { periodNumber: 1, commitTxHash: txHash };
       period = await getCurrentPeriod();
@@ -100,7 +116,9 @@ export async function GET(req: Request) {
     if (period.status === 'fulfilled' || summary.fulfilled) {
       const fresh = await getCurrentPeriod();
       if (fresh && fresh.status === 'fulfilled' && fresh.salt && fresh.vrfRandomness) {
-        const tree = computePeriodMerkleTree(fresh.salt, fresh.vrfRandomness);
+        // Derive the 100k outcomes from the PERIOD's committed snapshot —
+        // never the deployed static config (may be a newer generation).
+        const tree = computePeriodMerkleTree(fresh.salt, fresh.vrfRandomness, periodSegments(fresh));
         await storePeriodLeaves(fresh.periodNumber, tree);
         const onchain = await readPeriodOnchain(contractAddress, fresh.periodNumber);
         let rootCommitTxHash: string;
@@ -127,6 +145,7 @@ export async function GET(req: Request) {
       const nextNumber = post.periodNumber + 1;
       const salt = generatePeriodSalt();
       const saltHash = saltHashOf(salt);
+      const nextSegments = await segmentsForNewPeriod();
       const { txHash, requestId } = await callRequestRandomnessAndCommit(contractAddress, nextNumber, saltHash);
       await recordPeriodRequested({
         periodNumber: nextNumber,
@@ -134,8 +153,13 @@ export async function GET(req: Request) {
         saltHash,
         vrfRequestId: requestId,
         commitTxHash: txHash,
+        segments: nextSegments,
       });
-      summary.rolled = { newPeriodNumber: nextNumber, commitTxHash: txHash };
+      summary.rolled = {
+        newPeriodNumber: nextNumber,
+        commitTxHash: txHash,
+        hasJackhof: nextSegments.some((s) => s.id === 'jackhof'),
+      };
 
       // Now reveal the salt of the freshly-full period so it's publicly auditable.
       try {

@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateNonce, generateSeed, pickWeighted } from '@/lib/rng';
-import { wheelSegments, WHEEL_SEGMENT_ANGLE } from '@/lib/wheelConfig';
+import { wheelSegments } from '@/lib/wheelConfig';
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
@@ -19,7 +19,7 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
 import { unlockBadge } from '@/lib/db';
-import { claimSpinIndex, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { claimSpinIndex, getCurrentPeriod, periodSegments } from '@/lib/wheelPeriod';
 import { deriveSpinOutcome } from '@/lib/wheelMerkle';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
@@ -188,12 +188,6 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
 
-    // Single source of truth: the hardcoded prize table (same one the client
-    // wheel renders and period Merkle trees are derived from). The old
-    // Firestore `config/wheel` override was removed 2026-06-12 — a DB edit
-    // could silently diverge live odds from the period commitment.
-    const segments = wheelSegments;
-    const segmentAngle = WHEEL_SEGMENT_ANGLE;
     const seed = generateSeed();
     const nonce = generateNonce();
 
@@ -205,11 +199,6 @@ export async function POST(req: Request) {
     const allowForcedResult = isWalletAdmin(userId) || process.env.NODE_ENV === 'development';
     const forceResult =
       allowForcedResult && typeof body.forceResult === 'string' ? body.forceResult : null;
-    let segment: typeof segments[number];
-    let index: number;
-    // For the VRF-period path: the segment we derived BEFORE the tx, so the tx's
-    // atomic claim can assert it landed on the same outcome (concurrent-spin guard).
-    let peekedSegmentId: string | null = null;
 
     // If a VRF + Merkle period is currently active, claim a spin index inside
     // the same transaction that decrements `wheelSpins`. The outcome is
@@ -220,6 +209,18 @@ export async function POST(req: Request) {
     // the wheel keeps working until the admin opens period 1.
     const currentPeriod = forceResult ? null : await getCurrentPeriod();
     const usePeriod = currentPeriod && currentPeriod.status === 'active' && currentPeriod.spinCount < currentPeriod.maxSpins;
+
+    // Prize table: the ACTIVE period's committed segmentsSnapshot (what its
+    // Merkle root was derived from), falling back to the static config only
+    // outside a period. Never the deployed static config while a period is
+    // live — a newer config generation must not diverge from the commitment.
+    const segments = usePeriod ? periodSegments(currentPeriod!) : wheelSegments;
+    const segmentAngle = 360 / segments.length;
+    let segment: typeof segments[number];
+    let index: number;
+    // For the VRF-period path: the segment we derived BEFORE the tx, so the tx's
+    // atomic claim can assert it landed on the same outcome (concurrent-spin guard).
+    let peekedSegmentId: string | null = null;
     let periodNumber: number | null = null;
     let spinIndexInPeriod: number | null = null;
 
@@ -251,7 +252,7 @@ export async function POST(req: Request) {
       if (!currentPeriod!.salt || !currentPeriod!.vrfRandomness) {
         throw new ApiError(500, `Wheel period ${currentPeriod!.periodNumber} missing salt/vrf`);
       }
-      const peek = deriveSpinOutcome(currentPeriod!.salt, currentPeriod!.vrfRandomness, currentPeriod!.spinCount);
+      const peek = deriveSpinOutcome(currentPeriod!.salt, currentPeriod!.vrfRandomness, currentPeriod!.spinCount, segments);
       segment = peek.segment;
       index = peek.segmentIndex;
       peekedSegmentId = peek.segment.id;

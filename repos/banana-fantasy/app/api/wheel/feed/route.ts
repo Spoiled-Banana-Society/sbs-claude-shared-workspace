@@ -197,5 +197,15 @@ async function allTimeFeed(limit: number, beforeTs: string | null): Promise<Resp
   }
 
   const nextCursorTs = spins.length === limit ? spins[spins.length - 1].timestamp : null;
-  return json({ periodNumber: null, count: spins.length, nextCursor: null, nextCursorTs, spins }, 200);
+
+  // All-time total across every round + the pre-round era. Powers the feed's
+  // GLOBAL row numbering (spin #845, #846, …) that keeps counting up across
+  // round rolls instead of resetting with each new VRF round.
+  let totalSpins: number | null = null;
+  try {
+    const agg = await db.collectionGroup('wheelSpins').count().get();
+    totalSpins = agg.data().count;
+  } catch { /* numbering is cosmetic — feed still renders without it */ }
+
+  return json({ periodNumber: null, count: spins.length, nextCursor: null, nextCursorTs, totalSpins, spins }, 200);
 }
