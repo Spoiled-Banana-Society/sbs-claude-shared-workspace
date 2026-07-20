@@ -33,12 +33,19 @@ export function getAdminAlertEmails(): string[] {
  * Send a short alert email to every admin. Best-effort: never throws into
  * the caller's path; skips silently when Resend isn't configured.
  */
-export async function sendAdminAlertEmail(subject: string, line: string): Promise<void> {
+export interface AdminAlertEmailResult {
+  ok: boolean;
+  status?: number;
+  id?: string;      // Resend message id on success
+  error?: string;   // exact Resend rejection / config gap on failure
+}
+
+export async function sendAdminAlertEmail(subject: string, line: string): Promise<AdminAlertEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) return;
+  if (!apiKey || !from) return { ok: false, error: 'not-configured (RESEND_API_KEY/EMAIL_FROM missing)' };
   const to = getAdminAlertEmails();
-  if (to.length === 0) return;
+  if (to.length === 0) return { ok: false, error: 'no-recipients' };
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -51,11 +58,18 @@ export async function sendAdminAlertEmail(subject: string, line: string): Promis
         html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;padding:8px 0"><p style="font-size:16px;font-weight:600;line-height:1.5;color:#111;margin:0">${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p></div>`,
       }),
     });
+    const body = await res.text().catch(() => '');
     if (!res.ok) {
-      logger.warn('admin_alert_email.failed', { status: res.status, body: await res.text().catch(() => '') });
+      logger.warn('admin_alert_email.failed', { status: res.status, body: body.slice(0, 300) });
+      return { ok: false, status: res.status, error: body.slice(0, 300) };
     }
+    let id: string | undefined;
+    try { id = (JSON.parse(body) as { id?: string }).id; } catch { /* non-JSON ok body */ }
+    logger.info('admin_alert_email.sent', { status: res.status, id, to: to.length });
+    return { ok: true, status: res.status, id };
   } catch (err) {
     logger.warn('admin_alert_email.error', { err });
+    return { ok: false, error: (err as Error).message?.slice(0, 300) };
   }
 }
 
@@ -98,13 +112,10 @@ export async function alertAdminsNewUserDraftEvent(opts: {
     const isNew = !!u && typeof u.createdAt === 'string'
       && u.createdAt >= LAUNCH_ISO && !isReturning;
     if (!isNew) return;
-    // Comped accounts don't count: if ANY pass was ever admin-granted to this
-    // wallet, they're someone we invited — skip both bell and email.
-    const granted = await db.collection('pass_origin')
-      .where('ownerAtMint', '==', userId)
-      .where('origin', '==', 'admin_grant')
-      .limit(1).get();
-    if (!granted.empty) return;
+    // NOTE (Boris 2026-07-18): the old "skip admin-comped wallets" exclusion is
+    // REMOVED. It was meant for test accounts, but comps are now goodwill to
+    // REAL new players (SteveyBallGame etc.) — granting a pass was silently
+    // killing all future alerts for exactly the users Boris wants to track.
     const admins = getAdminBellWallets();
     if (admins.length === 0) return;
 
@@ -152,13 +163,16 @@ export async function alertAdminsNewUserDraftEvent(opts: {
         dedupeKey,
       })),
       // Instant email (guarded by a create()-once doc so a retry can't double-send).
+      // The Resend OUTCOME (message id or exact error) is written back onto the
+      // guard doc, so delivery is verifiable in Firestore — no more "sent into
+      // the void" (added 2026-07-18 after 4 unverifiable sends).
       (async () => {
+        const guardRef = db.collection('admin_alert_sent').doc(dedupeKey.replace(/[/\\\s]+/g, '_'));
         try {
-          await db.collection('admin_alert_sent')
-            .doc(dedupeKey.replace(/[/\\\s]+/g, '_'))
-            .create({ at: new Date().toISOString() });
+          await guardRef.create({ at: new Date().toISOString() });
         } catch { return; } // already sent for this user+draft+action
-        await sendAdminAlertEmail(emailSubject, message);
+        const result = await sendAdminAlertEmail(emailSubject, message);
+        await guardRef.set({ email: result }, { merge: true }).catch(() => {});
       })(),
     ]);
   } catch (err) {
