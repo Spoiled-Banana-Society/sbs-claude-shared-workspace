@@ -111,8 +111,8 @@ export async function POST(req: Request) {
       }).catch((e) => logger.warn('cardFeeFrontBackfill.activity_failed', { userId, err: (e as Error).message }));
       await createNotification(userId, {
         type: 'promo',
-        title: 'Free Draft Pass — card fees now covered',
-        message: 'New: we now cover card fees up front. You just got a free Draft Pass for the card fees you’ve already paid — and every $25 in card fees earns you another one, automatically.',
+        title: 'Free Paid Draft Pass — card fees now covered',
+        message: 'New: we now cover card fees up front. You just got a free Paid Draft Pass for the card fees you’ve already paid — and every $25 in card fees earns you another one, automatically.',
         link: '/drafting',
         dedupeKey: `card-fee-front-backfill-${userId}`,
         icon: 'gift',

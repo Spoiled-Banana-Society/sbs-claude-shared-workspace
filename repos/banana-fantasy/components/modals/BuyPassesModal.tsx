@@ -941,17 +941,17 @@ export function BuyPassesModal({
             <div className="flex gap-2.5">
               <span className="text-banana font-bold text-sm shrink-0 mt-px">1.</span>
               <p className="text-text-secondary text-sm leading-relaxed">
-                Card purchases carry a small processing fee. To make up for it, your first card purchase comes with a <span className="text-banana font-semibold">FREE bonus Draft Pass</span> — it lands right away.
+                Card purchases carry a small processing fee. To make up for it, your first card purchase comes with a <span className="text-banana font-semibold">FREE Paid Draft Pass</span> — it lands right away.
               </p>
             </div>
             <div className="flex gap-2.5">
               <span className="text-banana font-bold text-sm shrink-0 mt-px">2.</span>
               <p className="text-text-secondary text-sm leading-relaxed">
-                After that, every fee you pay is credited to you. Each time your fees add up to <span className="text-banana font-semibold">$25, another free Draft Pass</span> lands — automatically.
+                After that, every fee you pay is credited to you. Each time your fees add up to <span className="text-banana font-semibold">$25, another free Paid Draft Pass</span> lands — automatically.
               </p>
             </div>
             <p className="text-text-muted text-xs leading-relaxed">
-              Bonus passes are real paid-type passes — they count for promos too.
+              Paid Draft Passes are the same passes you buy — they count for promos too.
             </p>
           </div>
           <button
@@ -1083,12 +1083,12 @@ export function BuyPassesModal({
                       <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
                     </svg>
                     <p className="text-white/85 text-[12px] font-semibold">
-                      This purchase includes a FREE bonus Draft Pass — your card fee&apos;s on us
+                      This purchase includes a FREE Paid Draft Pass — your card fee&apos;s on us
                     </p>
                     {infoButton}
                   </div>
                   <p className="text-white/40 text-[10px] mt-1.5">
-                    After that, every $25 in card fees earns you another free Draft Pass — automatically.
+                    After that, every $25 in card fees earns you another free Paid Draft Pass — automatically.
                   </p>
                 </div>
                 );
@@ -1107,8 +1107,8 @@ export function BuyPassesModal({
                   </svg>
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
-                      ? 'This purchase earns you a free draft pass!'
-                      : 'Every $25 in card fees = another free Draft Pass'
+                      ? 'This purchase earns you a free Paid Draft Pass!'
+                      : 'Every $25 in card fees = another free Paid Draft Pass'
                     }
                   </p>
                   {infoButton}
@@ -1117,7 +1117,7 @@ export function BuyPassesModal({
                   <div className="absolute inset-y-0 left-0 bg-banana rounded-full transition-all" style={{ width: `${curPct}%` }} />
                 </div>
                 <p className="text-white/30 text-[10px] mt-1.5">
-                  {`${usd(current)} of ${usd(threshold)} toward your next draft pass${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
+                  {`${usd(current)} of ${usd(threshold)} toward your next free Paid Draft Pass${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
                 </p>
               </div>
               );

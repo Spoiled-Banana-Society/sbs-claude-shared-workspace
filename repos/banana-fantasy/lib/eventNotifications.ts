@@ -85,20 +85,20 @@ export function eventNotificationContent(
       if (payload.fronted) {
         return {
           type: 'promo',
-          title: count === 1 ? 'Bonus Draft Pass — card fee covered' : `${count} Bonus Draft Passes — card fees covered`,
+          title: count === 1 ? 'Free Paid Draft Pass — card fee covered' : `${count} free Paid Draft Passes — card fees covered`,
           message: count === 1
-            ? 'We cover card fees: your purchase came with a free Draft Pass. Every $25 you rack up in card fees earns you another one, automatically.'
-            : `We cover card fees: your purchase came with ${count} free Draft Passes. Every $25 you rack up in card fees earns you another one, automatically.`,
+            ? 'We cover card fees: your purchase came with a free Paid Draft Pass. Every $25 you rack up in card fees earns you another one, automatically.'
+            : `We cover card fees: your purchase came with ${count} free Paid Draft Passes. Every $25 you rack up in card fees earns you another one, automatically.`,
           link: '/drafting',
           icon: 'gift',
         };
       }
       return {
         type: 'promo',
-        title: count === 1 ? 'Draft Pass earned' : `${count} Draft Passes earned`,
+        title: count === 1 ? 'Paid Draft Pass earned' : `${count} Paid Draft Passes earned`,
         message: count === 1
-          ? 'Your card fees reached $25 — a free Draft Pass just landed. Every $25 in fees earns the next one.'
-          : `Your card fees earned you ${count} Draft Passes — on us. Every $25 in fees earns the next one.`,
+          ? 'Your card fees reached $25 — a free Paid Draft Pass just landed. Every $25 in fees earns the next one.'
+          : `Your card fees earned you ${count} Paid Draft Passes — on us. Every $25 in fees earns the next one.`,
         link: '/drafting',
         // 'gift' = a FREE draft (earned/won), distinct from a PURCHASED pass
         // ('ticket'). Matches the wheel-win free-draft bell (Boris 2026-06-20).
