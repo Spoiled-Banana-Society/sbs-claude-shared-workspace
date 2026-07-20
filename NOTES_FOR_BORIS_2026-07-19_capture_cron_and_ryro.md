@@ -18,3 +18,7 @@ His real in-app account is **`User-0x6346`** / `0x63462739b9efc65683235b17184c4b
 
 ## Go ask (adds to the wheel-link note from earlier today)
 The slow-draft durable summary (`drafts/{id}/state/summary`) is pre-created at start with `PlayerInfo.PlayerId` empty until each pick lands — fine — but please confirm the Go close routine back-fills every row; BBB #77's captured cards only had 13 of 15 picks in the summary, so 2 picks per team render without pick numbers. Low priority.
+
+## Addendum (7/19 ~8:30pm): CryptoHX ticket-3325 + token 873 double-spend
+CryptoHX (Discord) = **`User-0x09ce`** in-app (`0x09ce2805edcbb2ba1cadd7bfa7a0b2eafeb1e6cc`). His HOF #12 (from Wheel) team shows the blank placeholder because his seat's "wheel pass" (token 873) had ALREADY been spent into a regular draft (BBB #104) back before the HOF-level spend-lock existed — the queue kept the stale token binding. So his is the ONE wheel seat with no NFT of its own. My backfill briefly mislabeled token 873 as the HOF team; restored from backups same night (873 = Team #873 / Pro / League #104 again, verified + OpenSea refreshed). The link cron now refuses to relabel any token that's already a team (`link_wheel_teams.token_already_team` in the error feed = a seat needing manual resolution).
+**Open decision (Richard):** mint 1 replacement pass NFT to 0x09ce2805… and link it to his HOF #12 team, or leave that team card NFT-less.
