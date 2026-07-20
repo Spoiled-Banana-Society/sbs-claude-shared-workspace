@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { getOwnerDraftTokens, type ApiDraftToken } from '@/lib/api/owner';
 
 function levelToContestType(level: string): ContestType {
+  if (level === 'JackHOF') return 'jackhof';
   if (level === 'Jackpot') return 'jackpot';
   if (level === 'Hall of Fame') return 'hof';
   return 'pro';

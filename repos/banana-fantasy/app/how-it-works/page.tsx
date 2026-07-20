@@ -104,7 +104,7 @@ const FAQS = [
   },
   {
     q: 'How is wheel verification different from draft verification?',
-    a: 'Drafts use a "guaranteed distribution" model: every 100 drafts must contain exactly 1 Jackpot, 5 HOF, 94 Pro. We commit the random seed at batch start and reveal it at batch close — anyone can recompute draft type assignments. The wheel is different because outcomes are independent probability draws (jackpots are RARER but variable per round). For the wheel we pre-randomize ALL 10,000 outcomes upfront via Chainlink VRF, commit a fingerprint of the full list, and hand each spinner a personal proof their outcome was in that list. That means each spin is verifiable instantly — drafts batch-verify, the wheel spin-verifies.',
+    a: 'Drafts use a "guaranteed distribution" model: every 100-draft window is guaranteed exactly 1 Jackpot and 5 HOF. We commit the random seed before the drafts it covers and reveal it once its guarantee completes — anyone can recompute draft type assignments. The wheel is different because outcomes are independent probability draws (jackpots are RARER but variable per round). For the wheel we pre-randomize ALL 10,000 outcomes upfront via Chainlink VRF, commit a fingerprint of the full list, and hand each spinner a personal proof their outcome was in that list. That means each spin is verifiable instantly — drafts batch-verify, the wheel spin-verifies.',
   },
   {
     q: 'What does it mean that outcomes are "pre-randomized"?',

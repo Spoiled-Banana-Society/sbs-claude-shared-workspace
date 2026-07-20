@@ -46,9 +46,10 @@ const TYPE_COLOR: Record<DraftType, string> = {
   pro: '#a855f7',
   hof: '#D4AF37',
   jackpot: '#ef4444',
+  jackhof: '#ef4444',
 };
-const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT' };
-const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444' };
+const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT', jackhof: 'JACKHOF' };
+const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444', jackhof: '#ef4444' };
 
 // Warm the browser cache with the generated card image while the animation
 // plays, so the roster page shows it INSTANTLY on arrival instead of running

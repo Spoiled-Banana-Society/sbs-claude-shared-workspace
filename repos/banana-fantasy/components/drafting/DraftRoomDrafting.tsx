@@ -184,9 +184,9 @@ export function DraftRoomDrafting({
   // JP/HOF keep a ~20px black gap between the colored band and the tab menu
   // (flush edges made the colors visually touch); black drafts sit flush.
   const bannerGapPx =
-    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' ? 20 : 0;
+    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof' ? 20 : 0;
   const sidebarBannerBase =
-    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' ? '310px' : '290px';
+    visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof' ? '310px' : '290px';
   // Measured height already includes the safe-area padding inside the fixed div.
   const reservedBannerHeight =
     bannerBoxH !== null
@@ -232,7 +232,7 @@ export function DraftRoomDrafting({
               // below) painted OUTSIDE the card box — without this padding the
               // scroll container clips it. 7+4 keeps total height at 15px.
               style={
-                visibleDraftType === 'jackpot' || visibleDraftType === 'hof'
+                visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof'
                   ? { marginTop: '7px', padding: '4px' }
                   : { marginTop: '15px' }
               }
@@ -259,7 +259,7 @@ export function DraftRoomDrafting({
                 // "you" ring to ~3px and add a black moat OUTSIDE it so the
                 // gold always sits on dark regardless of band color. Shadows
                 // don't affect layout, so cards stay aligned.
-                const userHalo = isUserCard && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')
+                const userHalo = isUserCard && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof')
                   ? '0 0 0 2px #F3E216, 0 0 0 4px #000'
                   : undefined;
 

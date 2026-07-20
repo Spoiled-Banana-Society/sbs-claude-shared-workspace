@@ -178,6 +178,10 @@ export function SlotMachineOverlay({
                             <span className="text-[24px] font-black italic uppercase" style={{ color: '#e62222', textShadow: '2px 2px 0 #1a1a1a' }}>JACKPOT</span>
                           ) : type === 'hof' ? (
                             <span className="text-[36px] font-black" style={{ color: '#f5c400', textShadow: '2px 2px 0 #705a00' }}>HOF</span>
+                          ) : type === 'jackhof' ? (
+                            <span className="text-[22px] font-black italic uppercase" style={{ textShadow: '2px 2px 0 #1a1a1a' }}>
+                              <span style={{ color: '#e62222' }}>JACK</span><span style={{ color: '#f5c400' }}>HOF</span>
+                            </span>
                           ) : (
                             <span className="text-5xl">🍌</span>
                           )}
@@ -219,7 +223,7 @@ export function SlotMachineOverlay({
                 <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4 max-w-sm mx-auto text-left">
                   <p className="text-red-300 font-bold text-lg mb-3">Skip to the Finals</p>
                   <p className="text-white/70 text-sm">Win this league and go <span className="text-red-300 font-semibold">straight to the finals</span>, skipping two weeks of playoffs.</p>
-                  <p className="text-white/40 text-xs mt-3">1 in 100 drafts are Jackpots</p>
+                  <p className="text-white/40 text-xs mt-3">1 Jackpot guaranteed per 100-draft window</p>
                 </div>
               </>
             ) : draftType === 'hof' ? (
@@ -233,7 +237,21 @@ export function SlotMachineOverlay({
                 <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-xl p-4 mb-4 max-w-sm mx-auto text-left">
                   <p className="text-yellow-300 font-bold text-lg mb-3">Bonus Prizes</p>
                   <p className="text-white/70 text-sm">Compete for <span className="text-yellow-300 font-semibold">additional prizes</span> on top of regular weekly and season-long rewards.</p>
-                  <p className="text-white/40 text-xs mt-3">5 in 100 drafts are HOF</p>
+                  <p className="text-white/40 text-xs mt-3">5 HOF guaranteed per 100-draft window</p>
+                </div>
+              </>
+            ) : draftType === 'jackhof' ? (
+              <>
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <div className="text-5xl font-black italic" style={{ textShadow: '0 0 30px rgba(239,68,68,0.6), 0 0 30px rgba(212,175,55,0.6)' }}>
+                    <span style={{ color: '#ef4444' }}>JACK</span><span style={{ color: '#D4AF37' }}>HOF</span>
+                  </div>
+                  <VerifiedBadge type="draft-type" draftType="jackpot" size="md" draftId={badgeDraftId} />
+                </div>
+                <div className="rounded-xl p-4 mb-4 max-w-sm mx-auto text-left border" style={{ background: 'linear-gradient(95deg, rgba(239,68,68,0.16), rgba(212,175,55,0.16))', borderColor: 'rgba(239,68,68,0.35)' }}>
+                  <p className="font-bold text-lg mb-3"><span className="text-red-300">Two perks,</span> <span className="text-yellow-300">one draft</span></p>
+                  <p className="text-white/70 text-sm">The Jackpot and a HOF landed on the <span className="font-semibold text-white">same draft</span>. Win your league and go <span className="text-red-300 font-semibold">straight to the finals</span> — plus compete for <span className="text-yellow-300 font-semibold">HOF bonus prizes</span> on top.</p>
+                  <p className="text-white/40 text-xs mt-3">The rarest draft in SBS — about 1 in 800</p>
                 </div>
               </>
             ) : (

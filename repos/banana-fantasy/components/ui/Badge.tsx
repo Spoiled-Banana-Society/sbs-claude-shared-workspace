@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-type BadgeType = 'jackpot' | 'hof' | 'pro' | 'default';
+type BadgeType = 'jackpot' | 'hof' | 'pro' | 'jackhof' | 'default';
 
 interface BadgeProps {
   type: BadgeType;
@@ -14,6 +14,8 @@ const badgeStyles: Record<BadgeType, string> = {
   jackpot: 'bg-jackpot/20 text-jackpot border border-jackpot/30',
   hof: 'bg-hof/20 text-hof border border-hof/30',
   pro: 'bg-pro/20 text-pro border border-pro/30',
+  // Dual-type (Jackpot + HOF on one draft): red→gold wash, red border edge.
+  jackhof: 'bg-gradient-to-r from-jackpot/20 to-hof/20 text-hof border border-jackpot/40',
   default: 'bg-bg-tertiary text-text-secondary border border-bg-elevated',
 };
 

@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { isRollingActive, replayJpLane, replayHofLane, type RollingLanes } from '@/lib/rollingLanes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,6 +26,10 @@ interface BatchProgress {
   batchStart: number;
   pendingReveals?: PendingReveal[];
   serverNowMs?: number;
+  /** Present ONLY once the tracker carries RollingStartDraft and the cutover
+   *  draft has been reached — flips every consumer to the rolling-windows UI.
+   *  Absent → everything renders the legacy fixed-batch view unchanged. */
+  lanes?: RollingLanes;
 }
 
 // A draft's slot machine lands its TYPE at DraftStartTime-39s (= fill+21s). The
@@ -95,9 +100,18 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
     if (!id) continue;
     if (!stById.has(id) || st > (stById.get(id) as number)) stById.set(id, st);
   }
+  // Rolling cutover (0 = legacy fixed batches). In rolling mode the reveal
+  // window of interest is "any fill ≥ rollingStart", NOT the legacy aligned
+  // batch — at filled=300 the legacy `id <= batchStart` filter would drop a
+  // pending draft-299 reveal and leak the lane reset 21s early.
+  const rollingStart = Number(d.RollingStartDraft ?? 0) || 0;
+  const rolling = isRollingActive(rollingStart, filled);
+
   const pendingReveals: PendingReveal[] = [];
+  const unrevealedIds = new Set<number>();
   for (const [id, st] of stById) {
-    if (id <= batchStart || id > filled) continue; // only this batch's fills
+    if (id > filled) continue;
+    if (rolling ? id < rollingStart : id <= batchStart) continue; // only relevant fills
     // st<=0 is the provisional sentinel: the draft has FILLED but its slot
     // isn't timed yet (the count moved atomically with this entry). Hold it with
     // a far-future atMs so the JP/HOF deduction never shows early; the corrected
@@ -105,9 +119,38 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
     // timed entry, reveal = DraftStartTime-39s.
     const atMs = st > 0 ? (st - REVEAL_OFFSET_SEC) * 1000 : nowMs + 3_600_000;
     if (atMs <= nowMs) continue; // already revealed → already reflected in counts
+    unrevealedIds.add(id);
     pendingReveals.push({ atMs, jp: jpIds.includes(id) ? 1 : 0, hof: hofIds.includes(id) ? 1 : 0 });
   }
   pendingReveals.sort((a, b) => a.atMs - b.atMs);
+
+  // Rolling-windows lanes (post-cutover). Window starts are replayed from the
+  // hit arrays; the `pre` view excludes hits whose slot hasn't landed yet, so
+  // the client can hold the OLD window on screen until the reveal moment —
+  // a moving counter would otherwise spoil the slot machine. Legacy fields
+  // above keep being emitted untouched (Pick-10 + old clients read them).
+  let lanes: RollingLanes | undefined;
+  if (rolling) {
+    const jpEventual = replayJpLane(jpIds, rollingStart);
+    const hofEventual = replayHofLane(hofIds, rollingStart);
+    const jpPendingHits = jpIds.some((id) => unrevealedIds.has(id));
+    const hofPendingHits = hofIds.some((id) => unrevealedIds.has(id));
+    lanes = {
+      rollingStart,
+      jp: {
+        ...jpEventual,
+        ...(jpPendingHits
+          ? { pre: replayJpLane(jpIds.filter((id) => !unrevealedIds.has(id)), rollingStart) }
+          : {}),
+      },
+      hof: {
+        ...hofEventual,
+        ...(hofPendingHits
+          ? { pre: replayHofLane(hofIds.filter((id) => !unrevealedIds.has(id)), rollingStart) }
+          : {}),
+      },
+    };
+  }
 
   return {
     current,
@@ -118,6 +161,7 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
     batchStart,
     pendingReveals,
     serverNowMs: nowMs,
+    ...(lanes ? { lanes } : {}),
   };
 }
 

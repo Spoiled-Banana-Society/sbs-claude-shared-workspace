@@ -18,6 +18,12 @@ const JP_BAND =
   'linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.04) 14%, rgba(0,0,0,0) 44%, rgba(0,0,0,0.20) 100%), ' +
   'radial-gradient(130% 130% at 50% -12%, #E63A40 0%, #C71F29 46%, #8E141C 100%)';
 
+// JackHOF: Jackpot red sweeping into HOF gold, same metallic/glass finish as
+// its two parents so a dual-type draft reads as literally both fused.
+const JACKHOF_BAND =
+  'linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.04) 14%, rgba(0,0,0,0) 44%, rgba(0,0,0,0.20) 100%), ' +
+  'linear-gradient(100deg, #C71F29 0%, #A5341F 42%, #BE9430 62%, #DCB845 100%)';
+
 // Glassy edge + soft drop for depth on the colored (HOF/JP) bands.
 const GLASS_SHADOW =
   'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.5), 0 10px 34px rgba(0,0,0,0.5)';
@@ -26,17 +32,19 @@ const FLAT_SHADOW = 'inset 0 -1px 0 rgba(0,0,0,0.45)';
 export function draftBandBackground(type: DraftType | null): string {
   if (type === 'hof') return HOF_BAND;
   if (type === 'jackpot') return JP_BAND;
+  if (type === 'jackhof') return JACKHOF_BAND;
   return '#000';
 }
 
 export function draftBandShadow(type: DraftType | null): string {
-  return type === 'hof' || type === 'jackpot' ? GLASS_SHADOW : FLAT_SHADOW;
+  return type === 'hof' || type === 'jackpot' || type === 'jackhof' ? GLASS_SHADOW : FLAT_SHADOW;
 }
 
 /** Color of the PRO / HOF / JACKPOT word in the banner. */
 export function draftWordColor(type: DraftType | null): string {
   if (type === 'hof') return '#241900';   // espresso, reads on bright gold
   if (type === 'jackpot') return '#ffffff';
+  if (type === 'jackhof') return '#ffffff'; // white reads on the red→gold sweep
   return '#a855f7';                         // pro purple (clean default)
 }
 
@@ -44,6 +52,7 @@ export function draftWordColor(type: DraftType | null): string {
 export function draftWordShadow(type: DraftType | null): string | undefined {
   if (type === 'hof') return '0 1px 0 rgba(255,255,255,0.35)';   // crisp top highlight
   if (type === 'jackpot') return '0 1px 4px rgba(0,0,0,0.5)';    // soft drop for white on red
+  if (type === 'jackhof') return '0 1px 4px rgba(0,0,0,0.5)';
   return undefined;
 }
 

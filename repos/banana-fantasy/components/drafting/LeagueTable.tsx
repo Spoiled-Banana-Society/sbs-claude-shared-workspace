@@ -111,7 +111,7 @@ export function LeagueTable({ rooms, onEnter, onBuyDrafts }: LeagueTableProps) {
               className={`
                 grid grid-cols-6 gap-6 px-6 py-5 items-center transition-all duration-200 cursor-pointer
                 ${room.status !== 'filling'
-                  ? room.type === 'jackpot'
+                  ? (room.type === 'jackpot' || room.type === 'jackhof')
                     ? room.isOnClock
                       ? 'bg-gradient-to-r from-red-500/[0.15] to-transparent'
                       : 'bg-gradient-to-r from-red-500/[0.06] to-transparent hover:from-red-500/[0.10]'
@@ -150,6 +150,8 @@ export function LeagueTable({ rooms, onEnter, onBuyDrafts }: LeagueTableProps) {
                   <span className="text-sm font-semibold text-red-400">Jackpot</span>
                 ) : room.type === 'hof' ? (
                   <span className="text-sm font-semibold text-[#D4AF37]">HOF</span>
+                ) : room.type === 'jackhof' ? (
+                  <span className="text-sm font-semibold"><span className="text-red-400">Jack</span><span className="text-[#D4AF37]">HOF</span></span>
                 ) : (
                   <span className="text-sm text-white/70">Pro</span>
                 )}

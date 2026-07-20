@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
+import { lanePosition, laneDraftsLeft, lanePct, WINDOW_SIZE, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -16,6 +17,10 @@ interface RevealGated {
   jackpotRemaining: number;     // REVEALED as of now — flips at the slot landing
   hofRemaining: number;         // REVEALED as of now
   revealedFilled: number;       // filled minus not-yet-revealed (drives the %)
+  jpPending: boolean;           // a JP hit has filled but its slot hasn't landed
+  hofPending: boolean;          // same for a HOF hit
+  recentJpHit: boolean;         // a JP reveal landed <8s ago (drives the HIT flash)
+  recentHofHit: boolean;        // same for HOF
 }
 
 /**
@@ -57,6 +62,9 @@ function useRevealGated(data: BatchProgress | null): RevealGated | null {
           })).catch(() => {});
           tick((t) => t + 1);
         }, delay));
+        // Second tick ~8s after the reveal clears the transient HIT flash the
+        // rolling-lanes pills show (harmless no-op re-render in legacy mode).
+        timers.push(setTimeout(() => tick((t) => t + 1), delay + 8_200));
       }
     }
     return () => timers.forEach(clearTimeout);
@@ -64,14 +72,21 @@ function useRevealGated(data: BatchProgress | null): RevealGated | null {
 
   if (!data) return null;
   const serverNow = Date.now() - offsetRef.current;
-  const notYet = (data.pendingReveals ?? []).filter((p) => p.atMs > serverNow);
+  const pending = data.pendingReveals ?? [];
+  const notYet = pending.filter((p) => p.atMs > serverNow);
   const jpBack = notYet.reduce((s, p) => s + (p.jp || 0), 0);
   const hofBack = notYet.reduce((s, p) => s + (p.hof || 0), 0);
+  const recentlyLanded = (kind: 'jp' | 'hof') =>
+    pending.some((p) => (p[kind] || 0) > 0 && p.atMs <= serverNow && serverNow - p.atMs < 8_000);
   return {
     filledLeaguesCount: data.filledLeaguesCount,
     jackpotRemaining: data.jackpotRemaining + jpBack,
     hofRemaining: data.hofRemaining + hofBack,
     revealedFilled: data.filledLeaguesCount - notYet.length,
+    jpPending: jpBack > 0,
+    hofPending: hofBack > 0,
+    recentJpHit: recentlyLanded('jp'),
+    recentHofHit: recentlyLanded('hof'),
   };
 }
 
@@ -145,6 +160,167 @@ export function BatchProgressIndicator() {
           willChange: 'transform',
         } as React.CSSProperties)
       : undefined;
+
+  // ── ROLLING WINDOWS (post-cutover) — two independent lanes, equal billing.
+  // Activated purely by the payload carrying `lanes` (tracker has
+  // RollingStartDraft); until Go writes that field this branch is dead code
+  // and the legacy fixed-batch view below renders unchanged. Reveal gating:
+  // while a lane's hit is pending its slot landing, we show the lane's `pre`
+  // snapshot (the old window), so the counter can't spoil the slot machine;
+  // the useRevealGated timers re-render at the exact landing moment.
+  if (data.lanes) {
+    const lanes = data.lanes;
+    const jpView: LaneSnapshot = gated.jpPending && lanes.jp.pre ? lanes.jp.pre : lanes.jp;
+    const hofView: LaneSnapshot = gated.hofPending && lanes.hof.pre ? lanes.hof.pre : lanes.hof;
+    const jpPos = lanePosition(filledLeaguesCount, jpView.windowStart);
+    const hofPos = lanePosition(filledLeaguesCount, hofView.windowStart);
+    const jpLanePct = lanePct(jpView.remaining, laneDraftsLeft(rFilled, jpView.windowStart));
+    const hofLanePct = lanePct(hofView.remaining, laneDraftsLeft(rFilled, hofView.windowStart));
+
+    const pills = [
+      {
+        key: 'jp',
+        tag: 'JACKPOT',
+        shortTag: 'JP',
+        color: JP_RED,
+        textCls: 'text-red-400',
+        frameCls: 'border-red-500/40 bg-red-500/[0.06]',
+        barBg: 'linear-gradient(90deg,#b91c1c,#ef4444)',
+        pos: jpPos,
+        pct: jpLanePct,
+        heat: heatFor(jpLanePct),
+        hit: gated.recentJpHit,
+        hitDots: null as number | null,
+      },
+      {
+        key: 'hof',
+        tag: 'HOF',
+        shortTag: 'HOF',
+        color: HOF_GOLD,
+        textCls: 'text-[#e6c35c]',
+        frameCls: 'border-[#D4AF37]/40 bg-[#D4AF37]/[0.06]',
+        barBg: 'linear-gradient(90deg,#8a6d1f,#D4AF37)',
+        pos: hofPos,
+        pct: hofLanePct,
+        heat: heatFor(hofLanePct),
+        hit: gated.recentHofHit,
+        hitDots: hofView.hitsInWindow as number | null,
+      },
+    ];
+
+    return (
+      <Tooltip
+        content={
+          <div className="w-[250px] py-0.5">
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-sm font-semibold text-text-primary">Draft #{filledLeaguesCount}</span>
+              <span className="text-[10.5px] text-text-muted">rolling windows</span>
+            </div>
+
+            {/* Jackpot lane */}
+            <div className="mb-2.5">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11.5px] font-bold text-red-400">JACKPOT · {jpPos}/{WINDOW_SIZE}</span>
+                {jpLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jpLanePct)}</span>}
+              </div>
+              <p className="text-[10.5px] leading-snug text-text-secondary">
+                Guaranteed within the next {WINDOW_SIZE - jpPos} drafts — the window resets every time it hits.
+              </p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full" style={{ width: `${jpPos}%`, background: pills[0].barBg }} />
+              </div>
+            </div>
+
+            {/* HOF lane */}
+            <div className="mb-2.5">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11.5px] font-bold text-[#e6c35c]">HOF · {hofPos}/{WINDOW_SIZE}</span>
+                {hofLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-[#e6c35c]">{fmtPct(hofLanePct)}</span>}
+              </div>
+              <p className="text-[10.5px] leading-snug text-text-secondary">
+                {hofView.hitsInWindow} of {HOF_PER_WINDOW} hit this window — resets after the 5th.
+              </p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full" style={{ width: `${hofPos}%`, background: pills[1].barBg }} />
+              </div>
+            </div>
+
+            {/* What they are + JackHOF */}
+            <div className="space-y-1 border-t border-white/[0.08] pt-2.5 text-center">
+              <p className="text-[11px]"><span className="font-semibold text-red-400">Jackpot</span><span className="text-text-secondary"> · win your league, skip to finals</span></p>
+              <p className="text-[11px]"><span className="font-semibold text-[#e6c35c]">HOF</span><span className="text-text-secondary"> · compete for bonus prizes</span></p>
+              <p className="text-[11px]"><span className="font-semibold"><span className="text-red-400">JACK</span><span className="text-[#e6c35c]">HOF</span></span><span className="text-text-secondary"> · both land on one draft — two perks</span></p>
+            </div>
+            <p className="mt-2 text-center text-[10px] text-text-muted">A Jackpot is always within 100 drafts of the last · 5 HOF per window</p>
+          </div>
+        }
+      >
+        <div className="relative flex items-center gap-1.5 mr-1 md:mr-3 cursor-default">
+          {/* Global draft number — always one glance away of the window counters */}
+          <div className="flex flex-col items-center px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10 leading-tight">
+            <span className="text-[6.5px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
+            <span className="text-[10px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+          </div>
+
+          <div className="flex flex-col gap-[3px] sm:flex-row sm:gap-1.5">
+            {pills.map((p) => (
+              <div key={p.key}>
+                {/* Desktop pill */}
+                <div className={`hidden sm:flex flex-col gap-[2px] rounded-[10px] border px-2 py-[4px] min-w-[106px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  <div className="flex items-center gap-1.5 leading-none">
+                    <span className={`text-[8.5px] font-extrabold tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+                    {p.hitDots !== null && (
+                      <span className="flex items-center gap-[2.5px]">
+                        {Array.from({ length: HOF_PER_WINDOW }).map((_, i) => (
+                          <span key={i} className={`h-[4px] w-[4px] rounded-full ${i < (p.hitDots as number) ? 'bg-[#D4AF37] shadow-[0_0_4px_rgba(212,175,55,0.8)]' : 'bg-[#D4AF37]/25'}`} />
+                        ))}
+                      </span>
+                    )}
+                    {!p.hit && p.pct !== null && (
+                      <span className={`ml-auto text-[10px] font-semibold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                    )}
+                  </div>
+                  <div className="leading-none" style={heatPulse(p.heat, p.color)}>
+                    {p.hit ? (
+                      <span className="text-[12px] font-extrabold text-green-400">✓ HIT</span>
+                    ) : (
+                      <span className="text-[13px] font-extrabold tabular-nums text-white/90">
+                        {p.pos}<span className="text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="h-[2.5px] overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
+                  </div>
+                </div>
+
+                {/* Mobile row */}
+                <div className="flex items-center gap-1 leading-none sm:hidden" style={heatPulse(p.heat, p.color)}>
+                  <span className={`w-[22px] text-[7.5px] font-extrabold tracking-[0.06em] ${p.textCls}`}>{p.shortTag}</span>
+                  {p.hit ? (
+                    <span className="text-[10px] font-extrabold text-green-400">✓ HIT</span>
+                  ) : (
+                    <>
+                      <span className="text-[10.5px] font-extrabold tabular-nums text-white/90">
+                        {p.pos}<span className="text-[8.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      </span>
+                      <span className="h-[2px] w-[26px] overflow-hidden rounded-full bg-white/10">
+                        <span className="block h-full rounded-full" style={{ width: `${p.pos}%`, background: p.barBg }} />
+                      </span>
+                      {p.pct !== null && (
+                        <span className={`text-[8.5px] font-semibold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <style jsx global>{`@keyframes bpHeatPulse { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(var(--bpScale, 1.08)); opacity: 1 } }`}</style>
+        </div>
+      </Tooltip>
+    );
+  }
 
   return (
     <Tooltip

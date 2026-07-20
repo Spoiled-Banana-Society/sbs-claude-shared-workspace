@@ -84,7 +84,7 @@ export function CompletedDrafts({ drafts, onViewDetails }: CompletedDraftsProps)
             key={draft.id}
             className={`
               rounded-2xl overflow-hidden border transition-all duration-200 cursor-pointer
-              ${draft.type === 'jackpot'
+              ${(draft.type === 'jackpot' || draft.type === 'jackhof')
                 ? 'border-red-500/30 bg-gradient-to-r from-red-500/[0.08] to-transparent hover:from-red-500/[0.12]'
                 : draft.type === 'hof'
                 ? 'border-[#FFD700]/30 bg-gradient-to-r from-[#FFD700]/[0.08] to-transparent hover:from-[#FFD700]/[0.12]'
@@ -121,6 +121,11 @@ export function CompletedDrafts({ drafts, onViewDetails }: CompletedDraftsProps)
                   {draft.type === 'hof' && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#FFD700]/20 text-[#FFD700] font-medium">
                       HOF
+                    </span>
+                  )}
+                  {draft.type === 'jackhof' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gradient-to-r from-red-500/20 to-[#FFD700]/20 font-medium">
+                      <span className="text-red-400">Jack</span><span className="text-[#FFD700]">HOF</span>
                     </span>
                   )}
                   <VerifiedBadge type="draft-type" draftType={draft.type} size="sm" draftId={draft.id} />

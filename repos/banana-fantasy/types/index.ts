@@ -152,8 +152,8 @@ export interface UserBadge {
   source?: Record<string, unknown>;
 }
 
-// Contest types
-export type ContestType = 'regular' | 'pro' | 'jackpot' | 'hof';
+// Contest types ('jackhof' = Jackpot + HOF landed on one draft — dual perks)
+export type ContestType = 'regular' | 'pro' | 'jackpot' | 'hof' | 'jackhof';
 
 export interface Contest {
   id: string;

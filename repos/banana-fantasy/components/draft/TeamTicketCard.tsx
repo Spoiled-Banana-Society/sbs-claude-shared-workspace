@@ -20,9 +20,11 @@ const TYPE_FOIL: Record<DraftType, string> = {
   pro: 'linear-gradient(135deg,#5b1d9e 0%,#e9d5ff 22%,#a855f7 46%,#f3e8ff 62%,#7e22ce 82%,#c084fc 100%)',
   hof: 'linear-gradient(135deg,#9c7619 0%,#ffe9a0 22%,#d4af37 42%,#fff6cf 58%,#c0941d 78%,#e8c869 100%)',
   jackpot: 'linear-gradient(135deg,#7f1d1d 0%,#fecaca 22%,#ef4444 46%,#fee2e2 60%,#b91c1c 82%,#f87171 100%)',
+  // Dual-type foil: jackpot red sweeping into HOF gold.
+  jackhof: 'linear-gradient(135deg,#7f1d1d 0%,#fecaca 20%,#ef4444 38%,#fee2e2 50%,#d4af37 64%,#fff6cf 78%,#c0941d 100%)',
 };
-const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT' };
-const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444' };
+const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT', jackhof: 'JACKHOF' };
+const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444', jackhof: '#ef4444' };
 
 /**
  * The Banana Best Ball IV team card, rendered on-site from team data (not the

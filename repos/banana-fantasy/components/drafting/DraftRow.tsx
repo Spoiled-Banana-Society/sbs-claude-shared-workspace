@@ -168,8 +168,8 @@ export function DraftRow({
             // the round/pick column instead (see below).
             <span className="flex items-center gap-1 sm:gap-1.5">
               <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
-                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
-                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
+                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
+                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
               </span>
               {/* Prefer the live-resolved global league number for the
                   badge URL. Falls back to the slot id (which the proof

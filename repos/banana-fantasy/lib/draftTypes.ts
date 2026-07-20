@@ -1,7 +1,8 @@
 // Single source of truth for draft type colors and metadata
 // Replaces 5+ inconsistent color definitions across the codebase
 
-export type DraftType = 'jackpot' | 'hof' | 'pro';
+// 'jackhof' = Jackpot + HOF on the SAME draft (rolling-windows system) — both perks.
+export type DraftType = 'jackpot' | 'hof' | 'pro' | 'jackhof';
 
 // Drafting closes at NFL Season kickoff: Sept 4, 2026 at 4:20 PM PST (UTC: 11:20 PM)
 export const DRAFTING_CLOSES_AT = new Date('2026-09-04T23:20:00Z');
@@ -66,6 +67,22 @@ export const DRAFT_TYPE_COLORS = {
     textClass: 'text-pro',
     badgeClass: 'badge-pro',
     glowClass: 'glow-pro',
+  },
+  jackhof: {
+    primary: '#ef4444',
+    glow: 'rgba(212, 175, 55, 0.3)',
+    glowStrong: 'rgba(239, 68, 68, 0.6)',
+    particleColors: ['#ef4444', '#f87171', '#D4AF37', '#fbbf24', '#ffffff'],
+    label: 'JACKHOF',
+    shortLabel: 'JackHOF',
+    icon: '🔥',
+    odds: '~0.1%',
+    perk: 'Two Perks, One Draft',
+    perkDescription: 'Jackpot + HOF landed on the same draft: win your league to skip straight to the finals, plus compete for HOF bonus prizes on top.',
+    bgClass: 'bg-red-600',
+    textClass: 'text-jackpot',
+    badgeClass: 'badge-jackpot',
+    glowClass: 'glow-jackpot',
   },
 } as const;
 

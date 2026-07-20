@@ -6,7 +6,7 @@ import Link from 'next/link';
 
 interface VerifiedBadgeProps {
   type: 'draft-type' | 'draft-order' | 'team';
-  draftType?: 'jackpot' | 'hof' | 'pro' | 'regular';
+  draftType?: 'jackpot' | 'hof' | 'pro' | 'regular' | 'jackhof';
   size?: 'sm' | 'md';
   compact?: boolean; // icon-only variant
   // When provided, the badge becomes a link to /verify/[draftId] where the
@@ -17,7 +17,9 @@ interface VerifiedBadgeProps {
 }
 
 export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', size = 'sm', compact = false, draftId }: VerifiedBadgeProps) {
-  const draftType: 'jackpot' | 'hof' | 'pro' = rawDraftType === 'regular' ? 'pro' : (rawDraftType || 'pro');
+  // JackHOF verifies through the jackpot proof lane — red badge colors fit.
+  const draftType: 'jackpot' | 'hof' | 'pro' =
+    rawDraftType === 'regular' ? 'pro' : rawDraftType === 'jackhof' ? 'jackpot' : (rawDraftType || 'pro');
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLDivElement>(null);

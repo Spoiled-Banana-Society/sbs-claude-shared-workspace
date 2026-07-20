@@ -61,6 +61,7 @@ export function LeagueList({ leagues, selectedLeagueId, onSelectLeague }: League
               )}
               {league.type === 'jackpot' && <Badge type="jackpot">JP</Badge>}
               {league.type === 'hof' && <Badge type="hof">HOF</Badge>}
+              {league.type === 'jackhof' && <Badge type="jackhof">JACKHOF</Badge>}
               <span className="text-text-primary font-medium">{league.name}</span>
             </div>
 

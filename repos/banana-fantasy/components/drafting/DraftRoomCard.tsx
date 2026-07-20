@@ -30,9 +30,10 @@ export function DraftRoomCard({ room, onEnter, timer }: DraftRoomCardProps) {
           <h3 className="text-white font-semibold">{room.contestName}</h3>
           {room.type !== 'regular' && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-              room.type === 'jackpot' ? 'bg-hof/20 text-hof' : 'bg-jackpot/20 text-jackpot'
+              room.type === 'jackhof' ? 'bg-gradient-to-r from-jackpot/20 to-hof/20 text-hof'
+                : room.type === 'jackpot' ? 'bg-hof/20 text-hof' : 'bg-jackpot/20 text-jackpot'
             }`}>
-              {room.type === 'jackpot' ? 'JP' : 'HOF'}
+              {room.type === 'jackhof' ? 'JACKHOF' : room.type === 'jackpot' ? 'JP' : 'HOF'}
             </span>
           )}
         </div>

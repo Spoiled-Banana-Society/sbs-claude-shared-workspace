@@ -4,7 +4,9 @@
 export { ALL_POSITIONS } from '@/data/nfl-players';
 export type { PlayerData } from '@/data/nfl-players';
 
-export type DraftType = 'jackpot' | 'hof' | 'pro';
+// 'jackhof' = Jackpot + HOF landed on the SAME draft (rolling-windows system,
+// ~1 in 800) — dual-type, both perks. Server-sent only; never generated locally.
+export type DraftType = 'jackpot' | 'hof' | 'pro' | 'jackhof';
 export type RoomPhase = 'filling' | 'pre-spin' | 'spinning' | 'result' | 'countdown' | 'drafting' | 'completed' | 'loading';
 
 // ==================== POSITION COLORS ====================
@@ -55,6 +57,7 @@ export const DRAFT_TYPES = {
   jackpot: { label: 'JACKPOT', color: '#ef4444', bgClass: 'bg-red-600' },
   hof: { label: 'HALL OF FAME', color: '#D4AF37', bgClass: 'bg-yellow-600' },
   pro: { label: 'PRO', color: '#a855f7', bgClass: 'bg-purple-600' },
+  jackhof: { label: 'JACKHOF', color: '#ef4444', bgClass: 'bg-red-600' },
 };
 
 export const TOTAL_ROUNDS = 15;

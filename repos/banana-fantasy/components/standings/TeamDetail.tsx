@@ -19,6 +19,7 @@ const typeConfig = {
   hof: { label: 'HOF', text: 'text-hof', bg: 'bg-hof/10' },
   pro: { label: 'Pro', text: 'text-pro', bg: 'bg-pro/10' },
   regular: { label: 'Pro', text: 'text-pro', bg: 'bg-pro/10' },
+  jackhof: { label: 'JackHOF', text: 'text-hof', bg: 'bg-jackpot/10' },
 };
 
 export function TeamDetail({ league, gameweek }: TeamDetailProps) {

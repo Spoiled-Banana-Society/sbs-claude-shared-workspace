@@ -72,6 +72,9 @@ async function playersWithPicks(id: string, fallback: CardPlayer[]): Promise<Car
 
 function tierFromLevel(level?: string): CardTier {
   const l = (level || '').toLowerCase();
+  // 'jackhof' contains 'hof' — must be matched BEFORE the hof check or a
+  // dual-type card silently renders as plain HOF.
+  if (l.includes('jackhof')) return 'jackhof';
   if (l.includes('jackpot')) return 'jackpot';
   if (l.includes('hof') || l.includes('hall of fame')) return 'hof';
   return 'pro';
