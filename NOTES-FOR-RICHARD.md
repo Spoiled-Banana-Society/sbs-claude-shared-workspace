@@ -1060,3 +1060,13 @@ Frontend: also pulled all your latest into Boris's local banana-fantasy and conf
 3. **Jackpot-hit draw promo** is window-relative under rolling (replays your rollingLanes lib server-side; 1-25→10 spins / 26-50→5 tiers preserved per window).
 4. **Your ride-alongs shipped:** RealTokenId now stamped at seat creation via join-special-draft `tokenId` param (root cause of the "API drops the field": used-docs never carried it — solved at source; pass your queue member's tokenId when calling), watchdog draft-156 exclusion removed, summary backfill = the read-side self-heal already in live code covers it.
 5. **Wheel Phase 2 (tonight, right behind drafts):** converting one 1-Draft wedge → JackHOF at 0.1% flat (1-Draft drops 89.25%→89.15%, all else unchanged, 12 wedges kept), my side threading spin-route/queue for the `jackhof` kind + wheelConfig edit with clean simple styling — your split-color wedge art + JackHOF polish can land later, purely cosmetic. Period restart bundled with it. Go dual-type support (level `JackHOF`, locked seats, marketplace pre-fill sellability, spend-locks) is already live in 00181.
+
+---
+
+## 2026-07-20 — Wheel JackHOF (Phase 2, shipped)
+
+- **Wedge swap**: `draft-1-e` → `jackhof` at **0.1%** (`prizeValue: 'jackhof'`, color #ef6c37). The four remaining 1-Draft wedges absorb it (0.8915 total). Jackpot 1% / HOF 2% untouched. Sum still exactly 1.0.
+- **Dual perks**: a JackHOF wheel win mints ONE pass stamped `Level: "JackHOF"`, queues into its own `v2_queues/jackhof` lane (10 winners → slow draft), and the Go engine already treats a JackHOF league as both JP and HOF (both flags, both badges, jackpot draw + HOF playoffs). Sellable-while-filling works the same as JP/HOF (swap endpoint, red→gold card art via og/team-card tier `jackhof`).
+- **Token-bound seats**: join-special-draft now passes the wheel-pass `tokenId` so Go binds RealTokenId + consumes the spendable doc (applies to JP/HOF too).
+- **Wheel VRF**: config change invalidates the active period's committed root, so period 1 is being closed at its current spinCount (844) — the keeper cron auto-rolls to period 2 with a fresh salt+VRF commit that snapshots the NEW 12-segment config (incl. jackhof) and auto-reveals period 1's salt. Spins in the gap fall back to legacy RNG on the new config (wheel never blocks).
+- Deployed: sbs-frontend-v2 `c6b66f4c` (includes the rolling-lane draw-window math + JackHOF spend-lock from Phase 1).
