@@ -301,7 +301,7 @@ export async function GET(req: Request) {
       const levels = await getFillingWheelPassLevels(listings.map(l => String(l.tokenId)));
       for (const listing of listings) {
         const lvl = levels[String(listing.tokenId)];
-        if (lvl) (listing as { fillingWheelLevel?: 'jackpot' | 'hof' }).fillingWheelLevel = lvl;
+        if (lvl) (listing as { fillingWheelLevel?: 'jackpot' | 'hof' | 'jackhof' }).fillingWheelLevel = lvl;
       }
     } catch { /* best-effort — Buy card falls back to the generic pass look */ }
 

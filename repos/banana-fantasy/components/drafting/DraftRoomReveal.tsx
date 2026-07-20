@@ -33,7 +33,7 @@ interface DraftRoomRevealProps {
   jackpotRain: Array<{ id: number; x: number; delay: number; size: number }>;
   particleBurst: Array<{ id: number; x: number; y: number; angle: number; color: string }>;
   pulseGlow: boolean;
-  specialTypeParam: 'jackpot' | 'hof' | null;
+  specialTypeParam: 'jackpot' | 'hof' | 'jackhof' | null;
   showSlotMachine: boolean;
   allReelItems: DraftType[][];
   reelOffsets: number[];

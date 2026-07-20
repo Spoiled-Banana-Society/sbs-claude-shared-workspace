@@ -157,8 +157,8 @@ export async function createNotificationForWallets(
 }
 
 /** Notify user they've been queued */
-export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof', draftCount: number) {
-  const label = type === 'jackpot' ? 'Jackpot' : 'HOF';
+export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof' | 'jackhof', draftCount: number) {
+  const label = type === 'jackpot' ? 'Jackpot' : type === 'hof' ? 'HOF' : 'JackHOF';
   await createNotification(wallet, {
     type: `${type}_queue`,
     title: `${label} Draft Queued!`,
@@ -167,8 +167,8 @@ export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof',
 }
 
 /** Notify ALL members that a round is full — draft starting now */
-export async function notifyQueueFilled(wallets: string[], type: 'jackpot' | 'hof') {
-  const label = type === 'jackpot' ? 'Jackpot' : 'HOF';
+export async function notifyQueueFilled(wallets: string[], type: 'jackpot' | 'hof' | 'jackhof') {
+  const label = type === 'jackpot' ? 'Jackpot' : type === 'hof' ? 'HOF' : 'JackHOF';
   const promises = wallets.map(wallet =>
     createNotification(wallet, {
       type: `${type}_queue`,

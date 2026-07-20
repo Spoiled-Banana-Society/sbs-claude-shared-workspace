@@ -85,7 +85,7 @@ export async function GET(req: Request) {
   let linked = 0;
   const errors: string[] = [];
 
-  for (const type of ['jackpot', 'hof'] as const) {
+  for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     const queueSnap = await db.collection('v2_queues').doc(type).get();
     if (!queueSnap.exists) continue;
     const rounds = (queueSnap.data()?.rounds ?? []) as QueueRound[];

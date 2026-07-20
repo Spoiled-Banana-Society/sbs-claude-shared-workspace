@@ -13,6 +13,7 @@ export interface User {
   wheelSpins: number;
   jackpotEntries: number;
   hofEntries: number;
+  jackhofEntries?: number;
   /**
    * @deprecated Superseded by `cardFeeCreditCents`. The old "every 6 card
    * purchases = 1 free draft" counter; no longer incremented or read.
@@ -458,7 +459,7 @@ export interface Promo {
 }
 
 // Special draft queue types
-export type QueueType = 'jackpot' | 'hof';
+export type QueueType = 'jackpot' | 'hof' | 'jackhof';
 export type RoundStatus = 'filling' | 'ready' | 'drafting' | 'completed';
 
 export interface QueueMember {

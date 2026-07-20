@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     const db = getAdminFirestore();
 
     const passes: MarketplaceTeam[] = [];
-    for (const type of ['jackpot', 'hof'] as const) {
+    for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
       const snap = await db.collection('v2_queues').doc(type).get();
       if (!snap.exists) continue;
       const queue = snap.data() as { rounds?: Array<{ status: string; draftId?: string; members: Array<{ wallet: string; tokenId?: string }> }> };

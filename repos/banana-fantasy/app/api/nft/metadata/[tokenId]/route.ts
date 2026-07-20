@@ -49,12 +49,12 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     // chain trait only lands at draft fill). Surface its wheel tier as a Level
     // trait NOW so OpenSea's "Level: Jackpot/Hall of Fame" filter shows it while
     // it's sellable. Undrafted Pro passes get no Level (same as before).
-    let wheelLevel: 'jackpot' | 'hof' | null = null;
+    let wheelLevel: 'jackpot' | 'hof' | 'jackhof' | null = null;
     try {
       const { getFillingWheelPassLevels } = await import('@/lib/db');
       wheelLevel = (await getFillingWheelPassLevels([tokenId]))[tokenId] ?? null;
     } catch { /* best-effort */ }
-    const levelLabel = wheelLevel === 'jackpot' ? 'Jackpot' : wheelLevel === 'hof' ? 'Hall of Fame' : null;
+    const levelLabel = wheelLevel === 'jackpot' ? 'Jackpot' : wheelLevel === 'hof' ? 'Hall of Fame' : wheelLevel === 'jackhof' ? 'JackHOF' : null;
 
     // A filling JP/HOF pass should LOOK like its tier (gold HOF / red Jackpot),
     // not the grey default — same tiered art our own marketplace renders. Only

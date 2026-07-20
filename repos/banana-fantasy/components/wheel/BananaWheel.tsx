@@ -11,7 +11,7 @@ interface BananaWheelProps {
   spinsAvailable: number;
   onSpin: () => Promise<WheelSpinOutcome | null>;
   onSpinComplete?: (outcome: WheelSpinOutcome, segment: WheelSegment | null) => void;
-  onSpecialDraftWin?: (type: 'jackpot' | 'hof') => void;
+  onSpecialDraftWin?: (type: 'jackpot' | 'hof' | 'jackhof') => void;
   /** Live seat state for a just-won JP/HOF special draft (fed by the page's
    *  queue poll): lobby fill count + a direct Join-the-Lobby URL. Null until
    *  the seat resolves server-side (a few seconds after the wheel stops). */
@@ -85,6 +85,19 @@ function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: numbe
       </svg>
     );
   }
+  if (segment.id === 'jackhof') {
+    // JackHOF = trophy + star: the Jackpot and HOF prizes on one draft.
+    return (
+      <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 1.1l.95 1.93 2.13.31-1.54 1.5.36 2.12L12 5.97l-1.9 1 .36-2.12-1.54-1.5 2.13-.31z" fill="currentColor" stroke="none" />
+        <path d="M8 8.5h8V13a4 4 0 0 1-8 0V8.5z" fill="currentColor" fillOpacity={0.12} />
+        <path d="M8 9.7H5.5v1.8A2.5 2.5 0 0 0 8 14" />
+        <path d="M16 9.7h2.5v1.8A2.5 2.5 0 0 1 16 14" />
+        <path d="M12 17v1.5" />
+        <path d="M10.2 18.5h3.6l.7 4h-5z" fill="currentColor" fillOpacity={0.12} />
+      </svg>
+    );
+  }
   if (segment.id === 'hof') {
     // Hall of Fame = solid gold star.
     return (
@@ -113,6 +126,7 @@ function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: numbe
 function getPrizeMessage(segment: WheelSegment): string {
   if (segment.id === 'jackpot') return 'You hit the JACKPOT!';
   if (segment.id === 'hof') return 'You won a Hall of Fame draft!';
+  if (segment.id === 'jackhof') return 'You hit the JACKPOT and the Hall of Fame — one draft, both prizes!';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win!';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'Big win!';
   return 'Added to your balance';
@@ -121,13 +135,14 @@ function getPrizeMessage(segment: WheelSegment): string {
 // The "big four" that get the over-the-top outro (screen shake + prize rain):
 // Jackpot, HOF, 10 drafts, 20 drafts.
 function isBigWin(segment: WheelSegment): boolean {
-  return segment.id === 'jackpot' || segment.id === 'hof'
+  return segment.id === 'jackpot' || segment.id === 'hof' || segment.id === 'jackhof'
     || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10);
 }
 
 // The very top tier gets a harder shake + heavier rain.
 function isHugeWin(segment: WheelSegment): boolean {
-  return segment.id === 'jackpot' || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20);
+  return segment.id === 'jackpot' || segment.id === 'jackhof'
+    || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20);
 }
 
 // Rain clean tier-colored confetti down the screen (no emojis) — heavier for
@@ -696,7 +711,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               </div>
 
               <p className="text-[#32d74b] text-sm font-semibold tracking-wide uppercase mb-2">
-                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' ? 'LEGENDARY WIN!' : 'You Won!'}
+                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof' ? 'LEGENDARY WIN!' : 'You Won!'}
               </p>
 
               <h3
@@ -764,9 +779,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               {/* Info for Jackpot/HOF wins — winner is auto-seated in a special
                   draft lobby. Count is LIVE (page polls the queue); until the
                   seat resolves we show the generic 10-winners line. */}
-              {(wonSegment.id === 'jackpot' || wonSegment.id === 'hof') && (() => {
+              {(wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof') && (() => {
                 const isJp = wonSegment.id === 'jackpot';
-                const label = isJp ? 'Jackpot' : 'HOF';
+                const isJackHof = wonSegment.id === 'jackhof';
+                const label = isJackHof ? 'JackHOF' : isJp ? 'Jackpot' : 'HOF';
                 const count = specialDraftStatus?.count ?? null;
                 const remaining = count !== null ? Math.max(0, 10 - count) : null;
                 return (
@@ -782,7 +798,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                             ? <span className="text-white/90 font-semibold">It&apos;s full (10/10) — your draft is starting now!</span>
                             : <><span className="text-white/90 font-semibold">{remaining} more</span> {label} winner{remaining !== 1 ? 's' : ''} to go <span className="text-white/90 font-semibold">({count}/10)</span>.</>}</p>
                       <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — 8 hours per pick).</p>
-                      <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
+                      <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJackHof ? 'you skip straight to the season Finals AND enter the Hall of Fame playoff bracket — both perks on this one draft' : isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
                       <p className="text-white/40 pt-1">Your seat is locked — but until the draft fills, you can sell this pass on the Marketplace and the buyer takes your spot.</p>
                     </div>
                     <a

@@ -254,9 +254,9 @@ export function useDraftingPageState() {
               drafts.push({
                 id: `queue-${q.type}-${r.roundId}`,
                 queueDraftId: r.draftId || undefined,
-                contestName: `${q.type === 'jackpot' ? 'Jackpot' : 'HOF'} #${r.roundId}`,
+                contestName: `${q.type === 'jackpot' ? 'Jackpot' : q.type === 'hof' ? 'HOF' : 'JackHOF'} #${r.roundId}`,
                 status: 'filling',
-                type: q.type as 'jackpot' | 'hof',
+                type: q.type as 'jackpot' | 'hof' | 'jackhof',
                 draftSpeed: 'slow',
                 players: r.members?.length || 1,
                 maxPlayers: 10,
@@ -265,7 +265,7 @@ export function useDraftingPageState() {
                   m.wallet?.toLowerCase() === walletAddr?.toLowerCase(),
                 )?.joinedAt || Date.now(),
                 lastUpdated: Date.now(),
-                specialType: q.type as 'jackpot' | 'hof',
+                specialType: q.type as 'jackpot' | 'hof' | 'jackhof',
               });
             }
           }

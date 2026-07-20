@@ -450,7 +450,7 @@ export function playWinSound(tier: WinTier) {
 
 // Map a wheel segment to a sound tier.
 export function getWinTier(segment: { prizeValue?: number | string; id: string }): WinTier {
-  if (segment.id === 'jackpot') return 'legendary';
+  if (segment.id === 'jackpot' || segment.id === 'jackhof') return 'legendary';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'legendary';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'great';
   if (segment.id === 'hof') return 'good';

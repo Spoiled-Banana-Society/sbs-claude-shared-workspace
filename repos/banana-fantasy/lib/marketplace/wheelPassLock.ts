@@ -25,7 +25,7 @@ function canonId(id: string): string {
 }
 
 type QueueRound = { status?: string; draftId?: string; members?: Array<{ tokenId?: string; wallet?: string }> };
-type Queues = Partial<Record<'jackpot' | 'hof', { rounds?: QueueRound[] }>>;
+type Queues = Partial<Record<'jackpot' | 'hof' | 'jackhof', { rounds?: QueueRound[] }>>;
 
 export interface WheelPassLockResult {
   locked: boolean;
@@ -38,7 +38,7 @@ export async function checkWheelPassLock(tokenId: string | null | undefined): Pr
   const ident = canonId(String(tokenId));
   const queues = (await getQueueStatus().catch(() => null)) as Queues | null;
   if (!queues) return null;
-  for (const type of ['jackpot', 'hof'] as const) {
+  for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     for (const round of queues[type]?.rounds || []) {
       const member = (round.members || []).find(m => m.tokenId && canonId(String(m.tokenId)) === ident);
       if (!member) continue;

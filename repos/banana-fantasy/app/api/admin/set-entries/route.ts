@@ -68,7 +68,7 @@ export async function DELETE(req: Request) {
     actor = admin.walletAddress ?? admin.userId;
 
     const db = getAdminFirestore();
-    const ids = ['jackpot', 'hof'];
+    const ids = ['jackpot', 'hof', 'jackhof'];
     for (const id of ids) {
       await db.collection('v2_queues').doc(id).set({ type: id, rounds: [], nextRoundId: 1 });
     }

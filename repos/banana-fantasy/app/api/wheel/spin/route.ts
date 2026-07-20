@@ -280,9 +280,10 @@ export async function POST(req: Request) {
     // NFT for it (marked JP/HOF + wheel-origin) so the prize is a sellable asset,
     // instead of only bumping the wallet-keyed queue counter. Flag OFF → legacy
     // counter/queue path is untouched.
-    const jphofKind: 'jackpot' | 'hof' | null =
+    const jphofKind: 'jackpot' | 'hof' | 'jackhof' | null =
       segment.prizeType === 'custom' && segment.prizeValue === 'jackpot' ? 'jackpot'
       : segment.prizeType === 'custom' && segment.prizeValue === 'hof' ? 'hof'
+      : segment.prizeType === 'custom' && segment.prizeValue === 'jackhof' ? 'jackhof'
       : null;
     const mintJpHof = isWheelJpHofPassEnabled() && isAdminMintConfigured() && jphofKind !== null;
 
@@ -392,6 +393,10 @@ export async function POST(req: Request) {
       } else if (jphofKind === 'hof') {
         if (!mintJpHof) balanceUpdate.hofEntries = currentHof + 1;
         winningsWon += 1;
+      } else if (jphofKind === 'jackhof') {
+        const currentJackhof = Math.max(0, (userData?.jackhofEntries as number | undefined) ?? 0);
+        if (!mintJpHof) balanceUpdate.jackhofEntries = currentJackhof + 1;
+        winningsWon += 1;
       }
       // First-purchase popup gate counter. Only matters pre-purchase — skip
       // once they've bought or already unlocked it. Decremented as each won
@@ -431,6 +436,10 @@ export async function POST(req: Request) {
         await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackpot', spinId }).catch(() => {});
       } else if (jphofKind === 'hof') {
         await unlockBadge(userId, 'hof-club', { source: 'wheel-hof', spinId }).catch(() => {});
+      } else if (jphofKind === 'jackhof') {
+        // JackHOF = both perks on one draft → both club badges.
+        await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
+        await unlockBadge(userId, 'hof-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
       }
 
       let mintTxHash: string | undefined;
@@ -503,7 +512,7 @@ export async function POST(req: Request) {
           // stays sellable while the round is filling. A fresh wheel mint never
           // collides, so the validDraftTokens doc id is the on-chain tokenId.
           try {
-            const specialLevel = jphofKind === 'jackpot' ? 'Jackpot' : 'Hall of Fame';
+            const specialLevel = jphofKind === 'jackpot' ? 'Jackpot' : jphofKind === 'hof' ? 'Hall of Fame' : 'JackHOF';
             await Promise.all(
               res.tokenIds.map((tid) =>
                 db

@@ -54,7 +54,7 @@ async function resolveSeatWallets(
 
 /** The round hit 10/10: close the sell window and hide/cancel cached listings.
  *  The Go engine already started the draft and fired the start notifications. */
-async function onRoundFilled(type: 'jackpot' | 'hof', roundId: number): Promise<void> {
+async function onRoundFilled(type: 'jackpot' | 'hof' | 'jackhof', roundId: number): Promise<void> {
   const { markQueueRoundDrafting } = await import('@/lib/db');
   const res = await markQueueRoundDrafting(type, roundId);
   if (!res.changed) return;
@@ -83,7 +83,7 @@ async function onRoundFilled(type: 'jackpot' | 'hof', roundId: number): Promise<
  * for the creator to finish). Idempotent end to end.
  */
 export async function ensureSpecialDraftSeat(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
   wallet: string,
 ): Promise<SeatResult> {
@@ -106,7 +106,16 @@ export async function ensureSpecialDraftSeat(
         logger.warn('special_draft.join_denied_not_member', { type, roundId, wallet: w });
         return { draftId: claim.draftId, numPlayers: null };
       }
-      const res = await goPost('/staging/join-special-draft', { draftId: claim.draftId, wallet: w });
+      // Token-bound seat: pass the wheel-pass NFT id so the Go engine binds the
+      // seat token to the REAL on-chain pass (RealTokenId) and consumes its
+      // spendable doc — the pass can't also be spent on a regular draft.
+      const seatIdx = seatWallets.indexOf(w);
+      const seatTokenId = seatIdx >= 0 ? (round?.members || [])[seatIdx]?.tokenId : undefined;
+      const res = await goPost('/staging/join-special-draft', {
+        draftId: claim.draftId,
+        wallet: w,
+        ...(seatTokenId ? { tokenId: String(seatTokenId) } : {}),
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         logger.error('special_draft.join_failed', { type, roundId, draftId: claim.draftId, wallet: w, status: res.status, text });

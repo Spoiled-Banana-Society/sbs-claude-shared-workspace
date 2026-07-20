@@ -80,8 +80,8 @@ export async function GET(req: Request) {
     // Wheel wins are FREE passes; card purchases are PAID. Detect wheel records
     // by their spinId/reason so re-minted passes get the right type + origin.
     const isWheel = !!data.spinId || String(data.reason ?? '').startsWith('wheel_spin');
-    const jphofKind: 'jackpot' | 'hof' | null =
-      data.kind === 'jackpot' || data.kind === 'hof' ? data.kind : null;
+    const jphofKind: 'jackpot' | 'hof' | 'jackhof' | null =
+      data.kind === 'jackpot' || data.kind === 'hof' || data.kind === 'jackhof' ? data.kind : null;
     const passType: 'free' | 'paid' = isWheel ? 'free' : 'paid';
     if (!WALLET_REGEX.test(userId) || !Number.isInteger(quantity) || quantity <= 0) {
       await doc.ref.set({ resolved: true, resolvedReason: 'invalid_record', resolvedAt: FieldValue.serverTimestamp() }, { merge: true });

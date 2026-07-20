@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api/errors';
 export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
-    const queueType = requireString(body.queueType, 'queueType') as 'jackpot' | 'hof';
+    const queueType = requireString(body.queueType, 'queueType') as 'jackpot' | 'hof' | 'jackhof';
     const roundId = requireNumber(body.roundId, 'roundId');
     const botCount = typeof body.botCount === 'number' ? body.botCount : 9;
 

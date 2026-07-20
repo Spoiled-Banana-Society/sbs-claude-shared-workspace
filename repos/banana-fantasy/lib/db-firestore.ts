@@ -2226,7 +2226,7 @@ export async function getDraftHistory(userId: string): Promise<CompletedDraft[]>
 const QUEUES_COLLECTION = 'v2_queues';
 const QUEUE_MAX = 10;
 
-function emptyQueueDoc(type: 'jackpot' | 'hof'): DraftQueue {
+function emptyQueueDoc(type: 'jackpot' | 'hof' | 'jackhof'): DraftQueue {
   return { type, rounds: [], nextRoundId: 1 };
 }
 
@@ -2236,7 +2236,7 @@ function newRound(roundId: number): QueueRound {
 
 export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
   const db = getAdminFirestore();
-  const ids = ['jackpot', 'hof'] as const;
+  const ids = ['jackpot', 'hof', 'jackhof'] as const;
   const snaps = await Promise.all(ids.map(id => db.collection(QUEUES_COLLECTION).doc(id).get()));
   const result: Record<string, DraftQueue> = {};
   for (let i = 0; i < ids.length; i++) {
@@ -2259,7 +2259,7 @@ export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
  */
 export async function joinQueue(
   userId: string,
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
 ): Promise<{ queue: DraftQueue; joinedRoundIds: number[] }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
@@ -2272,7 +2272,7 @@ export async function joinQueue(
     const queue: DraftQueue = queueSnap.exists ? (queueSnap.data() as DraftQueue) : emptyQueueDoc(type);
     if (!queue.rounds) queue.rounds = [];
 
-    const entryField = type === 'jackpot' ? 'jackpotEntries' : 'hofEntries';
+    const entryField = type === 'jackpot' ? 'jackpotEntries' : type === 'hof' ? 'hofEntries' : 'jackhofEntries';
     const entries = (user as unknown as Record<string, unknown>)[entryField] as number || 0;
     if (entries <= 0) throw new ApiError(400, `No ${type} entries available`);
 
@@ -2309,7 +2309,7 @@ export async function joinQueue(
  */
 export async function joinQueueWithToken(
   userId: string,
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   tokenId: string,
 ): Promise<{ queue: DraftQueue; joinedRoundId: number | null }> {
   const db = getAdminFirestore();
@@ -2349,7 +2349,7 @@ export async function joinQueueWithToken(
  * Claims older than 60s are treated as crashed and taken over.
  */
 export async function claimSpecialDraftCreation(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
 ): Promise<{ draftId: string | null; claimed: boolean; wait: boolean }> {
   const db = getAdminFirestore();
@@ -2372,7 +2372,7 @@ export async function claimSpecialDraftCreation(
 }
 
 /** Release a creation claim after a failed league create so another request can retry. */
-export async function clearQueueRoundCreating(type: 'jackpot' | 'hof', roundId: number): Promise<void> {
+export async function clearQueueRoundCreating(type: 'jackpot' | 'hof' | 'jackhof', roundId: number): Promise<void> {
   const db = getAdminFirestore();
   const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
   await db.runTransaction(async (tx) => {
@@ -2394,7 +2394,7 @@ export async function clearQueueRoundCreating(type: 'jackpot' | 'hof', roundId: 
  * `changed: false` if the round already left 'filling'.
  */
 export async function markQueueRoundDrafting(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
 ): Promise<{ changed: boolean; members: Array<{ wallet: string; tokenId?: string }> }> {
   const db = getAdminFirestore();
@@ -2466,7 +2466,7 @@ export async function isSpecialDraftStarted(draftId: string): Promise<boolean> {
 export async function getLiveSpecialDraftLock(tokenId: string): Promise<string | null> {
   const want = String(tokenId);
   const db = getAdminFirestore();
-  for (const type of ['jackpot', 'hof'] as const) {
+  for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     const snap = await db.collection(QUEUES_COLLECTION).doc(type).get();
     if (!snap.exists) continue;
     const queue = snap.data() as DraftQueue;
@@ -2482,13 +2482,13 @@ export async function getLiveSpecialDraftLock(tokenId: string): Promise<string |
 
 export async function getFillingWheelPassLevels(
   tokenIds: string[],
-): Promise<Record<string, 'jackpot' | 'hof'>> {
-  const result: Record<string, 'jackpot' | 'hof'> = {};
+): Promise<Record<string, 'jackpot' | 'hof' | 'jackhof'>> {
+  const result: Record<string, 'jackpot' | 'hof' | 'jackhof'> = {};
   if (tokenIds.length === 0) return result;
   const want = new Set(tokenIds.map(String));
   const db = getAdminFirestore();
 
-  for (const type of ['jackpot', 'hof'] as const) {
+  for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     const snap = await db.collection(QUEUES_COLLECTION).doc(type).get();
     if (!snap.exists) continue;
     const queue = snap.data() as DraftQueue;
@@ -2531,7 +2531,7 @@ export interface ReassignResult {
 export async function reassignQueuePassWallet(tokenId: string, newWallet: string): Promise<ReassignResult> {
   const db = getAdminFirestore();
   const result: ReassignResult = { changed: false, prevWallet: null, prevDraftId: null };
-  for (const type of ['jackpot', 'hof'] as const) {
+  for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     const ref = db.collection(QUEUES_COLLECTION).doc(type);
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -2564,7 +2564,7 @@ export async function reassignQueuePassWallet(tokenId: string, newWallet: string
  * for a special draft round that doesn't have one yet.
  */
 export async function updateQueueRoundDraftId(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
   draftId: string,
 ): Promise<void> {
@@ -2596,7 +2596,7 @@ export async function updateQueueRoundDraftId(
  * Also optionally updates member count for display purposes.
  */
 export async function updateQueueRoundStatus(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
   status: 'filling' | 'ready' | 'drafting' | 'completed',
 ): Promise<void> {
@@ -2622,7 +2622,7 @@ export async function updateQueueRoundStatus(
  * Used in staging when bots are added to the Go API but not to Firestore.
  */
 export async function fillQueueRoundWithBots(
-  type: 'jackpot' | 'hof',
+  type: 'jackpot' | 'hof' | 'jackhof',
   roundId: number,
   botCount: number,
 ): Promise<void> {
@@ -2651,7 +2651,7 @@ export async function fillQueueRoundWithBots(
   });
 }
 
-export async function resetQueue(type: 'jackpot' | 'hof'): Promise<void> {
+export async function resetQueue(type: 'jackpot' | 'hof' | 'jackhof'): Promise<void> {
   const db = getAdminFirestore();
   await db.collection(QUEUES_COLLECTION).doc(type).set(emptyQueueDoc(type));
 }

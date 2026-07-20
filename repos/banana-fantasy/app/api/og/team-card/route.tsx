@@ -10,7 +10,7 @@ export const revalidate = 31536000;
 const CANVAS_W = 1080;
 const CANVAS_H = 1350;
 
-type Tier = 'pro' | 'hof' | 'jackpot';
+type Tier = 'pro' | 'hof' | 'jackpot' | 'jackhof';
 interface Player { team: string; pos: string; bye?: string | number; adp?: string | number; pick?: string | number; playerId?: string }
 interface Payload { tier?: Tier; passNo?: string | number; teamNo?: string | number; leagueNo?: string | number; players?: Player[]; preReveal?: boolean }
 
@@ -18,12 +18,15 @@ const FRAME: Record<Tier, string> = {
   pro: 'linear-gradient(135deg,#6b21a8,#d8b4fe 30%,#a855f7 52%,#f3e8ff 64%,#7e22ce 84%,#c084fc)',
   hof: 'linear-gradient(135deg,#7c5a14,#ffe9a0 22%,#d9b53c 44%,#fff6cf 58%,#b8901f 80%,#f0d875)',
   jackpot: 'linear-gradient(135deg,#7e1316,#ff8a85 24%,#e23b3b 46%,#ffd9d4 58%,#b01c1c 80%,#ef5350)',
+  // JackHOF = the Jackpot red flowing into HOF gold — both tiers on one card.
+  jackhof: 'linear-gradient(135deg,#7e1316,#ff8a85 22%,#e23b3b 40%,#ffe9a0 56%,#d9b53c 72%,#b8901f 86%,#f0d875)',
 };
 const GREY_FRAME = 'linear-gradient(135deg,#23262d,#aab0bb 22%,#474d58 44%,#dfe4ec 58%,#3a3f48 80%,#878e99)';
 const BADGE: Record<Tier, { text: string; bg: string; line: string; dot: string; label: string }> = {
   pro: { text: '#c79bff', bg: 'rgba(168,85,247,.16)', line: 'rgba(168,85,247,.5)', dot: '#b87cff', label: 'PRO' },
   hof: { text: '#f3d057', bg: 'rgba(225,200,75,.14)', line: 'rgba(225,200,75,.5)', dot: '#f1c84b', label: 'HOF' },
   jackpot: { text: '#ff7b7b', bg: 'rgba(239,68,68,.16)', line: 'rgba(239,68,68,.5)', dot: '#ff5a5a', label: 'JACKPOT' },
+  jackhof: { text: '#ffb37b', bg: 'rgba(239,108,55,.16)', line: 'rgba(239,108,55,.5)', dot: '#ff8a50', label: 'JACKHOF' },
 };
 const POS_ON_DARK: Record<string, string> = { QB: '#ff5a5f', RB: '#69c93f', WR: '#d98cf0', TE: '#5b8cff', DST: '#f0a050' };
 const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST'];

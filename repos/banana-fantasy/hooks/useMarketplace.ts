@@ -363,12 +363,12 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
       // Overlay "filling JP/HOF wheel pass" status: a wheel-won JP/HOF pass that's
       // still in a filling queue round is sellable now (the marketplace waives the
       // free-pass listing block for it). Best-effort — a failure just omits it.
-      let fillingLevels: Record<string, 'jackpot' | 'hof'> = {};
+      let fillingLevels: Record<string, 'jackpot' | 'hof' | 'jackhof'> = {};
       const ids = withFree.map((t) => String(t.tokenId)).filter(Boolean);
       if (ids.length > 0) {
         try {
           const wpRes = await fetch(`/api/queues/wheel-pass-filling?tokenIds=${ids.join(',')}`);
-          if (wpRes.ok) fillingLevels = ((await wpRes.json()) as { levels?: Record<string, 'jackpot' | 'hof'> }).levels ?? {};
+          if (wpRes.ok) fillingLevels = ((await wpRes.json()) as { levels?: Record<string, 'jackpot' | 'hof' | 'jackhof'> }).levels ?? {};
         } catch { /* ignore — non-blocking enrichment */ }
       }
       const finalData = withFree.map((team) => {

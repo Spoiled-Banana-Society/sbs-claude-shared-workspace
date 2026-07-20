@@ -57,7 +57,7 @@ function DraftRoomContent() {
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
-  const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | null;
+  const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | 'jackhof' | null;
   // Spectator mode: same URL flow as a live participant, but no actions
   // fire (no pick submit, no leave, no queue mutations) and a SPECTATOR
   // badge replaces the user's identity-related UI. The page still

@@ -9,7 +9,7 @@ export type PassOrigin = 'spin_reward' | 'admin_grant' | 'house_bot';
 // guaranteed it), unlike a normal pass whose level is only revealed when its
 // league fills. We stamp that known level here so the marketplace can mark/treat
 // the pass as JP/HOF before any league reveal.
-export type PassWheelLevel = 'jackpot' | 'hof';
+export type PassWheelLevel = 'jackpot' | 'hof' | 'jackhof';
 
 export interface PassOriginDoc {
   tokenId: string;

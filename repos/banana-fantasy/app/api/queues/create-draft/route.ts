@@ -20,12 +20,12 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
-    const queueType = requireString(body.queueType, 'queueType') as 'jackpot' | 'hof';
+    const queueType = requireString(body.queueType, 'queueType') as 'jackpot' | 'hof' | 'jackhof';
     const roundId = requireNumber(body.roundId, 'roundId');
     actorId = userId;
     queueCtx = { queueType, roundId };
 
-    if (queueType !== 'jackpot' && queueType !== 'hof') {
+    if (queueType !== 'jackpot' && queueType !== 'hof' && queueType !== 'jackhof') {
       return jsonError('Invalid queue type', 400);
     }
 

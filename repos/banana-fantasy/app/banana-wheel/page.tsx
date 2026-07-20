@@ -27,13 +27,14 @@ export default function BananaWheelPage() {
   const promosQuery = usePromos({ userId: user?.id });
   const [queuedJP, setQueuedJP] = React.useState(0);
   const [queuedHOF, setQueuedHOF] = React.useState(0);
+  const [queuedJackHOF, setQueuedJackHOF] = React.useState(0);
 
   // A JP/HOF spin win just landed: poll the live queue until the winner's seat
   // appears, then feed the win modal a live "X/10" + a Join-the-Lobby URL and
   // fire the bell notification with the real remaining count. The seat is
   // created server-side AFTER the spin response (waitUntil), so it typically
   // resolves a few seconds after the wheel stops.
-  const [specialWin, setSpecialWin] = React.useState<{ kind: 'jackpot' | 'hof'; spinId: string | null; startedAt: number } | null>(null);
+  const [specialWin, setSpecialWin] = React.useState<{ kind: 'jackpot' | 'hof' | 'jackhof'; spinId: string | null; startedAt: number } | null>(null);
   const [specialDraftStatus, setSpecialDraftStatus] = React.useState<{ count: number; draftRoomUrl: string | null } | null>(null);
   // Wheel prize odds now live behind the "i" by the title (not a big discouraging
   // panel on the page). Transparent (one tap), framed as "every spin wins".
@@ -51,20 +52,20 @@ export default function BananaWheelPage() {
     let cancelled = false;
     let notified = false;
     const { kind, spinId, startedAt } = specialWin;
-    const label = kind === 'jackpot' ? 'Jackpot' : 'HOF';
+    const label = kind === 'jackpot' ? 'Jackpot' : kind === 'hof' ? 'HOF' : 'JackHOF';
     const notify = (count: number | null) => {
       if (notified || cancelled) return;
       notified = true;
       const remaining = count !== null ? Math.max(0, 10 - count) : null;
       pushNotification({
-        type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+        type: kind === 'jackpot' ? 'jackpot_queue' : kind === 'hof' ? 'hof_queue' : 'jackhof_queue',
         title: `You won a ${label} Draft (from the Wheel)!`,
         message: (remaining === null
           ? `You're in a ${label}-only lobby. It drafts as soon as 10 wheel winners are in (Slow Draft, 8 hrs/pick).`
           : remaining === 0
             ? `Your ${label} lobby is full (10/10) — your draft is starting now! (Slow Draft, 8 hrs/pick).`
             : `You're in a ${label}-only lobby (${count}/10) — ${remaining} more wheel winner${remaining === 1 ? '' : 's'} to go, then you draft (Slow Draft, 8 hrs/pick).`)
-          + (kind === 'jackpot' ? ' Win your league → skip to the Finals.' : ' Win your league → enter the HOF playoffs.'),
+          + (kind === 'jackpot' ? ' Win your league → skip to the Finals.' : kind === 'hof' ? ' Win your league → enter the HOF playoffs.' : ' Win your league → skip to the Finals AND enter the HOF playoffs.'),
         link: '/drafting',
         ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
       });
@@ -76,7 +77,7 @@ export default function BananaWheelPage() {
       setTimeout(() => {
         if (cancelled) return;
         pushNotification({
-          type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+          type: kind === 'jackpot' ? 'jackpot_queue' : kind === 'hof' ? 'hof_queue' : 'jackhof_queue',
           title: 'Make sure your Draft Alerts are on',
           message: `Your ${label} Draft (from the Wheel) is a slow draft (8 hrs/pick) — turn on Draft Alerts so you don't miss the start or a pick.`,
           link: '/profile?tab=notifications',
@@ -135,6 +136,7 @@ export default function BananaWheelPage() {
         };
         setQueuedJP(countQueued('jackpot'));
         setQueuedHOF(countQueued('hof'));
+        setQueuedJackHOF(countQueued('jackhof'));
       }).catch((err) => {
         reportClientError({
           source: LOG_SOURCES.wheel.QUEUE_FETCH_FAILED,
@@ -157,23 +159,26 @@ export default function BananaWheelPage() {
     let drafts = 0;
     let jackpot = 0;
     let hof = 0;
+    let jackhof = 0;
     for (const s of spinHistory) {
       const p = s.prize;
       if (p && typeof p === 'object' && p.type) {
         if (p.type === 'draft_pass' && typeof p.value === 'number') drafts += p.value;
         else if (p.type === 'custom' && p.value === 'jackpot') jackpot += 1;
         else if (p.type === 'custom' && p.value === 'hof') hof += 1;
+        else if (p.type === 'custom' && p.value === 'jackhof') jackhof += 1;
         continue;
       }
       const r = s.result || '';
-      if (r.startsWith('jackpot')) jackpot += 1;
+      if (r.startsWith('jackhof')) jackhof += 1;
+      else if (r.startsWith('jackpot')) jackpot += 1;
       else if (r.startsWith('hof')) hof += 1;
       else {
         const m = r.match(/^draft-(\d+)/);
         if (m) drafts += Number(m[1]);
       }
     }
-    return { drafts, jackpot, hof };
+    return { drafts, jackpot, hof, jackhof };
   }, [spinHistory]);
 
   const spinsAvailable = Math.max(0, user?.wheelSpins ?? 0);
@@ -253,7 +258,7 @@ export default function BananaWheelPage() {
       // delivery so we can reassure the user if it needs retries.
       const isDeliverableWin =
         (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number' && segment.prizeValue > 0) ||
-        (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof'));
+        (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof' || segment.prizeValue === 'jackhof'));
       if (isDeliverableWin) watchRef.current();
       if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
         const expectedDraftPasses = (user.draftPasses ?? 0) + segment.prizeValue;
@@ -300,6 +305,10 @@ export default function BananaWheelPage() {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
         setSpecialDraftStatus(null);
         setSpecialWin({ kind: 'hof', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
+      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackhof') {
+        updateUser({ jackhofEntries: (user.jackhofEntries || 0) + 1 });
+        setSpecialDraftStatus(null);
+        setSpecialWin({ kind: 'jackhof', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
       }
     },
     [updateUser, user, refreshBalance, refreshBalanceUntil, queryClient],
@@ -589,6 +598,15 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.hofEntries || 0) + queuedHOF} left</span>
                 </span>
               </div>
+              {(wonTotals.jackhof > 0 || (user?.jackhofEntries || 0) + queuedJackHOF > 0) && (
+                <div className="flex justify-between items-baseline">
+                  <span className="text-white text-[14px] font-medium">JackHOF</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-[#ef6c37] font-semibold text-[16px] tabular-nums">{wonTotals.jackhof}</span>
+                    <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackhofEntries || 0) + queuedJackHOF} left</span>
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Hairline section divider — 1px @ 6% white, Apple-style */}

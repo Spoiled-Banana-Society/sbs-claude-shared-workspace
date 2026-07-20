@@ -165,7 +165,7 @@ export interface MarketplaceTeam {
    *  round. While set, the pass is sellable on our marketplace even though it's a
    *  free pass (the normal free-pass listing block is waived); once its draft
    *  fills this clears and the standard "listable after the season" rule applies. */
-  fillingWheelLevel?: 'jackpot' | 'hof';
+  fillingWheelLevel?: 'jackpot' | 'hof' | 'jackhof';
   /** Live lobby fill for a wheel-won pass's special draft (members in its
    *  queue round, out of 10). Lets cards show "In draft lobby — 6/10". */
   lobbyCount?: number;

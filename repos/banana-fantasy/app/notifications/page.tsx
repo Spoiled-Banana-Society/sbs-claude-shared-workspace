@@ -15,6 +15,7 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   hof: { emoji: '🏆', color: '#d4af37', label: 'HOF' },
   jackpot_queue: { emoji: '🔥', color: '#ef4444', label: 'Jackpot' },
   hof_queue: { emoji: '🏆', color: '#d4af37', label: 'HOF' },
+  jackhof_queue: { emoji: '🔥', color: '#ef6c37', label: 'JackHOF' },
   system: { emoji: '📢', color: '#6b7280', label: 'System' },
   offer_received: { emoji: '💰', color: '#22c55e', label: 'Offer' },
   offer_accepted: { emoji: '✅', color: '#3b82f6', label: 'Offer' },

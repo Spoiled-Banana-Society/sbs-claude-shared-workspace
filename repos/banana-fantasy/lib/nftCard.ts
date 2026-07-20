@@ -43,7 +43,7 @@ export function buildDraftPassUrl(tokenId: string | number, base = siteBaseUrl()
  */
 export function buildTieredDraftPassUrl(
   tokenId: string | number,
-  tier: 'hof' | 'jackpot',
+  tier: 'hof' | 'jackpot' | 'jackhof',
   base = siteBaseUrl(),
 ): string {
   return buildOgCardUrl({ preReveal: true, passNo: tokenId, tier }, base);

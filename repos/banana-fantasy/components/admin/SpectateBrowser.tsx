@@ -33,7 +33,7 @@ interface QueueRound {
 }
 
 interface QueueStatus {
-  type: 'jackpot' | 'hof';
+  type: 'jackpot' | 'hof' | 'jackhof';
   rounds: QueueRound[];
   nextRoundId: number;
 }
@@ -261,7 +261,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const specialDraftIds = useMemo(() => {
     const ids = new Set<string>();
     if (queues) {
-      for (const type of ['jackpot', 'hof'] as const) {
+      for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
         for (const r of queues[type]?.rounds || []) if (r.draftId) ids.add(r.draftId);
       }
     }
@@ -295,7 +295,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const memberWallets = useMemo(() => {
     const fromDrafts = (drafts ?? []).flatMap(d => [...(d.members ?? []), d.currentDrafter, d.onDeck ?? '']);
     const fromQueues = queues
-      ? (['jackpot', 'hof'] as const).flatMap(t => (queues[t]?.rounds || []).flatMap(r => (r.members || []).map(m => m.wallet)))
+      ? (['jackpot', 'hof', 'jackhof'] as const).flatMap(t => (queues[t]?.rounds || []).flatMap(r => (r.members || []).map(m => m.wallet)))
       : [];
     return [...fromDrafts, ...fromQueues].filter(Boolean);
   }, [drafts, queues]);
@@ -513,7 +513,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
       </div>
 
       {queues && (() => {
-        const specialRounds = (['jackpot', 'hof'] as const)
+        const specialRounds = (['jackpot', 'hof', 'jackhof'] as const)
           .flatMap(type => (queues[type]?.rounds || [])
             .filter(r => r.status !== 'completed')
             .map(r => ({ type, round: r })))

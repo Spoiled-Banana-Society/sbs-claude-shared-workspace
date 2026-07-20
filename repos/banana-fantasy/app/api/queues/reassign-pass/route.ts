@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const { getQueueStatus, reassignQueuePassWallet } = await import('@/lib/db');
     const queues = await getQueueStatus();
     let found: { draftId: string | null; seller: string; full: boolean } | null = null;
-    for (const type of ['jackpot', 'hof'] as const) {
+    for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
       for (const round of queues[type]?.rounds || []) {
         const member = (round.members || []).find(m => m.tokenId && String(m.tokenId) === String(tokenId));
         if (!member) continue;
