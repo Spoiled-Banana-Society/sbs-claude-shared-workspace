@@ -7,17 +7,18 @@
 //     next window starts at X+1.
 //   - hof: 5 distinct slots per window. Completes when the 5th hits.
 //
-// Each lane CYCLE gets its own commit-reveal on the SAME BBB4BatchProofVRFCommit
-// contract + Chainlink subscription as the legacy batches, keyed by
-// laneKey = laneKeyBase + cycleNumber (jp base 1_000_000, hof base 2_000_000) so
-// lane entries can never collide with legacy batch numbers (1..999_999).
+// SEED PROVENANCE (era model, Boris 2026-07-20 — see lane_eras.go): ONE
+// on-chain ceremony per lane ERA pre-randomizes EraCyclesPerLane (150)
+// consecutive cycles ≈ 10-15k drafts, exactly like the live 10k merkle
+// rounds. Every cycle's positions derive from the era's combinedSeed; a
+// cycle completion publishes that cycle's positions + Merkle proof against
+// the era root (NO per-cycle on-chain tx), and the era's salt is revealed
+// on-chain only when its last cycle completes. The retired per-cycle
+// commit flow (laneKey bases 1M/2M on the vrf-commit contract) left two
+// orphaned on-chain entries (jp/hof cycle 1) — harmless, documented in
+// NOTES-FOR-RICHARD.
 //
-// Flow per cycle (mirrors the legacy vrf-commit flow byte-for-byte where it
-// matters): generate salt → commit saltHash on-chain + request VRF randomness
-// (one atomic tx) → on fulfillment derive positions from
-// CombinedSeed(salt, randomness) → store hidden in lane_proofs/{lane}-{cycle}
-// → on cycle completion reveal the salt on-chain and immediately open the next
-// cycle. Derivation tags are the spec's exact byte layout:
+// Derivation tags are the spec's exact byte layout (UNCHANGED):
 //
 //	tag = "<lane>:<cycle>:<i>"            e.g. "jp:1:0", "hof:3:2"
 //	pos = uint64(first 8 bytes BE of HMAC-SHA256(combinedSeed, tag)) % 100
@@ -27,11 +28,10 @@
 // Cross-lane collisions are allowed and meaningful: both lanes landing the same
 // draft = JackHOF (dual-type). No cross-lane rule exists at all.
 //
-// KEEPING THE HOT PATH FAST (wheel-latency lesson): commit+VRF for the NEXT
-// cycle fires in a background goroutine at the moment a cycle completes, so by
-// the time the next window's first draft fills the positions are already in
-// Firestore and the fill path takes the fast read. The only blocking wait is
-// the same first-fill-after-boundary VRF wait the legacy system already has.
+// KEEPING THE HOT PATH FAST: cycle rollover is pure Firestore work (derive
+// from the already-sealed era seed) — no chain wait at all. The only slow
+// ceremony is once per ~10k drafts when a lane opens its next era, and that
+// fires eagerly in the background several cycles before it's needed.
 package batchproof
 
 import (
@@ -39,7 +39,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
@@ -48,6 +47,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -157,6 +157,14 @@ type LaneCycleDoc struct {
 	RevealTx    string `firestore:"revealTxHash,omitempty"`
 	RevealedAt  int64  `firestore:"revealedAt,omitempty"`
 	CompletedAtDraft int `firestore:"completedAtDraft,omitempty"` // draft # whose fill completed the cycle
+
+	// Era-model fields (variant era-merkle): which era seeded this cycle and
+	// the public proof published at completion. MerkleProof verifies
+	// LaneLeafHash(lane, cycle, positions) against the era's on-chain root.
+	Era         int      `firestore:"era,omitempty"`
+	LeafIndex   int      `firestore:"leafIndex,omitempty"`
+	Leaf        string   `firestore:"leaf,omitempty"`
+	MerkleProof []string `firestore:"merkleProof,omitempty"`
 }
 
 // laneMeta is the tiny pointer doc at lane_proofs/_meta tracking each lane's
@@ -280,7 +288,9 @@ func (m *Manager) EnsureLaneCyclesFor(ctx context.Context, draftNum int) (jpGlob
 }
 
 // ensureLaneCycleSlots is the lane analogue of ensureBatchHasVRFCommitSlots.
-// Returns the cycle's SORTED global draft ids.
+// Era model: positions come from the lane's already-sealed era seed — pure
+// Firestore work except when the cycle's era hasn't run its (once per ~10k
+// drafts) ceremony yet. Returns the cycle's SORTED global draft ids.
 func (m *Manager) ensureLaneCycleSlots(ctx context.Context, lane string, cycle int, startDraft int) ([]int, error) {
 	key := laneKey(lane, cycle)
 	lock := m.lockFor(key)
@@ -292,69 +302,28 @@ func (m *Manager) ensureLaneCycleSlots(ctx context.Context, lane string, cycle i
 		return nil, err
 	}
 
-	// Fast path — derived already.
-	if existing != nil && (existing.Status == "fulfilled" || existing.Status == "revealed") && len(existing.Globals) > 0 {
+	// Fast path — era-derived already (and startDraft unchanged: a stale doc
+	// from a different window start must be re-derived, though by construction
+	// rollover writes the doc once with the final start).
+	if existing != nil && existing.Variant == LaneVariantEra && len(existing.Globals) > 0 && existing.StartDraft == startDraft {
 		return existing.Globals, nil
 	}
-
-	// Mid-flight — request submitted, wait for fulfillment then derive.
-	if existing != nil && existing.Status == "requested" {
-		state, err := m.client.WaitForVRFCommitFulfillment(ctx, key, 5*time.Second, 5*time.Minute)
-		if err != nil {
-			return nil, fmt.Errorf("wait fulfillment: %w", err)
-		}
-		return m.deriveAndPersistLaneSlots(ctx, lane, cycle, startDraft, state, existing)
+	// A pre-era (per-cycle vrf-commit) doc that already REVEALED must never be
+	// rewritten — history. By deploy order this can't happen for an active
+	// cycle (rolling wasn't live before the era migration), so refuse loudly.
+	if existing != nil && existing.Variant == VariantVRFCommit && existing.Status == "revealed" {
+		return nil, fmt.Errorf("lane %s cycle %d: revealed pre-era doc — refusing to rewrite", lane, cycle)
 	}
 
-	// Cold start — salt, commit+request, wait, derive.
-	saltBytes, err := GenerateSeed()
+	era := eraForCycle(cycle)
+	eraDoc, err := m.ensureLaneEra(ctx, lane, era)
 	if err != nil {
-		return nil, fmt.Errorf("generate salt: %w", err)
+		return nil, fmt.Errorf("ensure era %d: %w", era, err)
 	}
-	saltHash := SeedHash(saltBytes)
-
-	res, err := m.client.RequestRandomnessAndCommit(ctx, key, saltHash)
+	combined, err := eraCombinedSeed(eraDoc)
 	if err != nil {
-		return nil, fmt.Errorf("requestRandomnessAndCommit lane %s cycle %d: %w", lane, cycle, err)
+		return nil, err
 	}
-	chainState, _ := m.client.GetBatchVRFCommit(ctx, key)
-	requestID := ""
-	if chainState.VRFRequestID != nil && chainState.VRFRequestID.Sign() > 0 {
-		requestID = chainState.VRFRequestID.String()
-	}
-	doc := &LaneCycleDoc{
-		Lane: lane, Cycle: cycle, LaneKey: key, StartDraft: startDraft,
-		Status: "requested", Variant: VariantVRFCommit,
-		SaltHash:   "0x" + hex.EncodeToString(saltHash.Bytes()),
-		ServerSalt: "0x" + hex.EncodeToString(saltBytes),
-		CommitTx:   res.TxHash.Hex(), RequestedAt: time.Now().Unix(),
-		VRFRequestID: requestID,
-	}
-	if err := saveLaneCycle(ctx, m.db, doc); err != nil {
-		return nil, fmt.Errorf("persist requested lane doc: %w", err)
-	}
-	fmt.Printf("[lanes] committed %s cycle %d (window %d-%d) tx=%s\n", lane, cycle, startDraft, startDraft+LaneWindow-1, res.TxHash.Hex())
-
-	state, err := m.client.WaitForVRFCommitFulfillment(ctx, key, 5*time.Second, 5*time.Minute)
-	if err != nil {
-		return nil, fmt.Errorf("wait fulfillment: %w", err)
-	}
-	return m.deriveAndPersistLaneSlots(ctx, lane, cycle, startDraft, state, doc)
-}
-
-func (m *Manager) deriveAndPersistLaneSlots(ctx context.Context, lane string, cycle int, startDraft int, state VRFCommitBatchState, doc *LaneCycleDoc) ([]int, error) {
-	if doc == nil || doc.ServerSalt == "" {
-		return nil, fmt.Errorf("lane %s cycle %d: server salt missing", lane, cycle)
-	}
-	saltBytes, err := hex.DecodeString(strings.TrimPrefix(doc.ServerSalt, "0x"))
-	if err != nil || len(saltBytes) != 32 {
-		return nil, fmt.Errorf("lane %s cycle %d: invalid stored salt: %v", lane, cycle, err)
-	}
-	randomness := state.RandomnessSeed()
-	if len(randomness) != 32 {
-		return nil, fmt.Errorf("lane %s cycle %d: VRF returned %d-byte randomness", lane, cycle, len(randomness))
-	}
-	combined := CombinedSeed(saltBytes, randomness)
 	positions, err := DeriveLaneSlots(combined, lane, cycle, laneSlotCount(lane))
 	if err != nil {
 		return nil, fmt.Errorf("derive lane slots: %w", err)
@@ -364,17 +333,22 @@ func (m *Manager) deriveAndPersistLaneSlots(ctx context.Context, lane string, cy
 		globals[i] = startDraft + p
 	}
 	sort.Ints(globals)
-	updates := map[string]interface{}{
-		"status":         "fulfilled",
-		"vrfRandomness":  "0x" + hex.EncodeToString(randomness),
-		"vrfFulfilledAt": int64(state.FulfilledAt),
-		"positions":      positions,
-		"globalDraftIds": globals,
+
+	doc := &LaneCycleDoc{
+		Lane: lane, Cycle: cycle, LaneKey: laneEraKey(lane, era), StartDraft: startDraft,
+		Status: "fulfilled", Variant: LaneVariantEra,
+		SaltHash: eraDoc.SaltHash, CommitTx: eraDoc.CommitTx,
+		RequestedAt: eraDoc.RequestedAt, VRFRequestID: eraDoc.VRFRequestID,
+		VRFRandomness: eraDoc.VRFRandomness, FulfilledAt: eraDoc.FulfilledAt,
+		Positions: positions, Globals: globals,
+		Era: era, LeafIndex: cycle - eraDoc.CycleStart,
 	}
-	if err := mergeLaneCycle(ctx, m.db, lane, cycle, updates); err != nil {
-		return nil, fmt.Errorf("merge lane fulfillment: %w", err)
+	if err := saveLaneCycle(ctx, m.db, doc); err != nil {
+		return nil, fmt.Errorf("persist lane cycle doc: %w", err)
 	}
-	fmt.Printf("[lanes] derived %s cycle %d → globals=%v (hidden until reveal)\n", lane, cycle, globals)
+	fmt.Printf("[lanes] cycle ready from era: %s cycle %d (era %d, window %d-%d) → globals=%v (hidden until completion)\n",
+		lane, cycle, era, startDraft, startDraft+LaneWindow-1, globals)
+	_ = key
 	return globals, nil
 }
 
@@ -429,12 +403,13 @@ func (m *Manager) completeLaneIfDone(ctx context.Context, lane string, cycle int
 		return // not this cycle's hit, or cycle not yet complete (more HOF slots ahead)
 	}
 
-	// Cycle complete: reveal + advance meta + pre-commit next cycle.
-	fmt.Printf("[lanes] %s cycle %d COMPLETE at draft %d — revealing + opening cycle %d\n", lane, cycle, draftNum, cycle+1)
+	// Cycle complete: publish this cycle's Merkle proof + advance meta +
+	// derive the next cycle from the era seed (no chain work).
+	fmt.Printf("[lanes] %s cycle %d COMPLETE at draft %d — publishing proof + opening cycle %d\n", lane, cycle, draftNum, cycle+1)
 	if err := mergeLaneCycle(ctx, m.db, lane, cycle, map[string]interface{}{"completedAtDraft": draftNum}); err != nil {
 		fmt.Printf("[lanes] mark complete failed: %v\n", err)
 	}
-	m.revealLaneCycle(ctx, lane, cycle)
+	m.publishLaneCycleProof(ctx, lane, cycle)
 
 	nextStart := draftNum + 1
 	err = m.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -466,44 +441,56 @@ func (m *Manager) completeLaneIfDone(ctx context.Context, lane string, cycle int
 		fmt.Printf("[lanes] meta advance failed for %s: %v\n", lane, err)
 		return
 	}
-	// Eager next-cycle commit+derive so the very next fill takes the fast path.
+	// Eager next-cycle derive so the very next fill takes the fast path. If
+	// cycle+1 crosses into a new era this also runs that era's ceremony now —
+	// ~1 min of background chain work, once per ~10k drafts, never blocking a
+	// fill (the fill path would wait only if a hit lands during that minute).
 	if _, err := m.ensureLaneCycleSlots(ctx, lane, cycle+1, nextStart); err != nil {
-		fmt.Printf("[lanes] eager commit %s cycle %d failed (fill path will retry): %v\n", lane, cycle+1, err)
+		fmt.Printf("[lanes] eager derive %s cycle %d failed (fill path will retry): %v\n", lane, cycle+1, err)
+	}
+	// Era turnover bookkeeping: completing an era's LAST cycle unlocks the
+	// era-end salt reveal — after that anyone can re-derive all 150 cycles.
+	if eraForCycle(cycle+1) != eraForCycle(cycle) {
+		m.revealLaneEraSalt(ctx, lane, eraForCycle(cycle))
 	}
 }
 
-// revealLaneCycle posts the completed cycle's salt on-chain. Mirrors
-// revealBatchVRFCommit's guards: refuse if chain says unfulfilled; tolerate
-// already-revealed.
-func (m *Manager) revealLaneCycle(ctx context.Context, lane string, cycle int) {
-	key := laneKey(lane, cycle)
+// publishLaneCycleProof marks a completed cycle "revealed" by publishing its
+// positions' Merkle proof against the era's on-chain root — the era model's
+// per-cycle reveal (no transaction needed; the root was committed at era
+// open, so the proof is independently checkable the moment it's published).
+func (m *Manager) publishLaneCycleProof(ctx context.Context, lane string, cycle int) {
 	doc, err := loadLaneCycle(ctx, m.db, lane, cycle)
 	if err != nil || doc == nil {
-		fmt.Printf("[lanes] reveal %s cycle %d: doc unavailable (%v)\n", lane, cycle, err)
+		fmt.Printf("[lanes] publish %s cycle %d: doc unavailable (%v)\n", lane, cycle, err)
 		return
 	}
 	if doc.Status == "revealed" {
 		return
 	}
-	chain, err := m.client.GetBatchVRFCommit(ctx, key)
-	if err != nil || !chain.Fulfilled {
-		fmt.Printf("[lanes] reveal %s cycle %d: chain not fulfilled (%v) — skipping\n", lane, cycle, err)
+	eraDoc, err := loadLaneEra(ctx, m.db, lane, eraForCycle(cycle))
+	if err != nil || eraDoc == nil || len(eraDoc.MerkleLeaves) == 0 {
+		fmt.Printf("[lanes] publish %s cycle %d: era unavailable (%v)\n", lane, cycle, err)
 		return
 	}
-	saltBytes, err := hex.DecodeString(strings.TrimPrefix(doc.ServerSalt, "0x"))
-	if err != nil || len(saltBytes) != 32 {
-		fmt.Printf("[lanes] reveal %s cycle %d: bad salt\n", lane, cycle)
-		return
-	}
-	var salt32 [32]byte
-	copy(salt32[:], saltBytes)
-	res, err := m.client.RevealSalt(ctx, key, salt32)
+	leaf, path, err := eraMerkleProof(eraDoc, cycle)
 	if err != nil {
-		fmt.Printf("[lanes] reveal %s cycle %d tx failed: %v\n", lane, cycle, err)
+		fmt.Printf("[lanes] publish %s cycle %d: proof build failed: %v\n", lane, cycle, err)
 		return
+	}
+	// Self-check before publishing — a proof that doesn't verify against the
+	// stored root means corrupted era data and needs a human.
+	if eraDoc.MerkleRoot != "" && !VerifyMerkleProof(leaf, path, common.HexToHash(eraDoc.MerkleRoot)) {
+		fmt.Printf("[lanes] publish %s cycle %d: SELF-CHECK FAILED against era root — not publishing\n", lane, cycle)
+		return
+	}
+	proofHex := make([]string, len(path))
+	for i, h := range path {
+		proofHex[i] = h.Hex()
 	}
 	_ = mergeLaneCycle(ctx, m.db, lane, cycle, map[string]interface{}{
-		"status": "revealed", "revealTxHash": res.TxHash.Hex(), "revealedAt": time.Now().Unix(),
+		"status": "revealed", "revealedAt": time.Now().Unix(),
+		"leaf": leaf.Hex(), "merkleProof": proofHex,
 	})
-	fmt.Printf("[lanes] revealed %s cycle %d tx=%s\n", lane, cycle, res.TxHash.Hex())
+	fmt.Printf("[lanes] published proof: %s cycle %d leaf=%s (era %d root on-chain)\n", lane, cycle, leaf.Hex(), eraDoc.Era)
 }

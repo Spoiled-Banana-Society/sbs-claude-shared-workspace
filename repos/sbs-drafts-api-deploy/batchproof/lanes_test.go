@@ -3,6 +3,9 @@ package batchproof
 import (
 	"encoding/hex"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // Locked test vectors — lib/batchProof.ts (Richard's side) must reproduce these
@@ -88,5 +91,98 @@ func TestLaneKeyNoCollisionWithLegacyBatches(t *testing.T) {
 	}
 	if laneKey(LaneJP, 500_000) >= laneKeyBaseHOF {
 		t.Fatalf("jp key space would overflow into hof space")
+	}
+}
+
+// ─── Era model tests ────────────────────────────────────────────────────
+
+// TestEraForCycleBoundaries locks the cycle→era mapping: era 1 = cycles
+// 1..150, era 2 = 151..300, etc. An off-by-one here would derive a cycle
+// from the wrong era's seed and break every downstream proof.
+func TestEraForCycleBoundaries(t *testing.T) {
+	cases := []struct{ cycle, era int }{
+		{1, 1}, {150, 1}, {151, 2}, {300, 2}, {301, 3}, {1500, 10}, {1501, 11},
+	}
+	for _, c := range cases {
+		if got := eraForCycle(c.cycle); got != c.era {
+			t.Errorf("eraForCycle(%d) = %d, want %d", c.cycle, got, c.era)
+		}
+	}
+	for _, c := range []struct{ era, start int }{{1, 1}, {2, 151}, {3, 301}} {
+		if got := eraCycleStart(c.era); got != c.start {
+			t.Errorf("eraCycleStart(%d) = %d, want %d", c.era, got, c.start)
+		}
+	}
+}
+
+// TestLaneLeafHashEncoding locks the public leaf encoding byte-for-byte:
+// keccak256("<lane>:<cycle>:<p0>[,<p1>...]"), positions in derivation order.
+// The client verifier must reproduce these exact hashes.
+func TestLaneLeafHashEncoding(t *testing.T) {
+	// jp leaf: single position → "jp:7:28"
+	if got, want := LaneLeafHash("jp", 7, []int{28}), crypto.Keccak256Hash([]byte("jp:7:28")); got != want {
+		t.Errorf("jp leaf = %s, want keccak(jp:7:28) = %s", got.Hex(), want.Hex())
+	}
+	// hof leaf: five positions, derivation order preserved (NOT sorted)
+	if got, want := LaneLeafHash("hof", 3, []int{39, 42, 36, 14, 90}), crypto.Keccak256Hash([]byte("hof:3:39,42,36,14,90")); got != want {
+		t.Errorf("hof leaf = %s, want keccak(hof:3:...) = %s", got.Hex(), want.Hex())
+	}
+}
+
+// TestEraTreeProofRoundtrip builds a full 150-cycle era tree from the locked
+// test seed and verifies every cycle's proof against the root — the exact
+// check publishLaneCycleProof runs before publishing.
+func TestEraTreeProofRoundtrip(t *testing.T) {
+	seed, _ := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	for _, lane := range []string{LaneJP, LaneHOF} {
+		leaves := make([]common.Hash, EraCyclesPerLane)
+		allPositions := make([][]int, EraCyclesPerLane)
+		for i := 0; i < EraCyclesPerLane; i++ {
+			cycle := 1 + i
+			pos, err := DeriveLaneSlots(seed, lane, cycle, laneSlotCount(lane))
+			if err != nil {
+				t.Fatalf("derive %s cycle %d: %v", lane, cycle, err)
+			}
+			leaves[i] = LaneLeafHash(lane, cycle, pos)
+			allPositions[i] = pos
+		}
+		tree, err := BuildMerkleTree(leaves)
+		if err != nil {
+			t.Fatalf("build tree: %v", err)
+		}
+		for i := 0; i < EraCyclesPerLane; i++ {
+			proof, err := tree.GetMerkleProof(i)
+			if err != nil {
+				t.Fatalf("proof %d: %v", i, err)
+			}
+			if !VerifyMerkleProof(leaves[i], proof, tree.Root) {
+				t.Errorf("%s cycle %d: proof does not verify", lane, 1+i)
+			}
+			// A WRONG positions claim must fail verification.
+			bad := append([]int(nil), allPositions[i]...)
+			bad[0] = (bad[0] + 1) % LaneWindow
+			if VerifyMerkleProof(LaneLeafHash(lane, 1+i, bad), proof, tree.Root) {
+				t.Errorf("%s cycle %d: forged positions verified — leaf encoding broken", lane, 1+i)
+			}
+		}
+	}
+}
+
+// TestEraDeterminism: the same era seed must always yield the same tree root
+// (the on-chain root is rebuilt from stored leaves at proof time — any
+// nondeterminism would brick proof publication).
+func TestEraDeterminism(t *testing.T) {
+	seed, _ := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	build := func() common.Hash {
+		leaves := make([]common.Hash, EraCyclesPerLane)
+		for i := 0; i < EraCyclesPerLane; i++ {
+			pos, _ := DeriveLaneSlots(seed, LaneJP, 1+i, laneJPSlots)
+			leaves[i] = LaneLeafHash(LaneJP, 1+i, pos)
+		}
+		tree, _ := BuildMerkleTree(leaves)
+		return tree.Root
+	}
+	if build() != build() {
+		t.Fatal("era tree root is nondeterministic")
 	}
 }
