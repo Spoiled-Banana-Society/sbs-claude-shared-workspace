@@ -1091,3 +1091,50 @@ Boris required the lanes pre-randomize a ~10k-draft horizon in ONE ceremony (lik
 **Orphaned artifacts (harmless, ignore):** the earlier per-cycle commits at laneKeys 1,000,001 / 2,000,001 on the vrf-commit contract are superseded and unused. LINK note: eras cut VRF spend ~100× (one request per ~10k drafts per lane); subscription at 5.92 LINK, 19 lifetime requests.
 
 **Wheel:** JackHOF wedge is REVERTED until draft 201 (Boris's call) — wheel period 3 active on the original 12-wedge config. At draft-200 fill: wedge swap → ship → new wheel period (jackhof plumbing already live + dormant). Public spin feed is now ALL-TIME (every period + pre-VRF spins) — period rolls never hide history.
+
+---
+
+## 2026-07-20 (end of day) — REPLY TO RICHARD: everything shipped since your v2 rolling-windows notes (full sync for your Claude)
+
+Richard — Boris asked me to write up the complete picture so we're on the same page. Everything below is LIVE on staging and verified. Your v2 spec is implemented with ONE deliberate amendment from Boris (seed provenance — item 2). Read top to bottom and your Claude will have full state.
+
+### 1. Rolling reset windows — LIVE and armed at draft 201 (your spec, exact)
+- Two independent lanes exactly as you wrote: jp 1-slot/100-window resets on hit; hof 5-slot resets on 5th; next window starts at hit+1; cross-lane collision = JackHOF (dual-type league: both perks, both flags in JackpotLeagueIds+HofLeagueIds, Level "JackHOF", RTDB type "jackhof", both club badges, jackpot draw + HOF playoffs).
+- Master switch: `drafts/draftTracker.RollingStartDraft = 201` (written + verified; delete the field = full rollback to legacy batches). Counter is 196/200 — activation is automatic at 200-fill, no human step.
+- Derivation is your byte-spec exactly: tags `"<lane>:<cycle>:<i>"`, HMAC-SHA256(combinedSeed, tag), first 8 bytes BE mod 100, +1 walk within own lane. Locked vectors unchanged (seed 0x0011…eeff → jp:1=[28]; hof:1=[39,42,36,14,90]).
+- Fill path: `models/draft-state.go` rollingActive branch → `EnsureLaneCyclesFor` (fails SAFE to tracker lists — a lane error can never brick a fill). Go rev **00182** at 100% traffic.
+
+### 2. AMENDMENT (Boris's call): ERA seed model — one ceremony per ~10-15k drafts per lane
+Boris required the old 10k-merkle-round property (one ceremony, long horizon) instead of per-cycle VRF requests. **Your derivation formula is untouched** — only seed provenance changed. Full spec in the earlier "ERA MODEL" section above; TL;DR for your verifier:
+- ONE `combinedSeed` per lane ERA = 150 consecutive cycles. Cycle numbers are GLOBAL (era 2 = cycles 151-300), so tags never repeat.
+- On-chain: BBB4BatchProofMerkle `0x1E7cE8c44922f226a52893D85AfF79156859eEB6` (same contract as the 10k rounds). eraKey = 3,000,000+era (jp) / 4,000,000+era (hof). Ceremony: requestRandomnessAndCommit → commitMerkleRoot; revealSalt only at era END.
+- Per-cycle reveal at each hit = publish positions + Merkle proof (leaf `keccak256("<lane>:<cycle>:<p0>[,p1…]")`, derivation order; sorted-pair keccak tree) against the era root. Zero on-chain tx per reset; zero LINK per reset (~100× cheaper).
+- LIVE: jp-era-1 root `0xfcd9611c…` (commit `0x239c2787…`, root `0xeae79bbf…`); hof-era-1 root `0xf18354f5…` (commit `0x947ca917…`, root `0x44a77f1b…`). Cycle-1 docs (`lane_proofs/jp-1`, `hof-1`) rewritten from era seeds, variant `era-merkle`, windows 201-300, positions hidden.
+- VERIFIED: independent Node re-implementation reproduced both roots + all 300 leaves + cycle-1 positions byte-for-byte; on-chain fulfilled/rootCommitted/saltHash match Firestore; Go tests cover era boundaries, leaf vectors, 150-cycle proof roundtrip + forged-position rejection, determinism.
+- ORPHANED (ignore): the first implementation's per-cycle commits at laneKeys 1,000,001/2,000,001 on the vrf-commit contract. Superseded before any rolling draft filled.
+
+### 3. Wheel JackHOF — plumbing live+dormant; wedge gated to draft 201 (Boris's call)
+- ALL jackhof plumbing shipped and dormant: `v2_queues/jackhof` lane, spin route (mint pass Level "JackHOF", queue+seat, both badges), token-bound seats (join-special-draft now passes the wheel-pass tokenId → your Go TokenId bind), notis (`jackhof_queue`), red→gold card art (og tier `jackhof`), marketplace sell-while-filling, drafting-page lobby rows, spend-lock (JackHOF pass can't enter regular drafts).
+- The ONLY gate is the wheel wedge itself. Boris: no JackHOF winnable before draft 201. So `wheelConfig` is the original 12-wedge layout right now.
+- At draft-200 fill (automated watcher in Boris's session; recipe also in memory + wheelConfig comment): swap `draft-1-e` → jackhof 0.001 (1-Draft wedges 0.8915/4), ship, then cap the active wheel period (maxSpins=spinCount) → the wheel-period-keeper auto-rolls a fresh 100k-spin period WITH jackhof + auto-reveals the old salt.
+- Wheel period churn today (all clean, zero spins lost): period 1 closed at 844 spins + salt revealed on-chain; period 2 (briefly jackhof) closed at 0 spins; **period 3 ACTIVE on the original wheel** (root `0x5fbf2700…`).
+
+### 4. Public verification surfaces — now rolling-aware (shipped tonight, frontend `d8bf14b2`)
+- `/proof/{n}` for drafts ≥201: rolling panel — both lanes' windows covering the draft, era commitments (root + VRF request tx + root commit tx, BaseScan links), sealed vs revealed status; revealed windows show positions + **in-browser Merkle verification** (`verifyLaneCycleProof` in `lib/batchMerkleClient.ts` — your client-side mirror of the Go leaf/tree). Legacy drafts ≤200 byte-identical to before (verified live on #199).
+- Proof feed + SSE stream: JackHOF label (was falling to 'Pro' — `'jackhof'.includes('jackpot')===false` strikes again), rolling-aware committed-type gate (reads lane docs server-side so a sealed JP never flashes 'Pro' pre-reveal — same guarantee the batch era had), Spin Draw receipts attach to JackHOF rows, "Rolling windows sealed" header with both era roots.
+- Server helpers in `lib/rollingProof.ts` (window-walk replay, secret-stripping) — 12 edge-case tests on the walk (window-edge hits, back-to-back windows, hof partials).
+- Verified LIVE: `/api/drafts/201/merkle-proof` → `variant: rolling-era`, both lanes sealed, windows [201,300], era roots present, positions + salt properly hidden.
+- Also: public wheel spin feed is now ALL-TIME (every period + pre-VRF spins; period rolls never hide history — Boris hard rule) with a new wheelSpins.timestamp collection-group index.
+
+### 5. What happens at draft 200-fill (nothing manual on the draft side)
+1. Draft 201 types from jp-1/hof-1 era-sealed positions automatically (Go, real-time).
+2. Each hit: cycle completes → proof published to `lane_proofs` → meta advances → next cycle derived from the era seed instantly (no chain wait). Era-end salt reveal fires when cycle 150 completes.
+3. Wheel wedge + fresh period go live via the watcher (or manually per the recipe if Boris's session is closed).
+4. Jackpot-hit spin promo (10/5/…-spin tiers) is window-relative under rolling — already live in reveal-complete.
+
+### 6. For your verifier — action items
+- Mirror `LaneLeafHash` + sorted-pair keccak tree (or reuse your 10k-round verifier — identical tree). Era docs: `lane_eras/{lane}-era-{n}`; cycle docs: `lane_proofs/{lane}-{cycle}` (leafIndex omitted when 0, firestore omitempty).
+- Chain reads: getBatch(eraKey) on `0x1E7cE8c4…` — fulfilled/rootCommitted/saltHash/merkleRoot.
+- Watch the FIRST rolling hit with us: expect cycle doc → status revealed + leaf + merkleProof, meta advance, next cycle doc appearing — all within seconds of the fill.
+
+LINK: 5.92 on the sub — fine now that eras are ~100× cheaper; top-up still worthwhile before season peak. — Boris's Claude
