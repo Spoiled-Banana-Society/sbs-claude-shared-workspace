@@ -120,8 +120,13 @@ function mulberry32(seed: number): () => number {
 // (Only used on the legacy no-seed path; the seeded path derives it directly.)
 let _proLandingCombo: DraftType[] = ['pro', 'jackpot', 'hof'];
 
-function makeProLandingCombo(rand: () => number): DraftType[] {
-  const pool: DraftType[] = ['pro', 'jackpot', 'hof']; // 'pro' renders as 🍌
+function makeProLandingCombo(rand: () => number, allowJackhof: boolean): DraftType[] {
+  // Rolling era (>= 201): no banana anywhere — a Pro spin lands a mixed
+  // no-match combo of the three WIN symbols (Richard 2026-07-20). Pre-201
+  // keeps the original pool where 'pro' renders as 🍌.
+  const pool: DraftType[] = allowJackhof
+    ? ['jackpot', 'hof', 'jackhof']
+    : ['pro', 'jackpot', 'hof'];
   let combo: DraftType[];
   do {
     combo = [0, 1, 2].map(() => pool[Math.floor(rand() * pool.length)]);
@@ -150,14 +155,20 @@ export function generateReelItemsForReel(
   const items: DraftType[] = [];
   for (let i = 0; i < totalItems; i++) {
     const rand = fillerRand();
-    // JackHOF rides the filler stream (rare) so every spin teases that the
-    // dual-type exists — but only from draft 201 (allowJackhof). Gated-off
-    // path consumes the SAME rand and keeps the ORIGINAL 15/20/65 split, so
-    // pre-201 reels are byte-identical to what shipped before JackHOF.
-    if (allowJackhof && rand < 0.04) items.push('jackhof');
-    else if (rand < (allowJackhof ? 0.19 : 0.15)) items.push('jackpot');
-    else if (rand < (allowJackhof ? 0.39 : 0.35)) items.push('hof');
-    else items.push('pro');
+    if (allowJackhof) {
+      // Rolling era (>= 201): banana is OUT of the reels entirely (Richard
+      // 2026-07-20). Only the three win symbols spin — JackHOF stays the
+      // rare tease, Jackpot/HOF split the rest.
+      if (rand < 0.10) items.push('jackhof');
+      else if (rand < 0.55) items.push('jackpot');
+      else items.push('hof');
+    } else {
+      // Pre-201 path consumes the SAME rand and keeps the ORIGINAL 15/20/65
+      // split, so pre-201 reels are byte-identical to what shipped before.
+      if (rand < 0.15) items.push('jackpot');
+      else if (rand < 0.35) items.push('hof');
+      else items.push('pro');
+    }
   }
   const landingIndex = totalItems - 8;
   if (resultType === 'pro') {
@@ -167,11 +178,11 @@ export function generateReelItemsForReel(
     // on the identical symbols. Without a seed, keep the legacy shared-module
     // behavior (combo computed on reel 0, read by reels 1 & 2).
     if (seed) {
-      const combo = makeProLandingCombo(mulberry32(hashStringToSeed(`${seed}:combo`)));
-      items[landingIndex] = combo[reelIndex] ?? 'pro';
+      const combo = makeProLandingCombo(mulberry32(hashStringToSeed(`${seed}:combo`)), allowJackhof);
+      items[landingIndex] = combo[reelIndex] ?? (allowJackhof ? 'jackpot' : 'pro');
     } else {
-      if (reelIndex === 0) _proLandingCombo = makeProLandingCombo(Math.random);
-      items[landingIndex] = _proLandingCombo[reelIndex] ?? 'pro';
+      if (reelIndex === 0) _proLandingCombo = makeProLandingCombo(Math.random, allowJackhof);
+      items[landingIndex] = _proLandingCombo[reelIndex] ?? (allowJackhof ? 'jackpot' : 'pro');
     }
   } else {
     items[landingIndex] = resultType;
