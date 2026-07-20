@@ -137,6 +137,9 @@ export function generateReelItemsForReel(
   // deterministically so every participant sees the same symbols. Omitted →
   // falls back to Math.random (preserves old behavior for any other caller).
   seed?: string,
+  // JackHOF filler is gated to the rolling-windows era (league # >= 201) —
+  // Richard 2026-07-21: no JackHOF sightings in reels before draft 201.
+  allowJackhof: boolean = false,
 ): DraftType[] {
   // Per-reel filler stream: seeded by (draft, reel) so the three reels look
   // independent from each other but are identical across every participant.
@@ -147,12 +150,13 @@ export function generateReelItemsForReel(
   const items: DraftType[] = [];
   for (let i = 0; i < totalItems; i++) {
     const rand = fillerRand();
-    // JackHOF rides the filler stream too (rare) so every spin teases that
-    // the dual-type exists — before this, the symbol could only ever appear
-    // as the landed result and nobody knew it was possible.
-    if (rand < 0.04) items.push('jackhof');
-    else if (rand < 0.19) items.push('jackpot');
-    else if (rand < 0.39) items.push('hof');
+    // JackHOF rides the filler stream (rare) so every spin teases that the
+    // dual-type exists — but only from draft 201 (allowJackhof). Gated-off
+    // path consumes the SAME rand and keeps the ORIGINAL 15/20/65 split, so
+    // pre-201 reels are byte-identical to what shipped before JackHOF.
+    if (allowJackhof && rand < 0.04) items.push('jackhof');
+    else if (rand < (allowJackhof ? 0.19 : 0.15)) items.push('jackpot');
+    else if (rand < (allowJackhof ? 0.39 : 0.35)) items.push('hof');
     else items.push('pro');
   }
   const landingIndex = totalItems - 8;
