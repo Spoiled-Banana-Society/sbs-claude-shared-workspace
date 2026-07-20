@@ -1061,6 +1061,20 @@ export function BuyPassesModal({
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
               const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
               const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+              // ⓘ reopens the full explainer overlay on demand (the auto-show is
+              // one-time; this is the persistent way back to it).
+              const infoButton = (
+                <button
+                  type="button"
+                  onClick={() => setShowFeeIntro(true)}
+                  aria-label="How the card-fee free draft works"
+                  className="ml-auto shrink-0 text-white/35 hover:text-white/70 transition-colors"
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+                    <circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.01" />
+                  </svg>
+                </button>
+              );
               if (!hasFrontedDraft) {
                 return (
                 <div className="bg-banana/[0.08] border border-banana/20 rounded-xl p-3">
@@ -1071,6 +1085,7 @@ export function BuyPassesModal({
                     <p className="text-white/85 text-[12px] font-semibold">
                       This purchase includes a FREE bonus Draft Pass — your card fee&apos;s on us
                     </p>
+                    {infoButton}
                   </div>
                   <p className="text-white/40 text-[10px] mt-1.5">
                     After that, every $25 in card fees earns you another free Draft Pass — automatically.
@@ -1096,6 +1111,7 @@ export function BuyPassesModal({
                       : 'Every $25 in card fees = another free Draft Pass'
                     }
                   </p>
+                  {infoButton}
                 </div>
                 <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <div className="absolute inset-y-0 left-0 bg-banana rounded-full transition-all" style={{ width: `${curPct}%` }} />
