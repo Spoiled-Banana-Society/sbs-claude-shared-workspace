@@ -240,7 +240,7 @@ export function BuyTab({
             {viewFilter === 'passes'
               ? 'No Jackpot or HOF draft passes are listed right now. Wheel winners can sell their wheel draft passes here while the draft fills.'
               : viewFilter === 'jackpot'
-              ? 'No Jackpot teams found. These are rare — 1 in 100 paid drafts, plus wheel wins.'
+              ? 'No Jackpot teams found. These are rare — guaranteed just once per 100-draft window, plus wheel wins.'
               : viewFilter === 'hof'
                 ? 'No Hall of Fame teams found in this view.'
                 : viewFilter === 'top'

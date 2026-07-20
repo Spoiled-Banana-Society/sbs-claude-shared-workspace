@@ -21,6 +21,11 @@ export type IndexLevel = 'jackpot' | 'hof' | 'pro';
 /** Normalize any level string (card 'Hall of Fame'/'Jackpot'/'Pro', trait, etc.) to the filter key. */
 export function normalizeLevel(raw: string | null | undefined): IndexLevel {
   const v = String(raw ?? '').toLowerCase();
+  // JackHOF (dual-type) buckets under 'jackpot' for marketplace filtering —
+  // it's the rarest identity and the filter set has no dedicated key yet.
+  // Without this it would fall through to 'pro' ('jackhof' matches neither
+  // 'jackpot' nor 'hall of fame' nor === 'hof').
+  if (v.includes('jackhof')) return 'jackpot';
   if (v.includes('jackpot')) return 'jackpot';
   if (v.includes('hall of fame') || v === 'hof') return 'hof';
   return 'pro';

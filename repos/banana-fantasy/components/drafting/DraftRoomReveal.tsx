@@ -121,35 +121,42 @@ export function DraftRoomReveal({
           'Starting soon' countdown) so the HOF/JP drama carries through
           to the start. Cuts out the moment picks begin (phase==='drafting')
           so the drafting view is uncluttered. */}
-      {visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && phase !== 'drafting' && phase !== 'completed' && (
+      {visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof') && phase !== 'drafting' && phase !== 'completed' && (
         <div
           className="fixed inset-0 z-30 pointer-events-none animate-pulse-glow"
           style={{
             background: visibleDraftType === 'jackpot'
               ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.3) 0%, transparent 70%)'
-              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
+              : visibleDraftType === 'jackhof'
+                ? 'radial-gradient(circle at 38% 50%, rgba(239, 68, 68, 0.28) 0%, transparent 60%), radial-gradient(circle at 62% 50%, rgba(255, 215, 0, 0.28) 0%, transparent 60%)'
+                : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
           }}
         />
       )}
 
       {jackpotRain.length > 0 && visibleDraftType && (
         <div className="fixed inset-0 z-[60] pointer-events-none overflow-hidden">
-          {jackpotRain.map((item) => (
-            <div
-              key={item.id}
-              className={`absolute animate-jackpot-rain font-black italic ${visibleDraftType === 'jackpot' ? 'text-red-500' : 'text-yellow-400'}`}
-              style={{
-                left: `${item.x}%`,
-                fontSize: `${item.size}px`,
-                animationDelay: `${item.delay}s`,
-                textShadow: visibleDraftType === 'jackpot'
-                  ? '0 0 10px rgba(239, 68, 68, 0.8)'
-                  : '0 0 10px rgba(250, 204, 21, 0.8)',
-              }}
-            >
-              {visibleDraftType === 'jackpot' ? 'JACKPOT' : 'HOF'}
-            </div>
-          ))}
+          {jackpotRain.map((item) => {
+            // JackHOF rains alternating red JACKPOT / gold HOF words — literally
+            // both hitting at once.
+            const rainAsJp = visibleDraftType === 'jackpot' || (visibleDraftType === 'jackhof' && item.id % 2 === 0);
+            return (
+              <div
+                key={item.id}
+                className={`absolute animate-jackpot-rain font-black italic ${rainAsJp ? 'text-red-500' : 'text-yellow-400'}`}
+                style={{
+                  left: `${item.x}%`,
+                  fontSize: `${item.size}px`,
+                  animationDelay: `${item.delay}s`,
+                  textShadow: rainAsJp
+                    ? '0 0 10px rgba(239, 68, 68, 0.8)'
+                    : '0 0 10px rgba(250, 204, 21, 0.8)',
+                }}
+              >
+                {rainAsJp ? 'JACKPOT' : 'HOF'}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -157,14 +164,16 @@ export function DraftRoomReveal({
           Rotating sun-rays behind a massive metallic-gradient title that
           slams in from huge scale with motion blur. Plays once for ~3.4s
           on the same gate as the pulse glow / specialType reveal. */}
-      {((pulseGlow || (specialTypeParam && phase !== 'loading')) && visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')) && (
+      {((pulseGlow || (specialTypeParam && phase !== 'loading')) && visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof' || visibleDraftType === 'jackhof')) && (
         <div className="fixed inset-0 z-[70] pointer-events-none flex items-center justify-center overflow-hidden">
           <div
             className="absolute left-1/2 top-1/2 w-[200vmax] h-[200vmax] -translate-x-1/2 -translate-y-1/2 animate-hero-rays"
             style={{
               background: visibleDraftType === 'jackpot'
                 ? 'repeating-conic-gradient(from 0deg, rgba(239,68,68,0.55) 0deg 6deg, transparent 6deg 24deg)'
-                : 'repeating-conic-gradient(from 0deg, rgba(255,215,0,0.55) 0deg 6deg, transparent 6deg 24deg)',
+                : visibleDraftType === 'jackhof'
+                  ? 'repeating-conic-gradient(from 0deg, rgba(239,68,68,0.55) 0deg 6deg, transparent 6deg 24deg, rgba(255,215,0,0.55) 24deg 30deg, transparent 30deg 48deg)'
+                  : 'repeating-conic-gradient(from 0deg, rgba(255,215,0,0.55) 0deg 6deg, transparent 6deg 24deg)',
               maskImage: 'radial-gradient(circle at center, transparent 8%, black 18%, black 55%, transparent 80%)',
               WebkitMaskImage: 'radial-gradient(circle at center, transparent 8%, black 18%, black 55%, transparent 80%)',
             }}
@@ -172,32 +181,42 @@ export function DraftRoomReveal({
           <div
             className="absolute left-1/2 top-1/2 animate-hero-slam font-black italic tracking-tighter text-center"
             style={{
-              fontSize: 'clamp(80px, 18vw, 260px)',
+              fontSize: visibleDraftType === 'jackhof' ? 'clamp(64px, 15vw, 210px)' : 'clamp(80px, 18vw, 260px)',
               lineHeight: 1,
               background: visibleDraftType === 'jackpot'
                 ? 'linear-gradient(180deg, #FFE0E0 0%, #FF4D4D 35%, #B91C1C 70%, #FFC2C2 100%)'
-                : 'linear-gradient(180deg, #FFF6C2 0%, #FFD700 30%, #B8860B 65%, #FFE57F 100%)',
+                : visibleDraftType === 'jackhof'
+                  ? 'linear-gradient(95deg, #FF4D4D 0%, #C71F29 38%, #B8860B 60%, #FFD700 100%)'
+                  : 'linear-gradient(180deg, #FFF6C2 0%, #FFD700 30%, #B8860B 65%, #FFE57F 100%)',
               WebkitBackgroundClip: 'text',
               backgroundClip: 'text',
               color: 'transparent',
               filter: visibleDraftType === 'jackpot'
                 ? 'drop-shadow(0 0 36px rgba(239,68,68,0.95)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))'
-                : 'drop-shadow(0 0 36px rgba(255,215,0,0.95)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))',
+                : visibleDraftType === 'jackhof'
+                  ? 'drop-shadow(0 0 28px rgba(239,68,68,0.85)) drop-shadow(0 0 28px rgba(255,215,0,0.85)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))'
+                  : 'drop-shadow(0 0 36px rgba(255,215,0,0.95)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))',
             }}
           >
-            {visibleDraftType === 'jackpot' ? 'JACKPOT' : 'HOF'}
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'jackhof' ? 'JACKHOF' : 'HOF'}
           </div>
           <div
             className="absolute left-1/2 top-[58%] animate-hero-subtitle font-bold text-center uppercase whitespace-nowrap"
             style={{
               fontSize: 'clamp(13px, 1.8vw, 22px)',
-              color: visibleDraftType === 'jackpot' ? '#FFE5E5' : '#FFF8C2',
+              color: visibleDraftType === 'jackpot' ? '#FFE5E5' : visibleDraftType === 'jackhof' ? '#FFF3D6' : '#FFF8C2',
               textShadow: visibleDraftType === 'jackpot'
                 ? '0 0 18px rgba(239,68,68,0.9), 0 2px 0 rgba(0,0,0,0.65)'
-                : '0 0 18px rgba(255,215,0,0.9), 0 2px 0 rgba(0,0,0,0.65)',
+                : visibleDraftType === 'jackhof'
+                  ? '0 0 14px rgba(239,68,68,0.8), 0 0 14px rgba(255,215,0,0.8), 0 2px 0 rgba(0,0,0,0.65)'
+                  : '0 0 18px rgba(255,215,0,0.9), 0 2px 0 rgba(0,0,0,0.65)',
             }}
           >
-            {visibleDraftType === 'jackpot' ? 'Winner skips to the finals' : 'Hall of Fame — bonus prizes'}
+            {visibleDraftType === 'jackpot'
+              ? 'Winner skips to the finals'
+              : visibleDraftType === 'jackhof'
+                ? 'Two perks, one draft — finals skip + HOF prizes'
+                : 'Hall of Fame — bonus prizes'}
           </div>
         </div>
       )}

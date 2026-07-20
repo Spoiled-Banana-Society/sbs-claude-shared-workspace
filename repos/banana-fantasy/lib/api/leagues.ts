@@ -215,6 +215,10 @@ export interface BatchProgress {
   // Reveal-time gating (optional; absent on the plain REST endpoint / old data).
   pendingReveals?: PendingReveal[];
   serverNowMs?: number;   // server clock at send time, for client skew correction
+  // Rolling reset windows (post-cutover). Present only once the tracker doc
+  // carries RollingStartDraft and that draft has been reached — its presence
+  // is what flips the header to the dual-counter UI. Absent → legacy batches.
+  lanes?: import('@/lib/rollingLanes').RollingLanes;
 }
 
 /**

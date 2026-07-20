@@ -7,6 +7,7 @@ import { createHash } from 'crypto';
 import { json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { isRollingActive, replayJpLane, replayHofLane, laneDraftsLeft, lanePct } from '@/lib/rollingLanes';
 
 /**
  * GET /api/bot/league?include_unfilled=true
@@ -146,6 +147,26 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
   if (!tracker) return NO_ODDS;
   const filled = Number(tracker.FilledLeaguesCount ?? 0) || 0;
   if (filled <= 0) return NO_ODDS;
+
+  // Rolling reset windows (post-cutover): each lane has its own window, so
+  // the odds come from the lane replays instead of the fixed 100-batch. Same
+  // formula + toFixed(2) rendering downstream, so bot lines keep matching the
+  // header exactly. Dormant until the tracker carries RollingStartDraft.
+  const rollingStart = Number(tracker.RollingStartDraft ?? 0) || 0;
+  if (isRollingActive(rollingStart, filled)) {
+    const toIdsR = (v: unknown): number[] =>
+      Array.isArray(v) ? v.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : [];
+    const jp = replayJpLane(toIdsR(tracker.JackpotLeagueIds), rollingStart);
+    const hof = replayHofLane(toIdsR(tracker.HofLeagueIds), rollingStart);
+    // No reveal gating here: the bot posts when a lobby opens, not at fills,
+    // and its cadence (poll-driven) can't leak a reveal-in-flight meaningfully.
+    return {
+      jackpotRemaining: jp.remaining,
+      hofRemaining: hof.remaining,
+      jackpotPercent: lanePct(jp.remaining, laneDraftsLeft(filled, jp.windowStart)),
+      hofPercent: lanePct(hof.remaining, laneDraftsLeft(filled, hof.windowStart)),
+    };
+  }
 
   const current = filled % BATCH_SIZE;
   const remainingSlots = BATCH_SIZE - current; // == BATCH_SIZE at a clean boundary

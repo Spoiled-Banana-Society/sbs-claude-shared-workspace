@@ -474,7 +474,18 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // confuses people by still advertising "Pick 6, 9 & 10" after the batch ended.
   // Crediting is unaffected — reveal-complete still uses getPick10ActiveSlots.
   let pickTier: 'base' | 'jp' | 'all' = 'base';
-  try { pickTier = (await getPick10DisplayTier()).tier; } catch { /* fall back to base copy */ }
+  let pickRolling = false;
+  try {
+    const dt = await getPick10DisplayTier();
+    pickTier = dt.tier;
+    pickRolling = dt.rolling;
+  } catch { /* fall back to base copy */ }
+  // Rolling era: the ladder is retired — simple era-neutral Pick-10 copy
+  // (the legacy explanation promised tiers that can no longer trigger).
+  const PICK_BASE_EXPLANATION =
+    '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
+    + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
+    + '• Paid Drafts Only.';
   const PICK_LADDER_EXPLANATION =
     '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
     + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
@@ -597,7 +608,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.isNew = c.isNew;
       promo.modalContent = promo.modalContent || {};
       promo.modalContent.title = c.title;
-      promo.modalContent.explanation = PICK_LADDER_EXPLANATION;
+      promo.modalContent.explanation = pickRolling ? PICK_BASE_EXPLANATION : PICK_LADDER_EXPLANATION;
     }
     return promo;
   }).filter((promo) => !(promo.type === 'new-user' && newUserBlocked)); // returning players never see the new-user promo (unless force-granted)
@@ -3074,6 +3085,9 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
 interface BatchSpecialsState {
   /** True when this batch's 1 Jackpot + 5 HOF have all filled. */
   allHit: boolean;
+  /** True once the rolling-lane era is active for this view — the pick-slot
+   *  LADDER is retired then (pinned to base) and copy drops ladder language. */
+  rolling?: boolean;
   /** Filled-count index where the current 100-batch began (the dedupe key for
    *  the "promo just expanded" announcement — one announcement per batch). */
   batchStart: number;
@@ -3090,6 +3104,18 @@ async function getBatchSpecialsState(opts?: { display?: boolean }): Promise<Batc
   const d = snap.data() as Record<string, unknown>;
   const filled = Number(d.FilledLeaguesCount ?? 0) || 0;
   if (filled <= 0) return { allHit: false, jpHit: false, batchStart: 0, filled };
+  // ROLLING-LANE ERA: the Pick-slot LADDER is retired (Boris 2026-07-20 —
+  // rolling windows kill the dead-window problem the ladder existed to fight).
+  // Pin both views to the base tier once rolling is active:
+  //   • CREDIT view pins from RollingStartDraft (draft 200's own reveal still
+  //     pays its legacy batch's earned 6/9/10 tier).
+  //   • DISPLAY view pins from RollingStartDraft-1 (card shows base "Pick 10"
+  //     the moment the last legacy draft fills).
+  // jpHit:false also silences announcePick10ExpansionIfActivated permanently.
+  const rollingStart = Number(d.RollingStartDraft ?? 0);
+  if (rollingStart > 0 && filled >= (opts?.display ? rollingStart - 1 : rollingStart)) {
+    return { allHit: false, jpHit: false, batchStart: filled, filled, rolling: true };
+  }
   const jpIds = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
   const hofIds = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
   const current = filled % 100;
@@ -3141,11 +3167,12 @@ export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: '
  * use to actually award spins, and it stays on the just-completed batch so league
  * 100's own reveal still pays out its earned Pick 6/9/10.
  */
-export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
+export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number; rolling: boolean }> {
   const state = await getBatchSpecialsState({ display: true });
-  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
-  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
-  return { slots: [10], tier: 'base', batchStart: state.batchStart };
+  const rolling = state.rolling === true;
+  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart, rolling };
+  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart, rolling };
+  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling };
 }
 
 // Bound the bell fan-out so a misread tracker can never broadcast to an
@@ -3289,10 +3316,29 @@ async function getCurrentBatchPosition(): Promise<number> {
     const db = getAdminFirestore();
     const snap = await db.collection('drafts').doc('draftTracker').get();
     if (!snap.exists) return 1;
-    const filled = Number(((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount) ?? 0);
-    // The JP draft just filled, so its 1-indexed position within this batch
-    // is ((filled - 1) % BATCH_SIZE) + 1, with a guard for filled === 0.
+    const d = snap.data() as {
+      FilledLeaguesCount?: number;
+      RollingStartDraft?: number;
+      JackpotLeagueIds?: number[];
+    } | undefined;
+    const filled = Number(d?.FilledLeaguesCount ?? 0);
     if (filled <= 0) return 1;
+    // ROLLING-LANE ERA (draft >= RollingStartDraft): "position" becomes the
+    // hit's 1-indexed spot within the JP lane's OWN window, replayed from the
+    // id array the same way lib/rollingLanes.ts does. The tracker already
+    // contains this hit (id == filled), so replay only the EARLIER hits to
+    // find the window this one landed in. Tiers (1-25 → 10 spins, 26-50 → 5)
+    // carry over unchanged, now window-relative (Boris 2026-07-20).
+    const rollingStart = Number(d?.RollingStartDraft ?? 0);
+    if (rollingStart > 0 && filled >= rollingStart) {
+      const priorHits = (Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [])
+        .filter((id) => Number(id) >= rollingStart && Number(id) < filled);
+      const { replayJpLane } = await import('@/lib/rollingLanes');
+      const windowStart = replayJpLane(priorHits, rollingStart).windowStart;
+      const pos = filled - windowStart + 1;
+      return pos >= 1 && pos <= 100 ? pos : 1;
+    }
+    // Legacy fixed-batch era: 1-indexed position within the aligned batch.
     return ((filled - 1) % BATCH_SIZE) + 1;
   } catch {
     return 1;

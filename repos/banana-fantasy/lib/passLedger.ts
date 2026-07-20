@@ -52,7 +52,7 @@ export async function countSpendableTokens(wallet: string): Promise<InventoryCou
     // actually use, and the use-pass gate would wave them into a join the engine
     // then rejects. Empty/"Pro" = an ordinary spendable pass.
     const lvl = String(data.Level ?? data.level ?? '').trim();
-    if (lvl === 'Hall of Fame' || lvl === 'Jackpot') return;
+    if (lvl === 'Hall of Fame' || lvl === 'Jackpot' || lvl === 'JackHOF') return;
     const pt = String(data.PassType ?? data.passType ?? '').toLowerCase();
     if (pt === 'free') free += 1;
     else paid += 1;

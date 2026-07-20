@@ -9,7 +9,7 @@ export interface DraftState {
   id: string;
   contestName: string;
   status: 'filling' | 'drafting' | 'completed';
-  type: 'pro' | 'hof' | 'jackpot' | null; // null = unrevealed
+  type: 'pro' | 'hof' | 'jackpot' | 'jackhof' | null; // null = unrevealed
   draftSpeed: 'fast' | 'slow';
   players: number;
   maxPlayers: number;
@@ -34,7 +34,7 @@ export interface DraftState {
   // from the poll so the realtime RTDB push can compute "N picks away" instantly
   // (snake math from the live pickNumber) without re-fetching the draft order.
   userSeat?: number;
-  draftType?: 'pro' | 'hof' | 'jackpot' | null;
+  draftType?: 'pro' | 'hof' | 'jackpot' | 'jackhof' | null;
   draftOrder?: Array<{ id: string; name: string; displayName: string; isYou: boolean; avatar: string }>;
   userDraftPosition?: number;
 

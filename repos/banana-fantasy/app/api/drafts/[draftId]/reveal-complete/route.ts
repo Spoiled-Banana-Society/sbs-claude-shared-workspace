@@ -39,7 +39,11 @@ export async function POST(req: Request, { params }: { params: { draftId: string
     if (!draftSnap.exists) return jsonError('Draft not found', 404);
 
     const level = String(draftSnap.get('Level') ?? '').toLowerCase();
-    const isJackpot = level.includes('jackpot');
+    // 'jackhof' (dual-type, rolling era) carries BOTH perks. Note the string
+    // 'jackhof' does NOT contain 'jackpot', so it needs its own check —
+    // without it a JackHOF draft would silently lose its jackpot draw.
+    const isJackHof = level.includes('jackhof') || level.includes('jack-hof') || level.includes('jackpot+hof');
+    const isJackpot = level.includes('jackpot') || isJackHof;
     const isHof = level.includes('hof') || level.includes('hall of fame');
 
     // Pick 10 — credited here (not at fill: the draft ORDER doesn't exist
@@ -72,15 +76,16 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       return json({ ok: true, level: 'pro', unlocked: false });
     }
 
+    const levelKey = isJackHof ? 'jackhof' : isJackpot ? 'jackpot' : 'hof';
     // Once per draft — the other 9 watching clients (and replays) no-op.
     try {
       await db.collection('draft_reveal_unlocks').doc(draftId).create({
         draftId,
-        level: isJackpot ? 'jackpot' : 'hof',
+        level: levelKey,
         revealedAt: new Date().toISOString(),
       });
     } catch {
-      return json({ ok: true, level: isJackpot ? 'jackpot' : 'hof', unlocked: false, deduped: true });
+      return json({ ok: true, level: levelKey, unlocked: false, deduped: true });
     }
 
     const users = (draftSnap.get('CurrentUsers') ?? []) as Array<{ OwnerId?: string }>;
@@ -104,7 +109,12 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       await Promise.allSettled(wallets.map((w) =>
         unlockBadge(w, 'jackpot-club', { source: 'draft-reveal', draftId }),
       ));
-    } else {
+    }
+    // Independent (NOT else): a JackHOF draft earns BOTH club badges — the
+    // jackpot draw/club above AND the HOF club here. Pure-jackpot levels never
+    // enter (their level string doesn't contain 'hof'), so legacy behavior is
+    // byte-identical for single-type drafts.
+    if (isHof) {
       await Promise.allSettled(wallets.map((w) =>
         unlockBadge(w, 'hof-club', { source: 'draft-reveal', draftId }),
       ));

@@ -245,7 +245,8 @@ function parseNftTraits(nft: OpenSeaNft | null | undefined) {
     if (ROSTER_TRAIT_KEYS.includes(key)) {
       roster.push(val);
     } else if (key === 'LEVEL') {
-      if (val === 'Jackpot') level = 'jackpot';
+      if (val === 'JackHOF') level = 'jackpot'; // dual-type buckets as jackpot
+      else if (val === 'Jackpot') level = 'jackpot';
       else if (val === 'Hall of Fame') level = 'hof';
       else level = 'pro';
     } else if (key === 'RANK' && val !== 'N/A') {

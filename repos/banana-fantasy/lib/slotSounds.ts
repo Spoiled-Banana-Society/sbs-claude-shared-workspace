@@ -7,7 +7,7 @@
 let audioCtx: AudioContext | null = null;
 let reverbIR: AudioBuffer | null = null;
 
-export type SlotRevealType = 'jackpot' | 'hof' | 'pro';
+export type SlotRevealType = 'jackpot' | 'hof' | 'pro' | 'jackhof';
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -523,10 +523,11 @@ export function playSlotReveal(type: SlotRevealType) {
     const ctx = getAudioContext();
     const { dry, space } = masterChain(ctx);
     const now = ctx.currentTime;
-    if (type === 'jackpot' || type === 'hof') {
+    if (type === 'jackpot' || type === 'hof' || type === 'jackhof') {
       // Immediate "hit" on the reveal, then the music GOES CRAZY — a full
-      // celebration drop that rides for several seconds (jackpot biggest).
-      const big = type === 'jackpot';
+      // celebration drop that rides for several seconds (jackpot biggest;
+      // JackHOF gets the full jackpot-scale celebration).
+      const big = type === 'jackpot' || type === 'jackhof';
       // Dark impact hit on the reveal (warm chord, not a bright stab), then the
       // build, then the drop goes crazy.
       riserSweep(ctx, space, now, big ? 0.26 : 0.22, big ? 0.2 : 0.16);

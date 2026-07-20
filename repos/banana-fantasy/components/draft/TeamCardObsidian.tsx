@@ -15,7 +15,7 @@ import React from 'react';
  * pixel-faithful at any display size (generating screen, roster page, etc.).
  */
 
-export type CardTier = 'pro' | 'hof' | 'jackpot';
+export type CardTier = 'pro' | 'hof' | 'jackpot' | 'jackhof';
 
 export interface CardPlayer {
   team: string;            // "BAL"
@@ -44,6 +44,8 @@ const FRAME: Record<CardTier, string> = {
   pro: 'linear-gradient(135deg,#6b21a8,#d8b4fe 30%,#a855f7 52%,#f3e8ff 64%,#7e22ce 84%,#c084fc)',
   hof: 'linear-gradient(135deg,#7c5a14,#ffe9a0 22%,#d9b53c 44%,#fff6cf 58%,#b8901f 80%,#f0d875)',
   jackpot: 'linear-gradient(135deg,#7e1316,#ff8a85 24%,#e23b3b 46%,#ffd9d4 58%,#b01c1c 80%,#ef5350)',
+  // Dual-type: jackpot red flowing into HOF gold across the frame.
+  jackhof: 'linear-gradient(135deg,#7e1316,#ff8a85 20%,#e23b3b 38%,#ffd9d4 50%,#d9b53c 64%,#fff6cf 76%,#b8901f 90%,#f0d875)',
 };
 const GREY_FRAME = 'linear-gradient(135deg,#23262d,#aab0bb 22%,#474d58 44%,#dfe4ec 58%,#3a3f48 80%,#878e99)';
 
@@ -51,6 +53,7 @@ const BADGE: Record<CardTier, { text: string; bg: string; line: string; dot: str
   pro: { text: '#c79bff', bg: 'rgba(168,85,247,.16)', line: 'rgba(168,85,247,.5)', dot: '#b87cff', label: 'PRO' },
   hof: { text: '#f3d057', bg: 'rgba(225,200,75,.14)', line: 'rgba(225,200,75,.5)', dot: '#f1c84b', label: 'HOF' },
   jackpot: { text: '#ff7b7b', bg: 'rgba(239,68,68,.16)', line: 'rgba(239,68,68,.5)', dot: '#ff5a5a', label: 'JACKPOT' },
+  jackhof: { text: '#ffb35c', bg: 'rgba(239,68,68,.14)', line: 'rgba(212,175,55,.5)', dot: '#ff5a5a', label: 'JACKHOF' },
 };
 
 // On-dark position colors — brightened variants of the canonical POSITION_COLORS

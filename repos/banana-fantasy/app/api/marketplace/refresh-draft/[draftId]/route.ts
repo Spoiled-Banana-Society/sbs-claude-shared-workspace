@@ -313,9 +313,13 @@ export async function POST(
     // toast), the first-purchase gate, jackpot-hit spins when this draft
     // revealed as Jackpot, and the silent My Teams refresh ping. The revealed
     // level lives on the cards docs (same field the proof feed reads).
-    const isJackpot = cardsSnap.docs.some((d) =>
-      String((d.data() as Record<string, unknown>)?.Level ?? '').toLowerCase().includes('jackpot'),
-    );
+    const isJackpot = cardsSnap.docs.some((d) => {
+      const lvl = String((d.data() as Record<string, unknown>)?.Level ?? '').toLowerCase();
+      // 'jackhof' (dual-type) does NOT contain the substring 'jackpot' — it
+      // needs its own check or a JackHOF draft would miss its jackpot draw
+      // in this close backstop (same fix as reveal-complete).
+      return lvl.includes('jackpot') || lvl.includes('jackhof');
+    });
     await creditDraftRipeness(draftId, tokenIds, isJackpot);
 
     // Pick 10 — GUARANTEED backstop at close (the order doesn't exist at the

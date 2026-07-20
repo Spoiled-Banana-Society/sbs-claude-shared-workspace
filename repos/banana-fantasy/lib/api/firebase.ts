@@ -181,11 +181,14 @@ export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: numbe
  * are normalized. Unrecognized/absent values invoke nothing (caller keeps its
  * current type). The realTimeDraftInfo `.read` rule cascades to this child.
  */
-export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | 'jackpot') => void): Unsubscribe {
+export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | 'jackpot' | 'jackhof') => void): Unsubscribe {
   return subscribeValue<unknown>(`/drafts/${draftId}/realTimeDraftInfo/type`, (v) => {
     if (typeof v !== 'string') return;
     const s = v.trim().toLowerCase();
-    if (s === 'jackpot') cb('jackpot');
+    // 'jackhof' first: it contains neither 'jackpot' nor 'hof' exactly, but be
+    // defensive about future server spellings of the dual type.
+    if (s === 'jackhof' || s === 'jackpot+hof' || s === 'jack-hof') cb('jackhof');
+    else if (s === 'jackpot') cb('jackpot');
     else if (s === 'hof' || s === 'hall of fame') cb('hof');
     else if (s === 'pro') cb('pro');
   });

@@ -36,6 +36,7 @@ const typeConfig = {
   hof: { label: 'HOF', pill: 'bg-hof', border: 'border-[#D4AF37]/30', bg: 'bg-gradient-to-b from-[#D4AF37]/[0.06] to-transparent', text: 'text-hof' },
   pro: { label: 'Pro', pill: 'bg-pro', border: 'border-purple-500/25', bg: 'bg-white/[0.02]', text: 'text-pro' },
   regular: { label: 'Pro', pill: 'bg-pro', border: 'border-purple-500/25', bg: 'bg-white/[0.02]', text: 'text-pro' },
+  jackhof: { label: 'JackHOF', pill: 'bg-gradient-to-r from-jackpot to-hof', border: 'border-red-500/30', bg: 'bg-gradient-to-b from-red-500/[0.05] via-[#D4AF37]/[0.05] to-transparent', text: 'text-hof' },
 };
 
 export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, isFounder }: TeamCardProps) {
