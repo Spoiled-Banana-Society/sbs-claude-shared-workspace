@@ -10,7 +10,7 @@ import { normalizeContestName } from '@/lib/draftStore';
 interface FeedDraft {
   draftId: string;
   draftNumber: number;
-  level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
+  level: 'Jackpot' | 'Hall of Fame' | 'JackHOF' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
   filledAt: string | null; // ISO timestamp from StartDate; null if unknown
@@ -113,7 +113,15 @@ export async function GET(req: Request) {
     // the same batch). batchData absent (e.g. pre-merkle) → no gate, show Level.
     const { locateDraft } = await import('@/lib/batchProof');
     const batchCache = new Map<number, { jackpotPositions?: number[]; hofPositions?: number[] } | null>();
+    const rollingStart = Number((trackerSnap.data() as { RollingStartDraft?: number } | undefined)?.RollingStartDraft ?? 0);
+    const laneCache = new Map<string, import('@/lib/rollingProof').LaneCycleDocRaw | null>();
     const committedTypeOf = async (globalNumber: number): Promise<FeedDraft['level'] | null> => {
+      // Rolling era (drafts >= cutover): the committed type lives in the lane
+      // cycle docs, not batch_proofs. Same display gate, new source of truth.
+      if (rollingStart > 0 && globalNumber >= rollingStart) {
+        const { rollingCommittedLevel } = await import('@/lib/rollingProof');
+        return rollingCommittedLevel(globalNumber, trackerSnap.data() as import('@/lib/rollingProof').TrackerLike, laneCache).catch(() => null);
+      }
       const loc = locateDraft(globalNumber);
       if (!batchCache.has(loc.batchNumber)) {
         const s = await db.collection('batch_proofs').doc(String(loc.batchNumber)).get();
@@ -156,7 +164,7 @@ export async function GET(req: Request) {
       // written). Better than StartDate (season kickoff, identical for
       // every draft) or createTime (lobby open, well before fill).
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
-      if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
+      if (level === 'Jackpot' || level === 'JackHOF') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber), // proof URL = /proof/{globalNum}
         draftNumber: globalNumber,
@@ -174,7 +182,7 @@ export async function GET(req: Request) {
     // rows — the public feed shows every draw, not just your own.
     await Promise.all(
       drafts
-        .filter((d) => d.level === 'Jackpot' && jackpotSlotIds.has(d.draftNumber))
+        .filter((d) => (d.level === 'Jackpot' || d.level === 'JackHOF') && jackpotSlotIds.has(d.draftNumber))
         .map(async (d) => {
           try {
             const drawSnap = await db.collection('jackpot_draws').doc(jackpotSlotIds.get(d.draftNumber)!).get();
@@ -195,7 +203,16 @@ export async function GET(req: Request) {
         }),
     );
 
-    return json({ drafts, round: await loadRound(db) });
+    // Rolling era header: each lane's current era commitment (root + txs) so
+    // the feed can show "the next ~10k drafts are already sealed" — null until
+    // the rolling system arms.
+    let lanes: import('@/lib/rollingProof').LaneEraHeaderInfo | null = null;
+    try {
+      const { loadCurrentLaneEras } = await import('@/lib/rollingProof');
+      lanes = await loadCurrentLaneEras(trackerSnap.data() as import('@/lib/rollingProof').TrackerLike);
+    } catch { /* header optional */ }
+
+    return json({ drafts, round: await loadRound(db), lanes });
   } catch (err) {
     logger.error('drafts.proof_feed.failed', { err });
     return jsonError('Internal Server Error', 500);
@@ -205,6 +222,7 @@ export async function GET(req: Request) {
 function normalizeLevel(raw: string | undefined): FeedDraft['level'] {
   if (!raw) return 'Pro';
   const v = raw.toLowerCase();
+  if (v.includes('jackhof')) return 'JackHOF'; // dual-type — matches neither substring below
   if (v.includes('jackpot')) return 'Jackpot';
   if (v.includes('hall of fame') || v === 'hof') return 'Hall of Fame';
   return 'Pro';

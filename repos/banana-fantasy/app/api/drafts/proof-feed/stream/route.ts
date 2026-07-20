@@ -13,7 +13,7 @@ const SPEEDS = ['fast', 'slow'] as const;
 interface FeedDraft {
   draftId: string;
   draftNumber: number;
-  level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
+  level: 'Jackpot' | 'Hall of Fame' | 'JackHOF' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
   filledAt: string | null;
@@ -38,6 +38,7 @@ interface RoundSummary {
 interface FeedPayload {
   drafts: FeedDraft[];
   round: RoundSummary | null;
+  lanes?: import('@/lib/rollingProof').LaneEraHeaderInfo | null;
 }
 
 /**
@@ -83,6 +84,10 @@ export async function GET(req: Request) {
     if (filled <= 0 || earliestMerkleDraft === null) {
       return { drafts: [], round: await loadRound(db) };
     }
+    // Full tracker doc (hit arrays + rolling cutover) for the rolling-era
+    // committed-type gate + era header. One read per rebuild — same cost
+    // profile as the non-stream route.
+    const trackerData = (((await trackerRef.get()).data()) ?? {}) as import('@/lib/rollingProof').TrackerLike;
 
     // Try multiple year prefixes per candidate — see the non-stream
     // route for the rationale (orderBy __name__ desc on `drafts` needs
@@ -124,7 +129,15 @@ export async function GET(req: Request) {
     // the 'Pro' creation-default before the slot machine determines it.
     const { locateDraft } = await import('@/lib/batchProof');
     const batchCache = new Map<number, { jackpotPositions?: number[]; hofPositions?: number[] } | null>();
+    const rollingStart = Number(trackerData.RollingStartDraft ?? 0);
+    const laneCache = new Map<string, import('@/lib/rollingProof').LaneCycleDocRaw | null>();
     const committedTypeOf = async (globalNumber: number): Promise<FeedDraft['level'] | null> => {
+      // Rolling era (drafts >= cutover): the committed type lives in the lane
+      // cycle docs, not batch_proofs. Same display gate, new source of truth.
+      if (rollingStart > 0 && globalNumber >= rollingStart) {
+        const { rollingCommittedLevel } = await import('@/lib/rollingProof');
+        return rollingCommittedLevel(globalNumber, trackerData, laneCache).catch(() => null);
+      }
       const loc = locateDraft(globalNumber);
       if (!batchCache.has(loc.batchNumber)) {
         const s = await db.collection('batch_proofs').doc(String(loc.batchNumber)).get();
@@ -160,7 +173,7 @@ export async function GET(req: Request) {
       seen.add(globalNumber);
       // updateTime = last write to the doc = slot machine reveal moment.
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
-      if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
+      if (level === 'Jackpot' || level === 'JackHOF') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber),
         draftNumber: globalNumber,
@@ -176,7 +189,7 @@ export async function GET(req: Request) {
     // Attach the recorded Spin Draw (winner + on-chain receipt) to jackpot rows.
     await Promise.all(
       drafts
-        .filter((d) => d.level === 'Jackpot' && jackpotSlotIds.has(d.draftNumber))
+        .filter((d) => (d.level === 'Jackpot' || d.level === 'JackHOF') && jackpotSlotIds.has(d.draftNumber))
         .map(async (d) => {
           try {
             const drawSnap = await db.collection('jackpot_draws').doc(jackpotSlotIds.get(d.draftNumber)!).get();
@@ -196,7 +209,12 @@ export async function GET(req: Request) {
           } catch { /* row simply renders without draw info */ }
         }),
     );
-    return { drafts, round: await loadRound(db) };
+    let lanes: import('@/lib/rollingProof').LaneEraHeaderInfo | null = null;
+    try {
+      const { loadCurrentLaneEras } = await import('@/lib/rollingProof');
+      lanes = await loadCurrentLaneEras(trackerData);
+    } catch { /* header optional */ }
+    return { drafts, round: await loadRound(db), lanes };
   };
 
   const stream = new ReadableStream({
@@ -333,6 +351,7 @@ export async function GET(req: Request) {
 function normalizeLevel(raw: string | undefined): FeedDraft['level'] {
   if (!raw) return 'Pro';
   const v = raw.toLowerCase();
+  if (v.includes('jackhof')) return 'JackHOF'; // dual-type — matches neither substring below
   if (v.includes('jackpot')) return 'Jackpot';
   if (v.includes('hall of fame') || v === 'hof') return 'Hall of Fame';
   return 'Pro';

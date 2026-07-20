@@ -51,6 +51,42 @@ export async function GET(req: Request, ctx: { params: { draftId: string } }) {
     }
 
     const db = getAdminFirestore();
+
+    // ── Rolling-era branch (drafts ≥ RollingStartDraft) ──────────────────
+    // Types come from the two rolling lanes, each sealed by an era ceremony
+    // (~150 windows under ONE on-chain root). Serve the lane windows covering
+    // this draft: revealed windows carry positions + a Merkle proof against
+    // the era root (verified client-side); live windows show the sealed
+    // commitment only. Secret hygiene handled by lib/rollingProof.
+    const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
+    const td = (trackerSnap.data() ?? {}) as import('@/lib/rollingProof').TrackerLike;
+    const rollingStart = Number(td.RollingStartDraft ?? 0);
+    if (rollingStart > 0 && draftNumber >= rollingStart) {
+      const { buildPublicLaneProof } = await import('@/lib/rollingProof');
+      const [jp, hof] = await Promise.all([
+        buildPublicLaneProof('jp', draftNumber, td),
+        buildPublicLaneProof('hof', draftNumber, td),
+      ]);
+      const filled = Number(td.FilledLeaguesCount ?? 0);
+      const isJp = (td.JackpotLeagueIds ?? []).includes(draftNumber);
+      const isHof = (td.HofLeagueIds ?? []).includes(draftNumber);
+      const draftType =
+        draftNumber > filled ? 'pending'
+        : isJp && isHof ? 'jackhof'
+        : isJp ? 'jackpot'
+        : isHof ? 'hof'
+        : 'pro';
+      return json({
+        variant: 'rolling-era',
+        draftId,
+        draftNumber,
+        rollingStart,
+        filled,
+        draftType,
+        lanes: { jp, hof },
+      });
+    }
+
     const batchSnap = await db.collection('batch_proofs').doc(String(locator.batchNumber)).get();
     if (!batchSnap.exists) {
       return jsonError(`Batch ${locator.batchNumber} has no proof on file`, 404);

@@ -78,3 +78,28 @@ export function buildDraftMerkleProof(leaves: Hex[], position: number): Hex[] {
   }
   return proof;
 }
+
+// ── Rolling-era lane proofs ─────────────────────────────────────────────
+// Leaf format (lane eras): keccak256(utf8("<lane>:<cycle>:<p0>[,<p1>…]"))
+// with positions in DERIVATION order. Tree = same sorted-pair keccak as the
+// round tree above. Mirrors Go batchproof.LaneLeafHash byte-for-byte.
+
+export function laneLeafHash(lane: 'jp' | 'hof', cycle: number, positions: number[]): Hex {
+  return keccak256(toHex(`${lane}:${cycle}:${positions.join(',')}`));
+}
+
+/** Verify a completed lane window's published positions against its era's
+ *  on-chain Merkle root — the browser-side check for the rolling system. */
+export function verifyLaneCycleProof(input: {
+  lane: 'jp' | 'hof';
+  cycle: number;
+  positions: number[];
+  proof: Hex[];
+  root: Hex;
+}): boolean {
+  let computed: Hex = laneLeafHash(input.lane, input.cycle, input.positions);
+  for (const sibling of input.proof) {
+    computed = nodeHash(computed, sibling);
+  }
+  return computed.toLowerCase() === input.root.toLowerCase();
+}

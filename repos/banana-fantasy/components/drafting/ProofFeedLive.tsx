@@ -16,7 +16,7 @@ import Link from 'next/link';
 interface FeedDraft {
   draftId: string;
   draftNumber: number;
-  level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
+  level: 'Jackpot' | 'Hall of Fame' | 'JackHOF' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
   draw?: {
@@ -36,9 +36,19 @@ interface RoundSummary {
   commitTxHashVrf: string | null;
 }
 
+interface LaneEraSummary {
+  era: number;
+  merkleRoot: string | null;
+  commitTxHash: string | null;
+  rootCommitTxHash: string | null;
+  status: string | null;
+}
+
 interface FeedResponse {
   drafts: FeedDraft[];
   round: RoundSummary | null;
+  /** Rolling era (drafts 201+): each lane's current sealed-era commitment. */
+  lanes?: { jp: LaneEraSummary | null; hof: LaneEraSummary | null } | null;
 }
 
 const BASESCAN_TX = (h: string) => `https://basescan.org/tx/${h.startsWith('0x') ? h : '0x' + h}`;
@@ -46,12 +56,14 @@ const BASESCAN_TX = (h: string) => `https://basescan.org/tx/${h.startsWith('0x')
 const LEVEL_COLORS: Record<string, { color: string; label: string }> = {
   Jackpot: { color: '#ef4444', label: 'JACKPOT' },
   'Hall of Fame': { color: '#D4AF37', label: 'HOF' },
+  JackHOF: { color: '#ef6c37', label: 'JACKHOF' },
   Pro: { color: '#a855f7', label: 'PRO' },
 };
 
 export function ProofFeedLive() {
   const [drafts, setDrafts] = useState<FeedDraft[]>([]);
   const [round, setRound] = useState<RoundSummary | null>(null);
+  const [lanes, setLanes] = useState<FeedResponse['lanes']>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +80,7 @@ export function ProofFeedLive() {
         const body = JSON.parse(raw) as FeedResponse;
         setDrafts(body.drafts);
         setRound(body.round);
+        setLanes(body.lanes ?? null);
         setError(null);
       } catch (err) {
         setError((err as Error).message);
@@ -100,6 +113,43 @@ export function ProofFeedLive() {
     <>
       {error && (
         <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-300 text-sm mb-6">{error}</div>
+      )}
+
+      {(lanes?.jp || lanes?.hof) && (
+        <section className="rounded-2xl border border-banana/30 bg-banana/[0.04] p-5 mb-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-banana animate-pulse" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-banana">
+              Rolling windows sealed · live
+            </h2>
+          </div>
+          <p className="text-xs text-white/60 leading-relaxed">
+            Every future Jackpot and Hall of Fame hit is already locked in by Chainlink VRF —
+            ~150 windows (≈10,000+ drafts) per lane, sealed under one on-chain Merkle root each.
+            The Jackpot window resets the draft after each hit; HOF resets after its 5th. Each
+            completed window publishes its positions with a Merkle proof you can check yourself.
+          </p>
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
+            {(['jp', 'hof'] as const).map((k) => {
+              const l = lanes?.[k];
+              if (!l) return null;
+              return (
+                <React.Fragment key={k}>
+                  <dt className="text-white/50">{k === 'jp' ? 'Jackpot lane root' : 'HOF lane root'}</dt>
+                  <dd className="font-mono break-all">
+                    {l.rootCommitTxHash ? (
+                      <a href={BASESCAN_TX(l.rootCommitTxHash)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                        {l.merkleRoot ?? l.rootCommitTxHash}
+                      </a>
+                    ) : (
+                      <span className="text-white">{l.merkleRoot ?? '(sealing…)'}</span>
+                    )}
+                  </dd>
+                </React.Fragment>
+              );
+            })}
+          </dl>
+        </section>
       )}
 
       {round && (

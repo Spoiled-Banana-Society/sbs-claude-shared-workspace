@@ -15,6 +15,7 @@ import {
 } from '@/lib/batchProof';
 import {
   verifyDraftMerkleProof,
+  verifyLaneCycleProof,
   type DraftType as MerkleDraftType,
 } from '@/lib/batchMerkleClient';
 
@@ -84,6 +85,42 @@ interface DraftMerkleProofPayload {
   rootTxHash: string | null;
 }
 
+interface RollingLaneEraInfo {
+  era: number;
+  merkleRoot: string | null;
+  commitTxHash: string | null;
+  rootCommitTxHash: string | null;
+  saltHash: string | null;
+  serverSalt: string | null;
+  status: string | null;
+  cycleStart: number | null;
+  cycleEnd: number | null;
+}
+
+interface RollingLaneProof {
+  lane: 'jp' | 'hof';
+  cycle: number;
+  era: number;
+  window: [number, number];
+  status: 'revealed' | 'sealed' | 'future';
+  positions: number[] | null;
+  globalDraftIds: number[] | null;
+  leaf: string | null;
+  merkleProof: string[] | null;
+  completedAtDraft: number | null;
+  eraInfo: RollingLaneEraInfo | null;
+}
+
+interface RollingProofPayload {
+  variant: 'rolling-era';
+  draftId: string;
+  draftNumber: number;
+  rollingStart: number;
+  filled: number;
+  draftType: 'jackpot' | 'hof' | 'jackhof' | 'pro' | 'pending';
+  lanes: { jp: RollingLaneProof; hof: RollingLaneProof };
+}
+
 const BASESCAN_TX = (hash: string) =>
   `https://basescan.org/tx/${hash.startsWith('0x') ? hash : '0x' + hash}`;
 const BASESCAN_BLOCK = (block: number) => `https://basescan.org/block/${block}`;
@@ -120,6 +157,13 @@ export default function ProofPage() {
     })();
     return () => { cancelled = true; };
   }, [draftId, draftNumber, router]);
+
+  // Rolling era (drafts >= RollingStartDraft): the per-draft route answers
+  // with variant 'rolling-era' and the page renders lane-window proofs
+  // instead of the legacy batch panel. Checked FIRST so the legacy batch
+  // fetch (which 404s for rolling drafts) never fires for them.
+  const [rolling, setRolling] = useState<RollingProofPayload | null>(null);
+  const [rollingChecked, setRollingChecked] = useState(false);
 
   const [proof, setProof] = useState<BatchProofPayload | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
@@ -160,7 +204,25 @@ export default function ProofPage() {
   }, [proof, draftId]);
 
   useEffect(() => {
-    if (!locator) return;
+    if (!draftId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/merkle-proof`);
+        if (!cancelled && res.ok) {
+          const body = (await res.json()) as { variant?: string };
+          if (body?.variant === 'rolling-era') {
+            setRolling(body as unknown as RollingProofPayload);
+          }
+        }
+      } catch { /* fall through to legacy */ }
+      if (!cancelled) setRollingChecked(true);
+    })();
+    return () => { cancelled = true; };
+  }, [draftId]);
+
+  useEffect(() => {
+    if (!locator || !rollingChecked || rolling) return;
     let cancelled = false;
     (async () => {
       try {
@@ -177,7 +239,7 @@ export default function ProofPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [locator]);
+  }, [locator, rollingChecked, rolling]);
 
   // Recompute slot positions in-browser once randomness is publicly
   // verifiable. Three sources of seed depending on variant:
@@ -233,6 +295,130 @@ export default function ProofPage() {
         <h1 className="text-2xl font-semibold text-white mb-2">Proof unavailable</h1>
         <p className="text-white/60">Could not parse a draft number from <code className="font-mono">{draftId}</code>.</p>
         <Link href="/drafting" className="inline-block mt-6 text-banana hover:underline">← Back to drafts</Link>
+      </div>
+    );
+  }
+
+  if (rolling) {
+    const typeMeta =
+      rolling.draftType === 'jackpot' ? { label: 'JACKPOT', color: '#ef4444' }
+      : rolling.draftType === 'hof' ? { label: 'HOF', color: '#D4AF37' }
+      : rolling.draftType === 'jackhof' ? { label: 'JACKHOF', color: '#ef6c37' }
+      : rolling.draftType === 'pro' ? { label: 'PRO', color: '#a855f7' }
+      : { label: 'NOT FILLED YET', color: '#9aa0ab' };
+    return (
+      <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-3xl mx-auto space-y-6">
+        <div>
+          <Link href="/drafting" className="text-xs text-white/50 hover:text-white/80">← Back</Link>
+          <h1 className="text-2xl font-semibold text-white mt-2">
+            Provably Fair · League #{rolling.draftNumber}
+          </h1>
+          <p className="text-sm text-white/60 mt-1">Independently verifiable.</p>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-full bg-blue-500/[0.08] border border-blue-400/30 text-blue-200 uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> Powered by Chainlink VRF v2.5
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-full bg-banana/[0.08] border border-banana/30 text-banana uppercase tracking-wider">
+              Rolling windows · sealed ~10k drafts ahead
+            </span>
+          </div>
+        </div>
+
+        {/* Overall type panel */}
+        <section className="rounded-xl p-5 border border-white/10 bg-white/[0.03]">
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-1 text-white/60">Draft type</div>
+          <p className="text-[20px] font-bold" style={{ color: typeMeta.color }}>{typeMeta.label}</p>
+          <p className="text-white/60 text-[13px] leading-relaxed mt-1.5">
+            {rolling.draftType === 'pending'
+              ? <>League #{rolling.draftNumber} hasn&apos;t filled yet. Its type is already sealed inside the windows below — the slot machine reveals it the moment the draft fills.</>
+              : <>Assigned by the rolling-window system: the Jackpot lane hides 1 draft per 100-draft window, the HOF lane hides 5 — each window resets the moment it completes, and every position was locked on-chain before any of its drafts filled.</>}
+          </p>
+        </section>
+
+        {(['jp', 'hof'] as const).map((k) => {
+          const l = rolling.lanes[k];
+          const laneName = k === 'jp' ? 'Jackpot lane' : 'HOF lane';
+          const laneColor = k === 'jp' ? '#ef4444' : '#D4AF37';
+          const verified = l.status === 'revealed' && l.positions && l.merkleProof && l.eraInfo?.merkleRoot
+            ? verifyLaneCycleProof({
+                lane: k,
+                cycle: l.cycle,
+                positions: l.positions,
+                proof: l.merkleProof as Array<`0x${string}`>,
+                root: l.eraInfo.merkleRoot as `0x${string}`,
+              })
+            : null;
+          return (
+            <section key={k} className={`rounded-xl p-5 border ${
+              verified === true ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+              : verified === false ? 'border-red-500/40 bg-red-500/[0.06]'
+              : 'border-white/10 bg-white/[0.03]'
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: laneColor }}>
+                    {laneName} · window #{l.cycle} · drafts {l.window[0]}–{l.window[1]}
+                  </div>
+                  <p className="text-white/75 text-[13.5px] leading-relaxed">
+                    {l.status === 'revealed' && verified === true && (
+                      <>Window complete — the hidden position{k === 'hof' ? 's were' : ' was'} published and the Merkle proof below was <span className="text-emerald-300 font-semibold">verified in your browser ✓</span> against the era&apos;s on-chain root. No SBS trust required.</>
+                    )}
+                    {l.status === 'revealed' && verified === false && (
+                      <>The published positions did NOT verify against the on-chain root. Treat as suspicious — please report.</>
+                    )}
+                    {l.status === 'sealed' && (
+                      <>This window is live. Its position{k === 'hof' ? 's are' : ' is'} locked under the era&apos;s on-chain Merkle root but stays hidden until the window completes — then it&apos;s published here with a proof anyone can check.</>
+                    )}
+                    {l.status === 'future' && (
+                      <>This draft sits beyond the current live window. Its window opens after the current one completes; the randomness is already sealed in the same era commitment.</>
+                    )}
+                  </p>
+                </div>
+                {verified === true && (
+                  <div className="shrink-0 w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] mt-3 pt-3 border-t border-white/[0.07]">
+                {l.status === 'revealed' && l.globalDraftIds && (
+                  <Row label={k === 'jp' ? 'Hit draft' : 'Hit drafts'} value={<span className="font-mono text-white">{l.globalDraftIds.map((g) => `#${g}`).join(', ')}</span>} />
+                )}
+                {l.eraInfo?.merkleRoot && (
+                  <Row label={`Era ${l.era} Merkle root`} value={<span className="font-mono text-white break-all">{l.eraInfo.merkleRoot}</span>} />
+                )}
+                {l.eraInfo?.commitTxHash && (
+                  <Row label="Chainlink VRF request tx" value={
+                    <a href={BASESCAN_TX(l.eraInfo.commitTxHash)} target="_blank" rel="noreferrer" className="font-mono text-blue-300 hover:text-blue-200 underline break-all">{l.eraInfo.commitTxHash.slice(0, 22)}…</a>
+                  } />
+                )}
+                {l.eraInfo?.rootCommitTxHash && (
+                  <Row label="Root commit tx" value={
+                    <a href={BASESCAN_TX(l.eraInfo.rootCommitTxHash)} target="_blank" rel="noreferrer" className="font-mono text-blue-300 hover:text-blue-200 underline break-all">{l.eraInfo.rootCommitTxHash.slice(0, 22)}…</a>
+                  } />
+                )}
+                {l.eraInfo?.saltHash && (
+                  <Row label={`Salt hash${l.eraInfo.serverSalt ? '' : ' (sealed)'}`} value={<span className="font-mono text-white/80 break-all">{l.eraInfo.saltHash.slice(0, 22)}…</span>} />
+                )}
+                {l.eraInfo?.serverSalt && (
+                  <Row label="Salt (era revealed)" value={<span className="font-mono text-white/80 break-all">{l.eraInfo.serverSalt.slice(0, 22)}…</span>} />
+                )}
+                {l.eraInfo?.cycleStart !== null && l.eraInfo?.cycleEnd !== null && l.eraInfo && (
+                  <Row label="Era covers" value={<span className="text-white/80">windows #{l.eraInfo.cycleStart}–#{l.eraInfo.cycleEnd} (~10k+ drafts, one ceremony)</span>} />
+                )}
+              </div>
+            </section>
+          );
+        })}
+
+        <p className="text-[11px] text-white/40 leading-relaxed">
+          How it works: each lane&apos;s next 150 windows were derived from one Chainlink VRF ceremony and
+          committed under a single on-chain Merkle root before any of those drafts existed. A window
+          completing publishes its positions + proof instantly; the era&apos;s secret salt is revealed
+          on-chain when its last window completes, letting anyone re-derive everything.
+        </p>
       </div>
     );
   }
