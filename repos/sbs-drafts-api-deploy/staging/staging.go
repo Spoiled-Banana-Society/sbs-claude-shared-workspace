@@ -36,6 +36,7 @@ func (sr *StagingResources) Routes() chi.Router {
 	r.Post("/swap-special-draft-member", sr.SwapSpecialDraftMember)
 	r.Post("/merkle-open-next-round", sr.MerkleOpenNextRound)
 	r.Post("/merkle-reset", sr.MerkleReset)
+	r.Post("/init-lanes", sr.InitLanes)
 	return r
 }
 
@@ -141,6 +142,9 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	level := "Jackpot"
 	if req.Type == "hof" {
 		level = "Hall of Fame"
+	} else if req.Type == "jackhof" {
+		// Wheel dual-type segment (0.1%) — both perks, one draft (v2 spec §5).
+		level = "JackHOF"
 	}
 
 	// Resolve the draftId IDEMPOTENTLY from the dedicated SpecialDraftCount
@@ -273,6 +277,12 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 	var req struct {
 		DraftId string `json:"draftId"`
 		Wallet  string `json:"wallet"`
+		// TokenId (optional): the winner's wheel-pass NFT id from the queue
+		// member. When present, the seat's card is bound to the NFT at creation
+		// (RealTokenId) and the pass's "available" doc is consumed — making the
+		// wheel team-link atomic instead of relying on the link cron backstop
+		// (ride-along, wheel_team_link note 7/19).
+		TokenId string `json:"tokenId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -371,6 +381,14 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 	token.DraftType = "slow"
 	token.LeagueDisplayName = league.DisplayName
 	token.Level = league.Level
+	if req.TokenId != "" {
+		// Bind the winner's wheel-pass NFT to this seat at creation. Lands on
+		// the card doc, the used-token doc AND metadata via the update below —
+		// which also makes /owner/{w}/draftToken/all serialize realTokenId
+		// (ride-along #1: the field was only ever missing because used docs
+		// never carried it).
+		token.RealTokenId = req.TokenId
+	}
 
 	// Save token
 	err = token.UpdateInUseDraftTokenInDatabase(league.LeagueId)
@@ -381,6 +399,12 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 
 	// Remove from available pool
 	utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", wallet)).Doc(token.CardId).Delete(context.Background())
+	if req.TokenId != "" && req.TokenId != token.CardId {
+		// Consume the wheel-pass NFT's own "available pass" doc so it can never
+		// be spent again or classify as an undrafted free pass (the FC-ticket
+		// root cause). Best-effort — the link cron remains the backstop.
+		utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", wallet)).Doc(req.TokenId).Delete(context.Background())
+	}
 
 	// Update RTDB with current player count
 	ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", league.LeagueId))
@@ -433,7 +457,7 @@ func (sr *StagingResources) SwapSpecialDraftMember(w http.ResponseWriter, r *htt
 		http.Error(w, fmt.Sprintf("League %s not found: %s", req.DraftId, err.Error()), http.StatusNotFound)
 		return
 	}
-	if league.Level != "Jackpot" && league.Level != "Hall of Fame" {
+	if league.Level != "Jackpot" && league.Level != "Hall of Fame" && league.Level != "JackHOF" {
 		http.Error(w, "Not a special draft league", http.StatusBadRequest)
 		return
 	}
@@ -1228,6 +1252,32 @@ func (sr *StagingResources) ClearAllTokenLeagues(w http.ResponseWriter, r *http.
 	})
 }
 
+
+// InitLanes is the rolling-window pre-commit trigger (v2 spec §4): creates
+// both lanes' FIRST cycles — salt commit + VRF request on-chain, positions
+// derived and stored hidden — so the windows are fully committed BEFORE the
+// cutover draft fills. Idempotent: repeat calls no-op once cycles exist.
+// The arm draft defaults to 201 (LANES_ARM_DRAFT env overrides).
+func (sr *StagingResources) InitLanes(w http.ResponseWriter, r *http.Request) {
+	mgr := batchproof.Default()
+	if mgr == nil {
+		http.Error(w, "batchproof manager not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	armDraft := batchproof.LanesArmDraft()
+	if err := mgr.InitLanes(ctx, armDraft); err != nil {
+		http.Error(w, fmt.Sprintf("InitLanes: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":       true,
+		"armDraft": armDraft,
+		"note":     "both lanes committed+derived for window starting at armDraft; positions hidden until reveal",
+	})
+}
 
 // MerkleOpenNextRound is a staging-only admin trigger that drives the
 // next vrf-commit-merkle round through open → fulfilled → merkleCommitted.

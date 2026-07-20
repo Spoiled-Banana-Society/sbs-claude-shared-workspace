@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -439,6 +440,55 @@ func (rs *RosterState) Update(draftId string) error {
 	return nil
 }
 
+// makeLeagueLevel stamps every card in the draft with an arbitrary Level —
+// the generalized form of MakeLeagueJackpot/HOF, added for the JackHOF
+// dual-type (rolling-lane era). Same best-effort/deferred semantics.
+func makeLeagueLevel(draftId string, level string) error {
+	cards, err := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/cards", draftId)).Documents(context.Background()).GetAll()
+	if err != nil {
+		fmt.Println("Error in reading all of the draft tokens in this league: ", err)
+		return err
+	}
+	for i := 0; i < len(cards); i++ {
+		snap := cards[i]
+		var token DraftToken
+		err = snap.DataTo(&token)
+		if err != nil {
+			fmt.Println("Error reading data into draft Token object: ", err)
+			return err
+		}
+		token.Level = level
+		err = token.updateInUseDraftTokenInDatabase(draftId)
+		if err != nil {
+			fmt.Printf("error updating token to level %s: %v\n", level, err)
+			return err
+		}
+	}
+	return nil
+}
+
+// unionSortedIds merges two id lists into a sorted, de-duplicated slice.
+// Used by the rolling-lane era to APPEND cycle globals to the tracker's
+// historical arrays without ever dropping pre-cutover history.
+func unionSortedIds(a, b []int) []int {
+	seen := make(map[int]bool, len(a)+len(b))
+	out := make([]int, 0, len(a)+len(b))
+	for _, id := range a {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range b {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
 func MakeLeagueHOF(draftId string, league *League) error {
 	cards, err := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/cards", draftId)).Documents(context.Background()).GetAll()
 	if err != nil {
@@ -510,7 +560,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// they were won with. This keeps the guaranteed 1 JP + 5 HOF per 100 a pure
 	// paid-draft pool, which is the only way to honor it under VRF (batch
 	// positions are committed before fills, so a special can't be slotted as Pro).
-	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame"
+	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" || leagueInfo.Level == "JackHOF"
 	specialLevel := leagueInfo.Level
 
 	// PHASE 1: atomic increment of the global tracker.
@@ -575,10 +625,30 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	batchNumber := (postIncrement-1)/batchproof.BatchSize + 1
 	positionInBatch := (postIncrement - 1) % batchproof.BatchSize
 
+	// ROLLING-LANE ERA SWITCH (spec: rolling_windows_jackhof v2). Active when
+	// the tracker carries RollingStartDraft and this draft is at/past it. In
+	// that era the fixed per-100 batch is replaced by two independent lane
+	// cycles (jp / hof); their CURRENT-cycle globals get UNIONED into the
+	// tracker id arrays (never replacing history). Deleting the tracker field
+	// (or LANES_DISABLED=1) drops us straight back to the legacy path below.
+	rollingActive := counts.RollingStartDraft > 0 &&
+		postIncrement >= counts.RollingStartDraft &&
+		!batchproof.LanesDisabled()
+
 	var batchJpGlobals, batchHofGlobals []int
 	if mgr := batchproof.Default(); mgr != nil && !isSpecialDraft {
 		if disabled, msg := mgr.Disabled(); disabled {
 			fmt.Printf("[batchproof] disabled, skipping batch %d derivation: %s\n", batchNumber, msg)
+		} else if rollingActive {
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			jpCycle, hofCycle, lnErr := mgr.EnsureLaneCyclesFor(ctx, postIncrement)
+			cancel()
+			if lnErr != nil {
+				fmt.Printf("[lanes] EnsureLaneCyclesFor draft %d failed: %v — falling back to tracker lists\n", postIncrement, lnErr)
+			} else {
+				batchJpGlobals = unionSortedIds(counts.JackpotLeagueIds, jpCycle)
+				batchHofGlobals = unionSortedIds(counts.HofLeagueIds, hofCycle)
+			}
 		} else {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			jp, hof, bpErr := mgr.EnsureBatchCommitted(ctx, batchNumber)
@@ -634,14 +704,19 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		tierName := "Jackpot"
 		if specialLevel == "Hall of Fame" {
 			tierName = "HOF"
+		} else if specialLevel == "JackHOF" {
+			// Wheel-won dual-type pass (0.1% segment) — both perks, one draft.
+			tierName = "JackHOF"
 		}
 		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from Wheel)", tierName, counts.SpecialDraftCount)
 		leagueInfo.Level = specialLevel
-		isJackpot = specialLevel == "Jackpot"
-		isHOF = specialLevel == "Hall of Fame"
+		isJackpot = specialLevel == "Jackpot" || specialLevel == "JackHOF"
+		isHOF = specialLevel == "Hall of Fame" || specialLevel == "JackHOF"
 	} else {
 		leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
-		// Slot reveal — the guaranteed 1 JP / 5 HOF ride these committed positions.
+		// Slot reveal — the guaranteed specials ride these committed positions.
+		// Membership is independent per array; the SAME id in BOTH arrays is a
+		// JackHOF (rolling era only — legacy batches can't produce one).
 		for i := 0; i < len(counts.HofLeagueIds); i++ {
 			if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
 				leagueInfo.Level = "Hall of Fame"
@@ -653,8 +728,19 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 			if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
 				leagueInfo.Level = "Jackpot"
 				isJackpot = true
-				isHOF = false
 				break
+			}
+		}
+		if isJackpot && isHOF {
+			// Canonical dual-type NFT/league level per the v2 spec.
+			leagueInfo.Level = "JackHOF"
+		}
+		// Rolling era: a hit may have completed a lane's cycle — reveal the
+		// cycle's salt on-chain and open the next cycle (background; never
+		// blocks the fill path).
+		if rollingActive && (isJackpot || isHOF) {
+			if mgr := batchproof.Default(); mgr != nil {
+				mgr.LaneAfterAssignment(counts.FilledLeaguesCount, isJackpot, isHOF)
 			}
 		}
 	}
@@ -810,7 +896,11 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// Pro/HOF/Jackpot the instant the slot reveal lands — no per-device owner
 	// lookup, no desync. Derived from the same isJackpot/isHOF decision above
 	// (which already folds in wheel-won special drafts via specialLevel).
-	if isJackpot {
+	if isJackpot && isHOF {
+		// Canonical RTDB string for a dual-type draft (frontend also tolerates
+		// variants, but 'jackhof' is the contract — v2 spec §3).
+		firstPickInfo.Type = "jackhof"
+	} else if isJackpot {
 		firstPickInfo.Type = "Jackpot"
 	} else if isHOF {
 		firstPickInfo.Type = "Hall of Fame"
@@ -915,7 +1005,11 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// way; the per-card Level field is purely a cosmetic hint for the
 	// draft-card UI. If this errors, log and move on — a sweeper can
 	// reconcile later and the draft will still draft normally.
-	if isJackpot {
+	if isJackpot && isHOF {
+		if mlErr := makeLeagueLevel(draftId, "JackHOF"); mlErr != nil {
+			fmt.Printf("[deferred] MakeLeagueJackHOF for draft %s failed (non-fatal — RTDB already up): %v\n", draftId, mlErr)
+		}
+	} else if isJackpot {
 		if mlErr := MakeLeagueJackpot(draftId, &leagueInfo); mlErr != nil {
 			fmt.Printf("[deferred] MakeLeagueJackpot for draft %s failed (non-fatal — RTDB already up): %v\n", draftId, mlErr)
 		}

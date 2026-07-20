@@ -41,7 +41,7 @@ func normalizePassType(pt string) string {
 // pass). Empty / "Pro" = an ordinary pass and stays eligible.
 func isSpecialWheelPass(level string) bool {
 	switch strings.TrimSpace(level) {
-	case "Hall of Fame", "Jackpot":
+	case "Hall of Fame", "Jackpot", "JackHOF":
 		return true
 	default:
 		return false
@@ -148,7 +148,7 @@ func selectLowestPartialLeague(startFrom int, maxLookback int, ownerId string, r
 		// Wheel-won specials (Jackpot/HOF) are enterable ONLY by winning them on
 		// the wheel — never hand a regular join an open seat in one (Richard,
 		// 2026-06-18).
-		if l.Level == "Jackpot" || l.Level == "Hall of Fame" {
+		if l.Level == "Jackpot" || l.Level == "Hall of Fame" || l.Level == "JackHOF" {
 			continue
 		}
 		if l.NumPlayers <= 0 || l.NumPlayers >= 10 {
@@ -202,6 +202,14 @@ type DraftLeagueTracker struct {
 	FilledLeaguesCount    int   `json:"filledLeaguesCount" firestore:"FilledLeaguesCount"`
 	HofLeagueIds          []int `json:"hofLeagueIds" firestore:"HofLeagueIds"`
 	JackpotLeagueIds      []int `json:"jackpotLeagueIds" firestore:"JackpotLeagueIds"`
+	// RollingStartDraft is THE master switch for the rolling-lane era (spec:
+	// NOTES_FOR_BORIS_2026-07-19_rolling_windows_jackhof.md). 0/absent = legacy
+	// fixed batches everywhere. Set to the cutover draft (201): from that draft
+	// on, the Go fill path assigns types from the per-lane cycles and Richard's
+	// deployed-dormant frontend activates automatically once FilledLeaguesCount
+	// >= RollingStartDraft-1. Rollback = delete the field (frontend reverts
+	// instantly; Go falls back to the legacy batch path on next fill).
+	RollingStartDraft     int   `json:"rollingStartDraft,omitempty" firestore:"RollingStartDraft,omitempty"`
 	// SpecialDraftCount is the OWN sequence for wheel-won Jackpot/HOF drafts.
 	// They run outside the per-100 batch entirely (never touch FilledLeaguesCount
 	// or the VRF JP/HOF position lists), so the guaranteed 1+5 per 100 stays a
@@ -487,7 +495,7 @@ func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firest
 
 		// Belt-and-suspenders: a regular join must never land in a wheel-won
 		// special (JP/HOF) — and neither may a house bot (Richard, 2026-06-18).
-		if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+		if league.Level == "Jackpot" || league.Level == "Hall of Fame" || league.Level == "JackHOF" {
 			return errLeagueSpecial
 		}
 		if league.NumPlayers == 10 {
@@ -670,7 +678,7 @@ func RemoveUserFromDraftWithRTBUpdate(tokenId, ownerId, draftId string, withRTBU
 		// which transfers the seat via the swap endpoint — never via leave.
 		// Normal drafts only receive a Level at fill (10/10), where the check
 		// above already blocks leaving, so this only ever matches special drafts.
-		if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+		if league.Level == "Jackpot" || league.Level == "Hall of Fame" || league.Level == "JackHOF" {
 			return fmt.Errorf("seats in a special %s draft are locked — sell the pass on the marketplace instead", league.Level)
 		}
 

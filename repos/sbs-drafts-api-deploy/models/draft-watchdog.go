@@ -52,12 +52,10 @@ const (
 	watchdogRecentWindow = 30
 )
 
-// Drafts the watchdog must never touch, even when stuck.
-var watchdogExcludedDrafts = map[string]string{
-	// BBB #162 froze 2026-07-15 (Firestore DeadlineExceeded mid-pick-145).
-	// Richard is entering the final 5 picks manually — do not resume it.
-	"2026-fast-draft-156": "BBB #162 — manual pick entry pending, watchdog must not touch",
-}
+// Drafts the watchdog must never touch, even when stuck. Empty since
+// 2026-07-20: the BBB #162 (fast-156) entry was removed once that draft was
+// hand-closed + healed (Richard's 7/19 note — "delete the inert exclusion").
+var watchdogExcludedDrafts = map[string]string{}
 
 type WatchdogDraftReport struct {
 	DraftId    string `json:"draftId"`
