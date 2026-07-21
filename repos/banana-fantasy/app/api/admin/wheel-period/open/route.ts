@@ -12,6 +12,7 @@ import {
   generatePeriodSalt,
   saltHashOf,
   recordPeriodRequested,
+  segmentsForNewPeriod,
 } from '@/lib/wheelPeriod';
 import {
   getWheelProofContractAddress,
@@ -76,6 +77,10 @@ export async function POST(req: Request) {
       saltHash,
       vrfRequestId,
       commitTxHash: txHash,
+      // Stamp the current config generation — without this the doc defaults
+      // to the CLASSIC set and an admin-opened period would silently drop
+      // the JackHOF wedge in the rolling era.
+      segments: await segmentsForNewPeriod(),
     });
 
     await logAdminAction({

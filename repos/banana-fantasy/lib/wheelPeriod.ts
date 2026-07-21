@@ -17,7 +17,7 @@ import { keccak256, type Hex } from 'viem';
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
+import { wheelSegments, jackhofWheelSegments, JACKHOF_WHEEL_FROM_FILLED, type WheelSegment } from '@/lib/wheelConfig';
 import { buildMerkleTree, deriveSpinOutcome, getMerkleProof, leafHash, type MerkleTree } from '@/lib/wheelMerkle';
 
 // One period is sized to cover the WHOLE contest (Boris 2026-06-12: the wheel
@@ -92,6 +92,38 @@ export async function getCurrentPeriodNumber(): Promise<number | null> {
   if (!snap.exists) return null;
   const data = snap.data() as WheelPeriodStateDoc | undefined;
   return data?.currentPeriodNumber ?? null;
+}
+
+/**
+ * The wedge set for a NEWLY-opened period, chosen at open time from the live
+ * draft counter: once the rolling era is reached (draft 200 filled), every
+ * new period carries the JackHOF wedge. Existing periods are never touched —
+ * their outcomes stay locked to the snapshot committed at their open. Shared
+ * by the keeper's auto-roll AND the admin open route so neither can stamp a
+ * stale generation.
+ */
+export async function segmentsForNewPeriod(): Promise<WheelSegment[]> {
+  const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
+  const filled = Number((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
+  return filled >= JACKHOF_WHEEL_FROM_FILLED ? jackhofWheelSegments : wheelSegments;
+}
+
+/**
+ * One-shot force-rotate flag (system_config/wheelPeriodState.forceRotate).
+ * Set it (via admin script) to make the keeper's next tick roll to a fresh
+ * period even though the current one isn't full — used to move a live period
+ * onto a new wedge-set generation (e.g. a wedge reorder). The keeper clears
+ * the flag the moment it successfully opens the replacement period.
+ */
+export async function getWheelForceRotate(): Promise<boolean> {
+  const db = getAdminFirestore();
+  const snap = await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).get();
+  return snap.exists && (snap.data() as { forceRotate?: boolean } | undefined)?.forceRotate === true;
+}
+
+export async function clearWheelForceRotate(): Promise<void> {
+  const db = getAdminFirestore();
+  await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).set({ forceRotate: FieldValue.delete() }, { merge: true });
 }
 
 export async function getPeriod(periodNumber: number): Promise<WheelPeriodDoc | null> {
