@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -45,6 +47,7 @@ func NewDatabaseClient(isRunningLocal bool) {
 		fmt.Println(err)
 		panic(err)
 	}
+	savedCreds = creds
 	conf := option.WithCredentialsJSON(creds)
 	app, err := firebase.NewApp(ctx, nil, conf)
 	if err != nil {
@@ -157,6 +160,81 @@ const (
 	dbMaxAttempts    = 3
 )
 
+// Patient profile for writes that are NOT under a pick clock (pass
+// registration, join bookkeeping, admin paths). THE WEDGE FIX (2026-07-21,
+// tokens 2739/2774 + fast-draft-196 half-join): one bad gRPC channel made a
+// single endpoint's writes fail DeadlineExceeded for ~40 min while all other
+// traffic was healthy. The fast profile's 3×2s gave up in ~6s; these paths
+// would rather succeed in a minute than strand an on-chain pass. Backoff
+// doubles from 500ms; worst case spans ~57s — the observed short-blip length.
+const (
+	dbPatientAttemptTimeout = 10 * time.Second
+	dbPatientMaxAttempts    = 5
+	dbPatientBaseBackoff    = 500 * time.Millisecond
+)
+
+// Channel self-heal (2026-07-21, same incident): the wedge lives in the
+// Firestore client's gRPC channel and outlives any request, so after
+// recycleAfterNFails consecutive transient failures we rebuild the client.
+// Cooldown-guarded so a genuine Firestore-wide brownout can't churn clients;
+// the old client is closed on a delay so in-flight ops finish on it.
+const (
+	recycleAfterNFails = 5
+	recycleCooldown    = time.Minute
+	oldClientLinger    = 90 * time.Second
+)
+
+var (
+	savedCreds       []byte // stashed by NewDatabaseClient for recycling
+	consecutiveFails atomic.Int32
+	recycleMu        sync.Mutex
+	lastRecycle      time.Time
+)
+
+// noteDbResult feeds the self-heal counter: any success resets it, any
+// transient failure bumps it, and crossing the threshold recycles the client
+// in the background (never blocking the caller's request).
+func noteDbResult(err error) {
+	if err == nil || !IsTransientDbErr(err) {
+		consecutiveFails.Store(0)
+		return
+	}
+	if consecutiveFails.Add(1) >= recycleAfterNFails {
+		go recycleFirestoreClient()
+	}
+}
+
+// recycleFirestoreClient swaps in a fresh Firestore client over a new gRPC
+// channel. Failure to build the replacement is logged and the old client kept
+// — worse than healing, better than crashing.
+func recycleFirestoreClient() {
+	recycleMu.Lock()
+	defer recycleMu.Unlock()
+	if time.Since(lastRecycle) < recycleCooldown || savedCreds == nil || Db == nil {
+		return
+	}
+	ctx := context.Background()
+	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON(savedCreds))
+	if err != nil {
+		fmt.Printf(`{"severity":"ERROR","event":"firestore_client_recycle_failed","stage":"app","error":%q}`+"\n", err.Error())
+		return
+	}
+	newClient, err := app.Firestore(ctx)
+	if err != nil {
+		fmt.Printf(`{"severity":"ERROR","event":"firestore_client_recycle_failed","stage":"client","error":%q}`+"\n", err.Error())
+		return
+	}
+	old := Db.Client
+	Db.Client = newClient
+	lastRecycle = time.Now()
+	consecutiveFails.Store(0)
+	fmt.Printf(`{"severity":"WARNING","event":"firestore_client_recycled","afterConsecutiveFails":%d}`+"\n", recycleAfterNFails)
+	go func(c *firestore.Client) {
+		time.Sleep(oldClientLinger)
+		_ = c.Close()
+	}(old)
+}
+
 // IsTransientDbErr: failures worth retrying (momentary stall / backend blip).
 // Validation-class errors (NotFound, InvalidArgument, PermissionDenied,
 // AlreadyExists…) are NOT retried — they'd fail identically every time.
@@ -206,15 +284,30 @@ func logDbOp(op, collection, documentId string, attempt int, start time.Time, op
 // the identical op on transient failure. Every attempt is logged with its
 // attempt number, duration and payload size.
 func withRetry(op, collection, documentId string, v any, fn func(ctx context.Context) error) error {
+	return withRetryProfile(op, collection, documentId, v, fn, dbAttemptTimeout, dbMaxAttempts, 0)
+}
+
+// withRetryPatient: same op semantics as withRetry but on the patient profile
+// (longer per-attempt deadline, more attempts, doubling backoff between them).
+// For writes with no clock pressure where giving up strands real state.
+func withRetryPatient(op, collection, documentId string, v any, fn func(ctx context.Context) error) error {
+	return withRetryProfile(op, collection, documentId, v, fn, dbPatientAttemptTimeout, dbPatientMaxAttempts, dbPatientBaseBackoff)
+}
+
+func withRetryProfile(op, collection, documentId string, v any, fn func(ctx context.Context) error, attemptTimeout time.Duration, maxAttempts int, baseBackoff time.Duration) error {
 	var err error
-	for attempt := 1; attempt <= dbMaxAttempts; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), dbAttemptTimeout)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
 		start := time.Now()
 		err = fn(ctx)
 		cancel()
 		logDbOp(op, collection, documentId, attempt, start, err, v)
+		noteDbResult(err)
 		if err == nil || !IsTransientDbErr(err) {
 			return err
+		}
+		if baseBackoff > 0 && attempt < maxAttempts {
+			time.Sleep(baseBackoff << (attempt - 1))
 		}
 	}
 	return err
@@ -249,6 +342,19 @@ func (db *DatabaseConn) CreateEmptyCollection(collection string, docName string)
 
 func (db *DatabaseConn) CreateOrUpdateDocument(collection string, documentId string, v any) error {
 	err := withRetry("write", collection, documentId, v, func(ctx context.Context) error {
+		_, e := db.Client.Collection(collection).Doc(documentId).Set(ctx, v)
+		return e
+	})
+	if err != nil {
+		return fmt.Errorf("error in Updating/Creating document at %s/%s: %w", collection, documentId, err)
+	}
+	return nil
+}
+
+// CreateOrUpdateDocumentPatient is CreateOrUpdateDocument on the patient
+// retry profile — see the dbPatient* constants for when to use which.
+func (db *DatabaseConn) CreateOrUpdateDocumentPatient(collection string, documentId string, v any) error {
+	err := withRetryPatient("write", collection, documentId, v, func(ctx context.Context) error {
 		_, e := db.Client.Collection(collection).Doc(documentId).Set(ctx, v)
 		return e
 	})

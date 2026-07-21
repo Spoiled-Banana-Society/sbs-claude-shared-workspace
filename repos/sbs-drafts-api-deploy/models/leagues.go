@@ -436,7 +436,7 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(l.LeagueId)
 		fmt.Println(leagueRef)
-		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token)
+		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType)
 		if err != nil {
 			// Same walk-forward behavior as always: a special, full, or
 			// already-joined league advances to the next league number.
@@ -478,7 +478,16 @@ var (
 // fail together — extracted verbatim from AddCardToLeague (2026-07-12) so the
 // house-bot pinned join runs EXACTLY the code every real join runs. Returns
 // the post-join league on success.
-func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken) (League, error) {
+//
+// 2026-07-21 (fast-draft-196 split-brain): the league-bind copies
+// (draftTokens / usedDraftTokens / drafts/{L}/cards / metadata) now commit in
+// this SAME transaction instead of as follow-up writes. A wedged channel used
+// to be able to land the seat and then lose the bind — "No bot joined" banner
+// vs a seated lobby. Now the entire join is one commit: it all lands, or none
+// of it does and the pass is still spendable. draftType is stamped on the
+// bound copies; the closure only mutates its own copy of token, so Firestore's
+// internal retries re-derive everything from a fresh read.
+func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken, draftType string) (League, error) {
 	var l League
 	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(leagueRef) // tx.Get, NOT ref.Get!
@@ -530,6 +539,24 @@ func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firest
 		if err := tx.Set(leagueRef, &league); err != nil {
 			return err
 		}
+
+		// League-bind copies, same commit as the seat (see doc comment).
+		bound := *token
+		bound.LeagueId = league.LeagueId
+		bound.DraftType = draftType
+		bound.LeagueDisplayName = league.DisplayName
+		if err := tx.Set(utils.Db.Client.Collection(utils.GetDraftTokenCollectionName()).Doc(bound.CardId), &bound); err != nil {
+			return err
+		}
+		if err := tx.Set(utils.Db.Client.Collection(fmt.Sprintf("owners/%s/usedDraftTokens", bound.OwnerId)).Doc(bound.CardId), &bound); err != nil {
+			return err
+		}
+		if err := tx.Set(utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/cards", league.LeagueId)).Doc(bound.CardId), &bound); err != nil {
+			return err
+		}
+		if err := tx.Set(utils.Db.Client.Collection(utils.GetDraftTokenMetadataCollectionName()).Doc(bound.CardId), bound.ConvertToMetadata()); err != nil {
+			return err
+		}
 		return tx.Delete(validTokenRef)
 	})
 	return l, err
@@ -558,14 +585,10 @@ func finalizeSeatedJoin(token *DraftToken, l League, draftId string, draftType s
 		}
 	}
 
-	// The pass was already removed from validDraftTokens INSIDE the seat
-	// transaction above (atomic with the seat — see the tx.Delete). Here we
-	// only write the denormalized "in use" copies (usedDraftTokens / cards /
-	// metadata). If this best-effort write fails, the pass is still correctly
-	// consumed + seated, so it can never be re-used; the copies reconcile.
-	if err := token.updateInUseDraftTokenInDatabase(draftId); err != nil {
-		return err
-	}
+	// The pass claim AND all in-use copies (draftTokens / usedDraftTokens /
+	// cards / metadata) committed INSIDE the seat transaction (2026-07-21) —
+	// nothing left to write here, so a wedged channel can no longer produce a
+	// seated-but-unbound token (fast-draft-196 split-brain).
 
 	if l.NumPlayers == 10 {
 		// Write numPlayers:10 to RTDB BEFORE CreateLeagueDraftStateUponFilling
@@ -643,7 +666,7 @@ func AddCardToSpecificLeague(token *DraftToken, leagueId string) (*League, error
 	leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
 	validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId)
 
-	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token)
+	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType)
 	if err != nil {
 		return nil, err
 	}
