@@ -447,7 +447,7 @@ export default function BananaWheelPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-4">
         <div className="text-center mb-6" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>
           <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
-          <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot/HOF Entries</p>
+          <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
           <div className="flex flex-col gap-4 order-3 lg:order-1">
@@ -483,7 +483,7 @@ export default function BananaWheelPage() {
             </svg>
           </button>
         </div>
-        <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot/HOF Entries</p>
+        <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries</p>
       </div>
 
       {/*
@@ -544,9 +544,18 @@ export default function BananaWheelPage() {
                 </p>
               </div>
               <div>
+                <span className="font-bold text-[15px]"><span className="text-[#ff6b6b]">Jack</span><span className="text-[#ffd60a]">HOF</span></span>
+                <p className="text-white mt-1.5 leading-relaxed">
+                  The 0.1% wedge — the rarest prize on the wheel. Land it and you&apos;re placed into a JackHOF draft lobby with BOTH perks: win that league and you skip straight to the finals AND compete for HOF bonus prizes.
+                </p>
+                <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
+                </p>
+              </div>
+              <div>
                 <span className="text-[#32d74b] font-bold text-[15px]">Free Drafts</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot/HOF drafts won on the Wheel.
+                  Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot, HOF, and JackHOF drafts won on the Wheel.
                 </p>
               </div>
             </div>
@@ -607,15 +616,13 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.hofEntries || 0) + queuedHOF} left</span>
                 </span>
               </div>
-              {(wonTotals.jackhof > 0 || (user?.jackhofEntries || 0) + queuedJackHOF > 0) && (
-                <div className="flex justify-between items-baseline">
-                  <span className="text-white text-[14px] font-medium">JackHOF</span>
-                  <span className="flex items-baseline gap-2">
-                    <span className="text-[#ef6c37] font-semibold text-[16px] tabular-nums">{wonTotals.jackhof}</span>
-                    <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackhofEntries || 0) + queuedJackHOF} left</span>
-                  </span>
-                </div>
-              )}
+              <div className="flex justify-between items-baseline">
+                <span className="text-white text-[14px] font-medium">JackHOF</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#ef6c37] font-semibold text-[16px] tabular-nums">{wonTotals.jackhof}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackhofEntries || 0) + queuedJackHOF} left</span>
+                </span>
+              </div>
             </div>
 
             {/* Hairline section divider — 1px @ 6% white, Apple-style */}
