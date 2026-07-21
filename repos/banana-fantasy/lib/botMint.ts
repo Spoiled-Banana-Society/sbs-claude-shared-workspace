@@ -43,11 +43,21 @@ export async function mintBotPass(
   const { txHash, tokenIds } = await reserveTokensToWallet({ to: addr, count: 1 });
   const idStrs = tokenIds.map((t) => String(t));
 
+  // Go's Firestore write path has shown transient per-instance DeadlineExceeded
+  // wedges lasting seconds-to-minutes (2026-07-21, twice). Retry registration
+  // over ~1 min before recording an orphan — the breaker stays as last resort,
+  // and the routes have maxDuration 300 so the budget is safe.
+  const RETRY_DELAYS_MS = [0, 5_000, 10_000, 20_000, 30_000];
   let registered = 0;
-  try {
-    registered = await registerMintedTokens(addr, tokenIds, 'free');
-  } catch (e) {
-    logger.warn('bots.mint.register_threw', { address: addr, err: (e as Error).message });
+  for (const delay of RETRY_DELAYS_MS) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      registered = await registerMintedTokens(addr, tokenIds, 'free');
+    } catch (e) {
+      logger.warn('bots.mint.register_threw', { address: addr, err: (e as Error).message });
+    }
+    if (registered >= idStrs.length) break;
+    logger.warn('bots.mint.register_retrying', { address: addr, tokens: idStrs, nextDelayMs: delay });
   }
   const allRegistered = registered >= idStrs.length;
 

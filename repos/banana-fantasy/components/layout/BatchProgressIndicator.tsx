@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
-import { lanePosition, laneDraftsLeft, lanePct, WINDOW_SIZE, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
+import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -168,14 +168,22 @@ export function BatchProgressIndicator() {
   // while a lane's hit is pending its slot landing, we show the lane's `pre`
   // snapshot (the old window), so the counter can't spoil the slot machine;
   // the useRevealGated timers re-render at the exact landing moment.
+  //
+  // Pill number = COUNTDOWN (Richard 2026-07-21): "specials remaining / drafts
+  // left in the window" — HOF starts 5/100, a hit makes it 4/…, every draft
+  // shrinks the denominator, a lane reset snaps it back to full. Both numbers
+  // come off the reveal-gated snapshot (same rFilled the % uses), so the
+  // fraction and the % always agree and neither can spoil a slot reveal.
   if (data.lanes) {
     const lanes = data.lanes;
     const jpView: LaneSnapshot = gated.jpPending && lanes.jp.pre ? lanes.jp.pre : lanes.jp;
     const hofView: LaneSnapshot = gated.hofPending && lanes.hof.pre ? lanes.hof.pre : lanes.hof;
     const jpPos = lanePosition(filledLeaguesCount, jpView.windowStart);
     const hofPos = lanePosition(filledLeaguesCount, hofView.windowStart);
-    const jpLanePct = lanePct(jpView.remaining, laneDraftsLeft(rFilled, jpView.windowStart));
-    const hofLanePct = lanePct(hofView.remaining, laneDraftsLeft(rFilled, hofView.windowStart));
+    const jpLeft = laneDraftsLeft(rFilled, jpView.windowStart);
+    const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
+    const jpLanePct = lanePct(jpView.remaining, jpLeft);
+    const hofLanePct = lanePct(hofView.remaining, hofLeft);
 
     const pills = [
       {
@@ -188,6 +196,8 @@ export function BatchProgressIndicator() {
         frameCls: 'border-red-500/40 bg-red-500/[0.06]',
         barBg: 'linear-gradient(90deg,#b91c1c,#ef4444)',
         pos: jpPos,
+        remaining: jpView.remaining,
+        left: jpLeft,
         pct: jpLanePct,
         heat: heatFor(jpLanePct),
         hit: gated.recentJpHit,
@@ -203,6 +213,8 @@ export function BatchProgressIndicator() {
         frameCls: 'border-[#D4AF37]/40 bg-[#D4AF37]/[0.06]',
         barBg: 'linear-gradient(90deg,#8a6d1f,#D4AF37)',
         pos: hofPos,
+        remaining: hofView.remaining,
+        left: hofLeft,
         pct: hofLanePct,
         heat: heatFor(hofLanePct),
         hit: gated.recentHofHit,
@@ -222,11 +234,11 @@ export function BatchProgressIndicator() {
             {/* Jackpot lane */}
             <div className="mb-2.5">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11.5px] font-bold text-red-400">JACKPOT · {jpPos}/{WINDOW_SIZE}</span>
+                <span className="text-[11.5px] font-bold text-red-400">JACKPOT · {jpView.remaining}/{jpLeft}</span>
                 {jpLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jpLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                Guaranteed within the next {WINDOW_SIZE - jpPos} drafts — the window resets every time it hits.
+                {jpView.remaining} Jackpot somewhere in the next {jpLeft} drafts — guaranteed. Resets every time it hits.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${jpPos}%`, background: pills[0].barBg }} />
@@ -236,11 +248,11 @@ export function BatchProgressIndicator() {
             {/* HOF lane */}
             <div className="mb-2.5">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11.5px] font-bold text-[#e6c35c]">HOF · {hofPos}/{WINDOW_SIZE}</span>
+                <span className="text-[11.5px] font-bold text-[#e6c35c]">HOF · {hofView.remaining}/{hofLeft}</span>
                 {hofLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-[#e6c35c]">{fmtPct(hofLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                {hofView.hitsInWindow} of {HOF_PER_WINDOW} hit this window — resets after the 5th.
+                {hofView.remaining} HOF left in the next {hofLeft} drafts ({hofView.hitsInWindow} of {HOF_PER_WINDOW} hit) — resets after the 5th.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${hofPos}%`, background: pills[1].barBg }} />
@@ -281,7 +293,7 @@ export function BatchProgressIndicator() {
                       <span className="text-[10.5px] sm:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
                       <span className="text-[10px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.pos}<span className="text-[8px] sm:text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                        {p.remaining}<span className="text-[8px] sm:text-[10.5px] font-medium text-white/40">/{p.left}</span>
                       </span>
                     )}
                   </div>
