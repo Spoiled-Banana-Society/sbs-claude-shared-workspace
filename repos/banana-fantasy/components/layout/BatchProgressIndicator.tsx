@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
-import { lanePosition, laneDraftsLeft, lanePct, WINDOW_SIZE, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
+import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -168,14 +168,22 @@ export function BatchProgressIndicator() {
   // while a lane's hit is pending its slot landing, we show the lane's `pre`
   // snapshot (the old window), so the counter can't spoil the slot machine;
   // the useRevealGated timers re-render at the exact landing moment.
+  //
+  // Pill number = COUNTDOWN (Richard 2026-07-21): "specials remaining / drafts
+  // left in the window" — HOF starts 5/100, a hit makes it 4/…, every draft
+  // shrinks the denominator, a lane reset snaps it back to full. Both numbers
+  // come off the reveal-gated snapshot (same rFilled the % uses), so the
+  // fraction and the % always agree and neither can spoil a slot reveal.
   if (data.lanes) {
     const lanes = data.lanes;
     const jpView: LaneSnapshot = gated.jpPending && lanes.jp.pre ? lanes.jp.pre : lanes.jp;
     const hofView: LaneSnapshot = gated.hofPending && lanes.hof.pre ? lanes.hof.pre : lanes.hof;
     const jpPos = lanePosition(filledLeaguesCount, jpView.windowStart);
     const hofPos = lanePosition(filledLeaguesCount, hofView.windowStart);
-    const jpLanePct = lanePct(jpView.remaining, laneDraftsLeft(rFilled, jpView.windowStart));
-    const hofLanePct = lanePct(hofView.remaining, laneDraftsLeft(rFilled, hofView.windowStart));
+    const jpLeft = laneDraftsLeft(rFilled, jpView.windowStart);
+    const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
+    const jpLanePct = lanePct(jpView.remaining, jpLeft);
+    const hofLanePct = lanePct(hofView.remaining, hofLeft);
 
     const pills = [
       {
@@ -188,6 +196,8 @@ export function BatchProgressIndicator() {
         frameCls: 'border-red-500/40 bg-red-500/[0.06]',
         barBg: 'linear-gradient(90deg,#b91c1c,#ef4444)',
         pos: jpPos,
+        remaining: jpView.remaining,
+        left: jpLeft,
         pct: jpLanePct,
         heat: heatFor(jpLanePct),
         hit: gated.recentJpHit,
@@ -203,6 +213,8 @@ export function BatchProgressIndicator() {
         frameCls: 'border-[#D4AF37]/40 bg-[#D4AF37]/[0.06]',
         barBg: 'linear-gradient(90deg,#8a6d1f,#D4AF37)',
         pos: hofPos,
+        remaining: hofView.remaining,
+        left: hofLeft,
         pct: hofLanePct,
         heat: heatFor(hofLanePct),
         hit: gated.recentHofHit,
@@ -222,11 +234,11 @@ export function BatchProgressIndicator() {
             {/* Jackpot lane */}
             <div className="mb-2.5">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11.5px] font-bold text-red-400">JACKPOT · {jpPos}/{WINDOW_SIZE}</span>
+                <span className="text-[11.5px] font-bold text-red-400">JACKPOT · {jpView.remaining}/{jpLeft}</span>
                 {jpLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jpLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                Guaranteed within the next {WINDOW_SIZE - jpPos} drafts — the window resets every time it hits.
+                {jpView.remaining} Jackpot somewhere in the next {jpLeft} drafts — guaranteed. Resets every time it hits.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${jpPos}%`, background: pills[0].barBg }} />
@@ -236,11 +248,11 @@ export function BatchProgressIndicator() {
             {/* HOF lane */}
             <div className="mb-2.5">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11.5px] font-bold text-[#e6c35c]">HOF · {hofPos}/{WINDOW_SIZE}</span>
+                <span className="text-[11.5px] font-bold text-[#e6c35c]">HOF · {hofView.remaining}/{hofLeft}</span>
                 {hofLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-[#e6c35c]">{fmtPct(hofLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                {hofView.hitsInWindow} of {HOF_PER_WINDOW} hit this window — resets after the 5th.
+                {hofView.remaining} HOF left in the next {hofLeft} drafts ({hofView.hitsInWindow} of {HOF_PER_WINDOW} hit) — resets after the 5th.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${hofPos}%`, background: pills[1].barBg }} />
@@ -257,11 +269,11 @@ export function BatchProgressIndicator() {
           </div>
         }
       >
-        <div className="relative flex items-center gap-1.5 ml-2 mr-1 sm:ml-0 md:mr-3 cursor-default">
+        <div className="relative flex flex-col items-center gap-[2px] ml-2 mr-1 sm:flex-row sm:gap-1.5 sm:ml-0 md:mr-3 cursor-default">
           {/* Global draft number — always one glance away of the window counters */}
-          <div className="flex flex-col items-center px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10 leading-tight">
-            <span className="text-[6.5px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[10px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+          <div className="flex flex-row items-baseline gap-1 leading-tight sm:flex-col sm:items-center sm:gap-0 sm:px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10">
+            <span className="text-[7px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
+            <span className="text-[9.5px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
           <div className="flex flex-row gap-1 sm:gap-1.5">
@@ -269,19 +281,19 @@ export function BatchProgressIndicator() {
               <div key={p.key}>
                 {/* One pill, same design on every screen — mobile is just a
                     tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[3px] sm:py-[5px] min-w-[88px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[2px] sm:py-[5px] min-w-[76px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
                   <div className="flex items-center gap-1 sm:gap-1.5 leading-none">
-                    <span className={`text-[8px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+                    <span className={`text-[7.5px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9.5px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      <span className={`ml-auto text-[9px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
                   </div>
                   <div className="leading-none" style={heatPulse(p.heat, p.color)}>
                     {p.hit ? (
                       <span className="text-[10.5px] sm:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
-                      <span className="text-[11px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.pos}<span className="text-[9px] sm:text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      <span className="text-[10px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
+                        {p.remaining}<span className="text-[8px] sm:text-[10.5px] font-medium text-white/40">/{p.left}</span>
                       </span>
                     )}
                   </div>
