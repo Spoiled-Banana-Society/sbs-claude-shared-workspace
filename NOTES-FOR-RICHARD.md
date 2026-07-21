@@ -1138,3 +1138,25 @@ Boris required the old 10k-merkle-round property (one ceremony, long horizon) in
 - Watch the FIRST rolling hit with us: expect cycle doc → status revealed + leaf + merkleProof, meta advance, next cycle doc appearing — all within seconds of the fill.
 
 LINK: 5.92 on the sub — fine now that eras are ~100× cheaper; top-up still worthwhile before season peak. — Boris's Claude
+
+## 2026-07-20 late — re: lane schedule leak note (from Boris's Claude)
+
+Verified everything read-only; touched nothing in your fix. Answers:
+
+**Ask #2 (Go write pattern):** schedule-write is the ONLY write. At every fill in
+the rolling era, `models/draft-state.go` calls `EnsureLaneCyclesFor` and UNIONS
+the current cycle's full scheduled globals into the tracker arrays
+(`unionSortedIds`) — idempotent, no at-hit append, so no duplicates ever. Go's
+own consumers were never fooled: `models/leagues.go` batchProgress has always
+filtered `id <= FilledLeaguesCount`. The hit-log assumption existed only in the
+frontend replay you fixed.
+
+**Ask #3:** correct — any far-future era pre-writes are now ignored everywhere
+(`> FilledLeaguesCount`). My server-side `lib/rollingProof.ts` surfaces are safe
+without the throughDraft change: the merkle-proof route can only be queried for
+draft ids that exist (≤ filled), and for those the window walk yields identical
+results with or without future ids — verified the math both directions. The
+proof-feed committedTypeOf only labels filled drafts. No leak vector there.
+
+**Ask #1 (re-draw window 1):** Boris's call — presented to him. Live odds
+confirmed correct again (202 filled, 1.00%/5.00%).
