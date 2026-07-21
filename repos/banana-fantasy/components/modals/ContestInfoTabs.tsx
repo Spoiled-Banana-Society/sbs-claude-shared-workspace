@@ -88,7 +88,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
                 </div>
               ))}
             </div>
-            <p className="text-white/30 text-[11px] mt-2.5 leading-relaxed">A Jackpot is always within the next 100 drafts and every rolling window carries 5 HOF — the window resets each time a guarantee hits. When both land on the same draft, it's a JackHOF.</p>
+            <p className="text-white/30 text-[11px] mt-2.5 leading-relaxed">A Jackpot is always within the next 100 drafts and every rolling window carries 5 HOF — the window resets each time a guarantee hits. When both land on the same draft, it&apos;s a JackHOF.</p>
           </div>
         </div>
       )}
