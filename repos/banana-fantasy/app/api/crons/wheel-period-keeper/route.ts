@@ -8,8 +8,10 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
 import { recordCronHeartbeat } from '@/lib/cronHeartbeat';
 import {
+  clearWheelForceRotate,
   computePeriodMerkleTree,
   getCurrentPeriod,
+  getWheelForceRotate,
   generatePeriodSalt,
   getPeriod,
   periodSegments,
@@ -19,6 +21,7 @@ import {
   recordPeriodRequested,
   recordPeriodRevealed,
   saltHashOf,
+  segmentsForNewPeriod,
   storePeriodLeaves,
 } from '@/lib/wheelPeriod';
 import {
@@ -29,20 +32,6 @@ import {
   readPeriodOnchain,
 } from '@/lib/wheelProofContract';
 import { commitPendingBatches } from '@/lib/wheelAssignmentJournal';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { jackhofWheelSegments, wheelSegments, JACKHOF_WHEEL_FROM_FILLED, type WheelSegment } from '@/lib/wheelConfig';
-
-/**
- * The wedge set for a NEWLY-opened period, chosen at open time from the live
- * draft counter: once the rolling era is reached (draft 200 filled), every
- * new period carries the JackHOF wedge. Existing periods are never touched —
- * their outcomes stay locked to the snapshot committed at their open.
- */
-async function segmentsForNewPeriod(): Promise<WheelSegment[]> {
-  const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
-  const filled = Number((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
-  return filled >= JACKHOF_WHEEL_FROM_FILLED ? jackhofWheelSegments : wheelSegments;
-}
 
 /**
  * Vercel cron — runs every 5 minutes. Two responsibilities:
@@ -135,12 +124,14 @@ export async function GET(req: Request) {
       }
     }
 
-    // (3) Auto-roll: if period is full, open the next one AND auto-reveal
-    //     the salt of the full period so the public can audit. Both happen
-    //     server-side so no human intervention is needed once the contract
-    //     is deployed — the wheel runs forever from one deploy.
+    // (3) Auto-roll: if period is full — OR a force-rotate was requested
+    //     (one-shot Firestore flag, used to move onto a new wedge-set
+    //     generation) — open the next one AND auto-reveal the salt of the
+    //     outgoing period so the public can audit. Both happen server-side
+    //     so no human intervention is needed once the contract is deployed.
     const post = await getCurrentPeriod();
-    if (post && post.spinCount >= post.maxSpins && (post.status === 'active' || post.status === 'closed')) {
+    const forceRotate = post ? await getWheelForceRotate() : false;
+    if (post && (post.spinCount >= post.maxSpins || forceRotate) && (post.status === 'active' || post.status === 'closed')) {
       // Open next period first so spins don't stall while the old one reveals.
       const nextNumber = post.periodNumber + 1;
       const salt = generatePeriodSalt();
@@ -159,7 +150,11 @@ export async function GET(req: Request) {
         newPeriodNumber: nextNumber,
         commitTxHash: txHash,
         hasJackhof: nextSegments.some((s) => s.id === 'jackhof'),
+        forced: forceRotate,
       };
+      // One-shot: clear only after the replacement period is safely opened,
+      // so a failed open retries on the next tick instead of losing the ask.
+      if (forceRotate) await clearWheelForceRotate();
 
       // Now reveal the salt of the freshly-full period so it's publicly auditable.
       try {

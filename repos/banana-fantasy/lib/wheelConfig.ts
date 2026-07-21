@@ -41,18 +41,23 @@ export const wheelSegments: WheelSegment[] = [
 export const WHEEL_SEGMENT_ANGLE = 360 / wheelSegments.length;
 
 // ── JackHOF era wedge set (live from draft 201 / rolling era) ────────────────
-// Identical to the classic wheel except wedge index 10: 'draft-1-e' becomes
-// the 0.1% JackHOF wedge, funded from the 1-Draft pool (0.8925 → 0.8915
-// across the remaining 4 wedges). Same 12-wedge geometry, so every angle is
-// unchanged. The keeper stamps THIS set onto periods it opens once the
-// rolling era is live (FilledLeaguesCount >= JACKHOF_WHEEL_FROM_FILLED).
+// Same wedges as the classic wheel except 'draft-1-e' becomes the 0.1%
+// JackHOF wedge, funded from the 1-Draft pool (0.8925 → 0.8915 across the
+// remaining 4 wedges). The keeper stamps THIS set onto periods it opens once
+// the rolling era is live (FilledLeaguesCount >= JACKHOF_WHEEL_FROM_FILLED).
+// Wedge ORDER differs from the classic wheel: JackHOF's orange must never
+// border another warm wedge (Jackpot red / HOF gold / 20-Drafts amber) or it
+// reads as one blob at wheel speed (Richard 2026-07-20) — so 20 Drafts moved
+// to slot 0 and JackHOF sits between a 5-Drafts green and a 1-Draft grey.
+// Reordering is safe: outcomes and rendering follow each period's committed
+// segmentsSnapshot, so a live period keeps its own geometry.
 const DRAFT_ONE_JH = 0.8915; // across 4 wedges
 const JACKHOF = 0.001;
 
 export const JACKHOF_WHEEL_FROM_FILLED = 200;
 
 export const jackhofWheelSegments: WheelSegment[] = [
-  { id: 'draft-1-a', label: '1 Draft', probability: DRAFT_ONE_JH / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
+  { id: 'draft-20', label: '20 Drafts', probability: DRAFT_TWENTY, prizeType: 'draft_pass', prizeValue: 20, color: '#f59e0b' },
   { id: 'draft-5-a', label: '5 Drafts', probability: DRAFT_FIVE / 2, prizeType: 'draft_pass', prizeValue: 5, color: '#22c55e' },
   { id: 'draft-1-b', label: '1 Draft', probability: DRAFT_ONE_JH / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
   { id: 'jackpot', label: 'Jackpot', probability: JACKPOT, prizeType: 'custom', prizeValue: 'jackpot', color: '#ef4444' },
@@ -63,7 +68,7 @@ export const jackhofWheelSegments: WheelSegment[] = [
   { id: 'draft-1-d', label: '1 Draft', probability: DRAFT_ONE_JH / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
   { id: 'draft-5-b', label: '5 Drafts', probability: DRAFT_FIVE / 2, prizeType: 'draft_pass', prizeValue: 5, color: '#22c55e' },
   { id: 'jackhof', label: 'JackHOF', probability: JACKHOF, prizeType: 'custom', prizeValue: 'jackhof', color: '#ef6c37' },
-  { id: 'draft-20', label: '20 Drafts', probability: DRAFT_TWENTY, prizeType: 'draft_pass', prizeValue: 20, color: '#f59e0b' },
+  { id: 'draft-1-a', label: '1 Draft', probability: DRAFT_ONE_JH / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
 ];
 
 /**
