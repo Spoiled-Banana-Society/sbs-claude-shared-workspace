@@ -36,7 +36,8 @@ export function SpecialDraftBanner() {
 
   const jpEntries = user.jackpotEntries || 0;
   const hofEntries = user.hofEntries || 0;
-  const hasEntries = jpEntries > 0 || hofEntries > 0;
+  const jackhofEntries = user.jackhofEntries || 0;
+  const hasEntries = jpEntries > 0 || hofEntries > 0 || jackhofEntries > 0;
   const hasQueues = queuedCount > 0;
 
   if (!hasEntries && !hasQueues) return null;
@@ -57,9 +58,11 @@ export function SpecialDraftBanner() {
                   : hasQueues
                   ? <>You have <span className="text-banana">{queuedCount}</span> Wheel draft{queuedCount !== 1 ? 's' : ''} queued</>
                   : <>You have {jpEntries > 0 && <span className="text-red-400">{jpEntries} Jackpot</span>}
-                    {jpEntries > 0 && hofEntries > 0 && ' & '}
+                    {jpEntries > 0 && (hofEntries > 0 || jackhofEntries > 0) && ' & '}
                     {hofEntries > 0 && <span className="text-yellow-400">{hofEntries} HOF</span>}
-                    {' '}{(jpEntries + hofEntries) === 1 ? 'entry' : 'entries'}!</>
+                    {hofEntries > 0 && jackhofEntries > 0 && ' & '}
+                    {jackhofEntries > 0 && <span><span className="text-red-400">{jackhofEntries} Jack</span><span className="text-yellow-400">HOF</span></span>}
+                    {' '}{(jpEntries + hofEntries + jackhofEntries) === 1 ? 'entry' : 'entries'}!</>
                 }
               </p>
               <p className="text-white/40 text-xs sm:text-sm">

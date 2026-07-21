@@ -62,8 +62,8 @@ export function DraftProofExplainerContent({
         />
         <Step
           num="2"
-          title="1 in 100 = Jackpot, 5 in 100 = HOF, 94 in 100 = Pro"
-          body="Every 100-draft window contains exactly that distribution."
+          title="A Jackpot within every 100 drafts, 5 HOF per window"
+          body="Rolling windows: each one resets the moment its guarantee hits. Jackpot + HOF on the same draft = JackHOF (both perks)."
         />
         <Step
           num="3"

@@ -215,6 +215,9 @@ export default function ContestDetailsPage() {
                 <p className="text-sm text-hof mb-1">HOF Chance</p>
                 <p className="text-4xl font-bold text-hof">{contest.hofPercent}%</p>
               </div>
+              <p className="text-xs text-text-muted text-center">
+                Both landing on the same draft = <span className="text-jackpot font-semibold">Jack</span><span className="text-hof font-semibold">HOF</span> — both perks at once.
+              </p>
             </div>
           </Card>
 

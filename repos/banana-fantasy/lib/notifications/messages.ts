@@ -40,8 +40,9 @@ function leagueLabel(name: string | undefined): string | null {
  * "HOF Draft …" / "Hall of Fame … (from Wheel)"). Regular drafts are "BBB #N" with
  * no tier word, so this matches ONLY the wheel specials — which get their own copy.
  */
-function wheelTier(name: string | undefined): 'Jackpot' | 'HOF' | null {
+function wheelTier(name: string | undefined): 'Jackpot' | 'HOF' | 'JackHOF' | null {
   const n = (name ?? '').toLowerCase();
+  if (n.includes('jackhof')) return 'JackHOF'; // must be first — 'jackhof' contains 'hof'
   if (n.includes('jackpot')) return 'Jackpot';
   if (n.includes('hall of fame') || n.includes('hof')) return 'HOF';
   return null;

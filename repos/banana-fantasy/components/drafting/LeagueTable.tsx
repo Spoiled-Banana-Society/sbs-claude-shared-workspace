@@ -84,7 +84,7 @@ export function LeagueTable({ rooms, onEnter, onBuyDrafts }: LeagueTableProps) {
           <div className="text-xs font-medium text-white/40 uppercase tracking-wider">
             Draft
           </div>
-          <Tooltip content="Spin to reveal: Pro · HOF (5%) · Jackpot (1%)">
+          <Tooltip content="Spin to reveal: Pro · HOF (5%) · Jackpot (1%) · JackHOF (1/800)">
             <div className="text-xs font-medium text-white/40 uppercase tracking-wider text-center cursor-help">
               Type
             </div>

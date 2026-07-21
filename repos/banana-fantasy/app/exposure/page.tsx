@@ -932,8 +932,9 @@ export default function ExposurePage() {
                   {matchingLeagues.map(l => {
                     const typeColor = l.type === 'jackpot' ? '#ef4444'
                       : l.type === 'hof' ? '#D4AF37'
+                      : l.type === 'jackhof' ? '#ef6c37'
                       : '#a855f7';
-                    const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : 'Pro';
+                    const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : l.type === 'jackhof' ? 'JACKHOF' : 'Pro';
                     return (
                       <button
                         key={l.id}
@@ -996,8 +997,9 @@ export default function ExposurePage() {
               {selectedStackLeagues.map(l => {
                 const typeColor = l.type === 'jackpot' ? '#ef4444'
                   : l.type === 'hof' ? '#D4AF37'
+                  : l.type === 'jackhof' ? '#ef6c37'
                   : '#a855f7';
-                const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : 'Pro';
+                const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : l.type === 'jackhof' ? 'JACKHOF' : 'Pro';
                 return (
                   <button
                     key={l.id}

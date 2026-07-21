@@ -84,11 +84,11 @@ const FAQS = [
   },
   {
     q: 'How do I get a Jackpot or HOF draft? (Two ways)',
-    a: 'There are two completely separate ways to land a Jackpot or Hall of Fame draft:\n🎰 The slot machine — when ANY draft fills (paid OR free entry), a slot reveal decides its tier. Every batch of 100 drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The positions are derived from a server seed committed before any draft fills, so it is verified fair (see the Verified badge on a drafted league).\n⚡ The Banana Wheel — you can win a Jackpot or HOF entry directly on the wheel. You KNOW it is a Jackpot/HOF before you draft: it goes into a Jackpot- or HOF-only lobby, and once 10 winners fill it you draft your team. Wheel-won drafts are labeled "(from Wheel)".\nEither way the prize is the same — a Jackpot or HOF draft with the same perks.',
+    a: 'There are two completely separate ways to land a Jackpot or Hall of Fame draft:\n🎰 The slot machine — when ANY draft fills (paid OR free entry), a slot reveal decides its tier. A Jackpot is always hiding in the next 100 drafts (the window resets the moment it hits), and every rolling 100-draft window carries 5 HOF. The positions are derived from a server seed committed in advance, so it is verified fair (see the Verified badge on a drafted league). When both land on the SAME draft, it becomes a JackHOF — both perks at once (~1 in 800).\n⚡ The Banana Wheel — you can win a Jackpot, HOF, or even JackHOF entry directly on the wheel. You KNOW the tier before you draft: it goes into a tier-only lobby, and once 10 winners fill it you draft your team. Wheel-won drafts are labeled "(from Wheel)".\nEither way the prize is the same — the same perks apply.',
   },
   {
-    q: 'What do Jackpot and HOF drafts actually win me?',
-    a: 'Jackpot: win your league (1st place) and you skip straight to the season Finals. HOF: win your league and you enter the Hall of Fame playoff bracket — an end-of-season tournament for bonus prizes. These perks are identical whether the draft came from the slot machine or the Banana Wheel.',
+    q: 'What do Jackpot, HOF, and JackHOF drafts actually win me?',
+    a: 'Jackpot: win your league (1st place) and you skip straight to the season Finals. HOF: win your league and you enter the Hall of Fame playoff bracket — an end-of-season tournament for bonus prizes. JackHOF: the rarest draft — Jackpot and HOF on the same league — carries BOTH perks: finals skip AND the HOF bonus track. These perks are identical whether the draft came from the slot machine or the Banana Wheel.',
   },
   {
     q: 'How does scoring work?',
@@ -104,7 +104,7 @@ const FAQS = [
   },
   {
     q: 'How is wheel verification different from draft verification?',
-    a: 'Drafts use a "guaranteed distribution" model: every 100-draft window is guaranteed exactly 1 Jackpot and 5 HOF. We commit the random seed before the drafts it covers and reveal it once its guarantee completes — anyone can recompute draft type assignments. The wheel is different because outcomes are independent probability draws (jackpots are RARER but variable per round). For the wheel we pre-randomize ALL 10,000 outcomes upfront via Chainlink VRF, commit a fingerprint of the full list, and hand each spinner a personal proof their outcome was in that list. That means each spin is verifiable instantly — drafts batch-verify, the wheel spin-verifies.',
+    a: 'Drafts use a "guaranteed window" model: a Jackpot is always within the next 100 drafts and each rolling window carries 5 HOF, with each window resetting when its guarantee completes (both landing together = JackHOF). We commit the random seed before the drafts it covers and reveal it once its guarantee completes — anyone can recompute draft type assignments. The wheel is different because outcomes are independent probability draws (jackpots are RARER but variable per round). For the wheel we pre-randomize ALL 10,000 outcomes upfront via Chainlink VRF, commit a fingerprint of the full list, and hand each spinner a personal proof their outcome was in that list. That means each spin is verifiable instantly — drafts batch-verify, the wheel spin-verifies.',
   },
   {
     q: 'What does it mean that outcomes are "pre-randomized"?',
@@ -131,8 +131,9 @@ const FAQS = [
 const PRIZES = [
   { tier: 'League Winner', icon: '🥇', desc: 'Top finisher in your 10-team league wins the biggest share of the prize pool.', highlight: true },
   { tier: 'Runner-Up', icon: '🥈', desc: '2nd place earns a solid payout — depth pays off in Best Ball.' , highlight: false },
-  { tier: 'Jackpot', icon: '🎰', desc: '1-in-100 chance for a massively boosted prize pool. Provably fair selection.', highlight: true },
-  { tier: 'Hall of Fame', icon: '⭐', desc: '5-in-100 drafts qualify. Winners enter an end-of-season bonus tournament.', highlight: false },
+  { tier: 'Jackpot', icon: '🎰', desc: 'Always within the next 100 drafts. Win it and skip straight to the Finals. Provably fair selection.', highlight: true },
+  { tier: 'Hall of Fame', icon: '⭐', desc: '5 per rolling 100-draft window. Winners enter an end-of-season bonus tournament.', highlight: false },
+  { tier: 'JackHOF', icon: '👑', desc: 'Jackpot + HOF on the same draft (~1 in 800). Both perks: finals skip AND the bonus tournament.', highlight: true },
   { tier: 'Banana Wheel', icon: '🍌', desc: 'Spin for free passes, instant prizes, Jackpot entries, and more.', highlight: false },
 ];
 

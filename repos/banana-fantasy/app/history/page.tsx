@@ -108,6 +108,7 @@ export default function HistoryPage() {
                   )}
                   {league.type === 'jackpot' && <Badge type="jackpot">JP</Badge>}
                   {league.type === 'hof' && <Badge type="hof">HOF</Badge>}
+                  {league.type === 'jackhof' && <Badge type="jackpot">JACKHOF</Badge>}
                   <span className="text-text-primary font-medium">{league.name}</span>
                 </div>
 

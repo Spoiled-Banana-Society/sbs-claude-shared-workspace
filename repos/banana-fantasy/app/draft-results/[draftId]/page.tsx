@@ -448,7 +448,7 @@ export default function DraftResultsPage() {
 
         // League · Team · Level
         const leagueNum = (title).replace(/\D/g, '') || title;
-        const levelColor = draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7';
+        const levelColor = draftLevel.toLowerCase() === 'jackhof' ? '#ef6c37' : draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7';
 
         ctx.font = '22px system-ui, sans-serif';
         ctx.textAlign = 'center';
@@ -627,7 +627,7 @@ export default function DraftResultsPage() {
         return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
       });
     if (players.length === 0) return;
-    const tier: CardTier = /jackpot/i.test(draftLevel) ? 'jackpot' : /hof|hall of fame/i.test(draftLevel) ? 'hof' : 'pro';
+    const tier: CardTier = /jackhof/i.test(draftLevel) ? 'jackhof' : /jackpot/i.test(draftLevel) ? 'jackpot' : /hof|hall of fame/i.test(draftLevel) ? 'hof' : 'pro';
     const leagueNo = title.replace(/\D/g, '');
     nftImgFiredRef.current.add(tokenId);
     void fetch('/api/nft/card-image', {
@@ -675,11 +675,13 @@ export default function DraftResultsPage() {
   }
 
   // Build the obsidian team card from the selected roster (instant, no image wait).
-  const cardTier: CardTier = /jackpot/i.test(draftLevel)
-    ? 'jackpot'
-    : /hof|hall of fame/i.test(draftLevel)
-      ? 'hof'
-      : 'pro';
+  const cardTier: CardTier = /jackhof/i.test(draftLevel)
+    ? 'jackhof'
+    : /jackpot/i.test(draftLevel)
+      ? 'jackpot'
+      : /hof|hall of fame/i.test(draftLevel)
+        ? 'hof'
+        : 'pro';
   const cardPlayers = POSITION_ORDER
     .flatMap((pos) => roster[pos] || [])
     .sort((a, b) => a.pickNum - b.pickNum)
@@ -722,7 +724,7 @@ export default function DraftResultsPage() {
                 <span
                   className="text-sm font-semibold"
                   style={{
-                    color: draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
+                    color: draftLevel.toLowerCase() === 'jackhof' ? '#ef6c37' : draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
                   }}
                 >
                   {draftLevel}

@@ -125,6 +125,7 @@ function describe(e: LiveActivityEvent): string {
       if (prizeType === 'draft_pass') return `${prizeValue} free draft pass${Number(prizeValue) !== 1 ? 'es' : ''}`;
       if (prizeType === 'custom' && prizeValue === 'jackpot') return 'Jackpot entry';
       if (prizeType === 'custom' && prizeValue === 'hof') return 'HOF entry';
+      if (prizeType === 'custom' && prizeValue === 'jackhof') return 'JackHOF entry';
       return String(e.metadata?.segmentLabel ?? 'Wheel prize');
     }
     case 'promo_claimed': {

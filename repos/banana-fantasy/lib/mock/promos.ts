@@ -118,7 +118,7 @@ export const mockPromos: Promo[] = [
     progressMax: 1,
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
-      explanation: '• 1 Jackpot draft in every 100 drafts\n\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 free spins\n\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 free spins\n\n• Cycle resets after every 100 drafts\n\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!',
+      explanation: '• A Jackpot is always hiding in the next 100 drafts\n\n• Jackpot hit within the first 25 drafts of its window → 1 of the 10 drafters in the Jackpot draft wins 10 free spins\n\n• Jackpot hit within the first 50 drafts → 1 of the 10 drafters wins 5 free spins\n\n• The window resets the moment the Jackpot hits — a new hunt starts immediately\n\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!',
       jackpotHistory: [],
     },
   },

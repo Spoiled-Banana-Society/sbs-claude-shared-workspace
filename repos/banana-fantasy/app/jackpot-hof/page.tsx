@@ -42,9 +42,9 @@ function CountUpNumber({ target, prefix = '' }: { target: number; prefix?: strin
 export default function JackpotHofPage() {
   const { user, isLoggedIn } = useAuth();
   const totalDrafts = (user?.draftPasses || 0) + (user?.freeDrafts || 0);
-  const batchEnd = Math.ceil(totalDrafts / 100) * 100 || 100;
-  const jpHit = (user?.jackpotEntries || 0) > 0;
+  const jpEarned = user?.jackpotEntries || 0;
   const hofEarned = user?.hofEntries || 0;
+  const jackhofEarned = user?.jackhofEntries || 0;
 
   return (
     <div className="min-h-screen bg-bg-primary pb-20">
@@ -71,17 +71,18 @@ export default function JackpotHofPage() {
             initial="hidden" animate="visible" custom={1} variants={fadeUp}
             className="text-4xl sm:text-5xl md:text-6xl font-black font-primary text-white leading-tight"
           >
-            Every 100 Drafts.<br />
-            <span className="text-red-500">1 Jackpot</span> +{' '}
-            <span className="text-[#F3E216]">5 HOF</span>.
+            A <span className="text-red-500">Jackpot</span> is never more<br />
+            than 100 drafts away.
           </motion.h1>
 
           <motion.p
             initial="hidden" animate="visible" custom={2} variants={fadeUp}
             className="mt-6 text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed"
           >
-            Guaranteed. In every batch of 100 drafts, one league becomes a <strong className="text-red-400">Jackpot</strong> and
-            five become <strong className="text-[#F3E216]">Hall of Fame</strong>. The odds are locked — the more you draft, the closer you get.
+            Guaranteed. One <strong className="text-red-400">Jackpot</strong> is always hiding in the next 100 drafts — and the moment it
+            hits, a fresh window starts. <strong className="text-[#F3E216]">Hall of Fame</strong> works the same way: 5 per window,
+            resetting after the 5th. And when both land on the same draft, that&apos;s a{' '}
+            <strong><span className="text-red-400">Jack</span><span className="text-[#F3E216]">HOF</span></strong> — both perks, one draft.
           </motion.p>
 
           {/* User progress */}
@@ -91,22 +92,23 @@ export default function JackpotHofPage() {
               className="mt-8 inline-flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl px-6 py-4"
             >
               <div className="text-center">
-                <div className="text-2xl font-bold text-white">{totalDrafts}/{batchEnd}</div>
+                <div className="text-2xl font-bold text-white">{totalDrafts}</div>
                 <div className="text-xs text-text-muted uppercase tracking-wide">Your Drafts</div>
               </div>
               <div className="w-px h-10 bg-white/10" />
               <div className="text-center">
-                <div className={`text-2xl font-bold ${jpHit ? 'text-green-400' : 'text-red-400'}`}>
-                  {jpHit ? '✓' : Math.max(0, 100 - (totalDrafts % 100))}
-                </div>
-                <div className="text-xs text-text-muted uppercase tracking-wide">{jpHit ? 'JP Hit!' : 'Until JP'}</div>
+                <div className={`text-2xl font-bold ${jpEarned > 0 ? 'text-red-400' : 'text-white/40'}`}>{jpEarned}</div>
+                <div className="text-xs text-text-muted uppercase tracking-wide">Jackpot Won</div>
               </div>
               <div className="w-px h-10 bg-white/10" />
               <div className="text-center">
-                <div className={`text-2xl font-bold ${hofEarned >= 5 ? 'text-green-400' : 'text-[#F3E216]'}`}>
-                  {hofEarned >= 5 ? '✓' : `${hofEarned}/5`}
-                </div>
-                <div className="text-xs text-text-muted uppercase tracking-wide">HOF Earned</div>
+                <div className={`text-2xl font-bold ${hofEarned > 0 ? 'text-[#F3E216]' : 'text-white/40'}`}>{hofEarned}</div>
+                <div className="text-xs text-text-muted uppercase tracking-wide">HOF Won</div>
+              </div>
+              <div className="w-px h-10 bg-white/10" />
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${jackhofEarned > 0 ? 'text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-[#F3E216]' : 'text-white/40'}`}>{jackhofEarned}</div>
+                <div className="text-xs text-text-muted uppercase tracking-wide">JackHOF Won</div>
               </div>
             </motion.div>
           )}
@@ -167,7 +169,7 @@ export default function JackpotHofPage() {
                   of all drafts become Jackpot
                 </div>
                 <div className="mt-4 text-sm text-text-muted text-center">
-                  Guaranteed 1 per 100 drafts — not random chance
+                  Always within 100 drafts of the last one — the window resets every time it hits
                 </div>
                 <div className="mt-2 text-xs text-text-muted/80 text-center">
                   You can also win a Jackpot entry on the{' '}
@@ -232,11 +234,77 @@ export default function JackpotHofPage() {
                   of all drafts become Hall of Fame
                 </div>
                 <div className="mt-4 text-sm text-text-muted text-center">
-                  Guaranteed 5 per 100 drafts — the more you draft, the more you earn
+                  5 per rolling 100-draft window — resets after the 5th hits
                 </div>
                 <div className="mt-2 text-xs text-text-muted/80 text-center">
                   You can also win an HOF entry on the{' '}
                   <Link href="/banana-wheel" className="text-banana hover:underline">Banana Wheel</Link>.
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* JackHOF Section */}
+      <section className="px-4 py-12">
+        <div className="max-w-5xl mx-auto">
+          <motion.div
+            initial="hidden" whileInView="visible" viewport={{ once: true }} custom={0} variants={fadeUp}
+            className="text-center mb-10"
+          >
+            <span className="text-5xl">👑</span>
+            <h2 className="text-3xl sm:text-4xl font-black font-primary mt-3">
+              <span className="text-red-500">Jack</span><span className="text-[#F3E216]">HOF</span> League
+            </h2>
+            <p className="text-text-secondary mt-2 text-lg">The rarest draft in SBS — about 1 in 800</p>
+          </motion.div>
+
+          <motion.div
+            initial="hidden" whileInView="visible" viewport={{ once: true }} custom={1} variants={fadeUp}
+            className="rounded-2xl p-8 sm:p-10 border"
+            style={{ background: 'linear-gradient(115deg, rgba(239,68,68,0.10), rgba(243,226,22,0.10))', borderColor: 'rgba(239,68,68,0.35)' }}
+          >
+            <div className="grid sm:grid-cols-2 gap-8">
+              <div>
+                <h3 className="text-xl font-bold mb-4"><span className="text-red-400">🏆 Two Perks,</span> <span className="text-[#F3E216]">One Draft</span></h3>
+                <ul className="space-y-3">
+                  <li className="flex items-start gap-3">
+                    <span className="text-red-400 text-lg">→</span>
+                    <div>
+                      <div className="font-bold text-white">Skip to Finals</div>
+                      <div className="text-sm text-text-secondary">The full Jackpot perk: win your JackHOF league and go straight to the Week 17 finals.</div>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="text-[#F3E216] text-lg">→</span>
+                    <div>
+                      <div className="font-bold text-white">HOF Bonus Prizes</div>
+                      <div className="text-sm text-text-secondary">The full HOF perk too: your league competes for the bonus prize pool on top of regular rewards.</div>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="text-red-400 text-lg">→</span>
+                    <div>
+                      <div className="font-bold text-white">Red &amp; Gold JackHOF Badge</div>
+                      <div className="text-sm text-text-secondary">Your draft token gets the exclusive dual-color JackHOF border — the rarest flex on the marketplace.</div>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+              <div className="flex flex-col items-center justify-center bg-black/30 rounded-xl p-6">
+                <div className="text-5xl sm:text-6xl font-black font-primary whitespace-nowrap">
+                  <span className="text-red-500">1</span><span className="text-white/60"> in </span><span className="text-[#F3E216]">800</span>
+                </div>
+                <div className="text-text-secondary mt-2 text-center">
+                  the Jackpot and a HOF landing on the same draft
+                </div>
+                <div className="mt-4 text-sm text-text-muted text-center">
+                  Both windows draw independently — when they collide, the draft carries both perks
+                </div>
+                <div className="mt-2 text-xs text-text-muted/80 text-center">
+                  You can also win a JackHOF seat on the{' '}
+                  <Link href="/banana-wheel" className="text-banana hover:underline">Banana Wheel</Link> — the 0.1% wedge.
                 </div>
               </div>
             </div>
@@ -256,9 +324,9 @@ export default function JackpotHofPage() {
 
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { step: '01', title: 'Draft', desc: 'Buy draft passes and enter best ball drafts. Every draft counts toward your batch of 100.', icon: '🎯' },
-              { step: '02', title: 'Reveal', desc: 'After the draft lobby fills, a slot machine reveals if your league is Pro, HOF, or Jackpot.', icon: '🎰' },
-              { step: '03', title: 'Win', desc: 'Jackpot winners skip to finals. HOF winners compete for bonus prizes. Everyone has a shot.', icon: '💰' },
+              { step: '01', title: 'Draft', desc: 'Buy draft passes and enter best ball drafts. Every fill moves both rolling windows forward.', icon: '🎯' },
+              { step: '02', title: 'Reveal', desc: 'After the draft lobby fills, a slot machine reveals if your league is Pro, HOF, Jackpot — or the ultra-rare JackHOF.', icon: '🎰' },
+              { step: '03', title: 'Win', desc: 'Jackpot winners skip to finals. HOF winners compete for bonus prizes. JackHOF winners get both. Everyone has a shot.', icon: '💰' },
             ].map((item, i) => (
               <motion.div
                 key={item.step}
@@ -290,7 +358,7 @@ export default function JackpotHofPage() {
                 { label: 'Total Pool', value: '$250K+', color: 'text-white' },
                 { label: 'Jackpot Leagues', value: '1%', color: 'text-red-400' },
                 { label: 'HOF Leagues', value: '5%', color: 'text-[#F3E216]' },
-                { label: 'Drafts Per Batch', value: '100', color: 'text-white' },
+                { label: 'JackHOF Odds', value: '1/800', color: 'text-white' },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}

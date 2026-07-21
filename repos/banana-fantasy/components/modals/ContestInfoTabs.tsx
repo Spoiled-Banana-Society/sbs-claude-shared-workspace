@@ -30,6 +30,7 @@ const TYPES: { word: string; pct: string; color: string; d: string }[] = [
   { word: 'Pro', pct: '94%', color: '#a855f7', d: 'Standard draft. Compete for the $100K GTD Prize Pool.' },
   { word: 'Hall of Fame', pct: '5%', color: '#D4AF37', d: 'Bonus prize pool on top of standard rewards.' },
   { word: 'Jackpot', pct: '1%', color: '#ef4444', d: 'Win your league and skip straight to the finals.' },
+  { word: 'JackHOF', pct: '1/800', color: '#ef6c37', d: 'Jackpot + HOF on the same draft — both perks at once.' },
 ];
 
 export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
@@ -87,7 +88,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
                 </div>
               ))}
             </div>
-            <p className="text-white/30 text-[11px] mt-2.5 leading-relaxed">Every 100 paid drafts contains exactly 94 Pro, 5 HOF, and 1 Jackpot — guaranteed distribution, not random odds.</p>
+            <p className="text-white/30 text-[11px] mt-2.5 leading-relaxed">A Jackpot is always within the next 100 drafts and every rolling window carries 5 HOF — the window resets each time a guarantee hits. When both land on the same draft, it's a JackHOF.</p>
           </div>
         </div>
       )}

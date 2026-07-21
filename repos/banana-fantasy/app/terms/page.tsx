@@ -119,7 +119,7 @@ function buildSections(): Section[] {
         <>
           <p>
             SBS uses a <strong>provably fair random number generation (RNG) system</strong> for draft order determination,
-            Banana Wheel spins, Jackpot selection, and Hall of Fame entry selection. Our system operates on a
+            Banana Wheel spins, Jackpot selection, Hall of Fame entry selection, and JackHOF (combined Jackpot + Hall of Fame) selection. Our system operates on a
             cryptographic <strong>commit-reveal scheme</strong> using HMAC-SHA256:
           </p>
           <ol>

@@ -255,11 +255,11 @@ export function BatchProgressIndicator() {
           </div>
         }
       >
-        <div className="relative flex items-center gap-1.5 mr-1 md:mr-3 cursor-default">
+        <div className="relative flex items-center gap-1.5 ml-2 mr-1 sm:ml-0 md:mr-3 cursor-default">
           {/* Global draft number — always one glance away of the window counters */}
           <div className="flex flex-col items-center px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10 leading-tight">
-            <span className="text-[8px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[13px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+            <span className="text-[7.5px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
+            <span className="text-[11.5px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
           <div className="flex flex-col gap-[3px] sm:flex-row sm:gap-1.5">
@@ -269,13 +269,6 @@ export function BatchProgressIndicator() {
                 <div className={`hidden sm:flex flex-col gap-[2px] rounded-[10px] border px-2.5 py-[5px] min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className={`text-[10px] font-extrabold tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
-                    {p.hitDots !== null && (
-                      <span className="flex items-center gap-[2.5px]">
-                        {Array.from({ length: HOF_PER_WINDOW }).map((_, i) => (
-                          <span key={i} className={`h-[4px] w-[4px] rounded-full ${i < (p.hitDots as number) ? 'bg-[#D4AF37] shadow-[0_0_4px_rgba(212,175,55,0.8)]' : 'bg-[#D4AF37]/25'}`} />
-                        ))}
-                      </span>
-                    )}
                     {!p.hit && p.pct !== null && (
                       <span className={`ml-auto text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
@@ -294,23 +287,23 @@ export function BatchProgressIndicator() {
                   </div>
                 </div>
 
-                {/* Mobile row — full lane names + numbers sized to be readable
-                    at a glance (Boris 2026-07-21: the JP/HOF cluster was too
-                    small on phones; there's room, use it). */}
-                <div className="flex items-center gap-[5px] leading-none sm:hidden" style={heatPulse(p.heat, p.color)}>
-                  <span className={`w-[52px] text-[9.5px] font-extrabold tracking-[0.08em] ${p.textCls}`}>{p.tag}</span>
+                {/* Mobile row — full lane names, sized halfway between the
+                    original tiny cluster and the first big pass (Boris
+                    2026-07-21: full-size crowded the SBS logo). */}
+                <div className="flex items-center gap-[4px] leading-none sm:hidden" style={heatPulse(p.heat, p.color)}>
+                  <span className={`w-[45px] text-[8.5px] font-extrabold tracking-[0.06em] ${p.textCls}`}>{p.tag}</span>
                   {p.hit ? (
-                    <span className="text-[12px] font-extrabold text-green-400">✓ HIT</span>
+                    <span className="text-[11px] font-extrabold text-green-400">✓ HIT</span>
                   ) : (
                     <>
-                      <span className="text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.pos}<span className="text-[10px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      <span className="text-[12px] font-extrabold tabular-nums text-white/90">
+                        {p.pos}<span className="text-[9.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
                       </span>
-                      <span className="h-[3px] w-[34px] overflow-hidden rounded-full bg-white/10">
+                      <span className="h-[2.5px] w-[30px] overflow-hidden rounded-full bg-white/10">
                         <span className="block h-full rounded-full" style={{ width: `${p.pos}%`, background: p.barBg }} />
                       </span>
                       {p.pct !== null && (
-                        <span className={`text-[11px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                        <span className={`text-[10px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                       )}
                     </>
                   )}
