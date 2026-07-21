@@ -10,6 +10,8 @@ What it gives up (deliberately, revisitable later): 1-popup MetaMask entries, si
 
 New focus items for the deposit+mint build (Richard's Claude has details): onramp fee slippage vs $25 multiples, card-fee-credit promo semantics at deposit time (card-fee accrual lives in the mint routes and won't see deposit card fees), double-tap idempotency on the one-tap CTA, balance-chip polling under RULE #0, sponsored-gas budget at higher entry frequency.
 
+Richard's calls on the new-shape risk list (7/21): **card-fee credit accrual MOVES to deposit time** ($25 accumulated fees → free pass, same accumulator relocated; mirror the fronted first-bonus behavior at first deposit). **No first-entry confirm sheet** — pure one-tap from day one. Double-tap double-buy accepted as-is (leave the extra draft, pass refunds to inventory). Deposit presets keep the existing fee-on-top quoting (user receives the full $25/50/100). Ride-along UI ask: **hide the header pass-ticket icon when count is 0** (only render with ≥1 pass) — `components/layout/Header.tsx` mobile + desktop tickets.
+
 **Everything below is the original treasury-design review — kept for reference / the future revisit.**
 
 ---
