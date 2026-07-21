@@ -264,54 +264,32 @@ export function BatchProgressIndicator() {
             <span className="text-[10px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
-          <div className="flex flex-col gap-[3px] sm:flex-row sm:gap-1.5">
+          <div className="flex flex-row gap-1 sm:gap-1.5">
             {pills.map((p) => (
               <div key={p.key}>
-                {/* Desktop pill */}
-                <div className={`hidden sm:flex flex-col gap-[2px] rounded-[10px] border px-2.5 py-[5px] min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center gap-1.5 leading-none">
-                    <span className={`text-[10px] font-extrabold tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+                {/* One pill, same design on every screen — mobile is just a
+                    tighter cut of the desktop pill (Boris 2026-07-21). */}
+                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[3px] sm:py-[5px] min-w-[88px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  <div className="flex items-center gap-1 sm:gap-1.5 leading-none">
+                    <span className={`text-[8px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      <span className={`ml-auto text-[9.5px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
                   </div>
                   <div className="leading-none" style={heatPulse(p.heat, p.color)}>
                     {p.hit ? (
-                      <span className="text-[12px] font-extrabold text-green-400">✓ HIT</span>
+                      <span className="text-[10.5px] sm:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
-                      <span className="text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.pos}<span className="text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      <span className="text-[11px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
+                        {p.pos}<span className="text-[9px] sm:text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
                       </span>
                     )}
                   </div>
-                  <div className="h-[2.5px] overflow-hidden rounded-full bg-white/10">
+                  <div className="h-[2px] sm:h-[2.5px] overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
                   </div>
                 </div>
 
-                {/* Mobile row — original compact footprint (full-size pass
-                    crowded the SBS logo), but the lane NAME and PERCENT are
-                    the two things a user reads, so those get the size:
-                    "Jackpot"/"HOF" 9.5px bold + pct 10.5px bold; counters and
-                    bar stay small and quiet (Boris 2026-07-21). */}
-                <div className="flex items-center gap-[4px] leading-none sm:hidden" style={heatPulse(p.heat, p.color)}>
-                  <span className={`w-[40px] text-[9.5px] font-bold ${p.textCls}`}>{p.mobileTag}</span>
-                  {p.hit ? (
-                    <span className="text-[11px] font-extrabold text-green-400">✓ HIT</span>
-                  ) : (
-                    <>
-                      <span className="text-[10.5px] font-extrabold tabular-nums text-white/85">
-                        {p.pos}<span className="text-[8.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
-                      </span>
-                      <span className="h-[2.5px] w-[24px] overflow-hidden rounded-full bg-white/10">
-                        <span className="block h-full rounded-full" style={{ width: `${p.pos}%`, background: p.barBg }} />
-                      </span>
-                      {p.pct !== null && (
-                        <span className={`text-[10.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
-                      )}
-                    </>
-                  )}
-                </div>
               </div>
             ))}
           </div>

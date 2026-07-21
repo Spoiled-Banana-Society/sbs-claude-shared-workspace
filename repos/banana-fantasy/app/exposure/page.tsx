@@ -82,7 +82,7 @@ export default function ExposurePage() {
   const [modalLeague, setModalLeague] = useState<League | null>(null);
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
   const [stackTeamFilter, setStackTeamFilter] = useState<string>('all');
-  const [stackMinSize, setStackMinSize] = useState<2 | 3 | 4>(2);
+  const [stackMinSize, setStackMinSize] = useState<2 | 3 | 4 | 5>(2);
   const [stackSearch, setStackSearch] = useState('');
   const [selectedStack, setSelectedStack] = useState<RealStack | null>(null);
   // Which sub-view of the Exposure page is showing. Team Stacks used to live
@@ -232,16 +232,19 @@ export default function ExposurePage() {
   // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
   // permutations don't count because in best ball, "stacking" only has
   // positive correlation when your QB and his pass-catchers / backs
-  // score together.
+  // score together. ONE exception: the full 5-stack (QB+RB+WR+TE+DST —
+  // every position group from one team) shows, DST included. Partial
+  // DST combos (QB+DST, QB+WR+DST, …) stay hidden so they don't dilute
+  // the 2+/3+ views.
   const STACK_SKILL_GROUPS = ['WR', 'TE', 'RB'] as const;
   const stacks = useMemo(() => {
     const all = computeStacksFromLeagues(leagues);
     return all.filter(s =>
-      s.positions.includes('QB') &&
-      s.positions.some(p => (STACK_SKILL_GROUPS as readonly string[]).includes(p)) &&
-      // Drop combos that contain anything OTHER than QB + WR/TE/RB
-      // (e.g. drop QB+DST, QB+WR+DST). DST mixed in dilutes the signal.
-      s.positions.every(p => p === 'QB' || (STACK_SKILL_GROUPS as readonly string[]).includes(p)),
+      s.size === 5 || (
+        s.positions.includes('QB') &&
+        s.positions.some(p => (STACK_SKILL_GROUPS as readonly string[]).includes(p)) &&
+        s.positions.every(p => p === 'QB' || (STACK_SKILL_GROUPS as readonly string[]).includes(p))
+      ),
     );
   }, [leagues]);
 
@@ -723,7 +726,7 @@ export default function ExposurePage() {
               </select>
               {/* Min-size pills */}
               <div className="flex bg-white/[0.04] rounded-lg p-0.5">
-                {([2, 3, 4] as const).map(size => (
+                {([2, 3, 4, 5] as const).map(size => (
                   <button
                     key={size}
                     onClick={() => setStackMinSize(size)}
