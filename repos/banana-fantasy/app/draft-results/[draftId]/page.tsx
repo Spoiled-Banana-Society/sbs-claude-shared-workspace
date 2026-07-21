@@ -100,7 +100,7 @@ function parseRoster(raw: Record<string, unknown>): PlayerRoster {
 export default function DraftResultsPage() {
   const params = useParams();
   const draftId = typeof params?.draftId === 'string' ? params.draftId : '';
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const walletAddress = user?.walletAddress ?? '';
 
   // New-user first-purchase gate. Landing on this roster page means the draft is
@@ -269,11 +269,20 @@ export default function DraftResultsPage() {
           setAllRosters(parsed);
           setPlayerKeys(keys);
 
-          // Default to user's wallet, fallback to first 0x address
+          // Default to user's wallet, fallback to first 0x address. While auth
+          // is still hydrating we do NOT fall back — the rosters often resolve
+          // before Privy does, and defaulting to the first wallet briefly shows
+          // (and lets the user download!) SOMEONE ELSE'S team. The effect
+          // re-runs when walletAddress lands and selects the right one.
           const userKey = walletAddress
             ? keys.find(k => k.toLowerCase() === walletAddress.toLowerCase())
             : undefined;
-          setSelectedPlayer(userKey || keys.find(k => k.startsWith('0x')) || keys[0] || '');
+          if (userKey) {
+            setSelectedPlayer(userKey);
+          } else if (!authLoading) {
+            // settled logged-out (spectator) or user genuinely not in this draft
+            setSelectedPlayer(keys.find(k => k.startsWith('0x')) || keys[0] || '');
+          }
         } else {
           setError('Failed to load roster data.');
         }
@@ -284,7 +293,7 @@ export default function DraftResultsPage() {
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, walletAddress, reloadTick]);
+  }, [draftId, walletAddress, authLoading, reloadTick]);
 
   const title = displayName || draftId;
   const roster = allRosters[selectedPlayer];
