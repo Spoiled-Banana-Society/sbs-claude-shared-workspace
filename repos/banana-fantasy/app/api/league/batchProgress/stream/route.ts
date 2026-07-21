@@ -131,8 +131,8 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
   // above keep being emitted untouched (Pick-10 + old clients read them).
   let lanes: RollingLanes | undefined;
   if (rolling) {
-    const jpEventual = replayJpLane(jpIds, rollingStart);
-    const hofEventual = replayHofLane(hofIds, rollingStart);
+    const jpEventual = replayJpLane(jpIds, rollingStart, filled);
+    const hofEventual = replayHofLane(hofIds, rollingStart, filled);
     const jpPendingHits = jpIds.some((id) => unrevealedIds.has(id));
     const hofPendingHits = hofIds.some((id) => unrevealedIds.has(id));
     lanes = {
@@ -140,13 +140,13 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
       jp: {
         ...jpEventual,
         ...(jpPendingHits
-          ? { pre: replayJpLane(jpIds.filter((id) => !unrevealedIds.has(id)), rollingStart) }
+          ? { pre: replayJpLane(jpIds.filter((id) => !unrevealedIds.has(id)), rollingStart, filled) }
           : {}),
       },
       hof: {
         ...hofEventual,
         ...(hofPendingHits
-          ? { pre: replayHofLane(hofIds.filter((id) => !unrevealedIds.has(id)), rollingStart) }
+          ? { pre: replayHofLane(hofIds.filter((id) => !unrevealedIds.has(id)), rollingStart, filled) }
           : {}),
       },
     };

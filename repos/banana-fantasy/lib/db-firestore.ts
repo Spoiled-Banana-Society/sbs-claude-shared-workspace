@@ -3334,7 +3334,7 @@ async function getCurrentBatchPosition(): Promise<number> {
       const priorHits = (Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [])
         .filter((id) => Number(id) >= rollingStart && Number(id) < filled);
       const { replayJpLane } = await import('@/lib/rollingLanes');
-      const windowStart = replayJpLane(priorHits, rollingStart).windowStart;
+      const windowStart = replayJpLane(priorHits, rollingStart, filled).windowStart;
       const pos = filled - windowStart + 1;
       return pos >= 1 && pos <= 100 ? pos : 1;
     }

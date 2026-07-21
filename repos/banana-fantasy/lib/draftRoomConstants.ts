@@ -156,11 +156,12 @@ export function generateReelItemsForReel(
   for (let i = 0; i < totalItems; i++) {
     const rand = fillerRand();
     if (allowJackhof) {
-      // Rolling era (>= 201): banana is OUT of the reels entirely (Richard
-      // 2026-07-20). Only the three win symbols spin — JackHOF stays the
-      // rare tease, Jackpot/HOF split the rest.
-      if (rand < 0.10) items.push('jackhof');
-      else if (rand < 0.55) items.push('jackpot');
+      // Rolling era (>= 201): banana is OUT of the reels entirely, and the
+      // three win symbols spin as equals — Richard 2026-07-20 ("a HOF, a
+      // Jackpot and a JackHOF as the 3 things"), tightened same day when the
+      // first live reveal happened to show zero JackHOF in the visible strip.
+      if (rand < 0.32) items.push('jackhof');
+      else if (rand < 0.66) items.push('jackpot');
       else items.push('hof');
     } else {
       // Pre-201 path consumes the SAME rand and keeps the ORIGINAL 15/20/65

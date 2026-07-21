@@ -118,7 +118,8 @@ export default function SpinProofPage() {
             {data.verifiable && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[12px] mt-4">
                 <KV label="Round" value={`#${data.periodNumber}`} />
-                <KV label="Spin index" value={`${data.spinIndex} of ${data.period?.maxSpins ?? '?'}`} />
+                {/* spinIndex is 0-based internally; humans count from 1 */}
+                <KV label="Spin" value={`${(data.spinIndex ?? 0) + 1} of ${data.period?.maxSpins ?? '?'}`} />
                 <KV label="Round status" value={<StatusPill status={data.period?.status ?? 'requested'} />} />
                 <KV label="Spins used" value={`${data.period?.spinCount ?? 0} / ${data.period?.maxSpins ?? 0}`} />
               </div>
