@@ -32,7 +32,7 @@ function nftToSyntheticLeague(n: MarketplaceTeam): League {
     // A wheel-won JP/HOF pass isn't stamped JP/HOF in its NFT metadata until the
     // draft reveals, so isHof/isJackpot are false while it's filling — fall back to
     // the known wheel level so it shows as HOF/Jackpot (badge, filter, gold art).
-    type: ((n.isJackpot && n.isHof) ? 'jackhof'
+    type: (((n.isJackpot && n.isHof) || n.fillingWheelLevel === 'jackhof') ? 'jackhof'
       : (n.isJackpot || n.fillingWheelLevel === 'jackpot') ? 'jackpot'
       : (n.isHof || n.fillingWheelLevel === 'hof') ? 'hof'
       : 'pro') as ContestType,

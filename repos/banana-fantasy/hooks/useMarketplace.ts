@@ -238,8 +238,12 @@ function enrichWithBackendData(
     if (!token) return nft;
 
     const level = token.level;
+    // 'JackHOF' = Jackpot + HOF hitting the SAME draft. Only that level sets
+    // BOTH flags — the teams page renders its JackHOF chip from exactly that
+    // pair, so a plain Jackpot must never also read as HOF.
+    const isJackhofLevel = level === 'JackHOF';
     const draftType: DraftType =
-      level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
+      isJackhofLevel || level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
 
     const rank = token.rank ? parseInt(token.rank, 10) : 0;
     const points = token.seasonScore ? Number(token.seasonScore) : 0;
@@ -266,7 +270,7 @@ function enrichWithBackendData(
     return {
       ...nft,
       draftType,
-      isHof: draftType === 'hof' || draftType === 'jackpot',
+      isHof: draftType === 'hof' || isJackhofLevel,
       isJackpot: draftType === 'jackpot',
       rank: Number.isFinite(rank) ? rank : 0,
       points: Number.isFinite(points) ? points : 0,
