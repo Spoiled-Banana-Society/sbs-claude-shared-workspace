@@ -55,6 +55,13 @@ export interface WheelPeriodDoc {
   // (salt, vrf, segmentsSnapshot) without trusting the deployed code.
   segmentsSnapshot?: WheelSegment[];
   segmentsHash?: string; // sha256 of canonical segments JSON
+  hasJackhof?: boolean;  // convenience flag: snapshot contains the JackHOF wedge
+}
+
+/** The wedge set a period's outcomes derive from (snapshot, or the classic
+ *  static config for pre-snapshot legacy periods). */
+export function periodSegments(p: WheelPeriodDoc): WheelSegment[] {
+  return p.segmentsSnapshot && p.segmentsSnapshot.length > 0 ? p.segmentsSnapshot : wheelSegments;
 }
 
 export interface WheelPeriodStateDoc {
@@ -112,10 +119,15 @@ export async function recordPeriodRequested(input: {
   saltHash: string;
   vrfRequestId: string;
   commitTxHash: string;
+  // The wedge set this period's 100k outcomes derive from — stamped
+  // immutably here. Caller (keeper) picks the config generation; every
+  // downstream derivation reads THIS snapshot, never the static config.
+  segments?: WheelSegment[];
 }): Promise<void> {
   const db = getAdminFirestore();
   const now = Date.now();
-  const segmentsJson = JSON.stringify(wheelSegments.map((s) => ({ id: s.id, label: s.label, probability: s.probability })));
+  const segments = input.segments ?? wheelSegments;
+  const segmentsJson = JSON.stringify(segments.map((s) => ({ id: s.id, label: s.label, probability: s.probability })));
   const doc: WheelPeriodDoc = {
     periodNumber: input.periodNumber,
     status: 'requested',
@@ -126,8 +138,9 @@ export async function recordPeriodRequested(input: {
     maxSpins: MAX_SPINS_PER_PERIOD,
     openedAt: now,
     commitTxHash: input.commitTxHash,
-    segmentsSnapshot: wheelSegments,
+    segmentsSnapshot: segments,
     segmentsHash: crypto.createHash('sha256').update(segmentsJson).digest('hex'),
+    hasJackhof: segments.some((s) => s.id === 'jackhof'),
   };
   await db.collection(PERIODS_COLLECTION).doc(String(input.periodNumber)).set(doc);
   await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).set(
@@ -146,17 +159,17 @@ export async function recordPeriodRequested(input: {
  * Compute cost: ~100-300ms for 10k outcomes on a Vercel function. Runs
  * once per period activation, amortized across 10k spins.
  */
-export function computePeriodMerkleTree(salt: string, vrf: string): MerkleTree {
+export function computePeriodMerkleTree(salt: string, vrf: string, segments: WheelSegment[] = wheelSegments): MerkleTree {
   const leaves: Hex[] = [];
   for (let i = 0; i < MAX_SPINS_PER_PERIOD; i += 1) {
-    const { segment } = deriveSpinOutcome(salt, vrf, i);
+    const { segment } = deriveSpinOutcome(salt, vrf, i, segments);
     leaves.push(leafHash(i, segment.id));
   }
   return buildMerkleTree(leaves);
 }
 
-export function computePeriodMerkleRoot(salt: string, vrf: string): Hex {
-  return computePeriodMerkleTree(salt, vrf).root;
+export function computePeriodMerkleRoot(salt: string, vrf: string, segments: WheelSegment[] = wheelSegments): Hex {
+  return computePeriodMerkleTree(salt, vrf, segments).root;
 }
 
 /**
@@ -329,7 +342,7 @@ export async function claimSpinIndex(periodNumber: number, tx: FirebaseFirestore
   }
 
   const spinIndex = period.spinCount;
-  const { segment } = deriveSpinOutcome(period.salt, period.vrfRandomness, spinIndex);
+  const { segment } = deriveSpinOutcome(period.salt, period.vrfRandomness, spinIndex, periodSegments(period));
 
   tx.update(ref, { spinCount: FieldValue.increment(1) });
 
@@ -362,11 +375,18 @@ export interface PublicPeriodSummary {
   commitTxHash: string | null;
   rootCommitTxHash: string | null;
   revealTxHash: string | null;
+  /** The wedge set this period's outcomes derive from — committed at open,
+   *  safe to expose (it's what auditors re-derive leaves from). */
+  segments: WheelSegment[];
+  hasJackhof: boolean;
 }
 
 export function toPublicSummary(p: WheelPeriodDoc): PublicPeriodSummary {
   const revealed = p.status === 'revealed';
+  const segments = periodSegments(p);
   return {
+    segments,
+    hasJackhof: p.hasJackhof ?? segments.some((s) => s.id === 'jackhof'),
     periodNumber: p.periodNumber,
     status: p.status,
     saltHash: p.saltHash,

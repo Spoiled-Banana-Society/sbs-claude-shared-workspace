@@ -8,7 +8,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
-import { wheelSegments } from '@/lib/wheelConfig';
+import { allKnownSegmentsById } from '@/lib/wheelConfig';
 import { sbsDayStartIso } from '@/lib/sbsDay';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -408,7 +408,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
   // Seed with every wheel-config prize. Multiple segment IDs collapse
   // onto the same human label (e.g. five 'draft-1-*' segments → "1 free
   // draft") so we dedupe by label.
-  for (const seg of wheelSegments) {
+  for (const seg of allKnownSegmentsById.values()) {
     let label = 'unknown';
     if (seg.prizeType === 'draft_pass' && typeof seg.prizeValue === 'number') {
       label = `${seg.prizeValue} free draft${seg.prizeValue === 1 ? '' : 's'}`;

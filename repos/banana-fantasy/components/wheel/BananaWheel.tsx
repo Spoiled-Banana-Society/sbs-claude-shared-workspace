@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { wheelSegments, WHEEL_SEGMENT_ANGLE, type WheelSegment } from '@/lib/wheelConfig';
+import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
+import { useWheelSegments } from '@/hooks/useWheelSegments';
 import type { WheelSpinOutcome } from '@/hooks/useWheelData';
 import { startSpinSound, playWinSound, getWinTier } from '@/lib/wheelSounds';
 import { verifySpinProof } from '@/lib/wheelMerkleClient';
@@ -225,7 +226,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const wheelRef = useRef<HTMLDivElement>(null);
   const resumedRef = useRef(false);
 
-  const segmentAngle = WHEEL_SEGMENT_ANGLE;
+  // The wedge set + geometry follow the ACTIVE VRF period's committed
+  // snapshot (server derives outcomes from the same source), so a new
+  // config generation flips the rendered wheel without a client deploy.
+  const { segments: wheelSegments, segmentAngle } = useWheelSegments();
 
   // On mount: check for a pending/completed spin that was interrupted
   React.useEffect(() => {
@@ -236,7 +240,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       if (!raw) return;
       const pending: PendingSpin = JSON.parse(raw);
       const elapsed = Date.now() - pending.startedAt;
-      const segment = pending.segmentId ? wheelSegments.find(s => s.id === pending.segmentId) ?? null : null;
+      const segment = pending.segmentId
+        ? wheelSegments.find(s => s.id === pending.segmentId) ?? allKnownSegmentsById.get(pending.segmentId) ?? null
+        : null;
 
       if (elapsed < SPIN_DURATION_MS) {
         // Spin still in progress — resume the landing animation
@@ -394,7 +400,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     setSpinPhase('landing');
     setRotation(newRotation);
 
-    const segment = wheelSegments.find((seg) => seg.id === outcome?.result) ?? null;
+    const segment =
+      wheelSegments.find((seg) => seg.id === outcome?.result)
+      ?? (outcome?.result ? allKnownSegmentsById.get(outcome.result) : undefined)
+      ?? null;
 
     // Persist spin state so it survives navigation
     try {
