@@ -257,11 +257,11 @@ export function BatchProgressIndicator() {
           </div>
         }
       >
-        <div className="relative flex items-center gap-1.5 ml-2 mr-1 sm:ml-0 md:mr-3 cursor-default">
+        <div className="relative flex flex-col items-center gap-[2px] ml-2 mr-1 sm:flex-row sm:gap-1.5 sm:ml-0 md:mr-3 cursor-default">
           {/* Global draft number — always one glance away of the window counters */}
-          <div className="flex flex-col items-center px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10 leading-tight">
-            <span className="text-[6.5px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[10px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+          <div className="flex flex-row items-baseline gap-1 leading-tight sm:flex-col sm:items-center sm:gap-0 sm:px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10">
+            <span className="text-[7px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
+            <span className="text-[9.5px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
           <div className="flex flex-row gap-1 sm:gap-1.5">
@@ -269,19 +269,19 @@ export function BatchProgressIndicator() {
               <div key={p.key}>
                 {/* One pill, same design on every screen — mobile is just a
                     tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[3px] sm:py-[5px] min-w-[88px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[2px] sm:py-[5px] min-w-[76px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
                   <div className="flex items-center gap-1 sm:gap-1.5 leading-none">
-                    <span className={`text-[8px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+                    <span className={`text-[7.5px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9.5px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      <span className={`ml-auto text-[9px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
                   </div>
                   <div className="leading-none" style={heatPulse(p.heat, p.color)}>
                     {p.hit ? (
                       <span className="text-[10.5px] sm:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
-                      <span className="text-[11px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.pos}<span className="text-[9px] sm:text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
+                      <span className="text-[10px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
+                        {p.pos}<span className="text-[8px] sm:text-[10.5px] font-medium text-white/40">/{WINDOW_SIZE}</span>
                       </span>
                     )}
                   </div>

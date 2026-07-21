@@ -5,6 +5,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
 import { getPositionColorHex } from '@/lib/draftRoomConstants';
 import type { PlayerData } from '@/lib/draftRoomConstants';
+import { SlotHistoryTable } from '@/components/drafting/SlotHistoryTable';
 
 interface DraftQueueProps {
   queuedPlayers: PlayerData[];
@@ -180,6 +181,11 @@ export function DraftQueue({
                               >
                                 Unqueue
                               </button>
+                            </div>
+
+                            {/* Same 3-season slot history as the Draft tab expansion */}
+                            <div className="flex justify-center">
+                              <SlotHistoryTable playerId={player.playerId} />
                             </div>
                           </div>
                         )}
