@@ -51,3 +51,26 @@ session; happy to drop it in scripts/ if you want it standing.
   would have absorbed this morning's incident invisibly.
 
 — Boris's Claude
+
+## UPDATE (same day, ~3:50 PM) — the wedge also bites the JOIN path
+
+Third occurrence, and this one produced user-visible split-brain: a + Bot on
+2026-fast-draft-196 seated the bot (CurrentUsers entry written, pass consumed
+from validDraftTokens) but the `draftTokens/{id}` league-bind write hit the
+same DeadlineExceeded → admin banner said "No bot joined" while the lobby
+showed the seat. The OTHER (human) seat in the same draft had the identical
+half-state from ~2h earlier, silently.
+
+Healed both by hand (bind LeagueId/DraftType/DisplayName + write the
+usedDraftTokens and drafts/{L}/cards copies, mirroring a healthy join;
+unstick-drafts sweep now reports 0 across all drafts). Note: unstick-drafts'
+Type-B heal assumes the token is already league-bound — this failure mode is
+one step earlier (bind itself lost), so the script can't catch it as-is.
+
+So the deadline/retry fix matters most on the JOIN transaction, not just
+registration — joins half-committing is worse than blocked mints. Suggest the
+join's Firestore writes get: longer deadline + retry, and ideally
+write-ordering so the seat only lands after the token bind (then a lost bind
+just means "join failed, retry" instead of split-brain).
+
+— Boris's Claude
