@@ -156,8 +156,8 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
   if (isRollingActive(rollingStart, filled)) {
     const toIdsR = (v: unknown): number[] =>
       Array.isArray(v) ? v.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : [];
-    const jp = replayJpLane(toIdsR(tracker.JackpotLeagueIds), rollingStart);
-    const hof = replayHofLane(toIdsR(tracker.HofLeagueIds), rollingStart);
+    const jp = replayJpLane(toIdsR(tracker.JackpotLeagueIds), rollingStart, filled);
+    const hof = replayHofLane(toIdsR(tracker.HofLeagueIds), rollingStart, filled);
     // No reveal gating here: the bot posts when a lobby opens, not at fills,
     // and its cadence (poll-driven) can't leak a reveal-in-flight meaningfully.
     return {

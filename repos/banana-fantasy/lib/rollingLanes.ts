@@ -50,21 +50,32 @@ export function isRollingActive(rollingStart: number, filled: number): boolean {
 
 /** Replay the jackpot lane: every hit at draft X closes its window and the
  *  next one opens at X+1. Ids below rollingStart (old fixed batches) never
- *  advance the lane. The current window is unhit by construction. */
-export function replayJpLane(jpIds: number[], rollingStart: number): LaneSnapshot {
+ *  advance the lane. The current window is unhit by construction.
+ *
+ *  ⚠️ throughDraft (= FilledLeaguesCount) is REQUIRED: Go's era model writes
+ *  each window's drawn positions into the id arrays UP FRONT (caught live at
+ *  cutover 2026-07-20: JackpotLeagueIds already held a future id minutes
+ *  after draft 200 filled). An id greater than the filled count is a
+ *  SCHEDULED draw, not a hit — counting it collapses the window early AND
+ *  leaks the secret position through the public odds (remaining/draftsLeft
+ *  is invertible). Only ids ≤ throughDraft may advance a lane. */
+export function replayJpLane(jpIds: number[], rollingStart: number, throughDraft: number): LaneSnapshot {
   let start = rollingStart;
   for (const id of [...jpIds].sort((a, b) => a - b)) {
+    if (id > throughDraft) break; // scheduled, not yet filled — must stay secret
     if (id >= start) start = id + 1;
   }
   return { windowStart: start, remaining: 1, hitsInWindow: 0 };
 }
 
 /** Replay the HOF lane: hits accumulate within the window; the 5th closes it
- *  and the next window opens at that draft + 1. */
-export function replayHofLane(hofIds: number[], rollingStart: number): LaneSnapshot {
+ *  and the next window opens at that draft + 1. Same throughDraft contract as
+ *  replayJpLane — ids beyond the filled count are scheduled draws, not hits. */
+export function replayHofLane(hofIds: number[], rollingStart: number, throughDraft: number): LaneSnapshot {
   let start = rollingStart;
   let hits = 0;
   for (const id of [...hofIds].sort((a, b) => a - b)) {
+    if (id > throughDraft) break; // scheduled, not yet filled — must stay secret
     if (id < start) continue;
     hits++;
     if (hits >= HOF_PER_WINDOW) {
