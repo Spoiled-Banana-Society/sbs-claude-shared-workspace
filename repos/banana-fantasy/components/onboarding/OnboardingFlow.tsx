@@ -35,7 +35,7 @@ const draftSlides = [
   {
     emoji: '🎰',
     title: 'Spin & Win More',
-    description: 'After each draft, spin the Banana Wheel for bonus prizes. Every draft is also a shot at the Jackpot and Hall of Fame.',
+    description: 'After each draft, spin the Banana Wheel for bonus prizes. Every draft is also a shot at the Jackpot, Hall of Fame — or both at once, the JackHOF.',
   },
   {
     emoji: '💰',

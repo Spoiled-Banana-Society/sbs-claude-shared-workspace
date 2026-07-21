@@ -599,7 +599,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
               {/* Guaranteed Distribution */}
               <div className="bg-white/5 border border-white/10 rounded-xl p-4 mt-4">
                 <p className="text-white/70 text-sm text-center">
-                  <span className="text-white font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro drafts. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel — earn spins by completing promos.
+                  <span className="text-white font-medium">Guaranteed windows:</span> A Jackpot is always within the next 100 drafts, and every rolling window carries 5 HOF — each resets when its guarantee hits. Both on one draft = the ultra-rare JackHOF, with both perks. Players can also win Jackpot, HOF, and JackHOF entries on the Banana Wheel — earn spins by completing promos.
                 </p>
               </div>
             </div>

@@ -25,6 +25,7 @@ export function buildWheelShareCopy(prizeId: string): SpinShareCopy {
   const base = (() => {
     if (prizeId === 'jackpot') return 'Just hit a JACKPOT on the Banana Wheel 🎰🍌 skip straight to the finals @SBSFantasy';
     if (prizeId === 'hof') return 'Hall of Fame draft unlocked on @SBSFantasy 🏆🍌 competing for bonus prizes';
+    if (prizeId === 'jackhof') return 'JACKHOF. The 0.1% wedge just hit on the Banana Wheel 🎰🏆🍌 finals skip + HOF prizes on ONE draft @SBSFantasy';
     const m = prizeId.match(/^draft-(\d+)$/);
     if (m) return `Just won ${m[1]} draft pass${Number(m[1]) === 1 ? '' : 'es'} on the Banana Wheel 🍌🏈 @SBSFantasy`;
     return `Just spun the Banana Wheel on @SBSFantasy 🍌🏈`;

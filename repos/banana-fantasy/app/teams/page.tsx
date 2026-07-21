@@ -154,10 +154,10 @@ export default function StandingsPage() {
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
   // keeps you on the same tab instead of bouncing back to All.
-  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro' | 'founder'>(() => {
+  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'jackhof' | 'pro' | 'founder'>(() => {
     if (typeof window === 'undefined') return 'all';
     const t = new URLSearchParams(window.location.search).get('type');
-    return t === 'jackpot' || t === 'hof' || t === 'pro' || t === 'founder' ? t : 'all';
+    return t === 'jackpot' || t === 'hof' || t === 'jackhof' || t === 'pro' || t === 'founder' ? t : 'all';
   });
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -314,10 +314,11 @@ export default function StandingsPage() {
   const typeBreakdown = useMemo(() => {
     // founder overlaps the three types (a Founder team is also Pro/JP/HOF),
     // so it's counted separately and NOT added to the All total.
-    const counts = { jackpot: 0, hof: 0, pro: 0, founder: 0 };
+    const counts = { jackpot: 0, hof: 0, jackhof: 0, pro: 0, founder: 0 };
     mergedLeagues.forEach((l) => {
       if (l.type === 'jackpot') counts.jackpot++;
       else if (l.type === 'hof') counts.hof++;
+      else if (l.type === 'jackhof') counts.jackhof++;
       else counts.pro++;
       if (founderTeamIds.has(nftByLeague.get(l.id)?.tokenId ?? '')) counts.founder++;
     });
@@ -369,10 +370,12 @@ export default function StandingsPage() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
                 <div className="flex gap-2 flex-shrink-0">
                   {([
-                    { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof})`, color: 'white' },
+                    { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof + typeBreakdown.jackhof})`, color: 'white' },
                     { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
                     { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
                     { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
+                    // Only rendered once one exists — no point advertising an empty ultra-rare tab.
+                    ...(typeBreakdown.jackhof > 0 ? [{ key: 'jackhof', label: `JackHOF (${typeBreakdown.jackhof})`, color: '#ef6c37' } as const] : []),
                     // Cyan matches the FOUNDER pill on the cards.
                     { key: 'founder', label: `Founder (${typeBreakdown.founder})`, color: '#06b6d4' },
                   ] as const).map(({ key, label, color }) => (

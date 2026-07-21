@@ -37,6 +37,7 @@ const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
 
 const typeConfig: Record<string, { label: string; text: string; bg: string }> = {
   jackpot: { label: 'Jackpot', text: 'text-jackpot', bg: 'bg-jackpot/10' },
+  jackhof: { label: 'JackHOF', text: 'text-jackpot', bg: 'bg-jackpot/10' },
   hof: { label: 'HOF', text: 'text-hof', bg: 'bg-hof/10' },
   pro: { label: 'Pro', text: 'text-pro', bg: 'bg-pro/10' },
   regular: { label: 'Pro', text: 'text-pro', bg: 'bg-pro/10' },

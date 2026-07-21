@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-type DraftType = 'bbb' | 'jackpot' | 'hof';
+type DraftType = 'bbb' | 'jackpot' | 'hof' | 'jackhof';
 type LobbyStatus = 'open' | 'filling' | 'starting' | 'full';
 
 interface Lobby {
@@ -66,6 +66,15 @@ const DRAFT_TYPE_CONFIG: Record<DraftType, { label: string; emoji: string; color
     borderColor: 'border-yellow-500/30',
     odds: '5%',
     description: 'Bonus prize pool. Top performers enter the Hall of Fame.',
+  },
+  jackhof: {
+    label: 'JackHOF',
+    emoji: '👑',
+    color: '#ef6c37',
+    bgGrad: 'from-red-600/15 to-yellow-900/5',
+    borderColor: 'border-red-500/30',
+    odds: '1/800',
+    description: 'Jackpot + HOF on one draft. Skip to the finals AND chase the bonus pool.',
   },
 };
 

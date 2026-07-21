@@ -57,7 +57,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What happens when I enter a draft?',
-        answer: 'You join a room that fills to 10 players. Once full, a 60-second countdown starts and your draft type is revealed slot machine style - Jackpot (1%), HOF (5%), or Pro (94%). Then you draft!',
+        answer: 'You join a room that fills to 10 players. Once full, a 60-second countdown starts and your draft type is revealed slot machine style - Jackpot, HOF, JackHOF (the ultra-rare Jackpot + HOF combo), or Pro. Then you draft!',
       },
       {
         question: 'What\'s the difference between Fast and Slow drafts?',
@@ -97,23 +97,23 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How does the guaranteed distribution work?',
-        answer: 'This is NOT random odds — it\'s a guaranteed distribution. Every 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro drafts. The order is randomized, but the mix is guaranteed — you\'re not gambling on luck. You can see what\'s still left in the current batch of 100 anytime, in the counter at the top-right of the header.',
+        answer: 'This is NOT random odds — it\'s a guaranteed rolling window. A Jackpot is always hiding somewhere in the next 100 drafts, and the moment it hits, a fresh 100-draft window starts — so a Jackpot is never more than 100 drafts away from the last one. HOF works the same way: 5 HOF slots per window, resetting after the 5th hits. The positions are provably random, but the guarantees are locked. You can watch both counters live at the top-right of the header — the odds climb as a window goes unhit.',
       },
       {
         question: 'I hit Jackpot on the Banana Wheel — what happens now?',
         answer: 'You\'re automatically seated in a special Jackpot draft, free. It sits ready and starts on its own the moment 10 wheel winners have joined. It\'s a slow draft — 8 hours per pick, and the clock pauses overnight (10pm–5am PT). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
       },
       {
-        question: 'Can I leave a wheel-won Jackpot or HOF draft?',
+        question: 'Can I leave a wheel-won Jackpot, HOF, or JackHOF draft?',
         answer: 'No — your seat is locked from the moment you win it. But you CAN sell the pass on the SBS Marketplace while the draft is still filling — the buyer takes over your seat, name and all. Once the draft fills it becomes your team, and you can still sell that team on the Marketplace afterward, like any other team.',
       },
       {
         question: 'Why is this the only sellable draft pass?',
-        answer: 'A wheel-won Jackpot or HOF pass is a guaranteed seat in a special draft — that\'s real value you might not be able to use, so we let you trade it before the draft starts. Every other free pass can only be used to enter drafts. The moment the special draft fills, the trade window closes.',
+        answer: 'A wheel-won Jackpot, HOF, or JackHOF pass is a guaranteed seat in a special draft — that\'s real value you might not be able to use, so we let you trade it before the draft starts. Every other free pass can only be used to enter drafts. The moment the special draft fills, the trade window closes.',
       },
       {
         question: 'Do special wheel-won drafts earn promos?',
-        answer: 'No. Special Jackpot/HOF drafts are free drafts and never earn promos — hitting a Slot 10 in one doesn\'t award a free spin, and the draft doesn\'t count toward the 4-drafts-in-a-day promo.',
+        answer: 'No. Special Jackpot/HOF/JackHOF drafts are free drafts and never earn promos — hitting a Slot 10 in one doesn\'t award a free spin, and the draft doesn\'t count toward the 4-drafts-in-a-day promo.',
       },
       {
         question: 'What exactly happens if I win a Jackpot league?',
@@ -139,11 +139,33 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What are the odds of getting a HOF draft?',
-        answer: 'HOF drafts make up 5% of all drafts. With the guaranteed distribution system, every 100 drafts contains exactly 5 HOF drafts. The order is randomized, but you\'re guaranteed fair distribution.',
+        answer: 'HOF drafts average 5% of all drafts, and it\'s guaranteed, not luck: every rolling 100-draft window contains 5 HOF slots, and the window resets as soon as the 5th one hits. The positions are provably random, but you\'re never far from the next HOF.',
       },
       {
         question: 'I hit HOF on the Banana Wheel — what happens now?',
         answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (8 hours per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace until the draft fills. Special drafts never earn promos.',
+      },
+    ],
+  },
+  {
+    id: 'jackhof',
+    title: 'JackHOF Drafts',
+    items: [
+      {
+        question: 'What is a JackHOF Draft?',
+        answer: 'The rarest draft in SBS — the Jackpot and a HOF landing on the SAME draft. A JackHOF league carries BOTH perks: win it and you skip straight to the Week 17 finals AND you\'re in the HOF playoff track competing for bonus prizes on top. Two perks, one draft.',
+      },
+      {
+        question: 'How rare is a JackHOF?',
+        answer: 'The Jackpot and HOF slots are drawn independently in their rolling windows, so they only collide on the same draft about once in 800 drafts — it can go a whole season without happening. There\'s also a JackHOF wedge on the Banana Wheel at 0.1%, which wins you a guaranteed seat in a special JackHOF draft.',
+      },
+      {
+        question: 'What happens if I win a JackHOF league?',
+        answer: 'Everything. You advance directly to the Week 17 finals (the Jackpot perk, skipping both playoff rounds) and your team also enters the separate HOF playoff track for bonus prizes (the HOF perk). Your draft token gets the exclusive red-and-gold JackHOF border.',
+      },
+      {
+        question: 'I hit JackHOF on the Banana Wheel — what happens now?',
+        answer: 'Same flow as a wheel Jackpot or HOF, but better: you\'re seated free in a special JackHOF draft that starts automatically once 10 wheel winners join. Slow draft, 8 hours per pick, paused overnight. Your seat is locked, but the pass can be sold on the Marketplace until the draft fills.',
       },
     ],
   },
@@ -197,11 +219,11 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What prizes can I win on the Banana Wheel?',
-        answer: 'Every spin wins! Prizes include: 1, 2, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, and guaranteed HOF draft entries. The wheel is weighted but every outcome is a winner.',
+        answer: 'Every spin wins! Prizes include: 1, 2, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, guaranteed HOF draft entries — and the 0.1% JackHOF wedge, a guaranteed seat in a draft with BOTH perks. The wheel is weighted but every outcome is a winner.',
       },
       {
         question: 'What is a "special draft"?',
-        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot or HOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (until the draft fills). They\'re free drafts, so they never earn promos.',
+        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (until the draft fills). They\'re free drafts, so they never earn promos.',
       },
       {
         question: 'Where can I spin the wheel?',
@@ -367,12 +389,12 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What makes SBS different?',
-        answer: 'Three things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot or Hall of Fame, unlocking bonus spins and bigger prizes.\nFantasy sports, evolved.',
+        answer: 'Three things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot, Hall of Fame, or the ultra-rare JackHOF, unlocking bonus spins and bigger prizes.\nFantasy sports, evolved.',
         audience: 'web2',
       },
       {
         question: 'What makes SBS different?',
-        answer: 'Four things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot or Hall of Fame, unlocking bonus spins and bigger prizes.\n• First & only — we\'re the first and only on-chain fantasy drafting platform: provably fair, with teams you truly own.\nFantasy sports, evolved.',
+        answer: 'Four things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot, Hall of Fame, or the ultra-rare JackHOF, unlocking bonus spins and bigger prizes.\n• First & only — we\'re the first and only on-chain fantasy drafting platform: provably fair, with teams you truly own.\nFantasy sports, evolved.',
         audience: 'web3',
       },
     ],

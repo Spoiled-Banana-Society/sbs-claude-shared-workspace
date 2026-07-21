@@ -248,7 +248,7 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
         </div>
         <div className="bg-bg-tertiary/50 rounded-xl p-3 border border-bg-tertiary">
           <p className="text-text-secondary text-xs text-center">
-            <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel.
+            <span className="text-text-primary font-medium">Guaranteed windows:</span> A Jackpot is always within the next 100 drafts, and every rolling window carries 5 HOF — resetting each time a guarantee hits. Both on one draft = JackHOF (both perks, ~1 in 800). Players can also win Jackpot, HOF, and JackHOF entries on the Banana Wheel.
           </p>
         </div>
       </div>

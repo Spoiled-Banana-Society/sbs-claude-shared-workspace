@@ -62,16 +62,16 @@ export function BatchRandomnessLoading({
 
         <p className="text-sm text-white/70 leading-relaxed mb-4">
           {isMerkle ? (
-            <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
-            <span className="text-hof font-semibold">5 HOF</span>, and{' '}
-            <span className="text-red-400 font-semibold">1 Jackpot</span>. All 10,000 upcoming outcomes are being
+            <>Every rolling window guarantees <span className="text-hof font-semibold">5 HOF</span> and{' '}
+            <span className="text-red-400 font-semibold">a Jackpot within 100 drafts</span> — collide and it&apos;s a{' '}
+            <span className="font-semibold"><span className="text-red-400">Jack</span><span className="text-hof">HOF</span></span>. All 10,000 upcoming outcomes are being
             randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span> and
             committed — once done, every draft reveals instantly with its own
             proof. This only happens once per 10,000 drafts.</>
           ) : (
-            <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
-            <span className="text-hof font-semibold">5 HOF</span>, and{' '}
-            <span className="text-red-400 font-semibold">1 Jackpot</span>. Which slot is which type is being
+            <>Every rolling window guarantees <span className="text-hof font-semibold">5 HOF</span> and{' '}
+            <span className="text-red-400 font-semibold">a Jackpot within 100 drafts</span> — collide and it&apos;s a{' '}
+            <span className="font-semibold"><span className="text-red-400">Jack</span><span className="text-hof">HOF</span></span>. Which slot is which type is being
             randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span>, the same
             oracle network Polymarket and Aave use. Once Chainlink delivers, your draft type reveals.</>
           )}

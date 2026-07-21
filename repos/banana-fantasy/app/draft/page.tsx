@@ -30,7 +30,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     items: [
       { q: 'Is this like a traditional league?', a: 'No — this is a tournament contest. You draft against 9 other players and top finishers advance through playoffs for the grand prize pool. Enter as many drafts as you want — more teams, more paths to the playoffs.' },
       { q: 'How does a draft lobby work?', a: 'You join a draft room that fills up to 10 players. Once full, the draft starts immediately — no scheduled times, no waiting.' },
-      { q: 'What happens when 10 players join?', a: 'A 60-second countdown starts and your draft type is revealed slot machine style — Jackpot (1%), HOF (5%), or Pro (94%). Then you draft!' },
+      { q: 'What happens when 10 players join?', a: 'A 60-second countdown starts and your draft type is revealed slot machine style — Jackpot, HOF, the ultra-rare JackHOF (both on one draft), or Pro. Then you draft!' },
     ],
   },
   'snake-draft': {
@@ -61,14 +61,14 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     items: [
       { q: 'What is a Pro Draft?', a: 'Pro is the standard draft type, making up 94% of all drafts. Compete against 9 other players for your share of the prize pool.' },
       { q: 'How do I win?', a: 'Top 2 in your 10-person league make it to the playoffs to compete for the grand prize pool. The better you finish, the further you go.' },
-      { q: 'How is the distribution guaranteed?', a: 'Every 100 paid drafts contains exactly 94 Pro, 5 HOF, and 1 Jackpot. The order is randomized but the distribution is guaranteed — it\'s not random odds. On top of this, players can also win extra Jackpot and HOF entries on the Banana Wheel.' },
+      { q: 'How is the distribution guaranteed?', a: 'A Jackpot is always hiding within the next 100 drafts, and every rolling 100-draft window carries 5 HOF — each window resets the moment its guarantee hits, so the specials never dry up. It\'s provably random but the guarantees are locked. On top of this, players can also win Jackpot, HOF, and JackHOF entries on the Banana Wheel.' },
     ],
   },
   hof: {
     title: 'Hall of Fame',
     items: [
       { q: 'What is a Hall of Fame Draft?', a: 'HOF Drafts are premium draft rooms making up 5% of all drafts. Your team competes for a separate bonus prize pool on top of the regular tournament prizes.' },
-      { q: 'How do I get into a HOF Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and 5 HOF are guaranteed in every 100-draft window. 2) The Banana Wheel: land on HOF and you win a guaranteed seat in a HOF draft (from the Wheel), free.' },
+      { q: 'How do I get into a HOF Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and 5 HOF are guaranteed in every rolling 100-draft window. 2) The Banana Wheel: land on HOF and you win a guaranteed seat in a HOF draft (from the Wheel), free.' },
       { q: 'What happens when I win a HOF on the Banana Wheel?', a: 'You\'re seated in a HOF draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
       { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
       { q: 'Do wheel-won HOF drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
@@ -78,11 +78,20 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     title: 'Jackpot',
     items: [
       { q: 'What is a Jackpot Draft?', a: 'Jackpot Drafts are the rarest and most valuable draft type — only 1% of all drafts. If you win your league in a Jackpot draft, you skip straight to the finals, bypassing two weeks of playoffs.' },
-      { q: 'How do I get into a Jackpot Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and a Jackpot is guaranteed in every 100-draft window. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a Jackpot draft (from the Wheel), free.' },
+      { q: 'How do I get into a Jackpot Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and a Jackpot is always within 100 drafts of the last one. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a Jackpot draft (from the Wheel), free.' },
       { q: 'What happens when I win a Jackpot on the Banana Wheel?', a: 'You\'re seated in a Jackpot draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
       { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
       { q: 'Do wheel-won Jackpot drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
       { q: 'What exactly happens if I win?', a: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely.' },
+    ],
+  },
+
+  jackhof: {
+    title: 'JackHOF',
+    items: [
+      { q: 'What is a JackHOF Draft?', a: 'The rarest draft in SBS — the Jackpot and a HOF landing on the SAME draft (~1 in 800). A JackHOF league carries BOTH perks: win it and you skip straight to the finals AND compete in the HOF bonus track.' },
+      { q: 'How do I get into a JackHOF Draft?', a: 'Two ways. 1) The reveal: the Jackpot and HOF positions are drawn independently — when they collide on one draft, the slot machine reveals JackHOF. 2) The Banana Wheel: the 0.1% JackHOF wedge wins you a guaranteed seat in a JackHOF draft (from the Wheel), free.' },
+      { q: 'What exactly happens if I win?', a: 'Everything. You advance directly to the Week 17 finals (the Jackpot perk) and your team also enters the separate HOF playoff track for bonus prizes (the HOF perk). Your draft token gets the exclusive red-and-gold JackHOF border.' },
     ],
   },
 };
@@ -292,7 +301,7 @@ export default function DraftingPage() {
 
                   <div>
                     <h3 className="text-[13px] font-semibold text-white/40 uppercase tracking-[0.12em] mb-3 px-1">Draft Types</h3>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setInfoTopic('pro')}
                         className="rounded-2xl p-4 hover:bg-white/[0.02] transition-colors text-left cursor-pointer"
@@ -328,6 +337,18 @@ export default function DraftingPage() {
                           <span className="text-[15px] font-bold tracking-tight text-jackpot">1%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals.</p>
+                      </button>
+                      <button
+                        onClick={() => setInfoTopic('jackhof')}
+                        className="rounded-2xl p-4 hover:bg-white/[0.02] transition-colors text-left cursor-pointer"
+                        style={{ background: 'linear-gradient(160deg, rgba(239,68,68,0.06) 0%, rgba(212,175,55,0.06) 60%, transparent 90%)' }}
+                      >
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <h4 className="text-[14px] font-semibold tracking-tight"><span className="text-jackpot">Jack</span><span className="text-hof">HOF</span></h4>
+                          <span className="text-white/15">&middot;</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">1/800</span>
+                        </div>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Jackpot + HOF on one draft. Both perks.</p>
                       </button>
                     </div>
                   </div>

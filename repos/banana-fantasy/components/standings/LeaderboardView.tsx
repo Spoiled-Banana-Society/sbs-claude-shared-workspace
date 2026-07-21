@@ -204,13 +204,15 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
               <h3 className="text-white font-semibold text-sm">League #{leagueLookup?.match(/(\d+)$/)?.[1] || leagueInput.trim()}</h3>
               {leagueEntries.length > 0 && leagueEntries[0].leagueLevel && (() => {
                 const lvl = String(leagueEntries[0].leagueLevel).toLowerCase();
-                const isJP = lvl.includes('jackpot');
-                const isHOF = lvl.includes('hof') || lvl.includes('hall');
+                // jackhof must be checked FIRST — 'jackhof' contains 'hof'.
+                const isJackHOF = lvl.includes('jackhof');
+                const isJP = !isJackHOF && lvl.includes('jackpot');
+                const isHOF = !isJackHOF && (lvl.includes('hof') || lvl.includes('hall'));
                 return (
                   <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                    isJP ? 'bg-jackpot/20 text-jackpot' : isHOF ? 'bg-hof/20 text-hof' : 'bg-pro/20 text-pro'
+                    isJackHOF ? 'bg-jackpot/20 text-jackpot' : isJP ? 'bg-jackpot/20 text-jackpot' : isHOF ? 'bg-hof/20 text-hof' : 'bg-pro/20 text-pro'
                   }`}>
-                    {isJP ? 'Jackpot' : isHOF ? 'HOF' : 'Pro'}
+                    {isJackHOF ? 'JackHOF' : isJP ? 'Jackpot' : isHOF ? 'HOF' : 'Pro'}
                   </span>
                 );
               })()}
