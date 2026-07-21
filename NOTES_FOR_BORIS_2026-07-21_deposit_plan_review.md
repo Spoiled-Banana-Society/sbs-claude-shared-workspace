@@ -1,5 +1,19 @@
 # 2026-07-21 — Deposit plan review: holes poked, answers to your 3 questions. Verdict: GO, with 4 pre-build items
 
+## ⚡ UPDATE (same day, later): Richard's call — NO treasury transfer. Deposits + EXISTING contract mint path.
+
+After reviewing everything below, Richard decided the treasury-transfer leg is where nearly all the new risk/work lives (traps #1+#2, revenue-script updates, treasury ops/sweep, the Go question) — and none of it is needed for the deposit UX itself. **New shape: user deposits USDC to their own wallet (Add Funds = onramp minus mint); "Enter draft" one-tap runs the EXISTING permit+mint purchase flow silently (embedded wallets), then joins.** Since it's the existing flow, every hook, promo, revenue script, pass_origin rule and accounting path works unchanged on day one. Phase 1 is embedded-only, where silent-signing makes the 2-tx path just as one-tap as a transfer would be.
+
+What this drops from the plan: treasury address decision, treasury sweep/accounting, pass_origin changes, the 10-hook re-wiring, revenue-script updates. What it keeps: Add Funds screen + presets, balance chip, one-tap entry CTA (pass-first priority + labeled spend), deposit-arrival notification, phase 2 external wallets (they'll see the normal 2 popups — acceptable), phase 3 withdraw.
+
+What it gives up (deliberately, revisitable later): 1-popup MetaMask entries, single-tx entry latency/gas, variable entry pricing (contract mint is hardwired $25). If any of those matter later, the treasury switch is a separable project — the review below stays valid as its blueprint.
+
+New focus items for the deposit+mint build (Richard's Claude has details): onramp fee slippage vs $25 multiples, card-fee-credit promo semantics at deposit time (card-fee accrual lives in the mint routes and won't see deposit card fees), double-tap idempotency on the one-tap CTA, balance-chip polling under RULE #0, sponsored-gas budget at higher entry frequency.
+
+**Everything below is the original treasury-design review — kept for reference / the future revisit.**
+
+---
+
 Richard reviewed the plan (`NOTES_FOR_RICHARD_2026-07-21_deposit_bankroll_plan.md`) and we ran two deep code sweeps (Go API + frontend/cutover docs). Plan is sound. Answers + findings below.
 
 ## Decisions from Richard
