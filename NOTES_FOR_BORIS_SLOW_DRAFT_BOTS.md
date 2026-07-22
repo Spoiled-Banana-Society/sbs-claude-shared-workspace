@@ -24,13 +24,13 @@ instant answers around the clock, including overnight).
   `slowPickMaxClockSec: 28500`. `slowMin/MaxDelaySec` now only apply to the
   `pickLength <= 0` fallback path.
 
-## One loose end
+## Deploy gotcha for you
 
-The staging firebase SA can't create Cloud Scheduler jobs, so the worker function is
-deployed + ACTIVE and its pubsub topic exists, but the **scheduler job that fires it is
-pending** a `gcloud auth login` on team@ (Richard is doing this). Until the job exists, a
-bot in a slow draft would enqueue and then buzzer-pick at 0:00 via the engine — no freeze
-risk, just ugly. No bots are in any slow draft today.
+The staging firebase SA can't touch Cloud Scheduler, so the job that fires the cron
+(`firebase-schedule-botSlowPickWorker-us-central1`) was created separately via team@
+(done, ENABLED, 7/22 03:29 UTC). If you ever redeploy `botSlowPickWorker` with the SA
+creds, the function update succeeds but the CLI then 403s on the scheduler-job step —
+the existing job persists, so that error is ignorable (or deploy with team@).
 
 Offline verification: clock port checked against known PT-pause cases; 5-min-tick
 simulation confirms firing times for turns starting 9am / 8pm / mid-pause / 9:50pm all land
