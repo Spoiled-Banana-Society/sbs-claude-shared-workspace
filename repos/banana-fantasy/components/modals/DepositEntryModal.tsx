@@ -97,7 +97,7 @@ export function DepositEntryModal({
         {busy && (
           <div className="mt-5 flex items-center justify-center gap-2 text-white/60 text-sm">
             <span className="inline-block w-4 h-4 border-2 border-banana border-t-transparent rounded-full animate-spin" />
-            Getting your pass…
+            Joining draft…
           </div>
         )}
 

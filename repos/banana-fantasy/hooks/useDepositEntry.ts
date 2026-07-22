@@ -70,8 +70,14 @@ export function useDepositEntry() {
       clientLog('payment', 'deposit_entry_mint_ok', { wallet: walletAddress });
       // The mint route already registered the pass with Go before responding,
       // so the join can start immediately. Bump the local count so the entry
-      // flow's own optimistic decrement starts from 1, not a stale 0.
-      updateUser({ draftPasses: (user?.draftPasses || 0) + 1 });
+      // flow's own optimistic decrement starts from 1, not a stale 0 — and
+      // drop the shown balance by the $25 that just left the wallet, so the
+      // chip moves INSTANTLY (Richard 7/21: it sat stale ~30s on mobile).
+      // refreshBalance re-reads the true on-chain number right behind it.
+      updateUser({
+        draftPasses: (user?.draftPasses || 0) + 1,
+        usdcBalance: Math.max(0, (user?.usdcBalance ?? 0) - ENTRY_PRICE_USD),
+      });
       void refreshBalance();
       return true;
     } catch (err) {
