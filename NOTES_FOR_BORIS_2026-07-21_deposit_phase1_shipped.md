@@ -28,3 +28,6 @@ Nothing needed from you.
 
 ## UPDATE — LIVE as of 2026-07-21 late night
 Richard flipped it on: `NEXT_PUBLIC_DEPOSIT_ENABLED=true` set in Vercel production + hook rebuild (deployment hfg77bb85, Ready). Verified live: `/api/deposits/card-credit` now returns 401 (auth) instead of the flag-off 404. Users now see the balance chip + Add Funds; zero-pass users with $25+ USDC get one-tap entry. First real card deposit + one-tap entry still unexercised — watch `payment.card.fee_credited` logs with `via: deposit` for the first one.
+
+## Test-entry exclusion — 2026-07-22 03:54 UTC
+Richard did a REAL one-tap balance entry to test the deposit flow (web3 wallet 0xC0F982492c323Fcd314af56d6c1A35Cc9b0fC31E): $25 USDC into the contract tx 0x0966336a5a008d033f486ac4a788abe9b242fbaddf6c3a49ae9c4ae549d18cc0, pass #2833 minted tx 0x019d9fb7bbdcab8796c744b866ee6a46b5b8eeb2cdc490fd79cb4a21cfb2c2c4. ⚠️ This $25 is TEAM TEST money — pull it out of prize-pool accounting (same treatment as the $950 prelaunch-mint exclusion) / take $25 back out of the prize pool safe.
