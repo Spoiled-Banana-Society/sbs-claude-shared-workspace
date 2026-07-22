@@ -91,7 +91,14 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
     try {
       target += await getUsdcBalance(walletAddress as Address);
     } catch { /* fall back to waiting on just the increment */ }
-    window.open('https://portfolio.metamask.io/buy', '_blank', 'noopener');
+    // chainId + address preselect USD Coin on Base — verified 2026-07-21 in
+    // the live portfolio UI (`token=`/`tokenAddress=` variants do NOT work;
+    // bare /buy defaults to ETH mainnet, the one thing users must not buy).
+    window.open(
+      'https://portfolio.metamask.io/buy?chainId=8453&address=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      '_blank',
+      'noopener',
+    );
     setStep('waiting');
     const funded = await waitForUsdcArrival(walletAddress as Address, target, {
       isCancelled: () => cancelledRef.current,
