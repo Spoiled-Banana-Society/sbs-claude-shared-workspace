@@ -229,7 +229,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     className="group md:hidden flex items-center gap-1 mr-1 px-1.5 py-[5px] rounded-full border border-banana/50 bg-banana/10 hover:bg-banana/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                   >
                     <span className="text-[13px] font-bold text-white tabular-nums leading-none">${Math.floor(user.usdcBalance ?? 0)}</span>
-                    <span className="flex items-center justify-center w-[15px] h-[15px] rounded-full bg-banana text-black text-[11px] font-bold leading-none">+</span>
+                    <span className="flex items-center justify-center w-[16px] h-[16px] rounded-full border-[1.5px] border-white/80 text-white text-[12px] font-bold leading-none">+</span>
                   </button>
                 )}
 
@@ -275,7 +275,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         className="group flex items-center gap-1 mx-1 px-2.5 py-[6px] rounded-full border border-banana/50 bg-banana/10 hover:bg-banana/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                       >
                         <span className="text-sm font-bold text-white tabular-nums leading-none">${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}</span>
-                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-banana text-black text-[11px] font-bold leading-none">+</span>
+                        <span className="flex items-center justify-center w-[17px] h-[17px] rounded-full border-[1.5px] border-white/80 text-white text-[12px] font-bold leading-none">+</span>
                       </button>
                     </Tooltip>
                   )}
