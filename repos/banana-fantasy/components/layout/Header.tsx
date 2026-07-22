@@ -199,14 +199,18 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
                 {/* Deposit bankroll balance chip — wallet USDC, taps into Add
                     Funds. Flag-gated; label always says what money it is. */}
+                {/* Mobile shows whole dollars + tight padding — the lane pills
+                    already eat most of the bar, and "$10.00" was pushing the
+                    avatar off-screen on iPhone (Richard 7/21). Cents on sm+. */}
                 {DEPOSITS_ENABLED && isLoggedIn && user && (
                   <button
                     onClick={() => setShowAddFunds(true)}
                     aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
-                    className="group flex items-center gap-1 mr-1 px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                    className="group flex items-center gap-0.5 sm:gap-1 mr-0.5 sm:mr-1 px-1 sm:px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                   >
                     <span className="text-sm font-bold text-white tabular-nums">
-                      ${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}
+                      <span className="sm:hidden">${Math.floor(user.usdcBalance ?? 0)}</span>
+                      <span className="hidden sm:inline">${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}</span>
                     </span>
                     <span className="flex items-center justify-center w-4 h-4 rounded-full border border-banana/60 text-banana text-[11px] font-bold leading-none group-hover:bg-banana group-hover:text-black transition-colors">+</span>
                   </button>

@@ -43,6 +43,11 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
   // card onramp; external (web3) wallets fund themselves, no card fee to
   // credit. The server enforces this too; skipping here just avoids a 403.
   const isEmbeddedWallet = privyUser?.wallet?.walletClientType === 'privy';
+  // Positively-known external wallet (metamask, coinbase_wallet, …) → the
+  // MetaMask-buy branch. Unknown/undefined stays on the web2 card flow —
+  // wrong-branching a web2 user into MetaMask would dead-end them, and the
+  // server independently gates the fee credit either way.
+  const isExternalWallet = !!privyUser?.wallet?.walletClientType && !isEmbeddedWallet;
   // What funding method the user actually picked inside the Privy widget —
   // only card deposits earn the card-fee credit ('manual' = external wallet
   // transfer, no card fee). null/undefined = widget didn't say; assume card
@@ -69,6 +74,35 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
   const close = () => {
     cancelledRef.current = true;
     onClose();
+  };
+
+  // Web3 (external wallet): MetaMask's OWN buy surface. We can't open the
+  // extension's internal Buy screen (no dapp API exists for it), but
+  // portfolio.metamask.io is MetaMask's official buy page — user connects the
+  // same wallet there and the purchase lands at their address. We watch the
+  // balance so the modal still confirms arrival. Amount is chosen on their
+  // side, so any ≥ $5 arrival counts as funded.
+  const startWeb3Funding = async () => {
+    if (!walletAddress || step === 'waiting') return;
+    cancelledRef.current = false;
+    setError(null);
+    clientLog('payment', 'deposit_funding_opened', { wallet: walletAddress, via: 'metamask_portfolio' });
+    let target = 5_000_000n;
+    try {
+      target += await getUsdcBalance(walletAddress as Address);
+    } catch { /* fall back to waiting on just the increment */ }
+    window.open('https://portfolio.metamask.io/buy', '_blank', 'noopener');
+    setStep('waiting');
+    const funded = await waitForUsdcArrival(walletAddress as Address, target, {
+      isCancelled: () => cancelledRef.current,
+    });
+    if (cancelledRef.current) return;
+    if (funded) {
+      clientLog('payment', 'deposit_funding_arrived', { wallet: walletAddress, via: 'metamask_portfolio' });
+      void refreshBalance();
+      onFunded?.(0);
+    }
+    setStep('done');
   };
 
   const startFunding = async () => {
@@ -148,7 +182,26 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
 
   return createPortal(
     <Modal isOpen={isOpen} onClose={close} title="Add Funds" size="sm">
-      {(step === 'amount' || step === 'funding') && (
+      {/* Web3 (external wallet): amount + methods live on MetaMask's side, so
+          no preset grid — one clean handoff to their buy page. */}
+      {(step === 'amount' || step === 'funding') && isExternalWallet && (
+        <div className="space-y-4">
+          <p className="text-text-muted text-sm text-center -mt-2">
+            Buy USDC on Base with MetaMask — it lands in your connected wallet, then you can enter drafts in one tap.
+          </p>
+          <button
+            onClick={() => void startWeb3Funding()}
+            className="w-full py-3.5 rounded-xl bg-banana text-black font-bold text-[15px] hover:brightness-110 transition-all"
+          >
+            Open MetaMask Buy
+          </button>
+          <p className="text-center text-text-muted text-xs">
+            Already have USDC elsewhere? Send it to your connected wallet and you&apos;re set.
+          </p>
+        </div>
+      )}
+
+      {(step === 'amount' || step === 'funding') && !isExternalWallet && (
         <div className="space-y-4">
           <p className="text-text-muted text-sm text-center -mt-2">
             Money goes to your balance — enter drafts in one tap.
