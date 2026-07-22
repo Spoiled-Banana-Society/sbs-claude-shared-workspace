@@ -13,6 +13,7 @@ import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
@@ -210,12 +211,16 @@ export default function DraftingPage() {
             >
               Enter
             </button>
-            <button
-              onClick={() => router.push('/buy-drafts?buy=1')}
-              className="w-32 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-full hover:bg-banana hover:text-black hover:scale-105 transition-all"
-            >
-              Buy
-            </button>
+            {/* Buy CTA only exists in the pre-deposit world — with the
+                bankroll live, Enter covers pass / balance / add-funds. */}
+            {!DEPOSITS_ENABLED && (
+              <button
+                onClick={() => router.push('/buy-drafts?buy=1')}
+                className="w-32 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-full hover:bg-banana hover:text-black hover:scale-105 transition-all"
+              >
+                Buy
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -278,12 +283,14 @@ export default function DraftingPage() {
                       >
                         Enter
                       </button>
-                      <button
-                        onClick={() => router.push('/buy-drafts?buy=1')}
-                        className="w-36 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
-                      >
-                        Buy
-                      </button>
+                      {!DEPOSITS_ENABLED && (
+                        <button
+                          onClick={() => router.push('/buy-drafts?buy=1')}
+                          className="w-36 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
+                        >
+                          Buy
+                        </button>
+                      )}
                     </div>
                   </div>
 
