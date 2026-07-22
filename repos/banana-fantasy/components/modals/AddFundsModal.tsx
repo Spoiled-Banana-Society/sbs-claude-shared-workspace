@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { useFundWallet } from '@privy-io/react-auth';
+import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import type { Address } from 'viem';
 import { useAuth } from '@/hooks/useAuth';
 import { BASE_SEPOLIA, getUsdcBalance, waitForUsdcArrival } from '@/lib/contracts/bbb4';
@@ -30,8 +30,15 @@ type Step = 'amount' | 'funding' | 'waiting' | 'done' | 'error';
  */
 export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps) {
   const { walletAddress, refreshBalance } = useAuth();
+  const { getAccessToken } = usePrivy();
+  // What funding method the user actually picked inside the Privy widget —
+  // only card deposits earn the card-fee credit ('manual' = external wallet
+  // transfer, no card fee). null/undefined = widget didn't say; assume card
+  // (it's the default flow we open into).
+  const fundingMethodRef = useRef<string | null>(null);
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
+      fundingMethodRef.current = fundingMethod ?? null;
       logger.debug('[AddFunds] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
@@ -92,6 +99,26 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
       if (funded) {
         clientLog('payment', 'deposit_funding_arrived', { wallet: walletAddress, amountUsd: effectiveAmount });
         void refreshBalance();
+        // Card-fee credit accrues at DEPOSIT time (Richard 2026-07-21). Fire
+        // and forget — the server verifies the transfer on-chain and is
+        // idempotent, and the reward toast arrives via the user event stream.
+        // Skip when the user picked an external-transfer method (no card fee).
+        if (fundingMethodRef.current !== 'manual') {
+          void (async () => {
+            try {
+              const token = await getAccessToken();
+              if (!token) return;
+              await fetch('/api/deposits/card-credit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ amountUsd: effectiveAmount }),
+              });
+            } catch {
+              // Non-fatal — the deposit itself succeeded; credit is recoverable
+              // from the on-chain record if this report is ever missed.
+            }
+          })();
+        }
         onFunded?.(effectiveAmount);
         setStep('done');
       } else {

@@ -53,3 +53,22 @@ export function feeForQty(quantity: number): number {
   // qty > 10 (or any gap): extrapolate from the qty-10 anchor.
   return CARD_FEE_CENTS_BY_QTY[10] + (q - 10) * CARD_FEE_MARGINAL_CENTS;
 }
+
+/**
+ * The card fee (in cents) for a deposit of `amountUsd` USDC — the deposit
+ * bankroll's analogue of feeForQty. A deposit has no pass quantity, so we map
+ * dollars onto the same measured curve at q = amount/$25, interpolating
+ * linearly between measured points. Below $25 the qty-1 fee applies flat
+ * (MoonPay's minimum fee dominates small purchases, so the fee doesn't shrink
+ * with the amount). Above $250 it extrapolates at the same ~$1.44/$25 slope.
+ */
+export function feeForDepositUsd(amountUsd: number): number {
+  const amt = Number.isFinite(amountUsd) ? Math.max(0, amountUsd) : 0;
+  const q = amt / draftPassPricing.pricePerPass;
+  if (q <= 1) return CARD_FEE_CENTS_BY_QTY[1];
+  if (q >= 10) return Math.round(CARD_FEE_CENTS_BY_QTY[10] + (q - 10) * CARD_FEE_MARGINAL_CENTS);
+  const lo = Math.floor(q);
+  const hi = lo + 1;
+  const frac = q - lo;
+  return Math.round(CARD_FEE_CENTS_BY_QTY[lo] + frac * (CARD_FEE_CENTS_BY_QTY[hi] - CARD_FEE_CENTS_BY_QTY[lo]));
+}

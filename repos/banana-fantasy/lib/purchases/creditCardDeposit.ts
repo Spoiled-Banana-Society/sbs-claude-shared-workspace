@@ -1,0 +1,239 @@
+import { createPublicClient, http, parseAbiItem, type Address } from 'viem';
+import { FieldValue } from 'firebase-admin/firestore';
+
+import { BASE, BASE_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS } from '@/lib/contracts/bbb4';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { reserveTokensToWallet } from '@/lib/onchain/adminMint';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { writeDraftPassMetadata } from '@/lib/nftCardServer';
+import { recountFromInventory } from '@/lib/passLedger';
+import { logActivityEvent } from '@/lib/activityEvents';
+import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { pushStreamEventBg } from '@/lib/userEventStream';
+import { runInBackground } from '@/lib/serverBackground';
+import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
+
+const USERS_COLLECTION = 'v2_users';
+const FAILED_MINTS_COLLECTION = 'failed_mints';
+// Same accumulator + marker collection as the card-mint path — deposits and
+// card pass purchases feed ONE cardFeeCreditCents balance and share the
+// once-only cardFeeFrontGranted flag, so a user can never be fronted twice.
+// Deposit markers are keyed `deposit_<txHash>_<logIndex>` (mint markers use the
+// bare mint txHash), so the two can't collide.
+const CARD_FEE_CREDIT_COLLECTION = 'card_fee_credits';
+
+const TRANSFER_EVENT = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
+// ~50 minutes of Base blocks (2s each) — comfortably covers the Add Funds
+// wait-for-arrival window plus a retry after a flaky first call.
+const SCAN_BLOCKS = 1500n;
+
+const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+
+export interface DepositCreditResult {
+  credited: boolean;
+  /** USDC actually received on-chain (dollars) for the credited transfer. */
+  amountUsd: number;
+  feeCents: number;
+  earned: number;
+  fronted: number;
+  rolloverCents: number;
+  draftPasses: number | null;
+}
+
+/**
+ * Card-fee credit for a DEPOSIT (Add Funds) — the deposit-time analogue of
+ * bookkeepPaidMint steps 4/4b/5b (⚠️ KEEP IN SYNC with that file's credit
+ * semantics; like card-mint, this is deliberately a parallel implementation so
+ * the live purchase path stays untouched).
+ *
+ * The client can only CLAIM a card deposit happened — Privy brokers the
+ * MoonPay popup, so no fee or payment method ever reaches our server. What we
+ * can verify is the on-chain half: a USDC transfer of ≈ the claimed amount
+ * landed in the caller's wallet recently, from a sender that isn't the wallet
+ * itself, and that transfer hasn't been credited before. The fee credited is
+ * computed from the VERIFIED on-chain amount, never the claim.
+ *
+ * Known residual risk (accepted, mirrors the client-claimed paymentMethod on
+ * card-mint): a user can self-report an external USDC transfer as a card
+ * deposit. Bounded — the front is once per user ever (shared flag), and the
+ * accumulator needs ~$435 of claimed deposits per earned pass. Marker docs
+ * record sender + amount for audit.
+ */
+export async function creditCardDeposit(opts: {
+  wallet: string;
+  claimedAmountUsd: number;
+}): Promise<DepositCreditResult> {
+  const wallet = opts.wallet.toLowerCase();
+  const claimed = opts.claimedAmountUsd;
+  if (!Number.isFinite(claimed) || claimed < 5 || claimed > 10_000) {
+    throw new ApiError(400, 'amountUsd out of range');
+  }
+  if (!isFirestoreConfigured()) throw new ApiError(503, 'Credit store unavailable');
+
+  // 1. Find the deposit on-chain: recent USDC transfers INTO the wallet.
+  const latest = await client.getBlockNumber();
+  const fromBlock = latest > SCAN_BLOCKS ? latest - SCAN_BLOCKS : 0n;
+  const logs = await client.getLogs({
+    address: BASE_SEPOLIA_USDC_ADDRESS,
+    event: TRANSFER_EVENT,
+    args: { to: wallet as Address },
+    fromBlock,
+    toBlock: latest,
+  });
+
+  // Amount tolerance: MoonPay normally delivers the quoted amount exactly, but
+  // leave room for provider rounding — ±max($2, 10%).
+  const tolUsd = Math.max(2, claimed * 0.1);
+  const candidates = logs
+    .filter((l) => (l.args.from ?? '').toLowerCase() !== wallet)
+    .map((l) => ({
+      txHash: (l.transactionHash ?? '').toLowerCase(),
+      logIndex: l.logIndex ?? 0,
+      from: (l.args.from ?? '').toLowerCase(),
+      valueUsd: Number(l.args.value ?? 0n) / 1e6,
+      blockNumber: l.blockNumber ?? 0n,
+    }))
+    .filter((c) => c.txHash && Math.abs(c.valueUsd - claimed) <= tolUsd)
+    .sort((a, b) => (a.blockNumber < b.blockNumber ? 1 : -1)); // newest first
+
+  if (candidates.length === 0) {
+    throw new ApiError(404, 'No matching USDC deposit found in your wallet yet — it may still be settling.');
+  }
+
+  // 2. Claim the newest unclaimed candidate atomically and run the credit math
+  //    (identical to bookkeepPaidMint step 4). The marker existence check lives
+  //    INSIDE the transaction so a double-submit can't double-credit.
+  const db = getAdminFirestore();
+  const userRef = db.collection(USERS_COLLECTION).doc(wallet);
+
+  let creditedTx: { txHash: string; logIndex: number; from: string; valueUsd: number; feeCents: number } | null = null;
+  let earned = 0;
+  let fronted = 0;
+  let rolloverCents = 0;
+
+  for (const cand of candidates) {
+    const markerRef = db.collection(CARD_FEE_CREDIT_COLLECTION).doc(`deposit_${cand.txHash}_${cand.logIndex}`);
+    const feeCents = feeForDepositUsd(cand.valueUsd);
+    const res = await db.runTransaction(async (tx) => {
+      const marker = await tx.get(markerRef);
+      if (marker.exists) return { duplicate: true, earned: 0, fronted: 0, rolloverCents: 0 };
+      const userSnap = await tx.get(userRef);
+      const udata = userSnap.data() ?? {};
+      const cur = Math.max(0, (udata.cardFeeCreditCents as number | undefined) ?? 0);
+      const credit = cur + feeCents;
+      const front = udata.cardFeeFrontGranted === true ? 0 : 1;
+      const earnedNow = front + Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
+      const rollover = credit % FREE_DRAFT_CREDIT_CENTS;
+      tx.set(userRef, { cardFeeCreditCents: rollover, cardFeeFrontGranted: true }, { merge: true });
+      tx.set(markerRef, {
+        source: 'deposit',
+        txHash: cand.txHash,
+        logIndex: cand.logIndex,
+        senderAddress: cand.from,
+        userId: wallet,
+        valueUsd: cand.valueUsd,
+        claimedAmountUsd: claimed,
+        feeCents,
+        earned: earnedNow,
+        fronted: front,
+        status: earnedNow > 0 ? 'pending' : 'credited',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      return { duplicate: false, earned: earnedNow, fronted: front, rolloverCents: rollover };
+    });
+    if (res.duplicate) continue; // already credited (e.g. client retry) — try an older transfer
+    creditedTx = { txHash: cand.txHash, logIndex: cand.logIndex, from: cand.from, valueUsd: cand.valueUsd, feeCents };
+    earned = res.earned;
+    fronted = res.fronted;
+    rolloverCents = res.rolloverCents;
+    break;
+  }
+
+  if (!creditedTx) {
+    // Every matching transfer was already credited — idempotent success.
+    logger.info(LOG_SOURCES.payment.REWARD_DUPLICATE_SKIPPED, { userId: wallet, via: 'deposit', claimed });
+    return { credited: false, amountUsd: 0, feeCents: 0, earned: 0, fronted: 0, rolloverCents: 0, draftPasses: null };
+  }
+
+  logger.info(LOG_SOURCES.payment.FEE_CREDITED, {
+    userId: wallet, via: 'deposit', txHash: creditedTx.txHash, valueUsd: creditedTx.valueUsd,
+    feeCents: creditedTx.feeCents, rolloverCents, earned, fronted,
+  });
+
+  // 3. Grant any earned draft(s) as PAID-type, exactly like bookkeepPaidMint 4b.
+  let rewardTokenIds: string[] = [];
+  let rewardMintTxHash: string | undefined;
+  let newDraftPasses: number | null = null;
+  if (earned > 0) {
+    try {
+      const rewardMint = await reserveTokensToWallet({ to: wallet, count: earned });
+      rewardTokenIds = rewardMint.tokenIds;
+      rewardMintTxHash = rewardMint.txHash;
+      await registerMintedTokens(wallet, rewardMint.tokenIds, 'paid');
+      runInBackground('deposit.reward-pass-metadata', writeDraftPassMetadata(rewardMint.tokenIds));
+      try {
+        await db.collection(CARD_FEE_CREDIT_COLLECTION)
+          .doc(`deposit_${creditedTx.txHash}_${creditedTx.logIndex}`)
+          .set({ status: 'granted', rewardTokenIds, rewardMintTxHash }, { merge: true });
+      } catch { /* marker status update is best-effort */ }
+      logger.info(LOG_SOURCES.payment.REWARD_GRANTED, {
+        userId: wallet, via: 'deposit', earned, rolloverCents, rewardTxHash: rewardMintTxHash, tokenIds: rewardTokenIds,
+      });
+    } catch (rewardErr) {
+      // Credit consumed but the mint failed → user is owed a draft. Same
+      // failed_mints record the card_reward retry path picks up.
+      logger.error(LOG_SOURCES.payment.REWARD_GRANT_FAILED, {
+        userId: wallet, via: 'deposit', earned, sourceTxHash: creditedTx.txHash, err: (rewardErr as Error).message,
+      });
+      try {
+        await db.collection(FAILED_MINTS_COLLECTION).add({
+          source: 'card_reward', userId: wallet, quantity: earned,
+          sourceTxHash: creditedTx.txHash, error: (rewardErr as Error).message,
+          createdAt: FieldValue.serverTimestamp(), retryable: true,
+        });
+      } catch { /* failed-mint record is best-effort */ }
+      earned = 0;
+    }
+
+    if (earned > 0) {
+      try {
+        const counts = await recountFromInventory(wallet);
+        newDraftPasses = counts.draftPasses;
+      } catch (recErr) {
+        logger.warn('depositCredit.recount_failed', { userId: wallet, err: (recErr as Error).message });
+      }
+      await logActivityEvent({
+        type: 'pass_granted',
+        userId: wallet,
+        walletAddress: wallet,
+        paymentMethod: 'free',
+        quantity: earned,
+        tokenIds: rewardTokenIds,
+        txHash: rewardMintTxHash ?? null,
+        metadata: {
+          source: 'card_fee_reward',
+          via: 'deposit',
+          creditConsumedCents: FREE_DRAFT_CREDIT_CENTS * (earned - fronted),
+          fronted,
+          rolloverCents,
+          sourceTxHash: creditedTx.txHash,
+          depositAmountUsd: creditedTx.valueUsd,
+        },
+      }).catch((e) => logger.warn('depositCredit.reward_activity_failed', { userId: wallet, err: (e as Error).message }));
+      // Same synced bell + bottom toast the card-purchase reward fires.
+      pushStreamEventBg(wallet, 'promo-card-free-draft', { awardedCount: earned, fronted: fronted > 0 });
+    }
+  }
+
+  return {
+    credited: true,
+    amountUsd: creditedTx.valueUsd,
+    feeCents: creditedTx.feeCents,
+    earned,
+    fronted,
+    rolloverCents,
+    draftPasses: newDraftPasses,
+  };
+}
