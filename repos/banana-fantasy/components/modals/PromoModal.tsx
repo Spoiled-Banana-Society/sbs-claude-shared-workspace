@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { promoWeekendActive } from '@/lib/promoWindow';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Promo } from '@/types';
@@ -50,7 +51,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
   const modalTitle = isPickBonus ? 'Get Pick 6 9 10 → SPIN' : (promo?.modalContent.title ?? '');
   const pickExplanation = isPickBonus
-    ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.'
+    ? (promoWeekendActive()
+      ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• FREE and paid drafts BOTH count — through Sunday 12pm PT.'
+      : '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.')
     : (promo?.modalContent.explanation ?? '');
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());

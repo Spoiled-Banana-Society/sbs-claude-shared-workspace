@@ -43,10 +43,35 @@ export async function mintBotPass(
   const { txHash, tokenIds } = await reserveTokensToWallet({ to: addr, count: 1 });
   const idStrs = tokenIds.map((t) => String(t));
 
+  // Record the wallet + tokens durably BEFORE attempting registration, with
+  // the tokens pessimistically flagged as unregistered. If the process dies
+  // anywhere in the retry window below, the orphan is already on record and
+  // the fill route's breaker still refuses further mints — an on-chain pass
+  // with no record anywhere is unrecoverable (token 2638, 7/19). The flag is
+  // cleared on success.
+  const doc: Record<string, unknown> = {
+    isBot: true,
+    address: addr,
+    tokenIds: FieldValue.arrayUnion(...idStrs),
+    unregisteredTokenIds: FieldValue.arrayUnion(...idStrs),
+    passType: 'free',
+    mintTxHash: txHash,
+    lastMintAt: Date.now(),
+  };
+  if (!isTopUp) doc.createdAt = Date.now();
+  await db.collection(BOT_COLLECTION).doc(addr).set(doc, { merge: true });
+
+  try {
+    await recordPassOrigins({ tokenIds: idStrs, origin: 'house_bot', ownerAtMint: addr, txHash, reason: 'house bot pool' });
+  } catch (e) {
+    logger.warn('bots.mint.origin_record_failed', { address: addr, err: (e as Error).message });
+  }
+
   // Go's Firestore write path has shown transient per-instance DeadlineExceeded
-  // wedges lasting seconds-to-minutes (2026-07-21, twice). Retry registration
-  // over ~1 min before recording an orphan — the breaker stays as last resort,
-  // and the routes have maxDuration 300 so the budget is safe.
+  // wedges lasting seconds-to-minutes (2026-07-21, three times). Retry
+  // registration over ~1 min before leaving the orphan flag standing — the
+  // breaker stays as last resort, and the routes have maxDuration 300 so the
+  // budget is safe.
   const RETRY_DELAYS_MS = [0, 5_000, 10_000, 20_000, 30_000];
   let registered = 0;
   for (const delay of RETRY_DELAYS_MS) {
@@ -61,31 +86,25 @@ export async function mintBotPass(
   }
   const allRegistered = registered >= idStrs.length;
 
-  // Always record the wallet + tokens durably, registered or not — an
-  // on-chain pass with no record anywhere is unrecoverable.
-  const doc: Record<string, unknown> = {
-    isBot: true,
-    address: addr,
-    tokenIds: FieldValue.arrayUnion(...idStrs),
-    passType: 'free',
-    mintTxHash: txHash,
-    lastMintAt: Date.now(),
-  };
-  if (!isTopUp) doc.createdAt = Date.now();
-  if (!allRegistered) doc.unregisteredTokenIds = FieldValue.arrayUnion(...idStrs);
-  await db.collection(BOT_COLLECTION).doc(addr).set(doc, { merge: true });
-
-  try {
-    await recordPassOrigins({ tokenIds: idStrs, origin: 'house_bot', ownerAtMint: addr, txHash, reason: 'house bot pool' });
-  } catch (e) {
-    logger.warn('bots.mint.origin_record_failed', { address: addr, err: (e as Error).message });
-  }
-
   if (!allRegistered) {
     throw new Error(
       `pass ${idStrs.join(',')} minted on-chain to ${addr} but Go registration failed — ` +
         `the engine can't spend it. Recorded in botWallets.unregisteredTokenIds; ` +
         `fix registration (Go API up?) before minting more.`,
+    );
+  }
+
+  // Registration confirmed — lift the pessimistic orphan flag. If THIS write
+  // fails the pass is healthy but the breaker will hold future mints; say so
+  // explicitly (heal = just delete the flag, registration is already done).
+  try {
+    await db.collection(BOT_COLLECTION).doc(addr).update({
+      unregisteredTokenIds: FieldValue.arrayRemove(...idStrs),
+    });
+  } catch (e) {
+    throw new Error(
+      `pass ${idStrs.join(',')} registered fine but clearing botWallets.unregisteredTokenIds failed ` +
+        `(${(e as Error).message}) — pass is USABLE; just remove the flag to unblock minting.`,
     );
   }
 
