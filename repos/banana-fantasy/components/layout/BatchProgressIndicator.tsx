@@ -273,7 +273,7 @@ export function BatchProgressIndicator() {
             tablets land between sm and lg, where the FULL-size pills + counter
             collide with the desktop nav (Richard 7/21 landscape screenshot).
             Compact cut persists until lg, where everything genuinely fits. */}
-        <div className="relative flex flex-row items-center gap-1 ml-1 mr-0.5 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
+        <div className="relative flex flex-row items-center gap-1 ml-3 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
           {/* Global draft number, desktop position: its own column left of the
               pills. On smaller screens it moves BETWEEN the two pills below. */}
           <div className="hidden lg:flex lg:flex-col lg:items-center lg:gap-0 leading-tight lg:px-0.5 lg:pr-2 lg:mr-0.5 lg:border-r lg:border-white/10">
@@ -281,20 +281,20 @@ export function BatchProgressIndicator() {
             <span className="text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
-          <div className="flex flex-row items-center gap-1 lg:gap-1.5">
-            {pills.map((p, i) => (
+          {/* Mobile: draft number centered ON TOP of the pill pair (Boris
+              2026-07-22 — no more splitting the pills); desktop keeps the
+              left column. Pills sit tighter together underneath. */}
+          <div className="flex flex-col items-center gap-[2px] lg:contents">
+            <div className="flex items-baseline gap-1 leading-none lg:hidden">
+              <span className="text-[6.5px] font-bold tracking-[0.12em] text-white/40">DRAFT</span>
+              <span className="text-[9.5px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+            </div>
+          <div className="flex flex-row items-center gap-[3px] lg:gap-1.5">
+            {pills.map((p) => (
               <React.Fragment key={p.key}>
-                {/* Compact draft number slotted BETWEEN Jackpot and HOF on
-                    mobile (Richard 2026-07-21) — desktop keeps the left column. */}
-                {i === 1 && (
-                  <div className="flex flex-col items-center gap-0 leading-tight lg:hidden">
-                    <span className="text-[6.5px] font-bold tracking-[0.12em] text-white/40">DRAFT</span>
-                    <span className="text-[10px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
-                  </div>
-                )}
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[76px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[70px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
                   <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
                     <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
@@ -316,6 +316,7 @@ export function BatchProgressIndicator() {
                 </div>
               </React.Fragment>
             ))}
+          </div>
           </div>
           <style jsx global>{`@keyframes bpHeatPulse { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(var(--bpScale, 1.08)); opacity: 1 } }`}</style>
         </div>

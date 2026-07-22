@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { CardMethodsGraphic } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance, waitForUsdcArrival } from '@/lib/contracts/bbb4';
 import { DEPOSIT_PRESETS_USD } from '@/lib/deposits';
+import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { clientLog } from '@/lib/clientLog';
 import { logger } from '@/lib/logger';
 
@@ -37,7 +38,7 @@ type Step = 'amount' | 'funding' | 'waiting' | 'done' | 'error';
  * (see CLAUDE.md troubleshooting). Callers must gate: {open && <AddFundsModal/>}.
  */
 export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps) {
-  const { walletAddress, refreshBalance } = useAuth();
+  const { walletAddress, refreshBalance, user } = useAuth();
   const { getAccessToken, user: privyUser } = usePrivy();
   // Card-fee credit is WEB2 ONLY — embedded-wallet deposits ride the MoonPay
   // card onramp; external (web3) wallets fund themselves, no card fee to
@@ -257,6 +258,52 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
           <div className="rounded-xl border-2 border-white/25 p-2.5">
             <CardMethodsGraphic />
           </div>
+
+          {/* Card-fee credit banner — mirrors BuyPassesModal's (⚠️ keep the two
+              in sync). Credit accrues at DEPOSIT time now, so first-time card
+              users see the fronted free pass HERE; returning users see live $
+              progress toward the next one. Web2 only — that's who the credit
+              applies to. */}
+          {isEmbeddedWallet && (() => {
+            const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
+            const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+            if (user?.cardFeeFrontGranted !== true) {
+              return (
+                <div className="bg-banana/[0.08] border border-banana/20 rounded-xl p-3">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+                      <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+                    </svg>
+                    <p className="text-white/85 text-[12px] font-semibold">
+                      Your first card payment includes a FREE Paid Draft Pass — the card fee&apos;s on us
+                    </p>
+                  </div>
+                  <p className="text-white/40 text-[10px] mt-1.5">
+                    After that, every $25 in card fees earns you another free Paid Draft Pass — automatically.
+                  </p>
+                </div>
+              );
+            }
+            const current = Math.min(threshold, user?.cardFeeCreditCents || 0);
+            const feeThisDeposit = amountValid ? feeForDepositUsd(effectiveAmount) : 0;
+            const earnsNow = current + feeThisDeposit >= threshold;
+            const curPct = Math.min(100, (current / threshold) * 100);
+            return (
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-white/75 text-[12px] font-semibold">
+                    {earnsNow
+                      ? 'This one earns you a FREE Paid Draft Pass 🎉'
+                      : 'Card fees add up to free Paid Draft Passes'}
+                  </p>
+                  <span className="text-white/45 text-[11px] tabular-nums">{usd(current)} / {usd(threshold)}</span>
+                </div>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-banana" style={{ width: `${curPct}%` }} />
+                </div>
+              </div>
+            );
+          })()}
 
           <button
             onClick={() => void startFunding()}

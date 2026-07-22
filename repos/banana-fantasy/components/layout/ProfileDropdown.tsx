@@ -199,7 +199,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
                   <rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" />
                 </svg>
-                <span className="text-text-muted text-xs uppercase tracking-wider">Wallet</span>
+                <span className="text-text-muted text-xs uppercase tracking-wider">Balance</span>
               </div>
               <span className={`font-bold text-sm tabular-nums ${unifiedBalance > 0 ? 'text-banana' : 'text-text-primary'}`}>
                 ${unifiedBalance.toFixed(2)}
@@ -207,26 +207,35 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             </div>
           </Link>
 
-          {/* Pass counts (Activity now lives in the menu below as its own line) */}
-          <div className="px-3 py-2.5 border-b border-bg-tertiary">
-            <div className="mb-2">
-              <span className="text-text-muted text-xs uppercase tracking-wider">Your Passes</span>
+          {/* Pass counts (Activity now lives in the menu below as its own line).
+              Hidden entirely at zero passes, and each kind only shows when
+              they actually hold some — a wall of zeros just advertises having
+              nothing (Richard 2026-07-22). */}
+          {((user.draftPasses ?? 0) + (user.freeDrafts ?? 0)) > 0 && (
+            <div className="px-3 py-2.5 border-b border-bg-tertiary">
+              <div className="mb-2">
+                <span className="text-text-muted text-xs uppercase tracking-wider">Your Passes</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
+                  <p className="text-[10px] uppercase text-text-muted tracking-wider">Total</p>
+                  <p className="text-text-primary font-bold text-sm tabular-nums">{(user.draftPasses ?? 0) + (user.freeDrafts ?? 0)}</p>
+                </div>
+                {(user.draftPasses ?? 0) > 0 && (
+                  <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
+                    <p className="text-[10px] uppercase text-text-muted tracking-wider">Paid</p>
+                    <p className="text-text-primary font-bold text-sm tabular-nums">{user.draftPasses ?? 0}</p>
+                  </div>
+                )}
+                {(user.freeDrafts ?? 0) > 0 && (
+                  <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
+                    <p className="text-[10px] uppercase text-text-muted tracking-wider">Free</p>
+                    <p className="text-text-primary font-bold text-sm tabular-nums">{user.freeDrafts ?? 0}</p>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
-                <p className="text-[10px] uppercase text-text-muted tracking-wider">Total</p>
-                <p className="text-text-primary font-bold text-sm tabular-nums">{(user.draftPasses ?? 0) + (user.freeDrafts ?? 0)}</p>
-              </div>
-              <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
-                <p className="text-[10px] uppercase text-text-muted tracking-wider">Paid</p>
-                <p className="text-text-primary font-bold text-sm tabular-nums">{user.draftPasses ?? 0}</p>
-              </div>
-              <div className="rounded-lg bg-white/[0.03] px-2.5 py-1.5">
-                <p className="text-[10px] uppercase text-text-muted tracking-wider">Free</p>
-                <p className="text-text-primary font-bold text-sm tabular-nums">{user.freeDrafts ?? 0}</p>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Referral link — one tap to copy, matches the Winnings row styling
               (Boris 2026-06-10: surface the code so users never hunt for it
