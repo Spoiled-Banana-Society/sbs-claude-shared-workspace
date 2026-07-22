@@ -14,6 +14,7 @@ import type { ApiDraftToken } from '@/lib/api/owner';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
+import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -149,6 +150,9 @@ export function useDraftingPageState() {
   const [, setTimers] = useState<Record<string, number>>({});
   const [exitingDraft, setExitingDraft] = useState<Draft | null>(null);
   const [showBuyPasses, setShowBuyPasses] = useState(false);
+  // Deposit bankroll one-tap entry (flag-gated) — shown instead of the buy
+  // modal when the user has 0 passes but ≥ $25 wallet USDC.
+  const [showDepositEntry, setShowDepositEntry] = useState(false);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
   // Apply shared whitelist + ordering. Sidebar shows the same 6-promo
@@ -184,6 +188,13 @@ export function useDraftingPageState() {
   // Lives in useEnterDraft so the home page and this page use the exact same
   // implementation — no divergence, no glitch creeping back via one copy.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
+  const {
+    depositEntryReady,
+    buying: depositBuying,
+    buyError: depositBuyError,
+    clearBuyError: clearDepositBuyError,
+    buyPassWithBalance,
+  } = useDepositEntry();
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -442,6 +453,11 @@ export function useDraftingPageState() {
     const paidPasses = user?.draftPasses || 0;
     const freePasses = user?.freeDrafts || 0;
     if (paidPasses + freePasses <= 0) {
+      // Deposit bankroll: only reachable at zero passes (pass-first ordering).
+      if (depositEntryReady) {
+        setShowDepositEntry(true);
+        return;
+      }
       setShowBuyPasses(true);
       return;
     }
@@ -452,6 +468,13 @@ export function useDraftingPageState() {
   const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
     setShowEntryFlow(false);
     void enterDraftWithPassType(passType, speed);
+  };
+
+  const handleDepositEntryComplete = async (speed: 'fast' | 'slow') => {
+    const ok = await buyPassWithBalance();
+    if (!ok) return; // error stays visible in the modal
+    setShowDepositEntry(false);
+    void enterDraftWithPassType('paid', speed);
   };
 
   useEffect(() => {
@@ -1799,6 +1822,12 @@ export function useDraftingPageState() {
     infoTopic,
     handleEnterDraft,
     handleEntryComplete,
+    showDepositEntry,
+    setShowDepositEntry,
+    depositBuying,
+    depositBuyError,
+    clearDepositBuyError,
+    handleDepositEntryComplete,
     handleDraftClick,
     handleClaim,
     confirmExitDraft,

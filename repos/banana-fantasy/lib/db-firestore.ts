@@ -6,6 +6,7 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
+import { promoWeekendActive } from '@/lib/promoWindow';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
@@ -482,10 +483,14 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   } catch { /* fall back to base copy */ }
   // Rolling era: the ladder is retired — simple era-neutral Pick-10 copy
   // (the legacy explanation promised tiers that can no longer trigger).
-  const PICK_BASE_EXPLANATION =
-    '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
-    + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
-    + '• Paid Drafts Only.';
+  const PICK_BASE_EXPLANATION = promoWeekendActive()
+    ? '• Hit Pick 10 in any draft → Free Banana Spin.\n'
+      + '• FREE and paid drafts BOTH count.\n'
+      + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
+      + '• Through Sunday 12pm PT.'
+    : '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
+      + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
+      + '• Paid Drafts Only.';
   const PICK_LADDER_EXPLANATION =
     '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
     + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
@@ -493,11 +498,18 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     + '• The reward escalates as the batch’s chase prizes run out, then resets when the next 100-draft batch begins.\n'
     + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
     + '• Paid Drafts Only.';
-  const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = {
-    base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
-    jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
-    all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
-  };
+  const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
+    ? {
+      // Weekend window copy — same slots, but free & paid drafts both count.
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: true },
+      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+    }
+    : {
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
+      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
+    };
 
   // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed
   // carries the NEW-player copy (every pass = 2 Spins, $1K framing); RETURNING
@@ -542,6 +554,23 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         if (seed.modalContent.referralRewards !== undefined) {
           promo.modalContent.referralRewards = seed.modalContent.referralRewards;
         }
+      }
+    }
+    // Weekend window (auto-reverts Sun 12pm PT): free drafts count too — strip
+    // the paid-only language from the draft-based promos' copy and say so.
+    if (promoWeekendActive() && (promo.type === 'daily-drafts' || promo.type === 'jackpot')) {
+      const dePaid = (t: string | undefined): string | undefined =>
+        t === undefined ? undefined : t.replace(/\bpaid draft/gi, 'draft').replace(/\bPaid Drafts Only\.?/gi, '').trim();
+      promo.title = dePaid(promo.title) ?? promo.title;
+      const desc = dePaid(promo.description) ?? promo.description;
+      promo.description = desc ? `${desc} · Free drafts count thru Sun 12pm PT` : desc;
+      if (promo.modalContent?.explanation) {
+        const lines = promo.modalContent.explanation
+          .split('\n')
+          .map((l: string) => dePaid(l) ?? l)
+          .filter((l: string) => l && l !== '•');
+        lines.push('• This week: FREE and paid drafts BOTH count (through Sunday 12pm PT)!');
+        promo.modalContent.explanation = lines.join('\n');
       }
     }
     // Expired daily-drafts window reads as a fresh 0/4 + 24:00:00 everywhere.
@@ -2849,11 +2878,13 @@ export async function promoCreditAllowed(
   promoTag: string,
 ): Promise<boolean> {
   const stamped = await resolveDraftPassType(userId, draftId);
-  if (stamped === 'free') return false;
+  // Weekend window: FREE drafts earn promos too (participation still verified
+  // below — only the free/paid discrimination is lifted, and it auto-reverts).
+  if (stamped === 'free') return promoWeekendActive();
   if (stamped === 'paid') return true;
   // No pass stamp found — decide via the authoritative draft roster.
   const roster = await userInDraftRoster(userId, draftId);
-  if (roster === 'in') return clientPassType !== 'free';
+  if (roster === 'in') return promoWeekendActive() || clientPassType !== 'free';
   if (roster === 'absent') {
     logger.warn(LOG_SOURCES.promo.PARTICIPATION_DENIED, { actor: userId, context: { draftId, promo: promoTag, clientClaimed: clientPassType } });
     return false;
@@ -3391,11 +3422,12 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     return null;
   }
 
-  // Paid entrants only — authoritative token stamp per wallet.
+  // Paid entrants only — authoritative token stamp per wallet. During the
+  // weekend promo window FREE entrants are eligible too (auto-reverts).
   const paid: string[] = [];
   for (const w of humans) {
     const t = await resolveDraftPassType(w, draftId).catch(() => null);
-    if (t === 'paid') paid.push(w);
+    if (t === 'paid' || (t === 'free' && promoWeekendActive())) paid.push(w);
   }
 
   const position = await getCurrentBatchPosition();

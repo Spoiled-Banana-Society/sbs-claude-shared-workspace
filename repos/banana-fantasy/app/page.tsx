@@ -19,6 +19,9 @@ import { useContests } from '@/hooks/useContests';
 import { usePromos } from '@/hooks/usePromos';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
+import { useDepositEntry } from '@/hooks/useDepositEntry';
+import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
+import { AddFundsModal } from '@/components/modals/AddFundsModal';
 
 function StagingMintButton({
   userId,
@@ -83,6 +86,7 @@ function StagingMintButton({
 export default function HomePage() {
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
+  const [showAddFunds, setShowAddFunds] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
   // Client self-ping for new promos REMOVED 2026-07-03 (it double-belled on
@@ -95,6 +99,7 @@ export default function HomePage() {
   // no count-pop-in). Single source of truth in useEnterDraft so the two entry
   // points can't drift and reintroduce the old home-page glitch.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
+  const { depositEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
 
   const allPromos = promosQuery.promos || [];
 
@@ -113,11 +118,25 @@ export default function HomePage() {
     const totalPasses = paidPasses + freePasses;
 
     if (totalPasses <= 0) {
+      // Deposit bankroll (flag-gated): no passes but ≥ $25 wallet USDC →
+      // one-tap paid entry instead of the buy modal. Pass-first ordering is
+      // preserved — this branch is only reachable at zero passes.
+      if (depositEntryReady) {
+        modals.push('deposit-entry');
+        return;
+      }
       modals.push('buy-passes');
       return;
     }
 
     modals.push('entry-flow');
+  };
+
+  const handleDepositEntry = async (speed: 'fast' | 'slow') => {
+    const ok = await buyPassWithBalance();
+    if (!ok) return; // error stays visible in the modal
+    modals.closeAll();
+    void enterDraftWithPassType('paid', speed);
   };
 
   const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
@@ -212,6 +231,22 @@ export default function HomePage() {
         freePasses={user?.freeDrafts || 0}
         isSubmitting={isJoiningDraft}
       />
+
+      {/* Deposit bankroll one-tap entry (flag-gated) */}
+      <DepositEntryModal
+        isOpen={modals.isOpen('deposit-entry')}
+        onClose={() => { clearBuyError(); modals.closeAll(); }}
+        onEnter={(speed) => void handleDepositEntry(speed)}
+        balanceUsd={user?.usdcBalance ?? 0}
+        busy={depositBuying}
+        error={depositBuyError}
+        onAddFunds={() => { clearBuyError(); modals.closeAll(); setShowAddFunds(true); }}
+      />
+
+      {/* Add Funds — mount only while open (useFundWallet crash rule) */}
+      {showAddFunds && (
+        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+      )}
 
       {/* Buy Passes Modal — only mount when open to prevent useFundWallet crash */}
       {modals.isOpen('buy-passes') && (

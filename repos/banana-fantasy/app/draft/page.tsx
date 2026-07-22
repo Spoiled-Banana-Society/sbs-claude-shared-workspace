@@ -11,6 +11,8 @@ import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
+import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
+import { AddFundsModal } from '@/components/modals/AddFundsModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
@@ -123,6 +125,12 @@ export default function DraftingPage() {
     infoTopic,
     handleEnterDraft,
     handleEntryComplete,
+    showDepositEntry,
+    setShowDepositEntry,
+    depositBuying,
+    depositBuyError,
+    clearDepositBuyError,
+    handleDepositEntryComplete,
     handleDraftClick,
     handleClaim,
     confirmExitDraft,
@@ -138,6 +146,7 @@ export default function DraftingPage() {
   const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
   const [showDraftInfo, setShowDraftInfo] = React.useState(false);
+  const [showAddFunds, setShowAddFunds] = React.useState(false);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live
@@ -446,6 +455,22 @@ export default function DraftingPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
       />
+
+      {/* Deposit bankroll one-tap entry (flag-gated) */}
+      <DepositEntryModal
+        isOpen={showDepositEntry}
+        onClose={() => { clearDepositBuyError(); setShowDepositEntry(false); }}
+        onEnter={(speed) => void handleDepositEntryComplete(speed)}
+        balanceUsd={user?.usdcBalance ?? 0}
+        busy={depositBuying}
+        error={depositBuyError}
+        onAddFunds={() => { clearDepositBuyError(); setShowDepositEntry(false); setShowAddFunds(true); }}
+      />
+
+      {/* Add Funds — mount only while open (useFundWallet crash rule) */}
+      {showAddFunds && (
+        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+      )}
 
       <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />
 

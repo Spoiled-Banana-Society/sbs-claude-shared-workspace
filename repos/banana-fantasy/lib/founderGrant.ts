@@ -19,6 +19,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { resolveDraftPassType, unlockBadge, isFounderDraftMarked } from '@/lib/db';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { createNotification } from '@/lib/queueNotifications';
+import { promoWeekendActive } from '@/lib/promoWindow';
 import { buildActivityEventDoc, addActivityEventToTx } from '@/lib/activityEvents';
 import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
@@ -177,7 +178,8 @@ export async function grantFounderDraftSpins(
   for (const wallet of recipients) {
     try {
       const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
-      if (passType !== 'paid') { skippedFree += 1; continue; } // free pass — no spin
+      // Weekend promo window: free passes earn the founder spin too (auto-reverts Sun 12pm PT).
+      if (passType !== 'paid' && !(passType === 'free' && promoWeekendActive())) { skippedFree += 1; continue; }
       await db.runTransaction(async (tx) => {
         tx.set(db.collection(USERS_COLLECTION).doc(wallet), { wheelSpins: FieldValue.increment(1) }, { merge: true });
         const evt = await buildActivityEventDoc({
