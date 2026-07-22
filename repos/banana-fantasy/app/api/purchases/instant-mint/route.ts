@@ -181,6 +181,22 @@ export async function POST(req: Request) {
     }
     const value = tokenPriceUsdc; // quantity pinned to 1
 
+    // One-tap entries: the client may sign the permit for MORE than this
+    // purchase (a standing cap, lib/deposits ONE_TAP_ALLOWANCE_USD) so later
+    // entries skip signing. The on-chain permit call must carry the EXACT
+    // signed amount or USDC rejects the signature; only `value` is pulled.
+    let permitAmount = value;
+    if (typeof body.permitValue === 'string' || typeof body.permitValue === 'number') {
+      try {
+        permitAmount = BigInt(String(body.permitValue));
+      } catch {
+        return jsonError('permitValue must be an integer USDC amount (6 decimals)', 400);
+      }
+      if (permitAmount < value) {
+        return jsonError('permitValue is below the purchase price', 400);
+      }
+    }
+
     // THE gate: $25 in the wallet + an authorization we can collect with.
     // Past this point the user gets seated NO MATTER WHAT happens to the money.
     if (userUsdcBalance < value) {
@@ -248,7 +264,7 @@ export async function POST(req: Request) {
 
           if ((await readAllowance()) < value && parsedSig) {
             permitTxHash = await submitUsdcPermit({
-              owner, spender: adminWallet, value, deadline,
+              owner, spender: adminWallet, value: permitAmount, deadline,
               v: parsedSig.v, r: parsedSig.r, s: parsedSig.s,
             });
           }
