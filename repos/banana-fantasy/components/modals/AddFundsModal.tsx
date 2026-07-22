@@ -61,7 +61,7 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
   });
 
   const [step, setStep] = useState<Step>('amount');
-  const [amount, setAmount] = useState<number>(DEPOSIT_PRESETS_USD[2]); // default $100
+  const [amount, setAmount] = useState<number>(DEPOSIT_PRESETS_USD[0]); // default $25 (Richard 2026-07-21)
   const [customRaw, setCustomRaw] = useState('');
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
