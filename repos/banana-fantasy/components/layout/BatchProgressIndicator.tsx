@@ -294,25 +294,23 @@ export function BatchProgressIndicator() {
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[70px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
-                    <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
-                    {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9px] lg:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
-                    )}
-                  </div>
-                  <div className="leading-none" style={heatPulse(p.heat, p.color)}>
-                    {p.hit ? (
-                      <span className="text-[10.5px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
-                    ) : (
-                      <span className="text-[10px] lg:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-medium text-white/40">/{p.left}</span>
+                {/* One slim line per lane (Boris 2026-07-22): tag · % · count.
+                    No progress bar, no stacked rows — a chip, not a box. The
+                    /left denominator is bright enough to actually read. */}
+                <div className={`flex items-center gap-1.5 lg:gap-2 rounded-full border px-2 lg:px-3 py-[4px] lg:py-[6px] leading-none ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  <span className={`text-[8px] lg:text-[10.5px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+                  {p.hit ? (
+                    <span className="text-[10px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
+                  ) : (
+                    <>
+                      {p.pct !== null && (
+                        <span className={`text-[9.5px] lg:text-[12px] font-extrabold tabular-nums ${p.textCls}`} style={heatPulse(p.heat, p.color)}>{fmtPct(p.pct)}</span>
+                      )}
+                      <span className="text-[9.5px] lg:text-[12px] font-extrabold tabular-nums text-white/95">
+                        {p.remaining}<span className="text-[8.5px] lg:text-[11px] font-semibold text-white/75">/{p.left}</span>
                       </span>
-                    )}
-                  </div>
-                  <div className="h-[2px] lg:h-[2.5px] overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
-                  </div>
+                    </>
+                  )}
                 </div>
               </React.Fragment>
             ))}
