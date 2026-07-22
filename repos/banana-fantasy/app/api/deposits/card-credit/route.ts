@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { paymentsEnabled } from '@/lib/envGates';
 import { getPrivyUser } from '@/lib/auth';
-import { fetchPrivyUser, linkedWalletsOf } from '@/lib/privyServer';
+import { fetchPrivyUser, isEmbeddedWalletOf, linkedWalletsOf } from '@/lib/privyServer';
 import { creditCardDeposit } from '@/lib/purchases/creditCardDeposit';
 import { logger } from '@/lib/logger';
 
@@ -39,15 +39,23 @@ export async function POST(req: Request) {
     }
 
     const user = await getPrivyUser(req);
+    const privyUser = await fetchPrivyUser(user.userId);
     let wallet = user.walletAddress;
     // Privy social-login JWTs don't always carry the wallet — fall back to the
     // server-side Privy user lookup (same pattern as badges/equip).
     if (!wallet) {
-      const privyUser = await fetchPrivyUser(user.userId);
       const linked = privyUser ? linkedWalletsOf(privyUser) : [];
       wallet = linked[0] || null;
     }
     if (!wallet) throw new ApiError(401, 'No wallet linked to this account');
+
+    // WEB2 ONLY (Richard 2026-07-21): the card-fee credit models MoonPay fees
+    // on the embedded-wallet onramp. External-wallet (web3) users fund their
+    // wallets themselves — an inbound transfer proves nothing about card fees,
+    // so they never accrue deposit credit or the fronted bonus here.
+    if (!privyUser || !isEmbeddedWalletOf(privyUser, wallet)) {
+      throw new ApiError(403, 'Card-fee credit applies to embedded-wallet card deposits only');
+    }
 
     const body = await parseBody(req);
     const amountUsd = Number(body.amountUsd);

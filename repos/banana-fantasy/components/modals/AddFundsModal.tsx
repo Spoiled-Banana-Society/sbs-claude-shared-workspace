@@ -30,7 +30,11 @@ type Step = 'amount' | 'funding' | 'waiting' | 'done' | 'error';
  */
 export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps) {
   const { walletAddress, refreshBalance } = useAuth();
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, user: privyUser } = usePrivy();
+  // Card-fee credit is WEB2 ONLY — embedded-wallet deposits ride the MoonPay
+  // card onramp; external (web3) wallets fund themselves, no card fee to
+  // credit. The server enforces this too; skipping here just avoids a 403.
+  const isEmbeddedWallet = privyUser?.wallet?.walletClientType === 'privy';
   // What funding method the user actually picked inside the Privy widget —
   // only card deposits earn the card-fee credit ('manual' = external wallet
   // transfer, no card fee). null/undefined = widget didn't say; assume card
@@ -103,7 +107,7 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
         // and forget — the server verifies the transfer on-chain and is
         // idempotent, and the reward toast arrives via the user event stream.
         // Skip when the user picked an external-transfer method (no card fee).
-        if (fundingMethodRef.current !== 'manual') {
+        if (isEmbeddedWallet && fundingMethodRef.current !== 'manual') {
           void (async () => {
             try {
               const token = await getAccessToken();
