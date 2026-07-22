@@ -501,9 +501,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
     ? {
       // Weekend window copy — Pick 9 pays too, free & paid both count.
-      base: { title: 'Pick 9 & 10 → FREE SPINS', description: 'Picks 9 & 10 each win a Free Spin — free & paid drafts count!', isNew: true },
-      jp: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count!', isNew: true },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count!', isNew: true },
+      base: { title: 'Pick 9 & 10 → FREE SPINS', description: 'Picks 9 & 10 each win a Free Spin — free & paid drafts count thru Sun 12pm PT!', isNew: true },
+      jp: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
     }
     : {
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
@@ -562,7 +562,8 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       const dePaid = (t: string | undefined): string | undefined =>
         t === undefined ? undefined : t.replace(/\bpaid draft/gi, 'draft').replace(/\bPaid Drafts Only\.?/gi, '').trim();
       promo.title = dePaid(promo.title) ?? promo.title;
-      promo.description = dePaid(promo.description) ?? promo.description;
+      const desc = dePaid(promo.description) ?? promo.description;
+      promo.description = desc ? `${desc} · Free drafts count thru Sun 12pm PT` : desc;
       if (promo.modalContent?.explanation) {
         const lines = promo.modalContent.explanation
           .split('\n')
