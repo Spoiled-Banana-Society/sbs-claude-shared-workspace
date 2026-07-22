@@ -336,13 +336,17 @@ func MintDraftTokenInDb(tokenId, ownerId, passType string) (*DraftToken, error) 
 
 	fmt.Println("Token inside of function: ", draftToken)
 
-	err = utils.Db.CreateOrUpdateDocument(utils.GetDraftTokenCollectionName(), tokenId, draftToken)
+	// Patient writes (2026-07-21): registration is the bot/reconcile path with
+	// an on-chain mint already behind it — a slow success beats a stranded
+	// pass. Tokens 2739/2774 stranded here when a wedged channel outlived the
+	// fast 3×2s profile.
+	err = utils.Db.CreateOrUpdateDocumentPatient(utils.GetDraftTokenCollectionName(), tokenId, draftToken)
 	if err != nil {
 		return nil, err
 	}
 	path := fmt.Sprintf("owners/%s/validDraftTokens", strings.ToLower(ownerId))
 	fmt.Println("Path: ", path)
-	err = utils.Db.CreateOrUpdateDocument(path, tokenId, draftToken)
+	err = utils.Db.CreateOrUpdateDocumentPatient(path, tokenId, draftToken)
 	if err != nil {
 		fmt.Println("Error updating owner")
 		return nil, err
@@ -350,7 +354,7 @@ func MintDraftTokenInDb(tokenId, ownerId, passType string) (*DraftToken, error) 
 	fmt.Println("Added draft token to ownerid validDraftTokens")
 
 	metadata := draftToken.ConvertToMetadata()
-	err = utils.Db.CreateOrUpdateDocument(utils.GetDraftTokenMetadataCollectionName(), tokenId, metadata)
+	err = utils.Db.CreateOrUpdateDocumentPatient(utils.GetDraftTokenMetadataCollectionName(), tokenId, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -465,11 +469,15 @@ func (token *DraftToken) UpdateInUseDraftTokenInDatabase(draftId string) error {
 	return token.updateInUseDraftTokenInDatabase(draftId)
 }
 
+// Patient writes (2026-07-21): these are the in-use copies written after a
+// seat is already committed — the exact writes that half-completed the
+// fast-draft-196 join when the wedged channel outlasted the fast profile.
+// Nothing here is under a pick clock; keep trying for up to ~a minute.
 func (token *DraftToken) updateInUseDraftTokenInDatabase(draftId string) error {
 	if token.LeagueId == "" {
 		token.LeagueId = draftId
 	}
-	err := utils.Db.CreateOrUpdateDocument(utils.GetDraftTokenCollectionName(), token.CardId, token)
+	err := utils.Db.CreateOrUpdateDocumentPatient(utils.GetDraftTokenCollectionName(), token.CardId, token)
 	if err != nil {
 		return err
 	}
@@ -477,20 +485,20 @@ func (token *DraftToken) updateInUseDraftTokenInDatabase(draftId string) error {
 	if token.LeagueId == "" {
 		token.LeagueId = draftId
 	}
-	err = utils.Db.CreateOrUpdateDocument(fmt.Sprintf("owners/%s/usedDraftTokens", token.OwnerId), token.CardId, token)
+	err = utils.Db.CreateOrUpdateDocumentPatient(fmt.Sprintf("owners/%s/usedDraftTokens", token.OwnerId), token.CardId, token)
 	if err != nil {
 		return err
 	}
 	if token.LeagueId == "" {
 		token.LeagueId = draftId
 	}
-	err = utils.Db.CreateOrUpdateDocument(fmt.Sprintf("drafts/%s/cards", token.LeagueId), token.CardId, token)
+	err = utils.Db.CreateOrUpdateDocumentPatient(fmt.Sprintf("drafts/%s/cards", token.LeagueId), token.CardId, token)
 	if err != nil {
 		return err
 	}
 
 	metadata := token.ConvertToMetadata()
-	err = utils.Db.CreateOrUpdateDocument(utils.GetDraftTokenMetadataCollectionName(), token.CardId, metadata)
+	err = utils.Db.CreateOrUpdateDocumentPatient(utils.GetDraftTokenMetadataCollectionName(), token.CardId, metadata)
 	if err != nil {
 		return err
 	}
