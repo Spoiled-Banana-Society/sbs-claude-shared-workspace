@@ -484,7 +484,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // Rolling era: the ladder is retired — simple era-neutral Pick-10 copy
   // (the legacy explanation promised tiers that can no longer trigger).
   const PICK_BASE_EXPLANATION = promoWeekendActive()
-    ? '• Land Pick 9 or 10 in any draft → Free Banana Spin.\n'
+    ? '• Hit Pick 10 in any draft → Free Banana Spin.\n'
       + '• FREE and paid drafts BOTH count.\n'
       + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
       + '• Through Sunday 12pm PT.'
@@ -500,9 +500,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     + '• Paid Drafts Only.';
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
     ? {
-      // Weekend window copy — Pick 9 pays too, free & paid both count.
-      base: { title: 'Pick 9 & 10 → FREE SPINS', description: 'Picks 9 & 10 each win a Free Spin — free & paid drafts count thru Sun 12pm PT!', isNew: true },
-      jp: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+      // Weekend window copy — same slots, but free & paid drafts both count.
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: true },
+      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
       all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
     }
     : {
@@ -3183,12 +3183,9 @@ export async function allBatchSpecialsHit(): Promise<boolean> {
  */
 export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
   const state = await getBatchSpecialsState();
-  // Weekend window: Pick 9 pays alongside Pick 10 at every tier (auto-reverts).
-  const withWeekend = (slots: number[]): number[] =>
-    promoWeekendActive() ? Array.from(new Set([...slots, 9, 10])).sort((a, b) => a - b) : slots;
-  if (state.allHit) return { slots: withWeekend([6, 9, 10]), tier: 'all', batchStart: state.batchStart };
-  if (state.jpHit) return { slots: withWeekend([6, 10]), tier: 'jp', batchStart: state.batchStart };
-  return { slots: withWeekend([10]), tier: 'base', batchStart: state.batchStart };
+  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
+  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
+  return { slots: [10], tier: 'base', batchStart: state.batchStart };
 }
 
 /**
@@ -3204,11 +3201,9 @@ export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: '
 export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number; rolling: boolean }> {
   const state = await getBatchSpecialsState({ display: true });
   const rolling = state.rolling === true;
-  const withWeekend = (slots: number[]): number[] =>
-    promoWeekendActive() ? Array.from(new Set([...slots, 9, 10])).sort((a, b) => a - b) : slots;
-  if (state.allHit) return { slots: withWeekend([6, 9, 10]), tier: 'all', batchStart: state.batchStart, rolling };
-  if (state.jpHit) return { slots: withWeekend([6, 10]), tier: 'jp', batchStart: state.batchStart, rolling };
-  return { slots: withWeekend([10]), tier: 'base', batchStart: state.batchStart, rolling };
+  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart, rolling };
+  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart, rolling };
+  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling };
 }
 
 // Bound the bell fan-out so a misread tracker can never broadcast to an
