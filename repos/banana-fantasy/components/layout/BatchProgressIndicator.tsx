@@ -306,7 +306,7 @@ export function BatchProgressIndicator() {
                       <span className="text-[10.5px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
                       <span className="text-[10px] lg:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-medium text-white/40">/{p.left}</span>
+                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-semibold text-white/60">/{p.left}</span>
                       </span>
                     )}
                   </div>
