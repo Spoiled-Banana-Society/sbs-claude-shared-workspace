@@ -36,6 +36,11 @@ type MintFn = (
     // distinguish MoonPay vs Coinbase purchases. Ignored when
     // paymentMethod === 'usdc'.
     cardProvider?: 'moonpay' | 'coinbase';
+    // Deposit bankroll one-tap entry: hit /api/purchases/instant-mint,
+    // which fronts the pass immediately (house money) and collects the $25
+    // in the background — the response returns as soon as the pass is
+    // registered, so the join can start seconds sooner. usdc-only, qty 1.
+    instantSeat?: boolean;
   },
 ) => Promise<Hex>;
 
@@ -427,7 +432,12 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         clientLog('payment', 'mint_signed', { wallet: activeWallet.address, quantity, paymentMethod: method });
 
         // Server orchestrates permit → transferFrom → reserveTokens.
-        const res = await fetch('/api/purchases/card-mint', {
+        // instantSeat flips the order server-side: pass fronted first,
+        // payment collected behind the response (seat-first entry).
+        const mintUrl = opts?.instantSeat && quantity === 1 && (opts?.paymentMethod ?? 'usdc') === 'usdc'
+          ? '/api/purchases/instant-mint'
+          : '/api/purchases/card-mint';
+        const res = await fetch(mintUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -66,7 +66,11 @@ export function useDepositEntry() {
           // RPC blip reading the balance — don't block; the server still guards.
         }
       }
-      await mint(1, { paymentMethod: 'usdc' });
+      // Seat-first (Richard 2026-07-21): the instant route fronts the pass on
+      // house money and responds the moment it's registered — the join below
+      // starts seconds sooner, and the $25 collects in the background (house
+      // eats + alerts on the rare failure).
+      await mint(1, { paymentMethod: 'usdc', instantSeat: true });
       clientLog('payment', 'deposit_entry_mint_ok', { wallet: walletAddress });
       // The mint route already registered the pass with Go before responding,
       // so the join can start immediately. Bump the local count so the entry
