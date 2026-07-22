@@ -197,25 +197,6 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                 {/* Batch Progress — visible on all sizes */}
                 <BatchProgressIndicator />
 
-                {/* Deposit bankroll balance chip — wallet USDC, taps into Add
-                    Funds. Flag-gated; label always says what money it is. */}
-                {/* Mobile shows whole dollars + tight padding — the lane pills
-                    already eat most of the bar, and "$10.00" was pushing the
-                    avatar off-screen on iPhone (Richard 7/21). Cents on sm+. */}
-                {DEPOSITS_ENABLED && isLoggedIn && user && (
-                  <button
-                    onClick={() => setShowAddFunds(true)}
-                    aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
-                    className="group flex items-center gap-0.5 sm:gap-1 mr-0.5 sm:mr-1 px-1 sm:px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
-                  >
-                    <span className="text-sm font-bold text-white tabular-nums">
-                      <span className="sm:hidden">${Math.floor(user.usdcBalance ?? 0)}</span>
-                      <span className="hidden sm:inline">${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}</span>
-                    </span>
-                    <span className="flex items-center justify-center w-4 h-4 rounded-full border border-banana/60 text-banana text-[11px] font-bold leading-none group-hover:bg-banana group-hover:text-black transition-colors">+</span>
-                  </button>
-                )}
-
                 {/* Draft passes — mobile only (desktop shows the gold ticket
                     in the icon row below). Sits next to the JP/HOF batch
                     counter so the user's "ammo" is always one glance away.
@@ -234,6 +215,22 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   >
                     <PassTicket count={user.draftPasses + user.freeDrafts} w={34} h={22} />
                   </Link>
+                )}
+
+                {/* Deposit chip — MOBILE. Rightmost money action (Boris
+                    2026-07-22): sits after the passes, next to the avatar, in
+                    a banana pill so adding funds is the one thing that pops.
+                    Whole dollars only (Richard 7/21 — cents pushed the avatar
+                    off-screen on iPhone). */}
+                {DEPOSITS_ENABLED && isLoggedIn && user && (
+                  <button
+                    onClick={() => setShowAddFunds(true)}
+                    aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
+                    className="group md:hidden flex items-center gap-1 mr-1 px-1.5 py-[5px] rounded-full border border-banana/50 bg-banana/10 hover:bg-banana/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                  >
+                    <span className="text-[13px] font-bold text-white tabular-nums leading-none">${Math.floor(user.usdcBalance ?? 0)}</span>
+                    <span className="flex items-center justify-center w-[16px] h-[16px] rounded-full border-[1.5px] border-white/80 text-white text-[12px] font-bold leading-none">+</span>
+                  </button>
                 )}
 
                 {/* ── Desktop-only icons ── */}
@@ -257,6 +254,29 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       >
                         <PassTicket count={user.draftPasses + user.freeDrafts} w={40} h={25} />
                       </Link>
+                    </Tooltip>
+                  )}
+
+                  {/* Deposit chip — DESKTOP. Right of the passes (Boris
+                      2026-07-22), banana pill treatment so it reads as THE
+                      money action on a busy header. */}
+                  {DEPOSITS_ENABLED && isLoggedIn && user && (
+                    <Tooltip
+                      content={
+                        <div className="text-center">
+                          <p className="font-semibold">Deposit Funds to Draft</p>
+                          <p className="text-text-secondary text-xs mt-1">Add money here — every draft is $25</p>
+                        </div>
+                      }
+                    >
+                      <button
+                        onClick={() => setShowAddFunds(true)}
+                        aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
+                        className="group flex items-center gap-1 mx-1 px-2.5 py-[6px] rounded-full border border-banana/50 bg-banana/10 hover:bg-banana/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                      >
+                        <span className="text-sm font-bold text-white tabular-nums leading-none">${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}</span>
+                        <span className="flex items-center justify-center w-[17px] h-[17px] rounded-full border-[1.5px] border-white/80 text-white text-[12px] font-bold leading-none">+</span>
+                      </button>
                     </Tooltip>
                   )}
 

@@ -6,6 +6,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { createNotification } from '@/lib/queueNotifications';
 import { logger } from '@/lib/logger';
+import { promoWeekendActive } from '@/lib/promoWindow';
 
 function authed(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -124,7 +125,9 @@ export async function GET(req: Request) {
       title: `Weekly Founder Draft today at ${timePT}`,
       // Spin is the hook but it's PAID-only (free-pass entrants get the badge,
       // not the spin) — qualify it so we never promise a spin we won't grant.
-      message: 'Draft in it for a Founders badge — paid entries also earn a Free Spin. Tap to see how it works.',
+      message: promoWeekendActive()
+        ? 'Draft in it for a Founders badge — and this week FREE and paid entries BOTH earn a Free Spin. Tap to see how it works.'
+        : 'Draft in it for a Founders badge — paid entries also earn a Free Spin. Tap to see how it works.',
       link: '/faq#founder-draft',
       dedupeKey: `founder-today-${minuteKey}`,
       icon: 'crown',
