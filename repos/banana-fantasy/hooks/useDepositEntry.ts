@@ -58,7 +58,7 @@ export function useDepositEntry() {
           const bal = await getUsdcBalance(walletAddress as Address);
           if (bal < BigInt(ENTRY_PRICE_USD) * 1_000_000n) {
             setBuyError(
-              `Not enough USDC — $${(Number(bal) / 1e6).toFixed(2)} of $${ENTRY_PRICE_USD}. Add funds and try again.`,
+              `Balance too low — $${(Number(bal) / 1e6).toFixed(2)} of $${ENTRY_PRICE_USD}. Add funds and try again.`,
             );
             return false;
           }

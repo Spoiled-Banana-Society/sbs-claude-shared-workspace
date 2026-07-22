@@ -6,5 +6,6 @@ export const DEPOSITS_ENABLED = process.env.NEXT_PUBLIC_DEPOSIT_ENABLED === 'tru
 /** Entry price in whole dollars — mirrors the $25 pass price (lib/pricing.ts). */
 export const ENTRY_PRICE_USD = 25;
 
-/** Add Funds presets, in dollars of USDC the user RECEIVES (fees ride on top). */
-export const DEPOSIT_PRESETS_USD = [25, 50, 100, 200];
+/** Add Funds presets, in dollars the user RECEIVES (card fees ride on top).
+ *  $25/$50/$100/$500 per Richard 2026-07-21 (mirrors the buy modal's spread). */
+export const DEPOSIT_PRESETS_USD = [25, 50, 100, 500];

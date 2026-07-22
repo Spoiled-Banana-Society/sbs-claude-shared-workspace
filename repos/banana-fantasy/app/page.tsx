@@ -20,6 +20,7 @@ import { usePromos } from '@/hooks/usePromos';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
 
@@ -118,11 +119,16 @@ export default function HomePage() {
     const totalPasses = paidPasses + freePasses;
 
     if (totalPasses <= 0) {
-      // Deposit bankroll (flag-gated): no passes but ≥ $25 wallet USDC →
-      // one-tap paid entry instead of the buy modal. Pass-first ordering is
-      // preserved — this branch is only reachable at zero passes.
+      // Deposit bankroll (flag-gated): no passes but ≥ $25 balance → one-tap
+      // paid entry. No passes AND no balance → Add Funds prompt (Richard
+      // 2026-07-21: Enter is the only CTA; the buy modal is out of this path).
+      // Pass-first ordering preserved — only reachable at zero passes.
       if (depositEntryReady) {
         modals.push('deposit-entry');
+        return;
+      }
+      if (DEPOSITS_ENABLED) {
+        setShowAddFunds(true);
         return;
       }
       modals.push('buy-passes');

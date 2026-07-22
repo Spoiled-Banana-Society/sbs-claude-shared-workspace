@@ -127,6 +127,8 @@ export default function DraftingPage() {
     handleEntryComplete,
     showDepositEntry,
     setShowDepositEntry,
+    showAddFunds,
+    setShowAddFunds,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
@@ -146,7 +148,6 @@ export default function DraftingPage() {
   const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
   const [showDraftInfo, setShowDraftInfo] = React.useState(false);
-  const [showAddFunds, setShowAddFunds] = React.useState(false);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live

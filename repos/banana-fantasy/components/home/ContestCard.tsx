@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Tooltip } from '../ui/Tooltip';
 import { Contest } from '@/types';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
 
 interface ContestCardProps {
   contest: Contest;
@@ -78,7 +79,10 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Buttons — with the deposit bankroll live, Enter is the ONLY
+            CTA (Richard 2026-07-21): it consumes a pass, one-taps $25 from
+            balance, or prompts Add Funds at $0. The Buy button only exists in
+            the pre-deposit world (flag off). */}
         <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-6 sm:mt-10">
           <button
             onClick={onEnter}
@@ -86,12 +90,14 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
           >
             Enter
           </button>
-          <Link
-            href="/buy-drafts?buy=1"
-            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
-          >
-            Buy
-          </Link>
+          {!DEPOSITS_ENABLED && (
+            <Link
+              href="/buy-drafts?buy=1"
+              className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
+            >
+              Buy
+            </Link>
+          )}
         </div>
       </div>
     </div>

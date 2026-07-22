@@ -15,6 +15,7 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -151,8 +152,11 @@ export function useDraftingPageState() {
   const [exitingDraft, setExitingDraft] = useState<Draft | null>(null);
   const [showBuyPasses, setShowBuyPasses] = useState(false);
   // Deposit bankroll one-tap entry (flag-gated) — shown instead of the buy
-  // modal when the user has 0 passes but ≥ $25 wallet USDC.
+  // modal when the user has 0 passes but ≥ $25 balance.
   const [showDepositEntry, setShowDepositEntry] = useState(false);
+  // Add Funds prompt — entering at 0 passes AND $0 balance lands here
+  // (Richard 2026-07-21: Enter is the only CTA under the deposit flag).
+  const [showAddFunds, setShowAddFunds] = useState(false);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
   // Apply shared whitelist + ordering. Sidebar shows the same 6-promo
@@ -454,8 +458,14 @@ export function useDraftingPageState() {
     const freePasses = user?.freeDrafts || 0;
     if (paidPasses + freePasses <= 0) {
       // Deposit bankroll: only reachable at zero passes (pass-first ordering).
+      // $25+ balance → one-tap entry; $0 balance → Add Funds prompt. The buy
+      // modal only remains for the flag-off world.
       if (depositEntryReady) {
         setShowDepositEntry(true);
+        return;
+      }
+      if (DEPOSITS_ENABLED) {
+        setShowAddFunds(true);
         return;
       }
       setShowBuyPasses(true);
@@ -1824,6 +1834,8 @@ export function useDraftingPageState() {
     handleEntryComplete,
     showDepositEntry,
     setShowDepositEntry,
+    showAddFunds,
+    setShowAddFunds,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
