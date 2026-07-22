@@ -1,5 +1,5 @@
 /**
- * Weekend promo window (Boris 2026-07-21):
+ * Week-long promo window (Boris 2026-07-21, Tue→Sun):
  *   until Sunday 2026-07-26 12:00 PM PT (19:00 UTC) —
  *   (a) FREE drafts earn promo credit exactly like paid ones
  *       (participation checks stay — only the free/paid gate is lifted), and

@@ -569,7 +569,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
           .split('\n')
           .map((l: string) => dePaid(l) ?? l)
           .filter((l: string) => l && l !== '•');
-        lines.push('• This weekend: FREE and paid drafts BOTH count (through Sunday 12pm PT)!');
+        lines.push('• This week: FREE and paid drafts BOTH count (through Sunday 12pm PT)!');
         promo.modalContent.explanation = lines.join('\n');
       }
     }

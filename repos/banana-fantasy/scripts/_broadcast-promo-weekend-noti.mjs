@@ -1,5 +1,5 @@
 /**
- * ⚠️ ONE-SHOT — bell blast announcing the WEEKEND PROMO window
+ * ⚠️ ONE-SHOT — bell blast announcing the WEEK-LONG PROMO window
  * (Boris 2026-07-21): until Sunday 12pm PT, FREE drafts count toward every
  * promo, and Picks 9 & 10 both win a Free Spin.
  *
@@ -31,7 +31,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 
 const NOTI = {
   type: 'promo',
-  title: 'Weekend Promo — FREE Drafts Count!',
+  title: 'This Week Only — FREE Drafts Count!',
   message: 'Until Sunday 12pm PT: FREE drafts count toward EVERY promo — Pick 10 spins, 4-in-24h, Jackpot draws, all of it. Every draft you enter is working for you. Draft now!',
   link: '/promos',
   dedupeKey: DEDUPE_KEY,
