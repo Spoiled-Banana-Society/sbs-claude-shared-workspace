@@ -25,3 +25,6 @@ Per Richard's decision, the $25-fees→free-pass accrual + the fronted first-pur
 2. e2e suites are environmentally broken on Richard's machine (mock-auth gate + cold-compile timeouts — identical failures on clean HEAD before the diff). Lint + tsc clean; Rule #0 verified by inspection.
 
 Nothing needed from you.
+
+## UPDATE — LIVE as of 2026-07-21 late night
+Richard flipped it on: `NEXT_PUBLIC_DEPOSIT_ENABLED=true` set in Vercel production + hook rebuild (deployment hfg77bb85, Ready). Verified live: `/api/deposits/card-credit` now returns 401 (auth) instead of the flag-off 404. Users now see the balance chip + Add Funds; zero-pass users with $25+ USDC get one-tap entry. First real card deposit + one-tap entry still unexercised — watch `payment.card.fee_credited` logs with `via: deposit` for the first one.
