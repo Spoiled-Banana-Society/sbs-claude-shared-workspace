@@ -91,6 +91,21 @@ function Method({ mark, label }: { mark: React.ReactNode; label: string }) {
   );
 }
 
+/** The 4 card methods (Card / Apple Pay / PayPal / Venmo) as a static,
+ *  non-interactive graphic — for surfaces where card is the ONLY path (e.g.
+ *  Add Funds), so there's no method choice to make, just a "here's how you
+ *  can pay" strip. Same marks the buy modal's picker uses. */
+export function CardMethodsGraphic() {
+  return (
+    <div className="grid w-full grid-cols-4 gap-x-2 text-text-secondary">
+      <Method mark={<CardMark />} label="Card" />
+      <Method mark={<ApplePayMark />} label="Apple Pay" />
+      <Method mark={<PayPalMark />} label="PayPal" />
+      <Method mark={<VenmoMark />} label="Venmo" />
+    </div>
+  );
+}
+
 export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBalance, requiredAmount = 0 }: PaymentMethodSquaresProps) {
   const bal = usdcBalance ?? 0;
   // Web2 sees Balance only when they actually have funds that cover the cost.

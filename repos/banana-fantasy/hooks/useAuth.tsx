@@ -1229,6 +1229,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userId = user?.id;
     if (!userId) return;
 
+    // On-chain USDC re-read, in parallel with the Firestore fetch below. The
+    // background poll only ticks every 30s, so without this the header chip
+    // sits on the pre-purchase number after a balance-funded entry spends $25
+    // (Richard 7/21: chip showed $123 until a manual page refresh). By the
+    // time any purchase path calls refreshBalance the transfer is already
+    // mined (the mint route responds post-transfer), so one read suffices.
+    if (walletAddress) {
+      const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
+      void fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'eth_call',
+          params: [{ to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', data: '0x70a08231' + paddedAddr }, 'latest'],
+        }),
+      })
+        .then((res) => res.json())
+        .then((result) => {
+          if (!result?.result) return;
+          const usdcBalance = parseInt(result.result, 16) / 1e6;
+          if (!Number.isFinite(usdcBalance)) return;
+          setUser((prev) => (prev && prev.usdcBalance !== usdcBalance ? { ...prev, usdcBalance } : prev));
+        })
+        .catch(() => { /* silent — the 30s poll will catch up */ });
+    }
+
     let firestoreBalance: {
       draftPasses?: number;
       freeDrafts?: number;
@@ -1262,7 +1288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cardFeeFrontGranted: typeof firestoreBalance!.cardFeeFrontGranted === 'boolean' ? firestoreBalance!.cardFeeFrontGranted : prev.cardFeeFrontGranted,
       };
     });
-  }, [user?.id]);
+  }, [user?.id, walletAddress]);
 
   const refreshBalanceUntil = useCallback(
     async (

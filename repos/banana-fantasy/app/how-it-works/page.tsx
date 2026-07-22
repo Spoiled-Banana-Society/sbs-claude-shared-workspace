@@ -28,8 +28,8 @@ const STEPS = [
   {
     num: '01',
     icon: '🎟️',
-    title: 'Buy Draft Passes',
-    desc: 'Grab a pass with USDC, debit, or credit card. One pass = one draft entry. Bulk up for better odds at Jackpots & HOF entries.',
+    title: 'Add Funds & Enter',
+    desc: 'Load your balance with a card, Apple Pay, PayPal, or Venmo — crypto works too. Every draft is $25, taken straight from your balance when you enter. Stock up on passes if you like — bulk buys earn Banana Wheel spins.',
     color: 'from-yellow-500/20 to-yellow-600/5',
     border: 'border-yellow-500/30',
   },
@@ -182,10 +182,10 @@ export default function HowItWorksPage() {
           <Reveal delay={0.3}>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
-                href="/buy-drafts"
+                href="/draft"
                 className="px-8 py-4 bg-[#F3E216] text-black font-bold text-lg rounded-2xl hover:brightness-110 transition-all shadow-lg shadow-[#F3E216]/20"
               >
-                Buy Your First Pass →
+                Enter Your First Draft →
               </Link>
               <Link
                 href="/draft-queue"
@@ -430,14 +430,14 @@ export default function HowItWorksPage() {
             <h2 className="text-3xl sm:text-5xl font-black mb-4">Ready to Draft?</h2>
             <p className="text-gray-400 text-lg mb-8 max-w-lg mx-auto">
               Join thousands of players in BBB4 — the biggest Best Ball season yet.
-              Buy a pass, draft your squad, win prizes.
+              Add funds, draft your squad, win prizes.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
-                href="/buy-drafts"
+                href="/draft"
                 className="px-10 py-4 bg-[#F3E216] text-black font-bold text-lg rounded-2xl hover:brightness-110 transition-all shadow-lg shadow-[#F3E216]/20"
               >
-                Get Started — Buy a Pass
+                Get Started — Enter a Draft
               </Link>
               <Link
                 href="/faq"

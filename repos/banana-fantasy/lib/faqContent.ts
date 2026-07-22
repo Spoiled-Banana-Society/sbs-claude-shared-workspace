@@ -260,7 +260,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'Do I need ETH for gas?',
-        answer: 'Not to play. Every transaction on SBS - minting passes, buying and selling on the marketplace - is gas-free, we cover it. The only fees you might ever pay are outside SBS: if you swap or bridge on another site (like Relay or Coinbase), their small network fee applies and is shown in their quote. You can also skip crypto entirely and pay with a debit card at checkout - card purchases carry a processing fee, but we cover it: your first card purchase comes with a free Paid Draft Pass, and after that every $25 you accumulate in card fees earns you another one automatically (Paid Draft Passes are the same passes you buy - they count for promos).',
+        answer: 'Not to play. Every transaction on SBS - minting passes, buying and selling on the marketplace - is gas-free, we cover it. The only fees you might ever pay are outside SBS: if you swap or bridge on another site (like Relay or Coinbase), their small network fee applies and is shown in their quote. You can also skip crypto entirely and add funds or pay with a debit card - card payments carry a processing fee, but we cover it: your first card payment comes with a free Paid Draft Pass, and after that every $25 you accumulate in card fees earns you another one automatically (Paid Draft Passes are the same passes you buy - they count for promos).',
       },
       {
         question: 'I have ETH on Ethereum Mainnet - how do I play?',
@@ -290,11 +290,15 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How much does it cost to enter?',
-        answer: 'Each draft costs $25. You can buy multiple draft passes at once - the more you buy, the more Banana Wheel spins you earn (1 spin per 10 drafts purchased).',
+        answer: 'Each draft costs $25. Add money to your balance once, then every entry is one tap - hit Enter, pick your speed, and $25 comes out of your balance. Any draft passes you already have are always used first, free. You can still buy multiple draft passes at once if you like to stock up - the more you buy, the more Banana Wheel spins you earn (1 spin per 10 drafts purchased).',
         link: {
           label: 'Buy Draft Passes',
           href: '/buy-drafts',
         },
+      },
+      {
+        question: 'How does my balance work?',
+        answer: 'The balance in the top bar is your money, in your own account - adding funds never charges you anything beyond the amount you add. Tap the + any time to add more ($25 to $500 presets, or a custom amount). When you enter a draft with no passes left, the $25 entry comes straight out of your balance - no checkout, no extra steps.',
       },
       {
         question: 'What payment methods are accepted?',

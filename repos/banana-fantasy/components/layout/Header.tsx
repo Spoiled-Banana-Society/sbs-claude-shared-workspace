@@ -13,6 +13,8 @@ import { NotificationWidget } from '../NotificationCenter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
+import { AddFundsModal } from '../modals/AddFundsModal';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
 const HEADER_SPOKES: [number, number][] = [
@@ -63,6 +65,9 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // Normal fast loads never hit this (the timer clears the moment loading ends).
   const stillResolving = isLoading || (isLoggedIn && !isBalanceLoaded);
   const [resolveTimedOut, setResolveTimedOut] = useState(false);
+  // Deposit bankroll balance chip (flag-gated). Pure read of the
+  // useAuth-polled wallet USDC — NO fetching of its own (Rule #0).
+  const [showAddFunds, setShowAddFunds] = useState(false);
   useEffect(() => {
     if (!stillResolving) { setResolveTimedOut(false); return; }
     const t = setTimeout(() => setResolveTimedOut(true), 8000);
@@ -128,7 +133,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         <div className="flex items-center justify-between h-14 md:h-16">
           {/* Left side: Logo + Desktop Navigation */}
           <div className="flex items-center gap-2">
-            <Logo size="lg" />
+            <Logo size="lg" compactMobile />
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
@@ -192,6 +197,25 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                 {/* Batch Progress — visible on all sizes */}
                 <BatchProgressIndicator />
 
+                {/* Deposit bankroll balance chip — wallet USDC, taps into Add
+                    Funds. Flag-gated; label always says what money it is. */}
+                {/* Mobile shows whole dollars + tight padding — the lane pills
+                    already eat most of the bar, and "$10.00" was pushing the
+                    avatar off-screen on iPhone (Richard 7/21). Cents on sm+. */}
+                {DEPOSITS_ENABLED && isLoggedIn && user && (
+                  <button
+                    onClick={() => setShowAddFunds(true)}
+                    aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
+                    className="group flex items-center gap-0.5 sm:gap-1 mr-0.5 sm:mr-1 px-1 sm:px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                  >
+                    <span className="text-sm font-bold text-white tabular-nums">
+                      <span className="sm:hidden">${Math.floor(user.usdcBalance ?? 0)}</span>
+                      <span className="hidden sm:inline">${(user.usdcBalance ?? 0) >= 100 ? Math.floor(user.usdcBalance ?? 0) : (user.usdcBalance ?? 0).toFixed(2)}</span>
+                    </span>
+                    <span className="flex items-center justify-center w-4 h-4 rounded-full border border-banana/60 text-banana text-[11px] font-bold leading-none group-hover:bg-banana group-hover:text-black transition-colors">+</span>
+                  </button>
+                )}
+
                 {/* Draft passes — mobile only (desktop shows the gold ticket
                     in the icon row below). Sits next to the JP/HOF batch
                     counter so the user's "ammo" is always one glance away.
@@ -200,7 +224,9 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     hover-card just flashes for a beat before the modal. Tapping
                     goes straight to Buy; the paid/free split lives in the
                     profile menu's "Your Passes" card. */}
-                {isLoggedIn && user && (
+                {/* Hidden entirely at zero passes (Richard 2026-07-21) — a "0"
+                    ticket only advertises that you have nothing. */}
+                {isLoggedIn && user && user.draftPasses + user.freeDrafts > 0 && (
                   <Link
                     href="/buy-drafts"
                     aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
@@ -212,27 +238,27 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
                 {/* ── Desktop-only icons ── */}
                 <div className="hidden md:contents">
-                  {/* Draft Passes */}
-                  <Tooltip
-                    content={
-                      <div className="text-center">
-                        <p className="font-semibold">Draft Passes</p>
-                        {isLoggedIn && user && (
+                  {/* Draft Passes — hidden entirely at zero (Richard 2026-07-21) */}
+                  {isLoggedIn && user && user.draftPasses + user.freeDrafts > 0 && (
+                    <Tooltip
+                      content={
+                        <div className="text-center">
+                          <p className="font-semibold">Draft Passes</p>
                           <p className="text-text-secondary text-xs mt-1">
                             Paid: {user.draftPasses} | Free: {user.freeDrafts}
                           </p>
-                        )}
-                      </div>
-                    }
-                  >
-                    <Link
-                      href="/buy-drafts"
-                      aria-label={`Draft passes: ${isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0} available`}
-                      className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                        </div>
+                      }
                     >
-                      <PassTicket count={isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0} w={40} h={25} />
-                    </Link>
-                  </Tooltip>
+                      <Link
+                        href="/buy-drafts"
+                        aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
+                        className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                      >
+                        <PassTicket count={user.draftPasses + user.freeDrafts} w={40} h={25} />
+                      </Link>
+                    </Tooltip>
+                  )}
 
                   {/* Banana Wheel */}
                   <Tooltip
@@ -278,6 +304,12 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
           </div>
         </div>
       </div>
+
+      {/* Mount only while open — useFundWallet crashes when mounted at page
+          level (see CLAUDE.md troubleshooting / BuyPassesModal precedent). */}
+      {showAddFunds && (
+        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+      )}
     </header>
   );
 }

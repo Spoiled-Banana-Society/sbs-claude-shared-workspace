@@ -4,6 +4,10 @@ interface PrivyLinkedAccount {
   type: string;
   address?: string;
   subject?: string;
+  // Wallet accounts only: 'privy' = our embedded wallet (web2 email/social
+  // login); anything else ('metamask', 'coinbase_wallet', …) = external web3.
+  wallet_client_type?: string;
+  connector_type?: string;
 }
 
 export interface PrivyUser {
@@ -66,6 +70,21 @@ export async function fetchPrivyUser(did: string): Promise<PrivyUser | null> {
     logger.error('privy.fetch_user.error', { did, err });
     return null;
   }
+}
+
+/**
+ * True when `address` is the user's Privy EMBEDDED wallet (web2 email/social
+ * login), not an external wallet like MetaMask. Used to gate web2-only perks
+ * (e.g. deposit card-fee credit) — external-wallet users move their own USDC,
+ * so "a transfer arrived" proves nothing about card fees for them.
+ */
+export function isEmbeddedWalletOf(user: PrivyUser, address: string): boolean {
+  const a = address.toLowerCase();
+  for (const account of user.linked_accounts ?? []) {
+    if (account.type !== 'wallet' || (account.address ?? '').toLowerCase() !== a) continue;
+    if (account.wallet_client_type === 'privy' || account.connector_type === 'embedded') return true;
+  }
+  return false;
 }
 
 /** Return all wallet addresses linked to the given Privy user (lowercased). */

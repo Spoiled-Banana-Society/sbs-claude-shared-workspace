@@ -4,6 +4,7 @@ import * as firestoreDb from './db-firestore';
 const db = firestoreDb;
 
 export const getPromos = db.getPromos;
+export const seedBotUserIdentity = db.seedBotUserIdentity;
 export const claimPromo = db.claimPromo;
 export const updatePromo = db.updatePromo;
 export const getReferralStats = db.getReferralStats;

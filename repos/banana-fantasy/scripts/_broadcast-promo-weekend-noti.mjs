@@ -32,7 +32,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 const NOTI = {
   type: 'promo',
   title: 'This Week Only — FREE Drafts Count!',
-  message: 'Until Sunday 12pm PT: FREE drafts count toward EVERY promo — Pick 10 spins, 4-in-24h, Jackpot draws, all of it. Every draft you enter is working for you. Draft now!',
+  message: 'Until Sunday 12pm PT: FREE drafts count toward EVERY promo — Pick 10 spins, 4-in-24h, Jackpot draws, all of it. Draft now!',
   link: '/promos',
   dedupeKey: DEDUPE_KEY,
   icon: 'spin',

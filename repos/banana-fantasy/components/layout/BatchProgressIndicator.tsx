@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
 import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
@@ -269,40 +269,52 @@ export function BatchProgressIndicator() {
           </div>
         }
       >
-        <div className="relative flex flex-col items-center gap-[2px] ml-2 mr-1 sm:flex-row sm:gap-1.5 sm:ml-0 md:mr-3 cursor-default">
-          {/* Global draft number — always one glance away of the window counters */}
-          <div className="flex flex-row items-baseline gap-1 leading-tight sm:flex-col sm:items-center sm:gap-0 sm:px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10">
-            <span className="text-[7px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[9.5px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+        {/* Breakpoints are lg (not sm) on purpose: landscape phones and small
+            tablets land between sm and lg, where the FULL-size pills + counter
+            collide with the desktop nav (Richard 7/21 landscape screenshot).
+            Compact cut persists until lg, where everything genuinely fits. */}
+        <div className="relative flex flex-row items-center gap-1 ml-1 mr-0.5 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
+          {/* Global draft number, desktop position: its own column left of the
+              pills. On smaller screens it moves BETWEEN the two pills below. */}
+          <div className="hidden lg:flex lg:flex-col lg:items-center lg:gap-0 leading-tight lg:px-0.5 lg:pr-2 lg:mr-0.5 lg:border-r lg:border-white/10">
+            <span className="text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
+            <span className="text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>
 
-          <div className="flex flex-row gap-1 sm:gap-1.5">
-            {pills.map((p) => (
-              <div key={p.key}>
-                {/* One pill, same design on every screen — mobile is just a
-                    tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] sm:rounded-[10px] border px-1.5 sm:px-2.5 py-[2px] sm:py-[5px] min-w-[76px] sm:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center gap-1 sm:gap-1.5 leading-none">
-                    <span className={`text-[7.5px] sm:text-[10px] font-extrabold tracking-[0.1em] sm:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
+          <div className="flex flex-row items-center gap-1 lg:gap-1.5">
+            {pills.map((p, i) => (
+              <React.Fragment key={p.key}>
+                {/* Compact draft number slotted BETWEEN Jackpot and HOF on
+                    mobile (Richard 2026-07-21) — desktop keeps the left column. */}
+                {i === 1 && (
+                  <div className="flex flex-col items-center gap-0 leading-tight lg:hidden">
+                    <span className="text-[6.5px] font-bold tracking-[0.12em] text-white/40">DRAFT</span>
+                    <span className="text-[10px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
+                  </div>
+                )}
+                {/* One pill, same design on every screen — smaller screens get
+                    a tighter cut of the desktop pill (Boris 2026-07-21). */}
+                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[76px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
+                    <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9px] sm:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      <span className={`ml-auto text-[9px] lg:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
                   </div>
                   <div className="leading-none" style={heatPulse(p.heat, p.color)}>
                     {p.hit ? (
-                      <span className="text-[10.5px] sm:text-[12px] font-extrabold text-green-400">✓ HIT</span>
+                      <span className="text-[10.5px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
                     ) : (
-                      <span className="text-[10px] sm:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[8px] sm:text-[10.5px] font-medium text-white/40">/{p.left}</span>
+                      <span className="text-[10px] lg:text-[13px] font-extrabold tabular-nums text-white/90">
+                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-medium text-white/40">/{p.left}</span>
                       </span>
                     )}
                   </div>
-                  <div className="h-[2px] sm:h-[2.5px] overflow-hidden rounded-full bg-white/10">
+                  <div className="h-[2px] lg:h-[2.5px] overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
                   </div>
                 </div>
-
-              </div>
+              </React.Fragment>
             ))}
           </div>
           <style jsx global>{`@keyframes bpHeatPulse { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(var(--bpScale, 1.08)); opacity: 1 } }`}</style>
