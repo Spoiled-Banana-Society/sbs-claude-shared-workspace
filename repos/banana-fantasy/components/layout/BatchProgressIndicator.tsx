@@ -269,9 +269,11 @@ export function BatchProgressIndicator() {
           </div>
         }
       >
-        <div className="relative flex flex-col items-center gap-[2px] ml-2 mr-1 sm:flex-row sm:gap-1.5 sm:ml-0 md:mr-3 cursor-default">
-          {/* Global draft number — always one glance away of the window counters */}
-          <div className="flex flex-row items-baseline gap-1 leading-tight sm:flex-col sm:items-center sm:gap-0 sm:px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10">
+        <div className="relative flex flex-col items-center gap-[2px] ml-1 mr-0.5 sm:flex-row sm:gap-1.5 sm:ml-0 md:mr-3 cursor-default">
+          {/* Global draft number — desktop only. The phone header row can't
+              fit it next to pills + balance chip + ticket + avatar (Richard
+              2026-07-21); the count stays one tap away in this tooltip. */}
+          <div className="hidden sm:flex sm:flex-col sm:items-center sm:gap-0 leading-tight sm:px-0.5 sm:pr-2 sm:mr-0.5 sm:border-r sm:border-white/10">
             <span className="text-[7px] sm:text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
             <span className="text-[9.5px] sm:text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
           </div>

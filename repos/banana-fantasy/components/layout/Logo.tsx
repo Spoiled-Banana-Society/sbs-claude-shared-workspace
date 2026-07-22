@@ -6,6 +6,10 @@ import Image from 'next/image';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
+  /** Hide the "SBS" wordmark below `sm` — the header row physically cannot
+   *  fit wordmark + lane pills + balance chip + ticket + avatar on a phone
+   *  (Richard 2026-07-21). Glyph alone still reads as the brand. */
+  compactMobile?: boolean;
 }
 
 const sizeMap = {
@@ -14,7 +18,7 @@ const sizeMap = {
   lg: 52,
 };
 
-export function Logo({ size = 'md' }: LogoProps) {
+export function Logo({ size = 'md', compactMobile = false }: LogoProps) {
   const imgSize = sizeMap[size];
   // Polymarket-style lockup, tuned for all-caps 3-letter wordmark:
   // text ~45% of icon height (all-caps reads ~20% larger than mixed-case),
@@ -31,7 +35,7 @@ export function Logo({ size = 'md' }: LogoProps) {
         priority
       />
       <span
-        className="-ml-1.5 font-bold tracking-tight leading-none text-white"
+        className={`-ml-1.5 font-bold tracking-tight leading-none text-white ${compactMobile ? 'hidden sm:block' : ''}`}
         style={{ fontSize: `${fontSize}px` }}
       >
         SBS
