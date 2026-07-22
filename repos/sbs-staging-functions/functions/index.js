@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
+const { isSlowDraftNightPause, slowDraftActiveSecondsUntil } = require("./slowDraftClock");
 
 admin.initializeApp();
 
@@ -539,6 +540,177 @@ function drawTeamBlueprint(rand) {
   return { QB: 3, RB1: 4, WR1: 4, TE: 2, DST: 2, RB2: 0, WR2: 0 };
 }
 
+/**
+ * submitBotPick — the shared "compute and submit" half of the bot brain:
+ * availability, blueprint, balance floor, reality override, weighted draw,
+ * POST to the public pick endpoint. Callers (onBotTurn for fast drafts,
+ * botSlowPickWorker for slow) MUST have just verified against a fresh RTDB
+ * read that it is still `drafter`'s turn on `pickNumberAtStart`. Never throws
+ * — any failure is logged and the engine's buzzer auto-pick is the backstop.
+ * Returns true only when the pick endpoint accepted the pick.
+ */
+async function submitBotPick(draftId, drafter, pickNumberAtStart, cfg, delayNote) {
+  try {
+    // Availability = all slots minus summary picks. Same construction the
+    // draft room uses.
+    const [pmSnap, sumRes] = await Promise.all([
+      admin.firestore().collection('playerStats2026').doc('playerMap').get(),
+      fetch(`${DRAFTS_API_URL}/draft/${draftId}/state/summary`),
+    ]);
+    const players = (pmSnap.data() || {}).Players || {};
+    const sumBody = await sumRes.json().catch(() => null);
+    const summary = Array.isArray(sumBody) ? sumBody : (sumBody && sumBody.summary) || [];
+    const taken = new Set();
+    const mine = {}; // this bot's roster so far, counted by SLOT TYPE (RB1 vs RB2 etc.)
+    const typeOf = (playerId) => String(playerId).split('-')[1] || '';
+    const posOf = (playerId) => typeOf(playerId).replace(/\d+$/, '');
+    for (const row of summary) {
+      const p = row && row.playerInfo;
+      if (!p || !p.playerId) continue;
+      taken.add(p.playerId);
+      if (String(p.ownerAddress || '').toLowerCase() === drafter) {
+        const t = typeOf(p.playerId);
+        mine[t] = (mine[t] || 0) + 1;
+      }
+    }
+
+    // This bot's team blueprint for THIS draft (deterministic — see helpers).
+    const targets = drawTeamBlueprint(mulberry32(hashSeed(draftId + '|' + drafter)));
+
+    let available = Object.keys(players)
+      .filter((id) => !taken.has(id))
+      .map((id) => ({ id, adp: Number(players[id].ADP) || 999 }))
+      .sort((a, b) => a.adp - b.adp);
+    // Starter supply BEFORE any filtering — the reality-override rules below
+    // need to know whether RB1/WR1 are still gettable at all.
+    const supplyOf = (t) => available.filter((s) => typeOf(s.id) === t).length;
+    const rb1Supply = supplyOf('RB1');
+    const wr1Supply = supplyOf('WR1');
+
+    // Reality override (Richard, 2026-07-12, draft-122 round 13): the
+    // "never a backup before 2 starters" gate assumes starters are still
+    // available. If WR1s sell out while the bot holds only 1, a hard gate
+    // would ban it from EVER taking another WR — it spent round 13 on an
+    // RB2 instead. So: the backup gate only applies while that position's
+    // starters can still be drafted, and when they can't, the blueprint's
+    // backup allowance grows so the bot can reach 3 total at the position.
+    const wrTotalNow = (mine.WR1 || 0) + (mine.WR2 || 0);
+    const rbTotalNow = (mine.RB1 || 0) + (mine.RB2 || 0);
+    const effTargets = { ...targets };
+    if (wr1Supply === 0 && wrTotalNow < 3) {
+      effTargets.WR2 = Math.max(effTargets.WR2 ?? 0, (mine.WR2 || 0) + (3 - wrTotalNow));
+    }
+    if (rb1Supply === 0 && rbTotalNow < 3) {
+      effTargets.RB2 = Math.max(effTargets.RB2 ?? 0, (mine.RB2 || 0) + (3 - rbTotalNow));
+    }
+
+    // Draft toward the blueprint: only slot types still needed, and never a
+    // backup (RB2/WR2) before 2+ starters at that position are rostered —
+    // unless the starters are gone (reality override above).
+    const needed = available.filter((s) => {
+      const t = typeOf(s.id);
+      if ((mine[t] || 0) >= (effTargets[t] ?? 0)) return false;
+      if (t === 'RB2' && (mine.RB1 || 0) < 2 && rb1Supply > 0) return false;
+      if (t === 'WR2' && (mine.WR1 || 0) < 2 && wr1Supply > 0) return false;
+      return true;
+    });
+    if (needed.length > 0) available = needed; // blueprint is a plan, not a straitjacket — never strand the bot
+    if (available.length === 0) return false; // engine fallback will handle it
+
+    // Emergency narrowing, ANY round: under 3 TOTAL at a premium position
+    // whose starters are gone — take its backups NOW while they exist. This
+    // is what turns "RB2 in round 13 with one WR" into "grab WR2s," and
+    // "4th QB while holding 2 RBs" into "grab RB2s." WR before RB when
+    // both are starving.
+    let emergencyType = null;
+    if (wr1Supply === 0 && wrTotalNow < 3 && available.some((s) => typeOf(s.id) === 'WR2')) {
+      emergencyType = 'WR2';
+    } else if (rb1Supply === 0 && rbTotalNow < 3 && available.some((s) => typeOf(s.id) === 'RB2')) {
+      emergencyType = 'RB2';
+    }
+    if (emergencyType) available = available.filter((s) => typeOf(s.id) === emergencyType);
+
+    // Early-draft balance floor (Richard, 2026-07-12 after draft-122): walk
+    // out of the first 7 rounds with AT LEAST 2 RB1 and 2 WR1. The blueprint
+    // alone says how many to end with, not WHEN — an RB-heavy start let the
+    // WR1 shelf empty out and the bot finished with a single WR1. Two
+    // triggers narrow the pool to a deficit position:
+    //  - scarcity: a needed premium type is down to ≤10 available (≈ one
+    //    snake round of demand) — take it before the run finishes it;
+    //  - runway: deficit picks needed ≥ early picks remaining — stop
+    //    browsing, cover the floor.
+    // Most-endangered position first when both are short. If the position
+    // is already sold out, there's nothing to force — blueprint continues.
+    const myPickCount = Object.values(mine).reduce((a, b) => a + b, 0);
+    if (myPickCount < 7) {
+      const deficits = [];
+      for (const t of ['RB1', 'WR1']) {
+        const have = mine[t] || 0;
+        if (have < 2) {
+          const supply = available.filter((s) => typeOf(s.id) === t).length;
+          if (supply > 0) deficits.push({ t, need: 2 - have, supply });
+        }
+      }
+      const totalNeed = deficits.reduce((a, d) => a + d.need, 0);
+      const runwayTight = 7 - myPickCount <= totalNeed;
+      const scarce = deficits.filter((d) => d.supply <= 10);
+      if (deficits.length > 0 && (runwayTight || scarce.length > 0)) {
+        const focus = (scarce.length > 0 ? scarce : deficits).sort((a, b) => a.supply - b.supply)[0];
+        available = available.filter((s) => typeOf(s.id) === focus.t);
+      }
+    }
+
+    // Variance: weighted draw from the top N by ADP (front-loaded weights).
+    const topN = Math.max(1, Number(cfg.topN ?? 5));
+    const pool = available.slice(0, topN);
+    const weights = pool.map((_, i) => Math.pow(0.55, i)); // 1, .55, .30, .17, .09…
+    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let chosen = pool[0];
+    for (let i = 0; i < pool.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) { chosen = pool[i]; break; }
+    }
+
+    const team = String(chosen.id).split('-')[0] || '';
+    const position = posOf(chosen.id);
+    const res = await fetch(
+      `${DRAFTS_API_URL}/draft-actions/${draftId}/owner/${drafter}/actions/pick`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId: chosen.id,
+          displayName: chosen.id,
+          team,
+          position,
+        }),
+      },
+    );
+    if (!res.ok) {
+      // Benign losses (turn advanced, dup pick) end here — engine's buzzer
+      // auto-pick is the backstop either way. Log for the admin Logs tab.
+      const bodyText = await res.text().catch(() => '');
+      console.warn('[onBotTurn] pick rejected', draftId, drafter, res.status, bodyText.slice(0, 200));
+      logErrorEvent('bots.brain.pick_rejected', `pick endpoint ${res.status}`, {
+        actor: drafter,
+        route: 'functions/onBotTurn',
+        context: { draftId, pickNumber: pickNumberAtStart, playerId: chosen.id, status: res.status, body: bodyText.slice(0, 300) },
+      });
+      return false;
+    }
+    console.log(`[onBotTurn] ${drafter} picked ${chosen.id} in ${draftId} ${delayNote} (pick ${pickNumberAtStart})`);
+    return true;
+  } catch (err) {
+    console.error('[onBotTurn] failed — engine auto-pick will cover', err);
+    logErrorEvent('bots.brain.failed', err && err.message ? err.message : String(err), {
+      actor: drafter,
+      route: 'functions/onBotTurn',
+      context: { draftId, pickNumber: pickNumberAtStart },
+    });
+    return false;
+  }
+}
+
 exports.onBotTurn = functions
   .region('us-central1')
   // 300s: a countdown-phase pick 1 can now sleep up to ~60s (rest of the
@@ -580,6 +752,33 @@ exports.onBotTurn = functions
     if (cfg.enabled !== true) return null;
 
     const pickLength = Number(after.pickLength ?? 0);
+    const pickNumberAtStart = Number(after.pickNumber ?? 0);
+
+    // SLOW drafts (Richard, 2026-07-21): a bot should answer at a random point
+    // while the pause-aware clock still reads between ~8:00:00 and 6:00:00
+    // left — hours into its window like a human, not 30–90s in like the old
+    // path (which read as instant answers around the clock). A function can't
+    // sleep for hours, so enqueue a target clock reading for
+    // botSlowPickWorker (5-min cron) and get out. Doc is keyed by draftId
+    // (only one seat is ever on the clock per draft), so each new bot turn
+    // overwrites the previous task and stale tasks can't stack up.
+    if (pickLength >= 3600) {
+      const minClock = Math.max(60, Number(cfg.slowPickMinClockSec ?? 21600));
+      const maxClockRaw = Number(cfg.slowPickMaxClockSec ?? 28500);
+      // Never target the full window (instant answer) or less than the min.
+      const maxClock = Math.min(Math.max(maxClockRaw, minClock), pickLength - 60);
+      const targetClockSec = Math.round(minClock + Math.random() * (Math.max(maxClock, minClock) - minClock));
+      await admin.firestore().collection('botPickQueue').doc(draftId).set({
+        drafter,
+        pickNumber: pickNumberAtStart,
+        targetClockSec,
+        pickLength,
+        createdAt: new Date().toISOString(),
+      });
+      console.log(`[onBotTurn] slow draft — queued ${drafter} pick ${pickNumberAtStart} in ${draftId} for clock <= ${targetClockSec}s left`);
+      return null;
+    }
+
     const isFast = pickLength > 0 && pickLength <= 3600;
     const minD = Number(isFast ? cfg.fastMinDelaySec ?? 10 : cfg.slowMinDelaySec ?? 30);
     const maxD = Number(isFast ? cfg.fastMaxDelaySec ?? 30 : cfg.slowMaxDelaySec ?? 90);
@@ -592,7 +791,6 @@ exports.onBotTurn = functions
     // (BBB #143 + #144, 2026-07-14: seat 3 humans saw ~11s of a 30s pick).
     // Anchor the bot's human-like delay to the window OPENING, not to this
     // wake-up: sleep out the rest of the countdown first, then the delay.
-    const pickNumberAtStart = Number(after.pickNumber ?? 0);
     const nowSec = Date.now() / 1000;
     const windowOpensSec = Number(after.pickStartTime || 0);
     const untilOpenSec = Math.max(0, windowOpensSec - nowSec);
@@ -619,164 +817,80 @@ exports.onBotTurn = functions
     // client's countdown. The engine's auto-pick covers a skipped turn.
     if (Date.now() / 1000 < Number(live.pickStartTime || 0)) return null;
 
-    try {
-      // Availability = all slots minus summary picks. Same construction the
-      // draft room uses.
-      const [pmSnap, sumRes] = await Promise.all([
-        admin.firestore().collection('playerStats2026').doc('playerMap').get(),
-        fetch(`${DRAFTS_API_URL}/draft/${draftId}/state/summary`),
-      ]);
-      const players = (pmSnap.data() || {}).Players || {};
-      const sumBody = await sumRes.json().catch(() => null);
-      const summary = Array.isArray(sumBody) ? sumBody : (sumBody && sumBody.summary) || [];
-      const taken = new Set();
-      const mine = {}; // this bot's roster so far, counted by SLOT TYPE (RB1 vs RB2 etc.)
-      const typeOf = (playerId) => String(playerId).split('-')[1] || '';
-      const posOf = (playerId) => typeOf(playerId).replace(/\d+$/, '');
-      for (const row of summary) {
-        const p = row && row.playerInfo;
-        if (!p || !p.playerId) continue;
-        taken.add(p.playerId);
-        if (String(p.ownerAddress || '').toLowerCase() === drafter) {
-          const t = typeOf(p.playerId);
-          mine[t] = (mine[t] || 0) + 1;
+    await submitBotPick(draftId, drafter, pickNumberAtStart, cfg, `after ${Math.round(delaySec)}s`);
+
+    return null;
+  });
+
+/**
+ * botSlowPickWorker — the slow-draft half of the bot brain (Richard's spec,
+ * 2026-07-21): a bot in a slow draft picks at a random point while the
+ * pause-aware clock reads between ~7:55:00 and 6:00:00 left, not seconds into
+ * an 8-hour window. onBotTurn enqueues a botPickQueue/{draftId} doc with the
+ * target clock reading; this cron submits the pick once the displayed clock
+ * crosses it. The clock is frozen 22:00–05:00 PT, so a target can only be
+ * crossed during active hours — bots never answer overnight (the tick also
+ * hard-skips the pause window so a stale task can't fire at 3am either).
+ * Verification mirrors onBotTurn's compute-at-submit rules: fresh RTDB read,
+ * same drafter, same pickNumber, window open, never near the buzzer. Every
+ * failure path leaves the engine's own auto-pick as the backstop.
+ */
+exports.botSlowPickWorker = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 300, memory: '256MB' })
+  .pubsub.schedule('every 5 minutes')
+  .timeZone('America/Los_Angeles')
+  .onRun(async () => {
+    const cfgSnap = await admin.firestore().collection('system_config').doc('botBrain').get();
+    const cfg = cfgSnap.exists ? cfgSnap.data() : {};
+    if (cfg.enabled !== true) return null;
+
+    const queue = await admin.firestore().collection('botPickQueue').get();
+    if (queue.empty) return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (isSlowDraftNightPause(nowSec)) return null;
+
+    for (const doc of queue.docs) {
+      const task = doc.data() || {};
+      const draftId = doc.id;
+      const drafter = String(task.drafter || '').toLowerCase();
+      try {
+        const liveSnap = await admin.database().ref(`drafts/${draftId}/realTimeDraftInfo`).once('value');
+        const live = liveSnap.val();
+        // Stale task — draft gone/over, or the turn moved on without us
+        // (engine buzzer-picked, or a human picked into the window): drop it.
+        if (
+          !live || live.isDraftComplete || live.isDraftClosed
+          || String(live.currentDrafter || '').toLowerCase() !== drafter
+          || Number(live.pickNumber ?? -1) !== Number(task.pickNumber ?? -2)
+        ) {
+          await doc.ref.delete();
+          continue;
         }
-      }
-
-      // This bot's team blueprint for THIS draft (deterministic — see helpers).
-      const targets = drawTeamBlueprint(mulberry32(hashSeed(draftId + '|' + drafter)));
-
-      let available = Object.keys(players)
-        .filter((id) => !taken.has(id))
-        .map((id) => ({ id, adp: Number(players[id].ADP) || 999 }))
-        .sort((a, b) => a.adp - b.adp);
-      // Starter supply BEFORE any filtering — the reality-override rules below
-      // need to know whether RB1/WR1 are still gettable at all.
-      const supplyOf = (t) => available.filter((s) => typeOf(s.id) === t).length;
-      const rb1Supply = supplyOf('RB1');
-      const wr1Supply = supplyOf('WR1');
-
-      // Reality override (Richard, 2026-07-12, draft-122 round 13): the
-      // "never a backup before 2 starters" gate assumes starters are still
-      // available. If WR1s sell out while the bot holds only 1, a hard gate
-      // would ban it from EVER taking another WR — it spent round 13 on an
-      // RB2 instead. So: the backup gate only applies while that position's
-      // starters can still be drafted, and when they can't, the blueprint's
-      // backup allowance grows so the bot can reach 3 total at the position.
-      const wrTotalNow = (mine.WR1 || 0) + (mine.WR2 || 0);
-      const rbTotalNow = (mine.RB1 || 0) + (mine.RB2 || 0);
-      const effTargets = { ...targets };
-      if (wr1Supply === 0 && wrTotalNow < 3) {
-        effTargets.WR2 = Math.max(effTargets.WR2 ?? 0, (mine.WR2 || 0) + (3 - wrTotalNow));
-      }
-      if (rb1Supply === 0 && rbTotalNow < 3) {
-        effTargets.RB2 = Math.max(effTargets.RB2 ?? 0, (mine.RB2 || 0) + (3 - rbTotalNow));
-      }
-
-      // Draft toward the blueprint: only slot types still needed, and never a
-      // backup (RB2/WR2) before 2+ starters at that position are rostered —
-      // unless the starters are gone (reality override above).
-      const needed = available.filter((s) => {
-        const t = typeOf(s.id);
-        if ((mine[t] || 0) >= (effTargets[t] ?? 0)) return false;
-        if (t === 'RB2' && (mine.RB1 || 0) < 2 && rb1Supply > 0) return false;
-        if (t === 'WR2' && (mine.WR1 || 0) < 2 && wr1Supply > 0) return false;
-        return true;
-      });
-      if (needed.length > 0) available = needed; // blueprint is a plan, not a straitjacket — never strand the bot
-      if (available.length === 0) return null; // engine fallback will handle it
-
-      // Emergency narrowing, ANY round: under 3 TOTAL at a premium position
-      // whose starters are gone — take its backups NOW while they exist. This
-      // is what turns "RB2 in round 13 with one WR" into "grab WR2s," and
-      // "4th QB while holding 2 RBs" into "grab RB2s." WR before RB when
-      // both are starving.
-      let emergencyType = null;
-      if (wr1Supply === 0 && wrTotalNow < 3 && available.some((s) => typeOf(s.id) === 'WR2')) {
-        emergencyType = 'WR2';
-      } else if (rb1Supply === 0 && rbTotalNow < 3 && available.some((s) => typeOf(s.id) === 'RB2')) {
-        emergencyType = 'RB2';
-      }
-      if (emergencyType) available = available.filter((s) => typeOf(s.id) === emergencyType);
-
-      // Early-draft balance floor (Richard, 2026-07-12 after draft-122): walk
-      // out of the first 7 rounds with AT LEAST 2 RB1 and 2 WR1. The blueprint
-      // alone says how many to end with, not WHEN — an RB-heavy start let the
-      // WR1 shelf empty out and the bot finished with a single WR1. Two
-      // triggers narrow the pool to a deficit position:
-      //  - scarcity: a needed premium type is down to ≤10 available (≈ one
-      //    snake round of demand) — take it before the run finishes it;
-      //  - runway: deficit picks needed ≥ early picks remaining — stop
-      //    browsing, cover the floor.
-      // Most-endangered position first when both are short. If the position
-      // is already sold out, there's nothing to force — blueprint continues.
-      const myPickCount = Object.values(mine).reduce((a, b) => a + b, 0);
-      if (myPickCount < 7) {
-        const deficits = [];
-        for (const t of ['RB1', 'WR1']) {
-          const have = mine[t] || 0;
-          if (have < 2) {
-            const supply = available.filter((s) => typeOf(s.id) === t).length;
-            if (supply > 0) deficits.push({ t, need: 2 - have, supply });
-          }
+        // Countdown-phase pick 1: window not open yet — check again next tick.
+        if (nowSec < Number(live.pickStartTime || 0)) continue;
+        const clockRemaining = slowDraftActiveSecondsUntil(nowSec, Number(live.pickEndTime || 0));
+        // Buzzer imminent (shouldn't happen with a ≥6h target) — engine's lane.
+        if (clockRemaining <= 120) {
+          await doc.ref.delete();
+          continue;
         }
-        const totalNeed = deficits.reduce((a, d) => a + d.need, 0);
-        const runwayTight = 7 - myPickCount <= totalNeed;
-        const scarce = deficits.filter((d) => d.supply <= 10);
-        if (deficits.length > 0 && (runwayTight || scarce.length > 0)) {
-          const focus = (scarce.length > 0 ? scarce : deficits).sort((a, b) => a.supply - b.supply)[0];
-          available = available.filter((s) => typeOf(s.id) === focus.t);
-        }
-      }
-
-      // Variance: weighted draw from the top N by ADP (front-loaded weights).
-      const topN = Math.max(1, Number(cfg.topN ?? 5));
-      const pool = available.slice(0, topN);
-      const weights = pool.map((_, i) => Math.pow(0.55, i)); // 1, .55, .30, .17, .09…
-      let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
-      let chosen = pool[0];
-      for (let i = 0; i < pool.length; i++) {
-        roll -= weights[i];
-        if (roll <= 0) { chosen = pool[i]; break; }
-      }
-
-      const team = String(chosen.id).split('-')[0] || '';
-      const position = posOf(chosen.id);
-      const res = await fetch(
-        `${DRAFTS_API_URL}/draft-actions/${draftId}/owner/${drafter}/actions/pick`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            playerId: chosen.id,
-            displayName: chosen.id,
-            team,
-            position,
-          }),
-        },
-      );
-      if (!res.ok) {
-        // Benign losses (turn advanced, dup pick) end here — engine's buzzer
-        // auto-pick is the backstop either way. Log for the admin Logs tab.
-        const bodyText = await res.text().catch(() => '');
-        console.warn('[onBotTurn] pick rejected', draftId, drafter, res.status, bodyText.slice(0, 200));
-        logErrorEvent('bots.brain.pick_rejected', `pick endpoint ${res.status}`, {
+        if (clockRemaining > Number(task.targetClockSec || 0)) continue; // not time yet
+        const h = Math.floor(clockRemaining / 3600);
+        const m = Math.floor((clockRemaining % 3600) / 60);
+        const ok = await submitBotPick(draftId, drafter, Number(task.pickNumber ?? 0), cfg, `with ${h}h${String(m).padStart(2, '0')}m left`);
+        // On failure keep the task: the next tick re-verifies and retries (or
+        // deletes it as stale once the engine/turn has moved on).
+        if (ok) await doc.ref.delete();
+      } catch (err) {
+        console.error('[botSlowPickWorker] task failed', draftId, err);
+        logErrorEvent('bots.brain.slow_worker_failed', err && err.message ? err.message : String(err), {
           actor: drafter,
-          route: 'functions/onBotTurn',
-          context: { draftId, pickNumber: pickNumberAtStart, playerId: chosen.id, status: res.status, body: bodyText.slice(0, 300) },
+          route: 'functions/botSlowPickWorker',
+          context: { draftId, pickNumber: Number(task.pickNumber ?? -1) },
         });
-      } else {
-        console.log(`[onBotTurn] ${drafter} picked ${chosen.id} in ${draftId} after ${Math.round(delaySec)}s (pick ${pickNumberAtStart})`);
       }
-    } catch (err) {
-      console.error('[onBotTurn] failed — engine auto-pick will cover', err);
-      logErrorEvent('bots.brain.failed', err && err.message ? err.message : String(err), {
-        actor: drafter,
-        route: 'functions/onBotTurn',
-        context: { draftId, pickNumber: pickNumberAtStart },
-      });
     }
-
     return null;
   });
 
