@@ -3973,6 +3973,39 @@ async function assignBananaNumber(userId: string): Promise<number> {
   });
 }
 
+/**
+ * Directory presence for a HOUSE BOT (Boris 2026-07-21): every bot appears in
+ * All Users like a real member. Creates the v2_users doc (firstLoginAt makes
+ * it roster-eligible), allocates the same sequential Banana#### any user gets,
+ * stores it as the bot's username, and claims the usernames reservation so
+ * the number can never be double-assigned. Idempotent — safe on every mint.
+ */
+export async function seedBotUserIdentity(wallet: string): Promise<void> {
+  const db = getAdminFirestore();
+  const w = wallet.toLowerCase();
+  const ref = db.collection(USERS_COLLECTION).doc(w);
+  const snap = await ref.get();
+  const nowIso = new Date().toISOString();
+  if (!snap.exists) {
+    await ref.set({
+      id: w,
+      walletAddress: w,
+      ripeness: { color: '#4e9a2f', tier: 0, count: 0, range: '1–9', label: 'Unripe' },
+      draftPasses: 0, freeDrafts: 0, wheelSpins: 0, jackpotEntries: 0, hofEntries: 0,
+      cardPurchaseCount: 0, usdcBalance: 0, cardFeeCreditCents: 0,
+      createdAt: nowIso, firstLoginAt: nowIso, lastSeenAt: nowIso,
+    }, { merge: true });
+  }
+  const existingName = snap.exists ? ((snap.data() as User).username || '') : '';
+  if (existingName && !/^user-0x/i.test(existingName)) return; // already properly named
+  const n = await assignBananaNumber(w);
+  const name = `Banana${n}`;
+  await ref.set({ username: name, username_lower: name.toLowerCase() }, { merge: true });
+  await db.collection('usernames').doc(name.toLowerCase()).set({
+    walletAddress: w, name, updatedAt: Date.now(),
+  }, { merge: true }).catch(() => {});
+}
+
 export async function getUserDisplayBatch(userIds: string[]): Promise<Record<string, {
   username: string | null;
   profilePicture: string | null;

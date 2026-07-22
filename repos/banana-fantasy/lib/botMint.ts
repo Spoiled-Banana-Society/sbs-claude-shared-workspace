@@ -3,6 +3,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
+import { seedBotUserIdentity } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 export const BOT_COLLECTION = 'botWallets';
@@ -60,6 +61,12 @@ export async function mintBotPass(
   };
   if (!isTopUp) doc.createdAt = Date.now();
   await db.collection(BOT_COLLECTION).doc(addr).set(doc, { merge: true });
+
+  // Every bot is a directory citizen: seed its v2_users presence + sequential
+  // Banana#### handle so All Users / drafts / search all show the same real
+  // name (Boris 2026-07-21). Idempotent, best-effort — never blocks a mint.
+  await seedBotUserIdentity(addr).catch((e) =>
+    logger.warn('bots.mint.identity_seed_failed', { address: addr, err: (e as Error).message }));
 
   try {
     await recordPassOrigins({ tokenIds: idStrs, origin: 'house_bot', ownerAtMint: addr, txHash, reason: 'house bot pool' });
