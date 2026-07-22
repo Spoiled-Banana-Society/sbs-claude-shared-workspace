@@ -6,6 +6,7 @@ import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import type { Address } from 'viem';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
+import { CardMethodsGraphic } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance, waitForUsdcArrival } from '@/lib/contracts/bbb4';
 import { DEPOSIT_PRESETS_USD } from '@/lib/deposits';
 import { clientLog } from '@/lib/clientLog';
@@ -189,6 +190,12 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
                 />
               </div>
             </div>
+          </div>
+
+          {/* How you can pay — same 4-method strip as the buy modal's card
+              box. Static: card is the only path here, nothing to pick. */}
+          <div className="rounded-xl border-2 border-white/25 p-2.5">
+            <CardMethodsGraphic />
           </div>
 
           <button
