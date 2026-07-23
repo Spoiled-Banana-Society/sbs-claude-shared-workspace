@@ -588,7 +588,13 @@ export default function BananaWheelPage() {
               fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
             }}
           >
-            <h3 className="text-[16px] font-semibold text-white tracking-tight">My Winnings</h3>
+            <div className="flex items-baseline justify-between">
+              <h3 className="text-[16px] font-semibold text-white tracking-tight">My Winnings</h3>
+              {/* Total spins done — count of the user's full spin history (Boris 2026-07-23). */}
+              <span className="text-white/45 text-[13px] font-medium tabular-nums">
+                {spinHistory.length} total {spinHistory.length === 1 ? 'spin' : 'spins'}
+              </span>
+            </div>
 
             {/* Totals — big number = LIFETIME won from spins (cumulative, never
                 drops); muted suffix = spendable balance left right now. Both
