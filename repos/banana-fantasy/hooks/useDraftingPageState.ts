@@ -194,6 +194,7 @@ export function useDraftingPageState() {
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
   const {
     depositEntryReady,
+    balanceEntryReady,
     buying: depositBuying,
     buyError: depositBuyError,
     clearBuyError: clearDepositBuyError,
@@ -475,7 +476,16 @@ export function useDraftingPageState() {
     setShowEntryFlow(true);
   };
 
-  const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+    if (passType === 'balance') {
+      // Paid seat bought from balance inside the chooser — keep the modal up
+      // until the charge lands so a failure stays visible.
+      const ok = await buyPassWithBalance();
+      if (!ok) return;
+      setShowEntryFlow(false);
+      void enterDraftWithPassType('paid', speed);
+      return;
+    }
     setShowEntryFlow(false);
     void enterDraftWithPassType(passType, speed);
   };
@@ -1836,6 +1846,7 @@ export function useDraftingPageState() {
     setShowDepositEntry,
     showAddFunds,
     setShowAddFunds,
+    balanceEntryReady,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,

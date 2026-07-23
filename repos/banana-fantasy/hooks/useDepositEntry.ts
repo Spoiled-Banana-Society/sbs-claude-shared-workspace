@@ -34,11 +34,18 @@ export function useDepositEntry() {
 
   // Offer gate — uses the 30s-polled useAuth balance, which is fine for
   // SHOWING the option. The charge itself re-reads the balance live.
-  const depositEntryReady =
-    DEPOSITS_ENABLED &&
-    !!user &&
-    passes <= 0 &&
-    (user?.usdcBalance ?? 0) >= ENTRY_PRICE_USD;
+  //
+  // `balanceEntryReady` is the same gate WITHOUT the zero-pass condition: it
+  // says "this user could pay for a seat right now". It exists because the
+  // pass chooser has to offer a paid seat to someone who holds only a FREE
+  // pass (Richard 2026-07-22 — AceJohn had 1 free pass and $100 sitting there
+  // with no way to buy in). It never charges on its own; the user taps a card
+  // with the price on it, so pass-first ordering is preserved by default and
+  // only overridden by an explicit choice.
+  const balanceEntryReady =
+    DEPOSITS_ENABLED && !!user && (user?.usdcBalance ?? 0) >= ENTRY_PRICE_USD;
+
+  const depositEntryReady = balanceEntryReady && passes <= 0;
 
   /**
    * Buy exactly one pass from wallet balance. Resolves true on success (pass
@@ -97,5 +104,5 @@ export function useDepositEntry() {
 
   const clearBuyError = () => setBuyError(null);
 
-  return { depositEntryReady, buying, buyError, clearBuyError, buyPassWithBalance };
+  return { depositEntryReady, balanceEntryReady, buying, buyError, clearBuyError, buyPassWithBalance };
 }

@@ -28,7 +28,7 @@ export default function BuyDraftsPage() {
   const router = useRouter();
   const { isLoggedIn, isLoading, user, setShowLoginModal } = useAuth();
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
-  const { depositEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
+  const { depositEntryReady, balanceEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
   const [mode, setMode] = useState<'none' | 'buy' | 'entry' | 'deposit' | 'add-funds'>('none');
 
   const passes = (user?.draftPasses || 0) + (user?.freeDrafts || 0);
@@ -67,7 +67,13 @@ export default function BuyDraftsPage() {
     }
   }, [router]);
 
-  const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+    if (passType === 'balance') {
+      const ok = await buyPassWithBalance();
+      if (!ok) return; // error stays visible in the modal
+      void enterDraftWithPassType('paid', speed);
+      return;
+    }
     void enterDraftWithPassType(passType, speed);
   };
 
@@ -110,11 +116,14 @@ export default function BuyDraftsPage() {
 
       <EntryFlowModal
         isOpen={mode === 'entry'}
-        onClose={leave}
-        onComplete={handleEntryComplete}
+        onClose={() => { clearBuyError(); leave(); }}
+        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
-        isSubmitting={joiningLobby}
+        isSubmitting={joiningLobby || depositBuying}
+        balanceEntryReady={balanceEntryReady}
+        balanceUsd={user?.usdcBalance ?? 0}
+        balanceError={depositBuyError}
         onBuyMore={() => {
           if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
           setMode('buy');

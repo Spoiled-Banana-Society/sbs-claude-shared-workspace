@@ -130,6 +130,7 @@ export default function DraftingPage() {
     setShowDepositEntry,
     showAddFunds,
     setShowAddFunds,
+    balanceEntryReady,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
@@ -458,10 +459,14 @@ export default function DraftingPage() {
 
       <EntryFlowModal
         isOpen={showEntryFlow}
-        onClose={() => setShowEntryFlow(false)}
-        onComplete={handleEntryComplete}
+        onClose={() => { clearDepositBuyError(); setShowEntryFlow(false); }}
+        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
+        isSubmitting={depositBuying}
+        balanceEntryReady={balanceEntryReady}
+        balanceUsd={user?.usdcBalance ?? 0}
+        balanceError={depositBuyError}
       />
 
       {/* Deposit bankroll one-tap entry (flag-gated) */}

@@ -100,7 +100,7 @@ export default function HomePage() {
   // no count-pop-in). Single source of truth in useEnterDraft so the two entry
   // points can't drift and reintroduce the old home-page glitch.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
-  const { depositEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
+  const { depositEntryReady, balanceEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
 
   const allPromos = promosQuery.promos || [];
 
@@ -145,7 +145,17 @@ export default function HomePage() {
     void enterDraftWithPassType('paid', speed);
   };
 
-  const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+    if (passType === 'balance') {
+      // Bought from balance inside the chooser (user holds a free pass but wants
+      // a paid seat). Modal stays open until the charge lands so a failure is
+      // visible; success falls through to the same shared entry flow.
+      const ok = await buyPassWithBalance();
+      if (!ok) return;
+      modals.closeAll();
+      void enterDraftWithPassType('paid', speed);
+      return;
+    }
     modals.closeAll();
     // Hand off to the single shared entry flow — pass gate, join-before-navigate,
     // overlay, promo-type, and URL seeding all live in useEnterDraft now.
@@ -231,11 +241,14 @@ export default function HomePage() {
       {/* Entry Flow Modal (Pass Type + Speed in one) */}
       <EntryFlowModal
         isOpen={modals.isOpen('entry-flow')}
-        onClose={() => modals.closeAll()}
-        onComplete={handleEntryComplete}
+        onClose={() => { clearBuyError(); modals.closeAll(); }}
+        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
-        isSubmitting={isJoiningDraft}
+        isSubmitting={isJoiningDraft || depositBuying}
+        balanceEntryReady={balanceEntryReady}
+        balanceUsd={user?.usdcBalance ?? 0}
+        balanceError={depositBuyError}
       />
 
       {/* Deposit bankroll one-tap entry (flag-gated) */}
