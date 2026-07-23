@@ -11,7 +11,6 @@ import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
-import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
@@ -126,15 +125,11 @@ export default function DraftingPage() {
     infoTopic,
     handleEnterDraft,
     handleEntryComplete,
-    showDepositEntry,
-    setShowDepositEntry,
     showAddFunds,
     setShowAddFunds,
-    balanceEntryReady,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
-    handleDepositEntryComplete,
     handleDraftClick,
     handleClaim,
     confirmExitDraft,
@@ -464,20 +459,11 @@ export default function DraftingPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={depositBuying}
-        balanceEntryReady={balanceEntryReady}
+        depositsEnabled={DEPOSITS_ENABLED}
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
-      />
-
-      {/* Deposit bankroll one-tap entry (flag-gated) */}
-      <DepositEntryModal
-        isOpen={showDepositEntry}
-        onClose={() => { clearDepositBuyError(); setShowDepositEntry(false); }}
-        onEnter={(speed) => void handleDepositEntryComplete(speed)}
-        balanceUsd={user?.usdcBalance ?? 0}
-        busy={depositBuying}
-        error={depositBuyError}
-        onAddFunds={() => { clearDepositBuyError(); setShowDepositEntry(false); setShowAddFunds(true); }}
+        onAddFunds={() => { clearDepositBuyError(); setShowEntryFlow(false); setShowAddFunds(true); }}
+        onBuyMore={() => { clearDepositBuyError(); setShowEntryFlow(false); setShowBuyPasses(true); }}
       />
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}

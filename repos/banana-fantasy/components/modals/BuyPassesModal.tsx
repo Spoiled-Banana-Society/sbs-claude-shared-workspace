@@ -289,7 +289,9 @@ export function BuyPassesModal({
     }
   }, [user?.loginMethod, hasWalletFunds, paymentMethod]);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
-  const quantityOptions = [1, 5, 10, 20, 50, 100];
+  // Richard 2026-07-22: presets sized to the promos (buy 2, buy 4 via custom,
+  // buy 10). Anything else goes in the Custom field, still capped at 100.
+  const quantityOptions = [1, 2, 5, 10, 20];
   const isProcessing =
     flowStep === 'funding' ||
     flowStep === 'waiting-for-usdc' ||
@@ -1007,7 +1009,7 @@ export function BuyPassesModal({
             {/* Quantity Selection */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Quantity</h3>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 {quantityOptions.map((qty) => (
                   <button
                     key={qty}
