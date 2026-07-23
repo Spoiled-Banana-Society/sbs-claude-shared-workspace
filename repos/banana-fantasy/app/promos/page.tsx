@@ -14,6 +14,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
+import { deriveChaseState, ordinal } from '@/lib/chasePromo';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -465,8 +466,23 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
   const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
   const progressCurrent = isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0);
   const progressPercent = progressMax > 0 ? Math.min(100, (progressCurrent / progressMax) * 100) : 0;
-  const showProgress = progressMax > 0;
-  const timeRemaining = promo.timerEndTime ? formatTimeRemaining(promo.timerEndTime) : '';
+
+  // Chase Your Pick: live state (pick slot, next-hit spins, 24h countdown) —
+  // the meter (x/5) and the always-on clock read the same on every surface.
+  const isChase = promo.type === 'pick-chase';
+  const chase = isChase ? deriveChaseState(promo) : null;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isChase && !promo.timerEndTime) return;
+    const i = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(i);
+  }, [isChase, promo.timerEndTime]);
+
+  const showProgress = progressMax > 0 || isChase;
+  // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
+  const timeRemaining = promo.timerEndTime
+    ? formatTimeRemaining(promo.timerEndTime)
+    : (isChase ? '24:00:00' : '');
 
   // Single status indicator. Restrained — small dot + label, no pulsing.
   const isClaimedPersistent =
@@ -509,10 +525,33 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title}
         </h3>
-        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
-        <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
-          {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
-        </p>
+        {isChase ? (
+          chase?.active ? (
+            <div className="mb-4 flex items-center gap-2.5">
+              <span className="inline-flex items-baseline gap-1.5 rounded-xl border border-[#f97316]/30 bg-[#f97316]/10 px-2.5 py-1 shrink-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#f97316]">Chasing</span>
+                <span className="text-xl font-black text-white leading-none tabular-nums">{chase.slot}</span>
+              </span>
+              <span className="text-white/70 text-[13px] leading-snug">
+                Land it on your {ordinal(chase.nextDraftOrdinal)} draft →{' '}
+                <span className="text-[#f97316] font-bold">
+                  {chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <p className="text-white/45 text-sm leading-relaxed mb-4">
+              Draft to lock your pick slot — land it again to win up to 5 Free Spins.
+            </p>
+          )
+        ) : (
+          <>
+            <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
+            <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
+              {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
+            </p>
+          </>
+        )}
         {promo.type === 'pick-10' && pickExpanded && (
           <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">
             🔥 Bonus: this batch&apos;s Jackpot + all 5 HOFs are gone, so slots 6, 9 &amp; 10 all win now

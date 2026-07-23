@@ -3168,10 +3168,14 @@ export async function recordPickChase(
       // Start a fresh chase — this draft sets the target.
       mc.chaseTargetSlot = slot;
       mc.chaseRunLength = 1;
+      // Meter = Free Spins the NEXT filled draft is worth (min(runLength, 5)),
+      // out of the 5 cap — drives the x/5 bar on every promo surface.
+      promo.progressCurrent = Math.min(1, PICK_CHASE_MAX_SPINS);
       promo.timerEndTime = new Date(now + TWENTY_FOUR_HOURS_MS).toISOString();
     } else {
       const runLength = ((mc.chaseRunLength as number | undefined) || 1) + 1;
       mc.chaseRunLength = runLength;
+      promo.progressCurrent = Math.min(runLength, PICK_CHASE_MAX_SPINS);
       if (slot === targetSlot) {
         won = Math.min(runLength - 1, PICK_CHASE_MAX_SPINS);
         promo.claimCount = (promo.claimCount || 0) + won;
@@ -3191,9 +3195,10 @@ export async function recordPickChase(
     (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
 
     if (resetChase) {
-      // Clear the chase so the user's next draft starts fresh.
+      // Clear the chase so the user's next draft starts fresh — dormant meter 0/5.
       delete (promo.modalContent as Record<string, unknown>).chaseTargetSlot;
       (promo.modalContent as Record<string, unknown>).chaseRunLength = 0;
+      promo.progressCurrent = 0;
     }
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     if (resetChase) {

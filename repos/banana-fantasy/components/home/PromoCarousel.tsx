@@ -9,6 +9,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
+import { deriveChaseState, ordinal } from '@/lib/chasePromo';
 
 interface PromoCarouselProps {
   /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
@@ -267,6 +268,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               // Featured (July 4th) card gets the patriotic treatment:
               // flag stripe, chip, corner stars, red ribbon, red→blue bar.
               const isJuly4 = !!promo.featured;
+              // Chase Your Pick live state — pick slot, next-hit spins, 24h clock.
+              const isChase = promo.type === 'pick-chase';
+              const chase = isChase ? deriveChaseState(promo) : null;
               return (
                 <div
                   key={`${promo.id}-${index}`}
@@ -344,7 +348,28 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
                       </div>
                     )}
-                    <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    {isChase ? (
+                      chase?.active ? (
+                        <div className="mt-2 flex flex-col items-center gap-1">
+                          <span className="inline-flex items-baseline gap-1 rounded-lg border border-[#f97316]/30 bg-[#f97316]/10 px-2.5 py-1">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316]">Chasing</span>
+                            <span className="text-lg font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
+                          </span>
+                          <span className="text-[10px] leading-snug text-[#4a4a4a]">
+                            {ordinal(chase.nextDraftOrdinal)} draft →{' '}
+                            <span className="font-bold text-[#f97316]">
+                              {chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}
+                            </span>
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]">
+                          Draft to lock your pick — land it again to win Spins
+                        </span>
+                      )
+                    ) : (
+                      <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    )}
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -379,6 +404,24 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               Learn more
                             </p>
                           )}
+                        </div>
+                      )}
+
+                      {/* Chase Your Pick — meter (x/5) + always-on 24h countdown
+                          (dormant reads 24:00:00). */}
+                      {isChase && (
+                        <div className="-mt-2">
+                          <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                            <span className="text-[#9a9a9a]">•</span>
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          </div>
+                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
+                            <div className="h-full bg-[#f97316] rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                          </div>
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
                         </div>
                       )}
 
