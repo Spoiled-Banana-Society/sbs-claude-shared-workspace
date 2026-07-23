@@ -42,6 +42,7 @@ import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 import { isReturningWalletSync } from '@/lib/returningUsers';
+import { ENTRY_PRICE_USD } from '@/lib/deposits';
 import { runInBackground } from '@/lib/serverBackground';
 
 const USERS_COLLECTION = 'v2_users';
@@ -512,15 +513,17 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     };
 
   // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed
-  // carries the NEW-player copy (every pass = 2 Spins, $1K framing); RETURNING
-  // players keep the CLASSIC promo unchanged — these strings overlay theirs.
-  // The grant math matches per-audience in _incrementMintPromosInTx.
+  // carries the NEW-player copy (every $25 deposited = 2 Spins, $1K framing);
+  // RETURNING players keep the CLASSIC rate ($50 = 1 spin) — these strings
+  // overlay theirs. Deposit-era copy (2026-07-22): keyed to deposit dollars,
+  // same math as before ($25 ≡ 1 pass). Grant fires in
+  // grantFirstPurchaseSpinsForDeposit at deposit time.
   const CLASSIC_FIRST_PURCHASE_COPY = {
-    title: 'First Purchase → FREE SPINS',
-    description: 'Every 2 passes on your first buy = 1 spin',
-    modalTitle: 'First Purchase → FREE SPINS',
+    title: 'First Deposit → FREE SPINS',
+    description: 'Every $50 deposited on your first deposit = 1 Free Spin',
+    modalTitle: 'First Deposit → FREE SPINS',
     explanation:
-      '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+      '• Your very first deposit earns Free Banana Spins — every $50 you deposit = 1 Free Banana Spin.\n• Deposit $100 for 2, $150 for 3, and so on — no limit.\n• One-time offer: applies only to your first deposit, so deposit it all at once to lock in the most Spins.\n• After you deposit, claim your Spins right here.',
   };
   const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
     || isReturningWalletSync(userId);
@@ -1473,6 +1476,56 @@ export async function incrementMintPromos(
   // just when a milestone is hit. (usePromos refetches on any stream ping.)
   pushStreamEventBg(userId, 'notification', { source: 'purchase' });
   return result;
+}
+
+/**
+ * Deposit-era first-purchase spin bonus (Boris 2026-07-22). Since deposits
+ * replaced buying passes in bulk, the one-time first-purchase bonus now keys
+ * off the FIRST DEPOSIT'S dollar amount instead of passes-minted-at-purchase:
+ * a deposit of $D counts as floor(D / $25) "passes" (the entry price), fed
+ * through the SAME grant math so the reward is identical to before —
+ *   NEW players:      every $25 = 2 Free Spins  ($100 → 8)
+ *   RETURNING players: every $50 = 1 Free Spin   ($100 → 2)
+ * One-time for everyone via the shared `firstPurchaseBonusGranted` flag (so it
+ * never double-grants with the legacy buy-passes path). Idempotent + safe to
+ * call on every deposit — a second deposit finds the flag set and grants 0.
+ * Returns spins granted (0 if none / already consumed).
+ */
+export async function grantFirstPurchaseSpinsForDeposit(
+  userId: string,
+  depositUsd: number,
+): Promise<number> {
+  const passEquiv = Math.floor((Number.isFinite(depositUsd) ? depositUsd : 0) / ENTRY_PRICE_USD);
+  if (passEquiv <= 0) return 0;
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+
+  const spins = await db.runTransaction(async (tx) => {
+    const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as (User & { isReturningPlayer?: boolean }) | undefined;
+    const isReturning = userData?.isReturningPlayer === true || isReturningWalletSync(userId);
+    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, passEquiv, isReturning);
+    if (!grant.consume) return 0;
+    tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+    if (grant.spins > 0) {
+      const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
+      if (fpDoc) {
+        const fpPromo = deepClone(fpDoc.data() as Promo);
+        fpPromo.claimCount = (fpPromo.claimCount || 0) + grant.spins;
+        recalcPromoClaimable(fpPromo);
+        tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
+      }
+    }
+    return grant.spins;
+  });
+
+  if (spins > 0) {
+    pushStreamEventBg(userId, 'promo-first-purchase', { awardedCount: spins });
+  }
+  pushStreamEventBg(userId, 'notification', { source: 'deposit-first-purchase' });
+  return spins;
 }
 
 /**

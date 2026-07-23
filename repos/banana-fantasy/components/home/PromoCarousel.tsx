@@ -338,8 +338,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         one line, "Drafts" on the next read broken). */}
                     {promo.type === 'first-purchase' && (
                       <div className="mt-1.5 px-1 text-center text-[10px] leading-relaxed text-[#4a4a4a]">
-                        <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
-                        <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
+                        <span className="block whitespace-nowrap">Every $25 Deposited = 2 Free Spins</span>
+                        <span className="block whitespace-nowrap">Deposit $25 → 2 Free Drafts GTD</span>
                         <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
                         <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
                       </div>

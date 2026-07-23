@@ -42,6 +42,7 @@ export const fillQueueRoundWithBots = db.fillQueueRoundWithBots;
 export const resetQueue = db.resetQueue;
 export const recordDraftCompletion = db.recordDraftCompletion;
 export const recordFirstPurchaseDraftFinished = db.recordFirstPurchaseDraftFinished;
+export const grantFirstPurchaseSpinsForDeposit = db.grantFirstPurchaseSpinsForDeposit;
 export const recordPick10 = db.recordPick10;
 export const notifyPick10FounderSkip = db.notifyPick10FounderSkip;
 export const allBatchSpecialsHit = db.allBatchSpecialsHit;
