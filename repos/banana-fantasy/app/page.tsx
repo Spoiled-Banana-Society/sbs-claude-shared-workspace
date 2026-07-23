@@ -21,8 +21,8 @@ import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
-import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 
 function StagingMintButton({
   userId,
@@ -100,7 +100,7 @@ export default function HomePage() {
   // no count-pop-in). Single source of truth in useEnterDraft so the two entry
   // points can't drift and reintroduce the old home-page glitch.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
-  const { depositEntryReady, balanceEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
+  const { buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance, buyPassesWithBalance } = useDepositEntry();
 
   const allPromos = promosQuery.promos || [];
 
@@ -114,35 +114,10 @@ export default function HomePage() {
       return;
     }
 
-    const paidPasses = user?.draftPasses || 0;
-    const freePasses = user?.freeDrafts || 0;
-    const totalPasses = paidPasses + freePasses;
-
-    if (totalPasses <= 0) {
-      // Deposit bankroll (flag-gated): no passes but ≥ $25 balance → one-tap
-      // paid entry. No passes AND no balance → Add Funds prompt (Richard
-      // 2026-07-21: Enter is the only CTA; the buy modal is out of this path).
-      // Pass-first ordering preserved — only reachable at zero passes.
-      if (depositEntryReady) {
-        modals.push('deposit-entry');
-        return;
-      }
-      if (DEPOSITS_ENABLED) {
-        setShowAddFunds(true);
-        return;
-      }
-      modals.push('buy-passes');
-      return;
-    }
-
+    // One chooser for everyone (Richard 2026-07-22): pass / free pass / buy.
+    // It handles the zero-pass case itself — row 1 becomes the $25 buy-in, or
+    // routes to Add Funds when the balance can't cover it.
     modals.push('entry-flow');
-  };
-
-  const handleDepositEntry = async (speed: 'fast' | 'slow') => {
-    const ok = await buyPassWithBalance();
-    if (!ok) return; // error stays visible in the modal
-    modals.closeAll();
-    void enterDraftWithPassType('paid', speed);
   };
 
   const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
@@ -160,6 +135,12 @@ export default function HomePage() {
     // Hand off to the single shared entry flow — pass gate, join-before-navigate,
     // overlay, promo-type, and URL seeding all live in useEnterDraft now.
     void enterDraftWithPassType(passType, speed);
+  };
+
+  const handleBuyFromBalance = async (qty: number) => {
+    const ok = await buyPassesWithBalance(qty);
+    if (!ok) return; // error stays visible in the sheet
+    modals.closeAll();
   };
 
   const handlePurchaseComplete = () => {
@@ -246,16 +227,22 @@ export default function HomePage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={isJoiningDraft || depositBuying}
-        balanceEntryReady={balanceEntryReady}
+        depositsEnabled={DEPOSITS_ENABLED}
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
+        onAddFunds={() => { clearBuyError(); modals.closeAll(); setShowAddFunds(true); }}
+        onBuyMore={() => {
+          clearBuyError();
+          modals.closeAll();
+          modals.push(DEPOSITS_ENABLED ? 'buy-from-balance' : 'buy-passes');
+        }}
       />
 
-      {/* Deposit bankroll one-tap entry (flag-gated) */}
-      <DepositEntryModal
-        isOpen={modals.isOpen('deposit-entry')}
+      {/* Buy passes from balance — no card/USDC pickers, just how many. */}
+      <BuyPassesBalanceModal
+        isOpen={modals.isOpen('buy-from-balance')}
         onClose={() => { clearBuyError(); modals.closeAll(); }}
-        onEnter={(speed) => void handleDepositEntry(speed)}
+        onBuy={(qty) => void handleBuyFromBalance(qty)}
         balanceUsd={user?.usdcBalance ?? 0}
         busy={depositBuying}
         error={depositBuyError}

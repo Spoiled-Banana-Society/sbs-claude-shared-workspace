@@ -11,22 +11,35 @@ interface EntryFlowModalProps {
   paidPasses: number;
   freePasses: number;
   isSubmitting?: boolean;
-  /** Optional — when provided (the pass-ticket flow), shows a small "Buy Drafts"
-   *  button that switches into the buy/mint flow. Omitted on the regular Enter
-   *  flows, so the button doesn't appear there. */
+  /** Opens the buy/mint screen (quantity picker) without entering a draft. */
   onBuyMore?: () => void;
-  /** Deposit bankroll: wallet holds ≥ $25, so a paid seat can be bought here.
-   *  Independent of the pass counts — someone holding only a free pass still
-   *  gets the option (Richard 2026-07-22). */
-  balanceEntryReady?: boolean;
-  /** Wallet USDC in dollars, for the "from your balance" line. */
+  /** Deposit bankroll is switched on, so a seat can be bought here for $25. */
+  depositsEnabled?: boolean;
+  /** Wallet USDC in dollars — decides pay-now vs Add Funds, and is shown on
+   *  the speed step so the spend is visible right up to the charge. */
   balanceUsd?: number;
   /** Failure text from the balance purchase — keeps the modal open. */
   balanceError?: string | null;
+  /** Balance is short of the entry price → send them to Add Funds instead. */
+  onAddFunds?: () => void;
 }
 
 type Step = 'pass-type' | 'speed';
 
+/**
+ * The one chooser every entry point opens (Richard 2026-07-22). Three rows,
+ * always the same three, whatever the user holds:
+ *
+ *   1. The paid seat — your Paid Draft Pass count if you have one, otherwise
+ *      "Join Draft · $25" charged to your balance (or Add Funds if short).
+ *   2. Your Free Draft Pass count.
+ *   3. Buy Draft Passes — stock up without entering a draft, so the buy-4 /
+ *      buy-10 promos are reachable.
+ *
+ * Passes still come before money by default: rows 1 and 2 spend a pass the
+ * moment you hold one, and the $25 only ever appears on row 1 when there is no
+ * paid pass to use.
+ */
 export function EntryFlowModal({
   isOpen,
   onClose,
@@ -35,18 +48,20 @@ export function EntryFlowModal({
   freePasses,
   isSubmitting = false,
   onBuyMore,
-  balanceEntryReady = false,
+  depositsEnabled = false,
   balanceUsd = 0,
   balanceError = null,
+  onAddFunds,
 }: EntryFlowModalProps) {
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | 'balance' | null>(null);
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
-  // More than one way in → keep the two-step flow (dots + "← Back" from speed).
-  const multipleChoices =
-    [hasPaid, hasFree, balanceEntryReady].filter(Boolean).length > 1;
+  // Row 1 turns into the $25 buy-in when there's no paid pass to spend. With
+  // deposits off it stays the old greyed-out "Paid Draft Pass 0".
+  const buyingSeat = !hasPaid && depositsEnabled;
+  const canAffordSeat = balanceUsd >= ENTRY_PRICE_USD;
   const payingWithBalance = selectedPassType === 'balance';
 
   // Reset state when modal opens/closes — always show pass type step
@@ -73,8 +88,17 @@ export function EntryFlowModal({
     }
   };
 
+  /** Row 1. A paid pass is spent if there is one; otherwise this is the $25
+   *  buy-in, which detours to Add Funds when the balance can't cover it. */
+  const handleSeatSelect = () => {
+    if (isSubmitting) return;
+    if (hasPaid) { handlePassSelect('paid'); return; }
+    if (!canAffordSeat) { onAddFunds?.(); return; }
+    handlePassSelect('balance');
+  };
+
   const handleBack = () => {
-    if (step === 'speed' && multipleChoices) {
+    if (step === 'speed') {
       setStep('pass-type');
       setSelectedPassType(null);
     } else {
@@ -108,13 +132,11 @@ export function EntryFlowModal({
           </svg>
         </button>
 
-        {/* Step indicators */}
-        {multipleChoices && (
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <div className={`w-2 h-2 rounded-full transition-all ${step === 'pass-type' ? 'bg-banana w-4' : 'bg-white/20'}`} />
-            <div className={`w-2 h-2 rounded-full transition-all ${step === 'speed' ? 'bg-banana w-4' : 'bg-white/20'}`} />
-          </div>
-        )}
+        {/* Step indicators — the chooser always precedes the speed step now. */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <div className={`w-2 h-2 rounded-full transition-all ${step === 'pass-type' ? 'bg-banana w-4' : 'bg-white/20'}`} />
+          <div className={`w-2 h-2 rounded-full transition-all ${step === 'speed' ? 'bg-banana w-4' : 'bg-white/20'}`} />
+        </div>
 
         {/* Step 1: Pass Type Selection */}
         {step === 'pass-type' && (
@@ -124,19 +146,33 @@ export function EntryFlowModal({
             </div>
 
             <div className="space-y-3">
+<<<<<<< Updated upstream
+              {/* Row 1 — the paid seat. Your pass when you hold one, the $25
+                  buy-in when you don't. */}
               <button
-                onClick={() => hasPaid && handlePassSelect('paid')}
-                disabled={!hasPaid || isSubmitting}
+                onClick={handleSeatSelect}
+                disabled={(!hasPaid && !buyingSeat) || isSubmitting}
                 className={`w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 text-left transition-all ${
-                  hasPaid
+                  hasPaid || buyingSeat
                     ? 'border-banana/30 bg-banana/5 hover:border-banana hover:bg-banana/10 hover:scale-[1.02] cursor-pointer'
                     : 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <p className={`font-semibold ${hasPaid ? 'text-white' : 'text-white/40'}`}>Paid Draft Pass</p>
-                  <p className={`text-3xl font-bold ${hasPaid ? 'text-banana' : 'text-white/40'}`}>
-                    {paidPasses}
+                <div className="flex w-full items-center justify-between">
+                  <div>
+                    <p className={`font-semibold ${hasPaid || buyingSeat ? 'text-white' : 'text-white/40'}`}>
+                      {buyingSeat ? 'Join Draft' : 'Paid Draft Pass'}
+                    </p>
+                    {buyingSeat && (
+                      <p className="text-white/40 text-sm tabular-nums">
+                        {canAffordSeat
+                          ? `From your $${balanceUsd.toFixed(2)} balance`
+                          : 'Add funds to enter'}
+                      </p>
+                    )}
+                  </div>
+                  <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>
+                    {buyingSeat ? `$${ENTRY_PRICE_USD}` : paidPasses}
                   </p>
                 </div>
               </button>
@@ -150,47 +186,59 @@ export function EntryFlowModal({
                     : 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
                 }`}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <p className={`font-semibold ${hasFree ? 'text-white' : 'text-white/40'}`}>Free Draft Pass</p>
                   <p className={`text-3xl font-bold ${hasFree ? 'text-green-500' : 'text-white/40'}`}>
                     {freePasses}
                   </p>
                 </div>
               </button>
-
-              {/* Buy a seat with wallet balance — offered even when the user
-                  holds a free pass, so money in the account is never stranded.
-                  Sits BELOW the pass cards: spending is the deliberate choice,
-                  and the price is on the card so it's never a surprise. */}
-              {balanceEntryReady && (
+=======
+              {/* A pass type only appears when the user actually HAS one — a
+                  greyed "0" card is noise (Boris 2026-07-22). The modal only
+                  opens with ≥1 pass or a balance option, so it's never empty. */}
+              {hasPaid && (
                 <button
-                  onClick={() => handlePassSelect('balance')}
+                  onClick={() => handlePassSelect('paid')}
                   disabled={isSubmitting}
-                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-white/20 bg-white/[0.05] text-left hover:border-white/40 hover:bg-white/[0.08] hover:scale-[1.02] transition-all disabled:opacity-60"
+                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-banana/30 bg-banana/5 hover:border-banana hover:bg-banana/10 hover:scale-[1.02] cursor-pointer text-left transition-all disabled:opacity-60"
                 >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-white">Buy Draft Pass</p>
-                      <p className="text-white/40 text-sm tabular-nums">
-                        From your ${balanceUsd.toFixed(2)} balance
-                      </p>
-                    </div>
-                    <p className="text-3xl font-bold text-banana">${ENTRY_PRICE_USD}</p>
+                    <p className="font-semibold text-white">Paid Draft Pass</p>
+                    <p className="text-3xl font-bold text-banana">{paidPasses}</p>
                   </div>
                 </button>
               )}
 
-              {/* Buy Drafts — only in the pass-ticket flow (onBuyMore). Same size
-                  as the cards above, kept in this group so spacing is even. Distinct
-                  neutral color so it reads as an action, not a pass type. */}
+              {hasFree && (
+                <button
+                  onClick={() => handlePassSelect('free')}
+                  disabled={isSubmitting}
+                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer text-left transition-all disabled:opacity-60"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-white">Free Draft Pass</p>
+                    <p className="text-3xl font-bold text-green-500">{freePasses}</p>
+                  </div>
+                </button>
+              )}
+>>>>>>> Stashed changes
+
+              {/* Row 3 — stock up without drafting. This is the only route to
+                  buying several at once, which the buy-4 / buy-10 promos need,
+                  so it shows for everyone. Neutral colour: it's an action, not
+                  a pass you hold. */}
               {onBuyMore && (
                 <button
                   onClick={() => { if (!isSubmitting) onBuyMore(); }}
                   disabled={isSubmitting}
-                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-white/20 bg-white/[0.05] text-left hover:border-white/40 hover:bg-white/[0.08] hover:scale-[1.02] transition-all"
+                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-white/20 bg-white/[0.05] text-left hover:border-white/40 hover:bg-white/[0.08] hover:scale-[1.02] transition-all disabled:opacity-60"
                 >
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-white">Buy Drafts</p>
+                  <div className="flex w-full items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-white">Buy Draft Passes</p>
+                      <p className="text-white/40 text-sm">Buy without entering a draft</p>
+                    </div>
                     <span className="text-3xl font-bold text-white/70 leading-none">+</span>
                   </div>
                 </button>
@@ -218,7 +266,7 @@ export function EntryFlowModal({
                 <p className="text-white/50 text-sm">
                   Balance: <span className="text-banana font-semibold tabular-nums">${balanceUsd.toFixed(2)}</span>
                 </p>
-              ) : multipleChoices && (
+              ) : (
                 <p className="text-white/50 text-sm">
                   Using <span className="text-banana font-semibold">{selectedPassType === 'paid' ? 'Paid Draft Pass' : 'Free Draft Pass'}</span>
                 </p>
@@ -231,7 +279,7 @@ export function EntryFlowModal({
                 disabled={isSubmitting}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-yellow-500/30 bg-yellow-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-yellow-500/60 hover:bg-yellow-500/10"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
@@ -247,7 +295,7 @@ export function EntryFlowModal({
                 disabled={isSubmitting}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-blue-500/30 bg-blue-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-blue-500/60 hover:bg-blue-500/10"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
@@ -280,7 +328,7 @@ export function EntryFlowModal({
                 disabled={isSubmitting}
                 className="text-white/40 text-sm hover:text-white/60 transition-colors"
               >
-                {multipleChoices ? '← Back' : 'Cancel'}
+                ← Back
               </button>
               <p className="text-white/30 text-xs">
                 {payingWithBalance ? `$${ENTRY_PRICE_USD} will be charged` : '1 pass will be used'}

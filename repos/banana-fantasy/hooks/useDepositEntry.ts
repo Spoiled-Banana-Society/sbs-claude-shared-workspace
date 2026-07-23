@@ -102,7 +102,63 @@ export function useDepositEntry() {
     }
   };
 
+  /**
+   * Stock up: buy `qty` passes from balance WITHOUT entering a draft — the
+   * route the buy-4 / buy-10 promos need (Richard 2026-07-22). Same silent
+   * permit+mint as above, minus the seat-first trick (that only exists to get
+   * one seat registered fast, and only handles qty 1). Promo, referral and
+   * revenue bookkeeping all happen server-side in the mint route, exactly as
+   * they do for the buy modal's USDC option.
+   */
+  const buyPassesWithBalance = async (qty: number): Promise<boolean> => {
+    if (inFlight.current) return false;
+    if (!Number.isInteger(qty) || qty < 1) return false;
+    inFlight.current = true;
+    setBuying(true);
+    setBuyError(null);
+    const costUsd = ENTRY_PRICE_USD * qty;
+    try {
+      if (walletAddress) {
+        try {
+          const bal = await getUsdcBalance(walletAddress as Address);
+          if (bal < BigInt(costUsd) * 1_000_000n) {
+            setBuyError(
+              `Balance too low — $${(Number(bal) / 1e6).toFixed(2)} of $${costUsd}. Add funds and try again.`,
+            );
+            return false;
+          }
+        } catch {
+          // RPC blip reading the balance — don't block; the server still guards.
+        }
+      }
+      await mint(qty, { paymentMethod: 'usdc' });
+      clientLog('payment', 'balance_buy_ok', { wallet: walletAddress, quantity: qty });
+      updateUser({
+        draftPasses: (user?.draftPasses || 0) + qty,
+        usdcBalance: Math.max(0, (user?.usdcBalance ?? 0) - costUsd),
+      });
+      void refreshBalance();
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Purchase failed';
+      clientLog('payment', 'balance_buy_failed', { wallet: walletAddress, quantity: qty, error: msg });
+      setBuyError(msg);
+      return false;
+    } finally {
+      inFlight.current = false;
+      setBuying(false);
+    }
+  };
+
   const clearBuyError = () => setBuyError(null);
 
-  return { depositEntryReady, balanceEntryReady, buying, buyError, clearBuyError, buyPassWithBalance };
+  return {
+    depositEntryReady,
+    balanceEntryReady,
+    buying,
+    buyError,
+    clearBuyError,
+    buyPassWithBalance,
+    buyPassesWithBalance,
+  };
 }

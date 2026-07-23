@@ -289,7 +289,9 @@ export function BuyPassesModal({
     }
   }, [user?.loginMethod, hasWalletFunds, paymentMethod]);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
-  const quantityOptions = [1, 5, 10, 20, 50, 100];
+  // Richard 2026-07-22: presets sized to the promos (buy 2, buy 4 via custom,
+  // buy 10). Anything else goes in the Custom field, still capped at 100.
+  const quantityOptions = [1, 2, 5, 10, 20];
   const isProcessing =
     flowStep === 'funding' ||
     flowStep === 'waiting-for-usdc' ||
@@ -1007,7 +1009,7 @@ export function BuyPassesModal({
             {/* Quantity Selection */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Quantity</h3>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 {quantityOptions.map((qty) => (
                   <button
                     key={qty}
@@ -1349,7 +1351,7 @@ export function BuyPassesModal({
                 disabled={isJoiningDraft}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-yellow-500/30 bg-yellow-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-yellow-500/60 hover:bg-yellow-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
@@ -1365,7 +1367,7 @@ export function BuyPassesModal({
                 disabled={isJoiningDraft}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-blue-500/30 bg-blue-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-blue-500/60 hover:bg-blue-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>

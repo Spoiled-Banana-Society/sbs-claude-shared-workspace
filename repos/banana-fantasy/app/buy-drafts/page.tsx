@@ -8,8 +8,9 @@ import { getPurchaseFlow, resetPurchaseFlow } from '@/lib/purchaseFlow';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
-import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
+import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 
 const BuyPassesModal = dynamic(
@@ -19,43 +20,37 @@ const BuyPassesModal = dynamic(
 
 /**
  * /buy-drafts — the draft-pass hub. What it surfaces depends on how you got here:
- *   • Default (e.g. tapping the pass ticket in the header): if you ALREADY hold
- *     a pass, go straight to the fast/slow picker and into a draft. Only if you
- *     have 0 passes does it open the buy/mint screen.
+ *   • Default (e.g. tapping the pass ticket in the header): the shared chooser,
+ *     which covers using a pass, buying a $25 seat, or buying passes outright.
  *   • `?buy=1` (the explicit "Buy Draft(s)" CTAs): always the buy/mint screen.
  */
 export default function BuyDraftsPage() {
   const router = useRouter();
   const { isLoggedIn, isLoading, user, setShowLoginModal } = useAuth();
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
-  const { depositEntryReady, balanceEntryReady, buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
-  const [mode, setMode] = useState<'none' | 'buy' | 'entry' | 'deposit' | 'add-funds'>('none');
-
-  const passes = (user?.draftPasses || 0) + (user?.freeDrafts || 0);
+  const { buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance, buyPassesWithBalance } = useDepositEntry();
+  const [mode, setMode] = useState<'none' | 'buy' | 'buy-balance' | 'entry' | 'add-funds'>('none');
 
   useEffect(() => {
     if (isLoading) return;
     if (!isLoggedIn) { setShowLoginModal(true); return; }
     // Mid-flow guard: the deposit mint bumps the pass count, which re-runs
-    // this effect — don't yank the user into 'entry' while they're paying.
-    if (mode === 'deposit' || mode === 'add-funds') return;
+    // this effect — don't yank the user back while they're paying or buying.
+    if (mode === 'add-funds' || mode === 'buy' || mode === 'buy-balance') return;
     const forceBuy =
       typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).get('buy') === '1';
-    if (!forceBuy && passes > 0) {
-      // Has a pass → pick fast/slow and draft, don't push them to buy more.
+    if (!forceBuy) {
+      // The chooser covers every case now (pass, free pass, $25 buy-in, or
+      // buy passes outright), so it's the default landing for the hub.
       setMode('entry');
-    } else if (!forceBuy && depositEntryReady) {
-      // Deposit bankroll: 0 passes but ≥ $25 wallet USDC → one-tap entry.
-      // Explicit ?buy=1 still always lands on the buy screen.
-      setMode('deposit');
     } else {
       // Buying: clear any stale post-mint "Join a Draft" state so we land on
       // the actual buy/mint screen (not a leftover join prompt).
       if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
       setMode('buy');
     }
-  }, [isLoading, isLoggedIn, passes, depositEntryReady, mode, setShowLoginModal]);
+  }, [isLoading, isLoggedIn, mode, setShowLoginModal]);
 
   // Closing returns the user to where they came from — not a bare hub screen.
   const leave = useCallback(() => {
@@ -77,10 +72,10 @@ export default function BuyDraftsPage() {
     void enterDraftWithPassType(passType, speed);
   };
 
-  const handleDepositEntry = async (speed: 'fast' | 'slow') => {
-    const ok = await buyPassWithBalance();
-    if (!ok) return; // error stays visible in the modal
-    void enterDraftWithPassType('paid', speed);
+  const handleBuyFromBalance = async (qty: number) => {
+    const ok = await buyPassesWithBalance(qty);
+    if (!ok) return; // error stays visible in the sheet
+    setMode('entry');
   };
 
   return (
@@ -121,29 +116,32 @@ export default function BuyDraftsPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={joiningLobby || depositBuying}
-        balanceEntryReady={balanceEntryReady}
+        depositsEnabled={DEPOSITS_ENABLED}
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
+        onAddFunds={() => { clearBuyError(); setMode('add-funds'); }}
         onBuyMore={() => {
+          clearBuyError();
+          if (DEPOSITS_ENABLED) { setMode('buy-balance'); return; }
           if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
           setMode('buy');
         }}
       />
 
-      {/* Deposit bankroll one-tap entry (flag-gated) */}
-      <DepositEntryModal
-        isOpen={mode === 'deposit'}
+      {/* Buy passes from balance — no card/USDC pickers, just how many. */}
+      <BuyPassesBalanceModal
+        isOpen={mode === 'buy-balance'}
         onClose={() => { clearBuyError(); leave(); }}
-        onEnter={(speed) => void handleDepositEntry(speed)}
+        onBuy={(qty) => void handleBuyFromBalance(qty)}
         balanceUsd={user?.usdcBalance ?? 0}
-        busy={depositBuying || joiningLobby}
+        busy={depositBuying}
         error={depositBuyError}
         onAddFunds={() => { clearBuyError(); setMode('add-funds'); }}
       />
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}
       {mode === 'add-funds' && (
-        <AddFundsModal isOpen={true} onClose={() => setMode('deposit')} />
+        <AddFundsModal isOpen={true} onClose={() => setMode('buy-balance')} />
       )}
 
       <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />

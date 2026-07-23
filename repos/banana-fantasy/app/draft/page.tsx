@@ -11,8 +11,8 @@ import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
-import { DepositEntryModal } from '@/components/modals/DepositEntryModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
@@ -126,21 +126,20 @@ export default function DraftingPage() {
     infoTopic,
     handleEnterDraft,
     handleEntryComplete,
-    showDepositEntry,
-    setShowDepositEntry,
     showAddFunds,
     setShowAddFunds,
-    balanceEntryReady,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
-    handleDepositEntryComplete,
     handleDraftClick,
     handleClaim,
     confirmExitDraft,
     getLiveState,
     setExitingDraft,
     setShowBuyPasses,
+    showBuyFromBalance,
+    setShowBuyFromBalance,
+    handleBuyFromBalance,
     setSelectedPromo,
     setPromoIndex,
     setShowEntryFlow,
@@ -464,20 +463,26 @@ export default function DraftingPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={depositBuying}
-        balanceEntryReady={balanceEntryReady}
+        depositsEnabled={DEPOSITS_ENABLED}
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
+        onAddFunds={() => { clearDepositBuyError(); setShowEntryFlow(false); setShowAddFunds(true); }}
+        onBuyMore={() => {
+          clearDepositBuyError();
+          setShowEntryFlow(false);
+          if (DEPOSITS_ENABLED) setShowBuyFromBalance(true); else setShowBuyPasses(true);
+        }}
       />
 
-      {/* Deposit bankroll one-tap entry (flag-gated) */}
-      <DepositEntryModal
-        isOpen={showDepositEntry}
-        onClose={() => { clearDepositBuyError(); setShowDepositEntry(false); }}
-        onEnter={(speed) => void handleDepositEntryComplete(speed)}
+      {/* Buy passes from balance — no card/USDC pickers, just how many. */}
+      <BuyPassesBalanceModal
+        isOpen={showBuyFromBalance}
+        onClose={() => { clearDepositBuyError(); setShowBuyFromBalance(false); }}
+        onBuy={(qty) => void handleBuyFromBalance(qty)}
         balanceUsd={user?.usdcBalance ?? 0}
         busy={depositBuying}
         error={depositBuyError}
-        onAddFunds={() => { clearDepositBuyError(); setShowDepositEntry(false); setShowAddFunds(true); }}
+        onAddFunds={() => { clearDepositBuyError(); setShowBuyFromBalance(false); setShowAddFunds(true); }}
       />
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}

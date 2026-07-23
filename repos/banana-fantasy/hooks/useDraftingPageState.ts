@@ -15,7 +15,6 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
-import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -151,9 +150,9 @@ export function useDraftingPageState() {
   const [, setTimers] = useState<Record<string, number>>({});
   const [exitingDraft, setExitingDraft] = useState<Draft | null>(null);
   const [showBuyPasses, setShowBuyPasses] = useState(false);
+  const [showBuyFromBalance, setShowBuyFromBalance] = useState(false);
   // Deposit bankroll one-tap entry (flag-gated) — shown instead of the buy
   // modal when the user has 0 passes but ≥ $25 balance.
-  const [showDepositEntry, setShowDepositEntry] = useState(false);
   // Add Funds prompt — entering at 0 passes AND $0 balance lands here
   // (Richard 2026-07-21: Enter is the only CTA under the deposit flag).
   const [showAddFunds, setShowAddFunds] = useState(false);
@@ -193,12 +192,11 @@ export function useDraftingPageState() {
   // implementation — no divergence, no glitch creeping back via one copy.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
   const {
-    depositEntryReady,
-    balanceEntryReady,
     buying: depositBuying,
     buyError: depositBuyError,
     clearBuyError: clearDepositBuyError,
     buyPassWithBalance,
+    buyPassesWithBalance,
   } = useDepositEntry();
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
@@ -455,25 +453,16 @@ export function useDraftingPageState() {
       return;
     }
 
-    const paidPasses = user?.draftPasses || 0;
-    const freePasses = user?.freeDrafts || 0;
-    if (paidPasses + freePasses <= 0) {
-      // Deposit bankroll: only reachable at zero passes (pass-first ordering).
-      // $25+ balance → one-tap entry; $0 balance → Add Funds prompt. The buy
-      // modal only remains for the flag-off world.
-      if (depositEntryReady) {
-        setShowDepositEntry(true);
-        return;
-      }
-      if (DEPOSITS_ENABLED) {
-        setShowAddFunds(true);
-        return;
-      }
-      setShowBuyPasses(true);
-      return;
-    }
-
+    // One chooser for everyone (Richard 2026-07-22): pass / free pass / buy.
+    // The zero-pass case lives inside it now — row 1 becomes the $25 buy-in,
+    // or routes to Add Funds when the balance can't cover it.
     setShowEntryFlow(true);
+  };
+
+  const handleBuyFromBalance = async (qty: number) => {
+    const ok = await buyPassesWithBalance(qty);
+    if (!ok) return; // error stays visible in the sheet
+    setShowBuyFromBalance(false);
   };
 
   const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
@@ -488,13 +477,6 @@ export function useDraftingPageState() {
     }
     setShowEntryFlow(false);
     void enterDraftWithPassType(passType, speed);
-  };
-
-  const handleDepositEntryComplete = async (speed: 'fast' | 'slow') => {
-    const ok = await buyPassWithBalance();
-    if (!ok) return; // error stays visible in the modal
-    setShowDepositEntry(false);
-    void enterDraftWithPassType('paid', speed);
   };
 
   useEffect(() => {
@@ -1842,15 +1824,11 @@ export function useDraftingPageState() {
     infoTopic,
     handleEnterDraft,
     handleEntryComplete,
-    showDepositEntry,
-    setShowDepositEntry,
     showAddFunds,
     setShowAddFunds,
-    balanceEntryReady,
     depositBuying,
     depositBuyError,
     clearDepositBuyError,
-    handleDepositEntryComplete,
     handleDraftClick,
     handleClaim,
     confirmExitDraft,
@@ -1858,6 +1836,9 @@ export function useDraftingPageState() {
     getLiveState,
     setExitingDraft,
     setShowBuyPasses,
+    showBuyFromBalance,
+    setShowBuyFromBalance,
+    handleBuyFromBalance,
     setSelectedPromo,
     setPromoIndex,
     setShowEntryFlow,
