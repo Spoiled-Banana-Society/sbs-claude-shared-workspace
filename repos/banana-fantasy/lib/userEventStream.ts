@@ -39,6 +39,7 @@ import { logger } from '@/lib/logger';
 export type StreamEventType =
   | 'badge-unlock'
   | 'promo-pick-10'
+  | 'promo-pick-chase'
   | 'promo-jackpot-hit'
   | 'promo-buy-10'
   | 'promo-daily-drafts'
@@ -67,6 +68,8 @@ export interface StreamEventPayload {
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
+  /** Chase Your Pick: spins won on this hit (multiplier, 1–5). */
+  spins?: number;
   /**
    * promo-card-free-draft only: true when the award includes the FRONTED
    * first-card-purchase draft (fee covered up front), so the bell explains

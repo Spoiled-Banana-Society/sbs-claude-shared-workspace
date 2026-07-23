@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { awardJackpotDraw, recordPick10, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
+import { awardJackpotDraw, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
 import { waitUntil } from '@vercel/functions';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
@@ -64,6 +64,22 @@ export async function POST(req: Request, { params }: { params: { draftId: string
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
           await recordPick10(owner, draftId, draftName, undefined, slot);
+        }
+      }
+
+      // Chase Your Pick (limited-time, thru Sun 12pm PT): every HUMAN seat's own
+      // slot (1–10) advances their personal chase — set target on the first
+      // draft, then match it to win the escalating spins. Free + paid both
+      // count. Bots excluded (their wallets have no promo docs, but skip them
+      // explicitly too). No-ops entirely once the window closes.
+      const botSet = new Set(
+        (await db.collection('botWallets').where('isBot', '==', true).get())
+          .docs.map((d) => d.id.toLowerCase()),
+      );
+      for (let pos = 0; pos < order.length; pos++) {
+        const owner = order[pos]?.ownerId?.toLowerCase();
+        if (owner && !owner.startsWith('bot-') && !botSet.has(owner)) {
+          await recordPickChase(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch — tell everyone (bell + push), once per TIER per

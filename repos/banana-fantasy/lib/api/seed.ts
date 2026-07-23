@@ -360,6 +360,27 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // Chase Your Pick — limited-time (thru Sun 12pm PT). Draft, see your pick
+    // slot, then chase it again for escalating spins. Free + paid both count.
+    id: 'pick-chase',
+    type: 'pick-chase',
+    title: 'Chase Your Pick → up to 5 Spins',
+    description: 'Land your first draft’s pick slot again — the longer you chase, the more Free Spins',
+    ctaText: 'Start Drafting',
+    ctaLink: '/drafting',
+    backgroundColor: '#2a2a35',
+    progressCurrent: 0,
+    progressMax: 5,
+    isNew: true,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Chase Your Pick → up to 5 Free Spins',
+      explanation:
+        '• Your first draft locks your pick — the draft slot (1–10) you land when it fills.\n• You have 24 hours. Land that SAME slot again in another draft to win.\n• It’s a multiplier — the more drafts you chase it for, the bigger the reward:\n   · 2nd draft = 1 Spin\n   · 3rd draft = 2 Spins\n   · 4th draft = 3 Spins\n   · 5th draft = 4 Spins\n   · 6th draft and beyond = 5 Spins (MAX)\n• Hit it and it resets — your next draft locks a new pick to chase.\n• If 24 hours pass without hitting it, it resets — your next draft starts a fresh chase and a new 24-hour clock.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
+    },
+  },
+  {
     id: '5',
     type: 'mint',
     title: 'Buy 10 → FREE SPIN',

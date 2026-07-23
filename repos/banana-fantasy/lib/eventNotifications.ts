@@ -51,6 +51,18 @@ export function eventNotificationContent(
         icon: 'target',
       };
     }
+    case 'promo-pick-chase': {
+      const spins = payload.spins ?? 1;
+      const pickSlot = payload.slot ?? 0;
+      return {
+        type: 'promo',
+        title: `You caught your pick! ${spins} Free Spin${spins === 1 ? '' : 's'}`,
+        message: `You landed Pick ${pickSlot} again — ${spins} Free Spin${spins === 1 ? '' : 's'} ready to claim. Draft again to chase your next pick.`,
+        link: '/promos',
+        dedupeKey: `promo-pick-chase-${draftId}`,
+        icon: 'target',
+      };
+    }
     case 'promo-jackpot-hit': {
       const count = payload.awardedCount ?? 1;
       return {

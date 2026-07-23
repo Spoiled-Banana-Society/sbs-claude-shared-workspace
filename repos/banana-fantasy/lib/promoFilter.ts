@@ -46,7 +46,12 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  * 'buy-bonus' = "Buy 2 → 1 Free" (July 4th weekend candidate). Inserted
  * right before 'mint' so it sits next to the Buy 10 card.
  */
-export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
+// 'pick-chase' — "Chase Your Pick" limited-time promo (Boris 2026-07-22),
+// STAGED for admin preview. To LAUNCH (tomorrow AM): move 'pick-chase' out of
+// here and into VISIBLE_PROMO_TYPES_ORDER right after 'first-purchase', then
+// send the deposits-style bell (scripts/_broadcast-pick-chase-noti.mjs). Runs
+// thru Sun 12pm PT (promoWeekendActive gate on crediting).
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['pick-chase'];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface

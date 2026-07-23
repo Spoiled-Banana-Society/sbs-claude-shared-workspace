@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
 import { promoWeekendActive } from '@/lib/promoWindow';
+import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
@@ -3100,6 +3101,113 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
     }
     return promo;
   });
+}
+
+// ─── Chase Your Pick (limited-time, thru Sun 12pm PT) ───────────────────────
+const PICK_CHASE_PROMO_ID = 'pick-chase';
+const PICK_CHASE_MAX_SPINS = 5;           // cap: +1 spin per draft, maxes at 5
+const PICK_CHASE_SEEN_LEDGER_MAX = 60;    // idempotency ledger cap per user
+
+/**
+ * Chase Your Pick (Boris 2026-07-22, live thru Sun 12pm PT — gated by
+ * promoWeekendActive). Called from reveal-complete for EVERY human seat with
+ * that seat's draft slot (1–10):
+ *
+ *   • No active chase (fresh, or the 24h ran out, or they just won) → THIS
+ *     draft's slot becomes the target and a 24h countdown starts. No spins yet.
+ *   • Active chase → this is an attempt. Match the target slot → win
+ *     min(draftsInRun−1, 5) spins (2nd draft in the run = 1, 6th+ = 5), then
+ *     the chase RESETS so the next filled draft sets a new target. Miss → keep
+ *     chasing (target + timer unchanged).
+ *
+ * FREE and paid drafts both count (no paid-gate) — safe at the 5-spin cap (a
+ * chase costs ~10 drafts and pays back ≤5, so it can't print). Idempotent per
+ * (user, draftId) via a capped seen-ledger. Requires the pick-chase promo doc
+ * to already exist (real seeded users) — bots have no promo docs, so they
+ * no-op naturally; callers also pre-exclude bots.
+ */
+export async function recordPickChase(
+  userId: string,
+  draftId: string,
+  draftName: string,
+  slot: number,
+): Promise<void> {
+  if (!promoWeekendActive()) return; // promo window closed (thru Sun 12pm PT)
+  // Launch gate: crediting only runs once the promo is PUBLIC. While it's
+  // admin-preview-only (pre-launch), this no-ops — so backfilled promo docs
+  // sit dormant and no one gets a pre-announcement bell. Moving 'pick-chase'
+  // into VISIBLE_PROMO_TYPES_ORDER is the single switch that turns it all on.
+  if (!VISIBLE_PROMO_TYPES.has('pick-chase')) return;
+  if (!Number.isInteger(slot) || slot < 1 || slot > 10) return;
+  const db = getAdminFirestore();
+  const promoRef = db
+    .collection(USERS_COLLECTION)
+    .doc(userId)
+    .collection(PROMOS_SUBCOLLECTION)
+    .doc(PICK_CHASE_PROMO_ID);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(promoRef);
+    if (!snap.exists) return { won: 0 }; // not seeded (bot / never logged in)
+    const promo = deepClone(snap.data() as Promo);
+    if (promo.type !== 'pick-chase') return { won: 0 };
+
+    const mc = (promo.modalContent || {}) as Record<string, unknown>;
+    const seen = (mc.chaseSeenDraftIds as string[] | undefined) || [];
+    if (seen.includes(draftId)) return { won: 0 }; // already processed this draft
+
+    const now = Date.now();
+    const timerMs = promo.timerEndTime ? new Date(promo.timerEndTime).getTime() : 0;
+    const expired = timerMs <= now;
+    const targetSlot = (mc.chaseTargetSlot as number | undefined);
+    const activeChase = typeof targetSlot === 'number' && !expired;
+
+    let won = 0;
+    let resetChase = false;
+    if (!activeChase) {
+      // Start a fresh chase — this draft sets the target.
+      mc.chaseTargetSlot = slot;
+      mc.chaseRunLength = 1;
+      promo.timerEndTime = new Date(now + TWENTY_FOUR_HOURS_MS).toISOString();
+    } else {
+      const runLength = ((mc.chaseRunLength as number | undefined) || 1) + 1;
+      mc.chaseRunLength = runLength;
+      if (slot === targetSlot) {
+        won = Math.min(runLength - 1, PICK_CHASE_MAX_SPINS);
+        promo.claimCount = (promo.claimCount || 0) + won;
+        promo.claimable = true;
+        mc.totalChaseSpins = ((mc.totalChaseSpins as number | undefined) || 0) + won;
+        mc.chaseHistory = [
+          { date: new Date().toISOString(), slot, spins: won, attempts: runLength - 1, draftId, draftName },
+          ...((mc.chaseHistory as unknown[] | undefined) || []),
+        ].slice(0, 50);
+        resetChase = true; // next filled draft sets a new target
+      }
+      // miss → keep chasing (target + timer unchanged)
+    }
+
+    mc.chaseSeenDraftIds = [...seen, draftId].slice(-PICK_CHASE_SEEN_LEDGER_MAX);
+    promo.modalContent = mc as Promo['modalContent'];
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
+
+    if (resetChase) {
+      // Clear the chase so the user's next draft starts fresh.
+      delete (promo.modalContent as Record<string, unknown>).chaseTargetSlot;
+      (promo.modalContent as Record<string, unknown>).chaseRunLength = 0;
+    }
+    tx.set(promoRef, stripUndefined(promo), { merge: true });
+    if (resetChase) {
+      tx.update(promoRef, {
+        'modalContent.chaseTargetSlot': FieldValue.delete(),
+        timerEndTime: FieldValue.delete(),
+      });
+    }
+    return { won };
+  });
+
+  if (result.won > 0) {
+    pushStreamEventBg(userId, 'promo-pick-chase', { draftId, slot, spins: result.won });
+  }
 }
 
 /**

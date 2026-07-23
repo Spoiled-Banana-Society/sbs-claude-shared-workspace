@@ -43,6 +43,7 @@ export const resetQueue = db.resetQueue;
 export const recordDraftCompletion = db.recordDraftCompletion;
 export const recordFirstPurchaseDraftFinished = db.recordFirstPurchaseDraftFinished;
 export const recordPick10 = db.recordPick10;
+export const recordPickChase = db.recordPickChase;
 export const notifyPick10FounderSkip = db.notifyPick10FounderSkip;
 export const allBatchSpecialsHit = db.allBatchSpecialsHit;
 export const getPick10ActiveSlots = db.getPick10ActiveSlots;

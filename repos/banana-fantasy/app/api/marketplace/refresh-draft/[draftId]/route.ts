@@ -8,7 +8,7 @@ import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
-import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, getPick10ActiveSlots, announcePick10ExpansionIfActivated } from '@/lib/db';
+import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { waitUntil } from '@vercel/functions';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
@@ -337,6 +337,20 @@ export async function POST(
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
           await recordPick10(owner, draftId, draftName, undefined, slot);
+        }
+      }
+      // Chase Your Pick backstop (idempotent per user+draft via its seen-ledger,
+      // no-ops after the window closes). Every human seat's own slot advances
+      // their chase — mirrors the reveal-complete path so a missed reveal still
+      // credits at close. Bots excluded.
+      const botSet = new Set(
+        (await db.collection('botWallets').where('isBot', '==', true).get())
+          .docs.map((d) => d.id.toLowerCase()),
+      );
+      for (let pos = 0; pos < order.length; pos++) {
+        const owner = order[pos]?.ownerId?.toLowerCase();
+        if (owner && !owner.startsWith('bot-') && !botSet.has(owner)) {
+          await recordPickChase(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch → one bell + push per TIER per batch. Backgrounded
