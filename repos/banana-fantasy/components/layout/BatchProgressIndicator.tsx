@@ -273,7 +273,7 @@ export function BatchProgressIndicator() {
             tablets land between sm and lg, where the FULL-size pills + counter
             collide with the desktop nav (Richard 7/21 landscape screenshot).
             Compact cut persists until lg, where everything genuinely fits. */}
-        <div className="relative flex flex-row items-center gap-1 ml-6 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
+        <div className="relative flex flex-row items-center gap-1 ml-9 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
           {/* Standalone DRAFT #N removed from the header (Boris 2026-07-23) —
               the global draft number now lives ONLY in the hover tooltip above,
               not as its own element on desktop or mobile. */}
@@ -283,23 +283,24 @@ export function BatchProgressIndicator() {
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col justify-center shrink-0 gap-[3px] rounded-[9px] lg:rounded-[10px] border px-2 py-[5px] lg:py-[7px] w-[96px] lg:w-[112px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center justify-between gap-1 leading-none">
-                    <span className={`text-[8px] lg:text-[10px] font-extrabold tracking-[0.08em] lg:tracking-[0.1em] ${p.textCls}`}>{p.tag}</span>
-                    {!p.hit && p.pct !== null && (
-                      <span className={`text-[9px] lg:text-[11px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
-                    )}
-                  </div>
-                  <div className="leading-none" style={heatPulse(p.heat, p.color)}>
-                    {p.hit ? (
-                      <span className="text-[10.5px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
-                    ) : (
-                      <span className="text-[10px] lg:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-semibold text-white/60">/{p.left}</span>
+                <div className={`flex flex-col justify-center shrink-0 gap-[2.5px] rounded-[8px] lg:rounded-[9px] border px-1.5 lg:px-2 py-[4px] lg:py-[5px] w-[64px] lg:w-[78px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  {/* Denser layout (Boris 2026-07-23): label on top, then the two
+                      numbers (count left, odds right) on ONE row filling the width
+                      — no empty space, smaller box. */}
+                  <span className={`text-[7.5px] lg:text-[9px] font-extrabold tracking-[0.06em] leading-none ${p.textCls}`}>{p.tag}</span>
+                  {p.hit ? (
+                    <span className="text-[10px] lg:text-[12px] font-extrabold text-green-400 leading-none">✓ HIT</span>
+                  ) : (
+                    <div className="flex items-baseline justify-between gap-1 leading-none" style={heatPulse(p.heat, p.color)}>
+                      <span className="text-[9.5px] lg:text-[11.5px] font-extrabold tabular-nums text-white/90">
+                        {p.remaining}<span className="text-[7px] lg:text-[9px] font-semibold text-white/55">/{p.left}</span>
                       </span>
-                    )}
-                  </div>
-                  <div className="h-[2px] lg:h-[2.5px] overflow-hidden rounded-full bg-white/10">
+                      {p.pct !== null && (
+                        <span className={`text-[8.5px] lg:text-[10.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="h-[2px] overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
                   </div>
                 </div>

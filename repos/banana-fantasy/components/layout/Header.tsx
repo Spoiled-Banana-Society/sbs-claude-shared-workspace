@@ -133,7 +133,11 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         <div className="flex items-center justify-between h-14 md:h-16">
           {/* Left side: Logo + Desktop Navigation */}
           <div className="flex items-center gap-2">
-            <Logo size="lg" compactMobile />
+            {/* shrink-0 so the header pills can never squeeze the logo smaller
+                on mobile (Boris 2026-07-23). */}
+            <span className="shrink-0">
+              <Logo size="lg" compactMobile />
+            </span>
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
