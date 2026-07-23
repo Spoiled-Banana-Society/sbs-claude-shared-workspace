@@ -274,21 +274,10 @@ export function BatchProgressIndicator() {
             collide with the desktop nav (Richard 7/21 landscape screenshot).
             Compact cut persists until lg, where everything genuinely fits. */}
         <div className="relative flex flex-row items-center gap-1 ml-6 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
-          {/* Global draft number, desktop position: its own column left of the
-              pills. On smaller screens it moves BETWEEN the two pills below. */}
-          <div className="hidden lg:flex lg:flex-col lg:items-center lg:gap-0 leading-tight lg:px-0.5 lg:pr-2 lg:mr-0.5 lg:border-r lg:border-white/10">
-            <span className="text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
-          </div>
-
-          {/* Mobile: draft number centered ON TOP of the pill pair (Boris
-              2026-07-22 — no more splitting the pills); desktop keeps the
-              left column. Pills sit tighter together underneath. */}
+          {/* Standalone DRAFT #N removed from the header (Boris 2026-07-23) —
+              the global draft number now lives ONLY in the hover tooltip above,
+              not as its own element on desktop or mobile. */}
           <div className="flex flex-col items-center gap-[2px] lg:contents">
-            <div className="flex items-baseline gap-1 leading-none lg:hidden">
-              <span className="text-[6.5px] font-bold tracking-[0.12em] text-white/40">DRAFT</span>
-              <span className="text-[9.5px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
-            </div>
           <div className="flex flex-row items-center gap-[3px] lg:gap-1.5">
             {pills.map((p) => (
               <React.Fragment key={p.key}>

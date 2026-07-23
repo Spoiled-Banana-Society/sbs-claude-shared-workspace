@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Promo } from '@/types';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
-import { deriveChaseState, ordinal } from '@/lib/chasePromo';
+import { deriveChaseState } from '@/lib/chasePromo';
 
 // Chase Your Pick clock — dormant reads a full 24:00:00 that hasn't started.
 function formatChaseTime(endTime?: string): string {
@@ -118,38 +118,31 @@ export function PromosSidebar({
               {isChase ? (
                 chase?.active ? (
                   <div className="mt-1.5 flex flex-col items-center gap-1">
-                    <span className="inline-flex items-baseline gap-1 rounded-lg border border-[#f97316]/30 bg-[#f97316]/10 px-2.5 py-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316]">Chasing</span>
-                      <span className="text-lg font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
-                    </span>
-                    <span className="text-[11px] leading-snug text-[#4a4a4a]">
-                      {ordinal(chase.nextDraftOrdinal)} draft →{' '}
-                      <span className="font-bold text-[#f97316]">
-                        {chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}
+                    {/* One line: pick landed · attempt (unbounded) · live countdown */}
+                    <div className="flex items-center justify-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
+                      <span className="inline-flex items-baseline gap-0.5 rounded-md border border-[#f97316]/30 bg-[#f97316]/10 px-1 py-0.5">
+                        <span className="text-[7px] font-bold uppercase tracking-wide text-[#f97316]">Pick</span>
+                        <span className="text-[12px] font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
                       </span>
+                      <span className="text-[#c4c4c8]">·</span>
+                      <span className="font-semibold tabular-nums">Att {chase.attempt}</span>
+                      <span className="text-[#c4c4c8]">·</span>
+                      <span className="font-semibold tabular-nums">{formatChaseTime(promo.timerEndTime)}</span>
+                    </div>
+                    <span className="text-[11px] text-[#4a4a4a]">
+                      Land it → <span className="font-bold text-[#f97316]">{chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}</span>
                     </span>
                   </div>
                 ) : (
-                  <span className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]">
-                    Draft to lock your pick — land it again to win Spins
-                  </span>
+                  <div className="mt-1 flex flex-col items-center gap-1">
+                    <span className="block text-center text-[11px] leading-snug text-[#4a4a4a]">Draft to lock your pick — land it again to win Spins</span>
+                    <span className="text-[11px] font-semibold tabular-nums text-[#4a4a4a]">{formatChaseTime(promo.timerEndTime)}</span>
+                  </div>
                 )
               ) : (
                 <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               )}
               <div className="mt-auto">
-                {isChase && (
-                  <div className="mb-2">
-                    <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1">
-                      <span className="font-semibold">{promo.progressCurrent || 0}/{promo.progressMax || 5}</span>
-                      <span className="text-[#9a9a9a]">•</span>
-                      <span className="font-semibold tabular-nums">{formatChaseTime(promo.timerEndTime)}</span>
-                    </div>
-                    <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#f97316] rounded-full transition-all" style={{ width: `${progressPercent}%` }} />
-                    </div>
-                  </div>
-                )}
                 {!isChase && hasProgress && (
                   <div className="mb-2">
                     <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">

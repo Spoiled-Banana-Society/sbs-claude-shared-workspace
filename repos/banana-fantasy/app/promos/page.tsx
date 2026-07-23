@@ -14,7 +14,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
-import { deriveChaseState, ordinal } from '@/lib/chasePromo';
+import { deriveChaseState } from '@/lib/chasePromo';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -478,7 +478,9 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
     return () => clearInterval(i);
   }, [isChase, promo.timerEndTime]);
 
-  const showProgress = progressMax > 0 || isChase;
+  // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
+  // so it's excluded from the generic progress bar below.
+  const showProgress = !isChase && progressMax > 0;
   // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
   const timeRemaining = promo.timerEndTime
     ? formatTimeRemaining(promo.timerEndTime)
@@ -527,22 +529,32 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
         </h3>
         {isChase ? (
           chase?.active ? (
-            <div className="mb-4 flex items-center gap-2.5">
-              <span className="inline-flex items-baseline gap-1.5 rounded-xl border border-[#f97316]/30 bg-[#f97316]/10 px-2.5 py-1 shrink-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#f97316]">Chasing</span>
-                <span className="text-xl font-black text-white leading-none tabular-nums">{chase.slot}</span>
-              </span>
-              <span className="text-white/70 text-[13px] leading-snug">
-                Land it on your {ordinal(chase.nextDraftOrdinal)} draft →{' '}
-                <span className="text-[#f97316] font-bold">
-                  {chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}
+            <div className="mb-4">
+              {/* One line: pick landed · attempt (unbounded) · live countdown */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <span className="inline-flex items-baseline gap-1 rounded-lg border border-[#f97316]/30 bg-[#f97316]/10 px-2 py-0.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316]">Pick</span>
+                  <span className="text-base font-black text-white leading-none tabular-nums">{chase.slot}</span>
                 </span>
-              </span>
+                <span className="text-white/25">·</span>
+                <span className="text-white/70 tabular-nums">Attempt {chase.attempt}</span>
+                <span className="text-white/25">·</span>
+                <span className="text-white/70 tabular-nums">{timeRemaining}</span>
+              </div>
+              <p className="mt-2 text-[13px] text-white/55">
+                Land it →{' '}
+                <span className="text-[#f97316] font-bold">
+                  {chase.nextHit} Free Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' (MAX)' : ''}
+                </span>
+              </p>
             </div>
           ) : (
-            <p className="text-white/45 text-sm leading-relaxed mb-4">
-              Draft to lock your pick slot — land it again to win up to 5 Free Spins.
-            </p>
+            <div className="mb-4">
+              <p className="text-white/45 text-sm leading-relaxed">
+                Draft to lock your pick slot — land it again to win up to 5 Free Spins.
+              </p>
+              <p className="mt-2 text-white/70 text-sm tabular-nums">{timeRemaining}</p>
+            </div>
           )
         ) : (
           <>

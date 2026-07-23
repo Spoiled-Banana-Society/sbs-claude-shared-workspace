@@ -21,11 +21,12 @@ export interface ChaseState {
   active: boolean;
   /** the pick slot (1–10) being chased, or null when dormant. */
   slot: number | null;
-  /** Free Spins won if they land the slot on their NEXT filled draft (1–5). */
+  /** which attempt the NEXT filled draft is (unbounded — can exceed 5). Their
+   *  next draft landing the slot pays min(attempt, 5) Free Spins. */
+  attempt: number;
+  /** Free Spins won if they land the slot on their next filled draft (1–5). */
   nextHit: number;
-  /** which draft-in-run the next fill is — 2 = "2nd draft", matches the ladder. */
-  nextDraftOrdinal: number;
-  /** true once the reward has hit the 5-Spin cap. */
+  /** true once the reward has hit the 5-Spin cap (attempts keep climbing). */
   isMax: boolean;
 }
 
@@ -35,21 +36,16 @@ export function deriveChaseState(promo: Promo | null | undefined): ChaseState {
   const runLength = typeof mc.chaseRunLength === 'number' ? (mc.chaseRunLength as number) : 0;
   const endMs = promo?.timerEndTime ? new Date(promo.timerEndTime).getTime() : 0;
   const active = slot != null && endMs > Date.now();
-  // Landing the slot on the NEXT draft is the (runLength+1)-th draft of the run;
-  // the ladder pays min(runLength, 5) for it (2nd draft = 1 … 6th+ = 5 MAX).
-  const nextHit = Math.min(runLength, CHASE_MAX_SPINS);
+  // The NEXT filled draft is attempt #runLength, worth min(runLength, 5) Spins
+  // (attempt 1 = 1 Spin … attempt 5 = 5, attempt 6+ = 5 MAX). Attempts are
+  // unbounded; only the Spin reward caps — so we never show a "/5".
+  const attempt = Math.max(runLength, 1);
+  const nextHit = Math.min(attempt, CHASE_MAX_SPINS);
   return {
     active,
     slot: active ? slot : null,
+    attempt: active ? attempt : 0,
     nextHit: active ? nextHit : 0,
-    nextDraftOrdinal: runLength + 1,
     isMax: active && nextHit >= CHASE_MAX_SPINS,
   };
-}
-
-/** "1st", "2nd", "3rd", "4th" … for the draft-in-run label. */
-export function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }

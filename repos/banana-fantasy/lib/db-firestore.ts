@@ -502,14 +502,15 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
     ? {
       // Weekend window copy — same slots, but free & paid drafts both count.
-      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: true },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+      // NEW tag removed (Boris 2026-07-23): Pick 10 is not a new promo.
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
+      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
     }
     : {
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
       jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: false },
     };
 
   // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed

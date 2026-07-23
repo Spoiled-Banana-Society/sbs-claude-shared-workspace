@@ -370,7 +370,10 @@ const seedPromos: Promo[] = [
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
     progressCurrent: 0,
-    progressMax: 5,
+    // No x/5 meter — attempts are unbounded (Boris 2026-07-23). progressMax 0
+    // also keeps the card in its fixed order slot (after first-purchase) instead
+    // of progress-bubbling above it when a chase is active.
+    progressMax: 0,
     isNew: true,
     claimable: false,
     claimCount: 0,

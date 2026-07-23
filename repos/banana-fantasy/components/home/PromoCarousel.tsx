@@ -9,7 +9,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
-import { deriveChaseState, ordinal } from '@/lib/chasePromo';
+import { deriveChaseState } from '@/lib/chasePromo';
 
 interface PromoCarouselProps {
   /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
@@ -351,21 +351,26 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {isChase ? (
                       chase?.active ? (
                         <div className="mt-2 flex flex-col items-center gap-1">
-                          <span className="inline-flex items-baseline gap-1 rounded-lg border border-[#f97316]/30 bg-[#f97316]/10 px-2.5 py-1">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316]">Chasing</span>
-                            <span className="text-lg font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
-                          </span>
-                          <span className="text-[10px] leading-snug text-[#4a4a4a]">
-                            {ordinal(chase.nextDraftOrdinal)} draft →{' '}
-                            <span className="font-bold text-[#f97316]">
-                              {chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}
+                          {/* One line: pick landed · attempt (unbounded) · live countdown */}
+                          <div className="flex items-center justify-center gap-1 text-[10px] text-[#4a4a4a] whitespace-nowrap">
+                            <span className="inline-flex items-baseline gap-0.5 rounded-md border border-[#f97316]/30 bg-[#f97316]/10 px-1 py-0.5">
+                              <span className="text-[7px] font-bold uppercase tracking-wide text-[#f97316]">Pick</span>
+                              <span className="text-[11px] font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
                             </span>
+                            <span className="text-[#c4c4c8]">·</span>
+                            <span className="font-semibold tabular-nums">Att {chase.attempt}</span>
+                            <span className="text-[#c4c4c8]">·</span>
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          </div>
+                          <span className="text-[10px] text-[#4a4a4a]">
+                            Land it → <span className="font-bold text-[#f97316]">{chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}</span>
                           </span>
                         </div>
                       ) : (
-                        <span className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]">
-                          Draft to lock your pick — land it again to win Spins
-                        </span>
+                        <div className="mt-1.5 flex flex-col items-center gap-1">
+                          <span className="px-2 text-center text-[10px] leading-snug text-[#4a4a4a]">Draft to lock your pick — land it again to win Spins</span>
+                          <span className="text-[11px] font-semibold tabular-nums text-[#4a4a4a]">{formatTimeRemaining(promo.timerEndTime)}</span>
+                        </div>
                       )
                     ) : (
                       <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
@@ -407,23 +412,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Chase Your Pick — meter (x/5) + always-on 24h countdown
-                          (dormant reads 24:00:00). */}
-                      {isChase && (
-                        <div className="-mt-2">
-                          <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                            <span className="text-[#9a9a9a]">•</span>
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-                          </div>
-                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                            <div className="h-full bg-[#f97316] rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-                          </div>
-                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-                            Learn more
-                          </p>
-                        </div>
-                      )}
+                      {/* Chase Your Pick renders its own inline row above (pick ·
+                          attempt · countdown) — no meter bar. */}
 
                       {/* Mint & Pick 10 promo - show progress + claim if available.
                           Binary promos (max <= 1) skip the counter+bar — "0/1"
@@ -464,8 +454,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
                           {progressMax > 1 && (
                             <>
