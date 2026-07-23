@@ -120,8 +120,8 @@ export function eventNotificationContent(
         type: 'promo',
         title: 'Your Free Spins are here!',
         message: count === 1
-          ? 'Your first deposit earned a Free Spin — claim it now.'
-          : `Your first deposit earned ${count} Free Spins — claim them now.`,
+          ? 'Your first purchase earned a Free Spin — claim it now.'
+          : `Your first purchase earned ${count} Free Spins — claim them now.`,
         link: '/promos',
         dedupeKey: `promo-first-purchase-${userId}`,
         icon: 'star',
@@ -130,9 +130,9 @@ export function eventNotificationContent(
     case 'first-purchase-unlocked':
       return {
         type: 'promo',
-        title: 'First Deposit Promo — Win up to 40 Free Drafts',
-        message: 'Every $25 deposited = 2 Free Spins. Deposit $25 → 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
-        link: '/draft',
+        title: 'First Purchase Promo — Win up to 40 Free Drafts',
+        message: 'Every Draft Pass = 2 Free Spins. Buy 1 → 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
+        link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',
       };

@@ -8,7 +8,6 @@ import { paymentsEnabled } from '@/lib/envGates';
 import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser, isEmbeddedWalletOf, linkedWalletsOf } from '@/lib/privyServer';
 import { creditCardDeposit } from '@/lib/purchases/creditCardDeposit';
-import { grantFirstPurchaseSpinsForDeposit } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 /**
@@ -62,21 +61,7 @@ export async function POST(req: Request) {
     const amountUsd = Number(body.amountUsd);
 
     const result = await creditCardDeposit({ wallet, claimedAmountUsd: amountUsd });
-
-    // First-purchase SPIN bonus (deposit era): only when a real deposit was
-    // just credited (result.credited) — keys off that deposit's verified
-    // on-chain value, one-time via firstPurchaseBonusGranted. Best-effort:
-    // the card-fee credit above already succeeded; a spin-grant hiccup must
-    // not fail the deposit.
-    let firstPurchaseSpins = 0;
-    if (result.credited) {
-      try {
-        firstPurchaseSpins = await grantFirstPurchaseSpinsForDeposit(wallet, result.amountUsd);
-      } catch (spinErr) {
-        logger.warn('depositCredit.first_purchase_spins_failed', { wallet, err: (spinErr as Error).message });
-      }
-    }
-    return json({ ...result, firstPurchaseSpins });
+    return json(result);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('depositCredit.route_failed', { err: (err as Error).message });

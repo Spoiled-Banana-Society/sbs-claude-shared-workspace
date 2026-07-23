@@ -47,19 +47,19 @@ export function FirstPurchaseBanner() {
         {isBB3Holder ? (
           <>
             <p className="text-sm font-semibold text-text-primary">
-              First Deposit Free Spins — every $50 deposited = 1 free spin
+              First Purchase Free Spins — every 2 passes = 1 free spin
             </p>
             <p className="text-xs text-text-secondary">
-              One-time offer on your first deposit. Deposit it all at once to stack the most spins.
+              One-time offer on your first buy. Grab them in one transaction to stack the most spins.
             </p>
           </>
         ) : (
           <>
             <p className="text-sm font-semibold text-text-primary">
-              Deposit $25 → win up to $1K in Drafts
+              Buy 1 Draft Pass → win up to $1K in Drafts
             </p>
             <p className="text-xs text-text-secondary">
-              Every $25 deposited = 2 Free Spins · $50 in Drafts guaranteed · first deposit only
+              Every pass = 2 Free Spins · $50 in Drafts guaranteed · first purchase only
             </p>
           </>
         )}
