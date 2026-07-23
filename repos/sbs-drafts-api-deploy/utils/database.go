@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -49,7 +48,9 @@ func NewDatabaseClient(isRunningLocal bool) {
 	}
 	savedCreds = creds
 	conf := option.WithCredentialsJSON(creds)
-	app, err := firebase.NewApp(ctx, nil, conf)
+	// 8 gRPC channels (default 4): a single wedged channel then fails ~1/8 of
+	// ops instead of ~1/4 while the self-heal recycle kicks in.
+	app, err := firebase.NewApp(ctx, nil, conf, option.WithGRPCConnectionPool(firestorePoolSize))
 	if err != nil {
 
 		panic(err)
@@ -174,32 +175,55 @@ const (
 )
 
 // Channel self-heal (2026-07-21, same incident): the wedge lives in the
-// Firestore client's gRPC channel and outlives any request, so after
-// recycleAfterNFails consecutive transient failures we rebuild the client.
-// Cooldown-guarded so a genuine Firestore-wide brownout can't churn clients;
-// the old client is closed on a delay so in-flight ops finish on it.
+// Firestore client's gRPC channel and outlives any request, so on a burst of
+// transient failures we rebuild the client. Detection is windowed, not
+// consecutive (2026-07-22, BBB #217): a partial wedge fails only one draft's
+// ops while the rest of traffic keeps succeeding, and interleaved successes
+// held the old consecutive counter at zero for 12 minutes mid-draft. Healthy
+// baseline is ≤ ~13 transient failures per DAY, so a handful inside one short
+// window is unambiguous. Cooldown-guarded so a genuine Firestore-wide brownout
+// can't churn clients; the old client is closed on a delay so in-flight ops
+// finish on it.
 const (
-	recycleAfterNFails = 5
-	recycleCooldown    = time.Minute
-	oldClientLinger    = 90 * time.Second
+	recycleWindow        = 10 * time.Second
+	recycleFailsInWindow = 6
+	recycleCooldown      = time.Minute
+	oldClientLinger      = 90 * time.Second
+	firestorePoolSize    = 8 // gRPC channels per Firestore client (library default 4)
 )
 
 var (
-	savedCreds       []byte // stashed by NewDatabaseClient for recycling
-	consecutiveFails atomic.Int32
-	recycleMu        sync.Mutex
-	lastRecycle      time.Time
+	savedCreds  []byte // stashed by NewDatabaseClient for recycling
+	recycleMu   sync.Mutex
+	lastRecycle time.Time
+
+	failWindowMu    sync.Mutex
+	failWindowStart time.Time
+	failWindowCount int
 )
 
-// noteDbResult feeds the self-heal counter: any success resets it, any
-// transient failure bumps it, and crossing the threshold recycles the client
-// in the background (never blocking the caller's request).
+// noteDbResult feeds the self-heal detector: transient failures accumulate
+// inside a rolling window (successes are ignored — they proved nothing about
+// the wedged channel) and crossing the threshold recycles the client in the
+// background (never blocking the caller's request).
 func noteDbResult(err error) {
 	if err == nil || !IsTransientDbErr(err) {
-		consecutiveFails.Store(0)
 		return
 	}
-	if consecutiveFails.Add(1) >= recycleAfterNFails {
+	failWindowMu.Lock()
+	now := time.Now()
+	if now.Sub(failWindowStart) > recycleWindow {
+		failWindowStart = now
+		failWindowCount = 0
+	}
+	failWindowCount++
+	trip := failWindowCount >= recycleFailsInWindow
+	if trip {
+		failWindowStart = now
+		failWindowCount = 0
+	}
+	failWindowMu.Unlock()
+	if trip {
 		go recycleFirestoreClient()
 	}
 }
@@ -214,7 +238,7 @@ func recycleFirestoreClient() {
 		return
 	}
 	ctx := context.Background()
-	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON(savedCreds))
+	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON(savedCreds), option.WithGRPCConnectionPool(firestorePoolSize))
 	if err != nil {
 		fmt.Printf(`{"severity":"ERROR","event":"firestore_client_recycle_failed","stage":"app","error":%q}`+"\n", err.Error())
 		return
@@ -227,8 +251,7 @@ func recycleFirestoreClient() {
 	old := Db.Client
 	Db.Client = newClient
 	lastRecycle = time.Now()
-	consecutiveFails.Store(0)
-	fmt.Printf(`{"severity":"WARNING","event":"firestore_client_recycled","afterConsecutiveFails":%d}`+"\n", recycleAfterNFails)
+	fmt.Printf(`{"severity":"WARNING","event":"firestore_client_recycled","failsInWindow":%d}`+"\n", recycleFailsInWindow)
 	go func(c *firestore.Client) {
 		time.Sleep(oldClientLinger)
 		_ = c.Close()
