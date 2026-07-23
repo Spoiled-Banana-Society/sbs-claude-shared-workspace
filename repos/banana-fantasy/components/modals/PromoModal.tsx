@@ -292,7 +292,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           {chase.active ? (
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-text-muted text-xs">Chasing</div>
+                <div className="text-text-muted text-xs">Matching</div>
                 <div className="text-2xl font-bold text-[#f97316] leading-tight">Pick {chase.slot}</div>
               </div>
               <div className="text-right">
@@ -312,7 +312,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
           <div className="text-center">
             <div className="text-2xl font-bold text-banana tabular-nums">{history.length}</div>
-            <div className="text-text-muted text-xs mt-1">Picks Caught</div>
+            <div className="text-text-muted text-xs mt-1">Picks Matched</div>
           </div>
           <div className="text-center border-l border-bg-elevated">
             <div className="text-2xl font-bold text-banana tabular-nums">{Math.max(totalSpins, promo.claimCount ?? 0)}</div>
@@ -353,7 +353,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               ))}
             </div>
           ) : (
-            <p className="text-text-muted text-sm">Every time you catch your pick it lands here with the date and Spins won.</p>
+            <p className="text-text-muted text-sm">Every time you match your pick it lands here with the date and Spins won.</p>
           )}
         </div>
       </>

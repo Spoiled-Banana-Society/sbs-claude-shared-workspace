@@ -39,7 +39,8 @@ export function SpinExplainer({
   } else if (t.includes('refer')) {
     maxDrafts = 60;
     guaranteed = 3;
-  } else if (t.includes('chase')) {
+  } else if (t.includes('match your pick')) {
+    // Match Your Pick pays up to 5 Spins per hit → up to 100 Free Drafts.
     maxDrafts = 100;
     guaranteed = 1;
   }

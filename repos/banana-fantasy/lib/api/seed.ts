@@ -364,8 +364,8 @@ const seedPromos: Promo[] = [
     // slot, then chase it again for escalating spins. Free + paid both count.
     id: 'pick-chase',
     type: 'pick-chase',
-    title: 'Chase Your Pick → up to 5 Spins',
-    description: 'Land your first draft’s pick slot again — the longer you chase, the more Free Spins',
+    title: 'Match Your Pick → up to 5 Spins',
+    description: 'Land your pick slot again to win Free Spins — the longer it takes, the bigger the payout',
     ctaText: 'Start Drafting',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
@@ -378,9 +378,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Chase Your Pick → up to 5 Free Spins',
+      title: 'Match Your Pick → up to 5 Free Spins',
       explanation:
-        '• Your first draft locks your pick — the draft slot (1–10) you land when it fills.\n• You have 24 hours. Land that SAME slot again in another draft to win.\n• It’s a multiplier — the more drafts you chase it for, the bigger the reward:\n   · 2nd draft = 1 Spin\n   · 3rd draft = 2 Spins\n   · 4th draft = 3 Spins\n   · 5th draft = 4 Spins\n   · 6th draft and beyond = 5 Spins (MAX)\n• Hit it and it resets — your next draft locks a new pick to chase.\n• If 24 hours pass without hitting it, it resets — your next draft starts a fresh chase and a new 24-hour clock.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
+        '• Your first draft locks your pick — the draft slot (1–10) you land when it fills.\n• You have 24 hours. Land that SAME slot again in another draft to win.\n• It’s a multiplier — the longer it takes to match, the bigger the reward:\n   · 2nd draft = 1 Spin\n   · 3rd draft = 2 Spins\n   · 4th draft = 3 Spins\n   · 5th draft = 4 Spins\n   · 6th draft and beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
     },
   },
   {

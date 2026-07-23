@@ -39,7 +39,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
   'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
-  'pick-chase':         { accent: '#f97316', label: 'Chase' },
+  'pick-chase':         { accent: '#f97316', label: 'Match' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
