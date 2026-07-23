@@ -283,26 +283,21 @@ export function BatchProgressIndicator() {
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col justify-center shrink-0 gap-[2.5px] rounded-[8px] lg:rounded-[9px] border px-1.5 lg:px-2 py-[4px] lg:py-[5px] w-[64px] lg:w-[78px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  {/* Denser layout (Boris 2026-07-23): label on top, then the two
-                      numbers (count left, odds right) on ONE row filling the width
-                      — no empty space, smaller box. */}
-                  <span className={`text-[7.5px] lg:text-[9px] font-extrabold tracking-[0.06em] leading-none ${p.textCls}`}>{p.tag}</span>
+                <div className={`flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] lg:rounded-[10px] border px-2 py-[5px] lg:py-[6px] w-[68px] lg:w-[82px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  {/* Boris 2026-07-23: centered, 2 lines — label on top, then the
+                      odds (prominent, colored — the exciting number) + count
+                      together. No bar; compact, minimal empty space. */}
+                  <span className={`text-[8px] lg:text-[9.5px] font-extrabold tracking-[0.07em] leading-none ${p.textCls}`}>{p.tag}</span>
                   {p.hit ? (
-                    <span className="text-[10px] lg:text-[12px] font-extrabold text-green-400 leading-none">✓ HIT</span>
+                    <span className="mt-[3px] text-[11px] lg:text-[13px] font-extrabold text-green-400 leading-none">✓ HIT</span>
                   ) : (
-                    <div className="flex items-baseline justify-between gap-1 leading-none" style={heatPulse(p.heat, p.color)}>
-                      <span className="text-[9.5px] lg:text-[11.5px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[7px] lg:text-[9px] font-semibold text-white/55">/{p.left}</span>
-                      </span>
+                    <div className="mt-[3px] flex items-baseline gap-1 leading-none" style={heatPulse(p.heat, p.color)}>
                       {p.pct !== null && (
-                        <span className={`text-[8.5px] lg:text-[10.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                        <span className={`text-[10.5px] lg:text-[12.5px] font-extrabold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                       )}
+                      <span className="text-[8px] lg:text-[9.5px] font-semibold tabular-nums text-white/50">{p.remaining}/{p.left}</span>
                     </div>
                   )}
-                  <div className="h-[2px] overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
-                  </div>
                 </div>
               </React.Fragment>
             ))}
