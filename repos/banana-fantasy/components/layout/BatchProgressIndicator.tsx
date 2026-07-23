@@ -283,11 +283,11 @@ export function BatchProgressIndicator() {
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2 py-[3px] lg:py-[6px] w-[84px] lg:w-[116px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
-                    <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.06em] lg:tracking-[0.1em] ${p.textCls}`}>{p.tag}</span>
+                <div className={`flex flex-col justify-center shrink-0 gap-[3px] rounded-[9px] lg:rounded-[10px] border px-2 py-[5px] lg:py-[7px] w-[96px] lg:w-[112px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  <div className="flex items-center justify-between gap-1 leading-none">
+                    <span className={`text-[8px] lg:text-[10px] font-extrabold tracking-[0.08em] lg:tracking-[0.1em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9px] lg:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      <span className={`text-[9px] lg:text-[11px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                     )}
                   </div>
                   <div className="leading-none" style={heatPulse(p.heat, p.color)}>
