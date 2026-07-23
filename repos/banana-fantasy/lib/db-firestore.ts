@@ -3149,13 +3149,13 @@ export async function recordPickChase(
 
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(promoRef);
-    if (!snap.exists) return { won: 0 }; // not seeded (bot / never logged in)
+    if (!snap.exists) return { won: 0, changed: false }; // not seeded (bot / never logged in)
     const promo = deepClone(snap.data() as Promo);
-    if (promo.type !== 'pick-chase') return { won: 0 };
+    if (promo.type !== 'pick-chase') return { won: 0, changed: false };
 
     const mc = (promo.modalContent || {}) as Record<string, unknown>;
     const seen = (mc.chaseSeenDraftIds as string[] | undefined) || [];
-    if (seen.includes(draftId)) return { won: 0 }; // already processed this draft
+    if (seen.includes(draftId)) return { won: 0, changed: false }; // already processed this draft
 
     const now = Date.now();
     const timerMs = promo.timerEndTime ? new Date(promo.timerEndTime).getTime() : 0;
@@ -3208,11 +3208,16 @@ export async function recordPickChase(
         timerEndTime: FieldValue.delete(),
       });
     }
-    return { won };
+    return { won, changed: true };
   });
 
   if (result.won > 0) {
     pushStreamEventBg(userId, 'promo-pick-chase', { draftId, slot, spins: result.won });
+  } else if (result.changed) {
+    // Silent refetch ping (no bell) so the card's pick slot / attempt / countdown
+    // update the instant a draft locks a slot or advances the chase — not on the
+    // next poll. Mirrors how purchases nudge the promos to refetch live.
+    pushStreamEventBg(userId, 'notification', { draftId });
   }
 }
 

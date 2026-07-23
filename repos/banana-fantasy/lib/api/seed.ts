@@ -380,7 +380,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Match Your Pick → up to 5 Free Spins',
       explanation:
-        '• Your first draft locks your pick — the draft slot (1–10) you land when it fills.\n• You have 24 hours. Land that SAME slot again in another draft to win.\n• It’s a multiplier — the longer it takes to match, the bigger the reward:\n   · 2nd draft = 1 Spin\n   · 3rd draft = 2 Spins\n   · 4th draft = 3 Spins\n   · 5th draft = 4 Spins\n   · 6th draft and beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
+        '• Your first draft locks your pick — the slot (1–10) you land when it fills. That starts your 24 hours.\n• Every draft after is an ATTEMPT to match it. Land that same slot again to win — the more attempts it takes, the bigger the reward:\n   · 1st attempt = 1 Spin\n   · 2nd attempt = 2 Spins\n   · 3rd attempt = 3 Spins\n   · 4th attempt = 4 Spins\n   · 5th attempt & beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
     },
   },
   {

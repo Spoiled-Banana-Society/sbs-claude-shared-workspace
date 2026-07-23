@@ -29,6 +29,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
+  'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
   'pick-10',        // "Pick 6 & 10 → FREE SPINS" — engagement reward
@@ -46,12 +47,10 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  * 'buy-bonus' = "Buy 2 → 1 Free" (July 4th weekend candidate). Inserted
  * right before 'mint' so it sits next to the Buy 10 card.
  */
-// 'pick-chase' — "Match Your Pick" limited-time promo (Boris 2026-07-22),
-// STAGED for admin preview. To LAUNCH: move 'pick-chase' out of here and into
-// VISIBLE_PROMO_TYPES_ORDER right after 'first-purchase', then send the bell
-// (~/sbs-broadcast-pick-chase-noti.mjs — lives in ~/, not scripts/, so ship.sh
-// can't leak it). Runs thru Sun 12pm PT (promoWeekendActive gate on crediting).
-export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['pick-chase'];
+// "Match Your Pick" (pick-chase) LAUNCHED 2026-07-23 — now in
+// VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase). Nothing staged
+// for admin-only preview right now.
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
