@@ -89,29 +89,14 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // (user.createdAt is stamped at load time, not at signup). If storage is
   // unavailable (private mode) we just show it — erring toward helping a new
   // user beats hiding it.
-  const [showFaqNav, setShowFaqNav] = useState(false);
-  useEffect(() => {
-    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-    try {
-      const KEY = 'sbs-faq-nav-first-seen';
-      let firstSeen = Number(localStorage.getItem(KEY));
-      if (!firstSeen || Number.isNaN(firstSeen)) {
-        firstSeen = Date.now();
-        localStorage.setItem(KEY, String(firstSeen));
-      }
-      setShowFaqNav(Date.now() - firstSeen < WEEK_MS);
-    } catch {
-      setShowFaqNav(true);
-    }
-  }, []);
-
   // Nav items — desktop only
   const navItems = [
     { href: '/draft', label: 'Draft', tooltip: 'View active drafts', auth: false },
     { href: '/teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
-    // FAQ rides along for a visitor's first week only (see showFaqNav above).
-    ...(showFaqNav ? [{ href: '/faq', label: 'FAQ', tooltip: 'New here? How SBS works', auth: false }] : []),
+    // FAQ shown for ALL users on desktop (Boris 2026-07-23), right after Promos
+    // — links to the same /faq page as the profile-dropdown FAQ.
+    { href: '/faq', label: 'FAQ', tooltip: 'How SBS works', auth: false },
     // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
     // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in
     // the profile menu — so they no longer clutter the top nav.
