@@ -527,42 +527,32 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title}
         </h3>
-        {isChase ? (
-          chase?.active ? (
-            <div className="mb-4">
-              {/* One line: pick landed · attempt (unbounded) · live countdown */}
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <span className="inline-flex items-baseline gap-1 rounded-lg border border-[#f97316]/30 bg-[#f97316]/10 px-2 py-0.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316]">Pick</span>
-                  <span className="text-base font-black text-white leading-none tabular-nums">{chase.slot}</span>
+        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
+        <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
+          {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
+        </p>
+
+        {/* Chase Your Pick — bottom row: live countdown, plus (once a draft locks
+            a pick) the slot, attempts, and next-hit Spins. No x/5 meter. */}
+        {isChase && (
+          <div className="mt-auto mb-4">
+            {chase?.active ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] whitespace-nowrap text-white/70">
+                  <span className="font-bold text-[#f97316]">Pick {chase.slot}</span>
+                  <span className="text-white/25"> · </span>Att {chase.attempt}
+                  <span className="text-white/25"> · </span>
+                  <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                 </span>
-                <span className="text-white/25">·</span>
-                <span className="text-white/70 tabular-nums">Attempt {chase.attempt}</span>
-                <span className="text-white/25">·</span>
-                <span className="text-white/70 tabular-nums">{timeRemaining}</span>
+                <span className="shrink-0 text-sm tabular-nums text-white/70">{timeRemaining}</span>
               </div>
-              <p className="mt-2 text-[13px] text-white/55">
-                Land it →{' '}
-                <span className="text-[#f97316] font-bold">
-                  {chase.nextHit} Free Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' (MAX)' : ''}
-                </span>
-              </p>
-            </div>
-          ) : (
-            <div className="mb-4">
-              <p className="text-white/45 text-sm leading-relaxed">
-                Draft to lock your pick slot — land it again to win up to 5 Free Spins.
-              </p>
-              <p className="mt-2 text-white/70 text-sm tabular-nums">{timeRemaining}</p>
-            </div>
-          )
-        ) : (
-          <>
-            <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
-            <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
-              {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
-            </p>
-          </>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-white/45">Draft to lock your pick</span>
+                <span className="text-sm tabular-nums text-white/70">{timeRemaining}</span>
+              </div>
+            )}
+          </div>
         )}
         {promo.type === 'pick-10' && pickExpanded && (
           <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">

@@ -14,6 +14,7 @@ import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { API_CONFIG } from '@/lib/api/config';
+import { deriveChaseState } from '@/lib/chasePromo';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -276,6 +277,86 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             : `Complete ${promo.progressMax! - (promo.progressCurrent || 0)} more to claim your reward.`}
         </p>
       </div>
+    );
+  };
+
+  const renderChaseContent = () => {
+    const chase = deriveChaseState(promo);
+    const mc = (promo.modalContent || {}) as Record<string, unknown>;
+    const history = (Array.isArray(mc.chaseHistory) ? mc.chaseHistory : []) as Array<{ date?: string; slot?: number; spins?: number; attempts?: number }>;
+    const totalSpins = typeof mc.totalChaseSpins === 'number' ? mc.totalChaseSpins : 0;
+    return (
+      <>
+        {/* Current chase state */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          {chase.active ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-text-muted text-xs">Chasing</div>
+                <div className="text-2xl font-bold text-[#f97316] leading-tight">Pick {chase.slot}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-text-secondary text-sm">Attempt {chase.attempt}</div>
+                <div className="text-white font-semibold">
+                  Land it → <span className="text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-text-secondary text-sm">
+              Draft to lock your pick slot — then land that same slot again within 24 hours to win Free Spins.
+            </p>
+          )}
+        </div>
+        {/* Lifetime stats */}
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-banana tabular-nums">{history.length}</div>
+            <div className="text-text-muted text-xs mt-1">Picks Caught</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{Math.max(totalSpins, promo.claimCount ?? 0)}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Won Here</div>
+          </div>
+        </div>
+        {/* Time Remaining — always shown, 24:00:00 until a pick is locked */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-text-secondary">Time Remaining</span>
+            <div className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span className="text-xl font-bold text-banana tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+            </div>
+          </div>
+          {!promo.timerEndTime && (
+            <p className="text-text-muted text-xs mt-2">Timer starts when your next draft fills and locks your pick.</p>
+          )}
+        </div>
+        {promo.claimable && promo.claimCount && promo.claimCount > 0 ? (
+          <p className="text-banana text-sm font-medium">
+            You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!
+          </p>
+        ) : null}
+        {/* History — one row per caught pick, newest first. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">History</h4>
+          {history.length > 0 ? (
+            <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
+              {history.map((e, index) => (
+                <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
+                  <span className="text-text-secondary text-sm">{fmtWhen(e.date)}</span>
+                  <span className="text-banana font-medium text-sm">Pick {e.slot} · {e.spins} {e.spins === 1 ? 'spin' : 'spins'}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-text-muted text-sm">Every time you catch your pick it lands here with the date and Spins won.</p>
+          )}
+        </div>
+      </>
     );
   };
 
@@ -1104,6 +1185,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderBuyBonusContent();
       case 'tweet-engagement':
         return renderTweetEngagementContent();
+      case 'pick-chase':
+        return renderChaseContent();
       default:
         return null;
     }

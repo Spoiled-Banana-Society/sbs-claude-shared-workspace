@@ -115,34 +115,24 @@ export function PromosSidebar({
                   <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
                 </div>
               )}
-              {isChase ? (
-                chase?.active ? (
-                  <div className="mt-1.5 flex flex-col items-center gap-1">
-                    {/* One line: pick landed · attempt (unbounded) · live countdown */}
-                    <div className="flex items-center justify-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
-                      <span className="inline-flex items-baseline gap-0.5 rounded-md border border-[#f97316]/30 bg-[#f97316]/10 px-1 py-0.5">
-                        <span className="text-[7px] font-bold uppercase tracking-wide text-[#f97316]">Pick</span>
-                        <span className="text-[12px] font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
-                      </span>
-                      <span className="text-[#c4c4c8]">·</span>
-                      <span className="font-semibold tabular-nums">Att {chase.attempt}</span>
-                      <span className="text-[#c4c4c8]">·</span>
-                      <span className="font-semibold tabular-nums">{formatChaseTime(promo.timerEndTime)}</span>
-                    </div>
-                    <span className="text-[11px] text-[#4a4a4a]">
-                      Land it → <span className="font-bold text-[#f97316]">{chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}</span>
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-1 flex flex-col items-center gap-1">
-                    <span className="block text-center text-[11px] leading-snug text-[#4a4a4a]">Draft to lock your pick — land it again to win Spins</span>
-                    <span className="text-[11px] font-semibold tabular-nums text-[#4a4a4a]">{formatChaseTime(promo.timerEndTime)}</span>
-                  </div>
-                )
-              ) : (
-                <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
-              )}
+              <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               <div className="mt-auto">
+                {/* Chase Your Pick — bottom row: live countdown, plus (once a draft
+                    locks a pick) the slot, attempts, and next-hit Spins. */}
+                {isChase && (
+                  <div className="mb-2 flex flex-col items-center gap-0.5">
+                    {chase?.active && (
+                      <div className="flex items-center justify-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
+                        <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
+                        <span className="text-[#c4c4c8]">·</span>
+                        <span className="font-semibold">Att {chase.attempt}</span>
+                        <span className="text-[#c4c4c8]">·</span>
+                        <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                      </div>
+                    )}
+                    <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime)}</span>
+                  </div>
+                )}
                 {!isChase && hasProgress && (
                   <div className="mb-2">
                     <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">

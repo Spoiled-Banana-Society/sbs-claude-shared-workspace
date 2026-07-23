@@ -348,33 +348,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
                       </div>
                     )}
-                    {isChase ? (
-                      chase?.active ? (
-                        <div className="mt-2 flex flex-col items-center gap-1">
-                          {/* One line: pick landed · attempt (unbounded) · live countdown */}
-                          <div className="flex items-center justify-center gap-1 text-[10px] text-[#4a4a4a] whitespace-nowrap">
-                            <span className="inline-flex items-baseline gap-0.5 rounded-md border border-[#f97316]/30 bg-[#f97316]/10 px-1 py-0.5">
-                              <span className="text-[7px] font-bold uppercase tracking-wide text-[#f97316]">Pick</span>
-                              <span className="text-[11px] font-black text-[#1d1d1f] leading-none tabular-nums">{chase.slot}</span>
-                            </span>
-                            <span className="text-[#c4c4c8]">·</span>
-                            <span className="font-semibold tabular-nums">Att {chase.attempt}</span>
-                            <span className="text-[#c4c4c8]">·</span>
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-                          </div>
-                          <span className="text-[10px] text-[#4a4a4a]">
-                            Land it → <span className="font-bold text-[#f97316]">{chase.nextHit} Spin{chase.nextHit === 1 ? '' : 's'}{chase.isMax ? ' MAX' : ''}</span>
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="mt-1.5 flex flex-col items-center gap-1">
-                          <span className="px-2 text-center text-[10px] leading-snug text-[#4a4a4a]">Draft to lock your pick — land it again to win Spins</span>
-                          <span className="text-[11px] font-semibold tabular-nums text-[#4a4a4a]">{formatTimeRemaining(promo.timerEndTime)}</span>
-                        </div>
-                      )
-                    ) : (
-                      <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
-                    )}
+                    <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -412,8 +386,32 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Chase Your Pick renders its own inline row above (pick ·
-                          attempt · countdown) — no meter bar. */}
+                      {/* Chase Your Pick — bottom row like the 4-in-24h timer: the
+                          countdown, plus (once a draft locks a pick) the slot,
+                          attempts, and next-hit Spins. No meter bar. */}
+                      {isChase && (
+                        <div className="-mt-2">
+                          {chase?.active ? (
+                            <div className="flex flex-col items-center gap-0.5 mb-1">
+                              <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] whitespace-nowrap">
+                                <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
+                                <span className="text-[#c4c4c8]">·</span>
+                                <span className="font-semibold">Att {chase.attempt}</span>
+                                <span className="text-[#c4c4c8]">·</span>
+                                <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                              </div>
+                              <span className="text-[13px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-center mb-1">
+                              <span className="text-[13px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
+                            </div>
+                          )}
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-1 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
 
                       {/* Mint & Pick 10 promo - show progress + claim if available.
                           Binary promos (max <= 1) skip the counter+bar — "0/1"

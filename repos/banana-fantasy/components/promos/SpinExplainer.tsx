@@ -27,8 +27,9 @@ export function SpinExplainer({
   // Per-promo reward framing. Each Banana Wheel spin wins up to 20 Free Drafts
   // (guaranteed at least 1), so the totals scale with how many spins the promo
   // awards: Jackpot Hit pays up to 10 spins (200 drafts, min 5); Refer Friend
-  // pays up to 3 spins per friend (60 drafts, min 3); everything else is a
-  // single spin (20 drafts, min 1). Title-based with a graceful 20/1 fallback.
+  // pays up to 3 spins per friend (60 drafts, min 3); Chase Your Pick pays up to
+  // 5 spins per hit (100 drafts, min 1); everything else is a single spin (20
+  // drafts, min 1). Title-based with a graceful 20/1 fallback.
   const t = (promoTitle || '').toLowerCase();
   let maxDrafts = 20;
   let guaranteed = 1;
@@ -38,6 +39,9 @@ export function SpinExplainer({
   } else if (t.includes('refer')) {
     maxDrafts = 60;
     guaranteed = 3;
+  } else if (t.includes('chase')) {
+    maxDrafts = 100;
+    guaranteed = 1;
   }
 
   return (
