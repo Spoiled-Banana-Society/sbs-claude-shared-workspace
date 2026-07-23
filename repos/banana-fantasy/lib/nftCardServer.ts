@@ -262,8 +262,15 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           //   3. else (no summary anywhere) keep the pick-less attribute roster.
           const hasPicks = (ps: CardPlayer[] | null): ps is CardPlayer[] =>
             !!ps && ps.length >= 10 && ps.some((p) => p.pick !== '-' && p.pick != null);
+          // Trust the durable index roster ONLY when it's at least as COMPLETE as the
+          // finalize-doc attribute roster. marketplace_index.players can be a stale /
+          // partial capture (seen: 13 of 15 — missing a 2nd TE + 2nd DST), and the
+          // attribute roster Go writes at draft finalize is the fuller truth. Never
+          // let a shorter index roster drop real roster spots off the card art — a
+          // complete pick-less roster beats an incomplete one with picks. When the
+          // index is short, heal picks onto the FULL attribute roster instead.
           let cardPlayers: CardPlayer[];
-          if (hasPicks(indexPlayers)) {
+          if (hasPicks(indexPlayers) && indexPlayers.length >= players.length) {
             cardPlayers = indexPlayers;
           } else {
             const healed = await playersWithPicks(id, players);
