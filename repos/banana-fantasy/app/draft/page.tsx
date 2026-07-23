@@ -12,6 +12,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
@@ -136,6 +137,9 @@ export default function DraftingPage() {
     getLiveState,
     setExitingDraft,
     setShowBuyPasses,
+    showBuyFromBalance,
+    setShowBuyFromBalance,
+    handleBuyFromBalance,
     setSelectedPromo,
     setPromoIndex,
     setShowEntryFlow,
@@ -463,7 +467,22 @@ export default function DraftingPage() {
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
         onAddFunds={() => { clearDepositBuyError(); setShowEntryFlow(false); setShowAddFunds(true); }}
-        onBuyMore={() => { clearDepositBuyError(); setShowEntryFlow(false); setShowBuyPasses(true); }}
+        onBuyMore={() => {
+          clearDepositBuyError();
+          setShowEntryFlow(false);
+          if (DEPOSITS_ENABLED) setShowBuyFromBalance(true); else setShowBuyPasses(true);
+        }}
+      />
+
+      {/* Buy passes from balance — no card/USDC pickers, just how many. */}
+      <BuyPassesBalanceModal
+        isOpen={showBuyFromBalance}
+        onClose={() => { clearDepositBuyError(); setShowBuyFromBalance(false); }}
+        onBuy={(qty) => void handleBuyFromBalance(qty)}
+        balanceUsd={user?.usdcBalance ?? 0}
+        busy={depositBuying}
+        error={depositBuyError}
+        onAddFunds={() => { clearDepositBuyError(); setShowBuyFromBalance(false); setShowAddFunds(true); }}
       />
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}

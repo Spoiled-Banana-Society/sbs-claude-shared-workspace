@@ -22,6 +22,7 @@ import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 
 function StagingMintButton({
   userId,
@@ -99,7 +100,7 @@ export default function HomePage() {
   // no count-pop-in). Single source of truth in useEnterDraft so the two entry
   // points can't drift and reintroduce the old home-page glitch.
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
-  const { buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance } = useDepositEntry();
+  const { buying: depositBuying, buyError: depositBuyError, clearBuyError, buyPassWithBalance, buyPassesWithBalance } = useDepositEntry();
 
   const allPromos = promosQuery.promos || [];
 
@@ -134,6 +135,12 @@ export default function HomePage() {
     // Hand off to the single shared entry flow — pass gate, join-before-navigate,
     // overlay, promo-type, and URL seeding all live in useEnterDraft now.
     void enterDraftWithPassType(passType, speed);
+  };
+
+  const handleBuyFromBalance = async (qty: number) => {
+    const ok = await buyPassesWithBalance(qty);
+    if (!ok) return; // error stays visible in the sheet
+    modals.closeAll();
   };
 
   const handlePurchaseComplete = () => {
@@ -224,7 +231,22 @@ export default function HomePage() {
         balanceUsd={user?.usdcBalance ?? 0}
         balanceError={depositBuyError}
         onAddFunds={() => { clearBuyError(); modals.closeAll(); setShowAddFunds(true); }}
-        onBuyMore={() => { clearBuyError(); modals.closeAll(); modals.push('buy-passes'); }}
+        onBuyMore={() => {
+          clearBuyError();
+          modals.closeAll();
+          modals.push(DEPOSITS_ENABLED ? 'buy-from-balance' : 'buy-passes');
+        }}
+      />
+
+      {/* Buy passes from balance — no card/USDC pickers, just how many. */}
+      <BuyPassesBalanceModal
+        isOpen={modals.isOpen('buy-from-balance')}
+        onClose={() => { clearBuyError(); modals.closeAll(); }}
+        onBuy={(qty) => void handleBuyFromBalance(qty)}
+        balanceUsd={user?.usdcBalance ?? 0}
+        busy={depositBuying}
+        error={depositBuyError}
+        onAddFunds={() => { clearBuyError(); modals.closeAll(); setShowAddFunds(true); }}
       />
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}
