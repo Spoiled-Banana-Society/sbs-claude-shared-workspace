@@ -294,7 +294,7 @@ export function BatchProgressIndicator() {
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[70px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] w-[92px] lg:w-[132px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
                   <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
                     <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
                     {!p.hit && p.pct !== null && (

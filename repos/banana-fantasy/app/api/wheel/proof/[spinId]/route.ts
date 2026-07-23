@@ -59,6 +59,24 @@ export async function GET(_req: Request, ctx: { params: { spinId: string } }) {
     const period = await getPeriod(data.periodNumber!);
     if (!period) throw new ApiError(500, `Spin references missing period ${data.periodNumber}`);
 
+    // Cumulative ALL-TIME spin number — mirrors the Live Activity feed's global
+    // numbering (which never resets across period/round rolls). A spin's number
+    // is its position in the all-time timeline = the count of every wheelSpin
+    // with a timestamp at or before this one. Uses the same single-field
+    // timestamp index the feed's orderBy already relies on. Cosmetic — a miss
+    // just omits it (client falls back to the period-relative index).
+    let globalSpinNumber: number | null = null;
+    try {
+      const agg = await db
+        .collectionGroup('wheelSpins')
+        .where('timestamp', '<=', data.timestamp)
+        .count()
+        .get();
+      globalSpinNumber = agg.data().count;
+    } catch (countErr) {
+      logger.warn('wheel.proof.global_number_failed', { spinId, err: (countErr as Error).message });
+    }
+
     const contractAddress = await getWheelProofContractAddress();
 
     let proof: { leaf: string; path: string[]; root: string } | null = null;
@@ -78,6 +96,7 @@ export async function GET(_req: Request, ctx: { params: { spinId: string } }) {
       verifiable: true,
       periodNumber: data.periodNumber,
       spinIndex: data.spinIndexInPeriod,
+      globalSpinNumber,
       period: toPublicSummary(period),
       contractAddress,
       proof,

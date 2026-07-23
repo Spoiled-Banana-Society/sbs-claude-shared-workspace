@@ -20,6 +20,7 @@ import {
   USDC_PERMIT_ABI,
 } from '@/lib/contracts/bbb4';
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
+import { ONE_TAP_ALLOWANCE_USD } from '@/lib/deposits';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { clientLog } from '@/lib/clientLog';
@@ -378,11 +379,41 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           outputs: [{ type: 'bool' }],
         }] as const;
 
+        // One-tap entries: a prior enlarged permit/approve may have left a
+        // standing allowance that already covers this purchase — then no
+        // authorization step is needed at all ('0x' sentinel; both mint routes
+        // re-verify the allowance server-side before pulling).
+        let standingAllowance = 0n;
+        try {
+          standingAllowance = (await publicClient.readContract({
+            address: BASE_SEPOLIA_USDC_ADDRESS, abi: ALLOWANCE_ABI,
+            functionName: 'allowance', args: [activeWallet.address as Address, adminAddress],
+          })) as bigint;
+        } catch { standingAllowance = 0n; }
+
+        // Authorize the one-tap cap (not the exact price) wherever the extra
+        // authorization is free for the user: external EOAs (one gasless
+        // signature either way — wallet UI discloses the cap) and smart
+        // accounts (one sponsored approve either way, and a standing allowance
+        // skips the ~30s approve-and-wait on every later purchase). Embedded
+        // EOAs sign silently per purchase, so they keep the exact amount —
+        // no reason to hold a standing allowance for them.
+        const oneTapCap = BigInt(ONE_TAP_ALLOWANCE_USD) * 1_000_000n;
+        const authAmount =
+          (!isEmbedded || isSmartAccount) && oneTapCap > value ? oneTapCap : value;
+        // The amount a signed permit covers — the server must submit the
+        // permit with EXACTLY this value or USDC rejects the signature.
+        let signedPermitValue = value;
+
         // '0x' is a sentinel meaning "no permit — allowance set on-chain instead".
         let signature: Hex = '0x';
-        if (isEmbedded && isSmartAccount) {
+        if (standingAllowance >= value) {
+          clientLog('payment', 'mint_allowance_skip_sign', {
+            wallet: activeWallet.address, allowance: standingAllowance.toString(),
+          });
+        } else if (isEmbedded && isSmartAccount) {
           // Gas-sponsored approve (Privy sponsors it → $0 for the user).
-          const approveData = encodeFunctionData({ abi: APPROVE_ABI, functionName: 'approve', args: [adminAddress, value] });
+          const approveData = encodeFunctionData({ abi: APPROVE_ABI, functionName: 'approve', args: [adminAddress, authAmount] });
           await sendTransactionRef.current(
             { to: BASE_SEPOLIA_USDC_ADDRESS, data: approveData, chainId: BASE_CHAIN_ID },
             { sponsor: true, uiOptions: { showWalletUIs: false } },
@@ -398,10 +429,11 @@ export function useMintDraftPass(): UseMintDraftPassResult {
             await new Promise((r) => setTimeout(r, 1500));
           }
         } else {
+          signedPermitValue = authAmount;
           const typedData = buildUsdcPermitTypedData({
             owner: activeWallet.address as Address,
             spender: adminAddress,
-            value,
+            value: authAmount,
             nonce: userNonce as bigint,
             deadline,
           });
@@ -445,6 +477,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
             quantity,
             deadline: Number(deadline),
             signature,
+            permitValue: signedPermitValue.toString(),
             paymentMethod: opts?.paymentMethod ?? 'usdc',
             ...(opts?.cardProvider ? { cardProvider: opts.cardProvider } : {}),
           }),

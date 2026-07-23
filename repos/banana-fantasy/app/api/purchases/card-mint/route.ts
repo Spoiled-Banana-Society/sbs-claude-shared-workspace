@@ -190,6 +190,23 @@ export async function POST(req: Request) {
 
     const value = (tokenPriceUsdc as bigint) * BigInt(quantity);
 
+    // One-tap entries: the client may sign the permit for MORE than this
+    // purchase (a standing cap, lib/deposits ONE_TAP_ALLOWANCE_USD) so later
+    // purchases skip signing. The on-chain permit call must carry the EXACT
+    // signed amount or USDC rejects the signature; only `value` is pulled.
+    // KEEP IN SYNC with instant-mint/route.ts.
+    let permitAmount = value;
+    if (typeof body.permitValue === 'string' || typeof body.permitValue === 'number') {
+      try {
+        permitAmount = BigInt(String(body.permitValue));
+      } catch {
+        return jsonError('permitValue must be an integer USDC amount (6 decimals)', 400);
+      }
+      if (permitAmount < value) {
+        return jsonError('permitValue is below the purchase price', 400);
+      }
+    }
+
     // Serialize the entire approve → pull → mint sequence on the shared admin
     // wallet so two concurrent purchases (or the fulfillment cron) can't
     // interleave and race on the tx nonce or the USDC allowance — the exact
@@ -225,7 +242,7 @@ export async function POST(req: Request) {
           permitTxHash = await submitUsdcPermit({
             owner,
             spender: adminWallet,
-            value,
+            value: permitAmount,
             deadline,
             v: parsedSig.v,
             r: parsedSig.r,

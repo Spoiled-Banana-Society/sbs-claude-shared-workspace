@@ -220,7 +220,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   // 'verifying' = proof is being fetched in the background after landing (the
   // spin response no longer carries it — see the lazy fetch below).
   const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verifying' | 'verified' | 'failed'>('unverified');
-  const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string } | null>(null);
+  const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string; globalSpinNumber?: number | null } | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
   const wheelRef = useRef<HTMLDivElement>(null);
@@ -307,6 +307,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         verifiable?: boolean;
         periodNumber?: number;
         spinIndex?: number;
+        globalSpinNumber?: number | null;
         proof?: { leaf: string; path: Array<`0x${string}`>; root: `0x${string}` } | null;
       };
       if (!data?.verifiable || !data.proof || typeof data.spinIndex !== 'number' || typeof data.periodNumber !== 'number') {
@@ -321,7 +322,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         root: data.proof.root,
       });
       setWonProofStatus(ok ? 'verified' : 'failed');
-      setWonProofMeta({ periodNumber: data.periodNumber, spinIndex: data.spinIndex, root: data.proof.root });
+      setWonProofMeta({ periodNumber: data.periodNumber, spinIndex: data.spinIndex, root: data.proof.root, globalSpinNumber: data.globalSpinNumber ?? null });
     } catch {
       setWonProofStatus('unverified');
     }
@@ -775,18 +776,26 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 {getPrizeMessage(wonSegment)}
               </p>
 
-              {wonProofStatus === 'verified' && wonProofMeta && (
-                <div
-                  className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
-                  style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
-                  title={`Verified by Chainlink VRF · Round ${wonProofMeta.periodNumber} · spin #${wonProofMeta.spinIndex + 1}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Verified by Chainlink VRF · spin #{wonProofMeta.spinIndex + 1}
-                </div>
-              )}
+              {wonProofStatus === 'verified' && wonProofMeta && (() => {
+                // Show the ALL-TIME spin number (matches the Live Activity feed,
+                // never resets across rounds). Fall back to the period-relative
+                // index for legacy/inline-proof spins that lack the global count.
+                const spinNo = typeof wonProofMeta.globalSpinNumber === 'number'
+                  ? wonProofMeta.globalSpinNumber
+                  : wonProofMeta.spinIndex + 1;
+                return (
+                  <div
+                    className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
+                    style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
+                    title={`Verified by Chainlink VRF · Round ${wonProofMeta.periodNumber} · spin #${spinNo}`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Verified by Chainlink VRF · spin #{spinNo}
+                  </div>
+                );
+              })()}
               {wonProofStatus === 'verifying' && (
                 <div
                   className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[#86868b] text-[12px] font-semibold"

@@ -85,6 +85,29 @@ export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.purchases);
   if (rateLimited) return rateLimited;
 
+  // Stage timings for every purchase, persisted as a server breadcrumb —
+  // 7/22 both live instant-seat purchases stalled ~50s between register and
+  // respond (users waited the exact delay seat-first exists to remove) and
+  // Vercel keeps no log history, so the route must record its own timeline.
+  const t0 = Date.now();
+  const stages: Record<string, number> = {};
+  const mark = (stage: string) => { stages[stage] = Date.now() - t0; };
+  const persistTimings = (event: string, payload: Record<string, unknown>) => {
+    if (!isFirestoreConfigured()) return;
+    runInBackground(`instant-mint.timings.${event}`, getAdminFirestore().collection('v2_debug_events').add({
+      tag: 'payment',
+      event,
+      payload,
+      clientTs: Date.now(),
+      serverTs: new Date().toISOString(),
+      sessionId: 'server-instant-mint',
+      wallet: '',
+      path: '/api/purchases/instant-mint',
+      ua: 'server',
+      ...payload.wallet ? { wallet: payload.wallet } : {},
+    }));
+  };
+
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId').toLowerCase();
@@ -125,7 +148,9 @@ export async function POST(req: Request) {
     }
     const owner = userId as Address;
 
+    mark('parsed');
     const adminEthBalance = await publicClient.getBalance({ address: adminWallet });
+    mark('gas_check');
     if (adminEthBalance < ADMIN_WALLET_GAS_FLOOR_WEI) {
       logger.error('instant-mint.admin_wallet_low_balance', {
         adminWallet, balanceWei: adminEthBalance.toString(),
@@ -156,6 +181,22 @@ export async function POST(req: Request) {
     }
     const value = tokenPriceUsdc; // quantity pinned to 1
 
+    // One-tap entries: the client may sign the permit for MORE than this
+    // purchase (a standing cap, lib/deposits ONE_TAP_ALLOWANCE_USD) so later
+    // entries skip signing. The on-chain permit call must carry the EXACT
+    // signed amount or USDC rejects the signature; only `value` is pulled.
+    let permitAmount = value;
+    if (typeof body.permitValue === 'string' || typeof body.permitValue === 'number') {
+      try {
+        permitAmount = BigInt(String(body.permitValue));
+      } catch {
+        return jsonError('permitValue must be an integer USDC amount (6 decimals)', 400);
+      }
+      if (permitAmount < value) {
+        return jsonError('permitValue is below the purchase price', 400);
+      }
+    }
+
     // THE gate: $25 in the wallet + an authorization we can collect with.
     // Past this point the user gets seated NO MATTER WHAT happens to the money.
     if (userUsdcBalance < value) {
@@ -164,10 +205,12 @@ export async function POST(req: Request) {
     if (!parsedSig && currentAllowance < value) {
       return jsonError('Payment authorization missing — please try again. You were NOT charged.', 400);
     }
+    mark('contract_reads');
 
     // Front the pass NOW (house money, one tx) and register it so the join
     // that follows this response can consume it immediately.
     const releaseAdminLock = await acquireAdminWalletLock('instant-mint');
+    mark('lock');
     let mintResult: { txHash: Hex; tokenIds: string[] };
     try {
       mintResult = await reserveTokensToWallet({ to: userId, count: 1 });
@@ -177,6 +220,7 @@ export async function POST(req: Request) {
       await releaseAdminLock();
       return jsonError('Could not get your pass — please try again. You were NOT charged.', 500);
     }
+    mark('mint');
 
     try {
       await registerMintedTokens(userId, mintResult.tokenIds, 'paid');
@@ -186,17 +230,25 @@ export async function POST(req: Request) {
       // reconcile sweep registers it, so nothing is lost.
       logger.error('instant-mint.register_failed', { userId, tokenIds: mintResult.tokenIds, err: (e as Error).message });
     }
+    mark('register');
     runInBackground('instant-mint.pass-metadata', writeDraftPassMetadata(mintResult.tokenIds));
 
-    let newDraftPasses: number | null = null;
-    try {
-      const counts = await recountFromInventory(userId);
-      newDraftPasses = counts.draftPasses;
-    } catch { /* counter self-heals via the usual paths */ }
+    // Do NOT await the counter recount: the Go engine is the join's real gate
+    // and it knows the pass as of `register` above, the client ignores the
+    // returned count (it bumps optimistically), and collection re-recounts
+    // anyway. 7/22 this await hung ~50s on both live purchases (Firestore
+    // slow from the Vercel side) and held the seat hostage — the one thing
+    // seat-first exists to prevent.
+    runInBackground('instant-mint.recount', recountFromInventory(userId).then((counts) => {
+      persistTimings('instant_mint_recount_done', {
+        wallet: userId, ms: Date.now() - t0, draftPasses: counts.draftPasses,
+      });
+    }));
 
     // ── Respond NOW; the user's join starts immediately. ──────────────────
     // Collection + bookkeeping continue below via waitUntil.
     runInBackground('instant-mint.collect', (async () => {
+      const collectStartMs = Date.now() - t0;
       let permitTxHash: Hex | 'skipped' = 'skipped';
       let transferTxHash: Hex | undefined;
       let collected = false;
@@ -212,7 +264,7 @@ export async function POST(req: Request) {
 
           if ((await readAllowance()) < value && parsedSig) {
             permitTxHash = await submitUsdcPermit({
-              owner, spender: adminWallet, value, deadline,
+              owner, spender: adminWallet, value: permitAmount, deadline,
               v: parsedSig.v, r: parsedSig.r, s: parsedSig.s,
             });
           }
@@ -309,13 +361,19 @@ export async function POST(req: Request) {
           metadata: { source: 'instant_seat_house_ate', collectError: lastErr },
         }).catch(() => {});
       }
+      persistTimings('instant_mint_collect_done', {
+        wallet: userId, collected, collectStartMs, collectMs: Date.now() - t0 - collectStartMs,
+        permitTxHash, transferTxHash: transferTxHash ?? null,
+      });
     })().finally(() => releaseAdminLock()));
 
+    mark('respond');
+    persistTimings('instant_mint_timings', { wallet: userId, stages, tokenIds: mintResult.tokenIds });
     return json({
       success: true,
       txHashes: { mint: mintResult.txHash },
       tokenIds: mintResult.tokenIds,
-      draftPasses: newDraftPasses,
+      draftPasses: null,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

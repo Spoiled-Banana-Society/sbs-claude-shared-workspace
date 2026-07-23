@@ -852,7 +852,7 @@ export function BuyPassesModal({
     { label: 'Adding draft pass to your account', completeAtIdx: 4 },
   ];
   const usdcSteps: VisibleStep[] = [
-    { label: 'Confirm with your wallet', completeAtIdx: 1, helper: 'Check your wallet to approve.' },
+    { label: 'Confirm with your wallet', completeAtIdx: 1, helper: 'Check your wallet to approve. Your first approval sets a $5,000 USDC spending cap so future entries are 1-tap — no signing.' },
     { label: 'Payment confirmed', completeAtIdx: 1 },
     { label: 'Processing your purchase', completeAtIdx: 2 },
     { label: 'Adding draft pass to your account', completeAtIdx: 2 },
