@@ -102,6 +102,26 @@ function isPreRevealOg(url: string): boolean {
   } catch { return false; }
 }
 
+/** Team+pos multiset baked into a roster, order-independent. Used to detect a
+ *  stored image whose roster no longer matches the token's real roster. */
+function rosterKey(players: Array<{ team?: string; pos?: string }>): string {
+  return players
+    .map((p) => `${(p.team || '').toUpperCase()}-${(p.pos || '').toUpperCase()}`)
+    .sort()
+    .join(',');
+}
+
+/** The roster key baked into an og team-card image URL, or null if it isn't a
+ *  decodable og image (→ can't trust it, rebuild). */
+function ogRosterKey(url: string): string | null {
+  try {
+    const d = new URL(url).searchParams.get('d');
+    if (!d) return null;
+    const parsed = JSON.parse(Buffer.from(d, 'base64url').toString('utf8'));
+    return Array.isArray(parsed.players) ? rosterKey(parsed.players) : null;
+  } catch { return null; }
+}
+
 function playersFromTeamData(team: TeamData): CardPlayer[] {
   return team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
 }
@@ -243,20 +263,21 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           const hasPicks = (ps: CardPlayer[] | null): ps is CardPlayer[] =>
             !!ps && ps.length >= 10 && ps.some((p) => p.pick !== '-' && p.pick != null);
           let cardPlayers: CardPlayer[];
-          let image: string;
           if (hasPicks(indexPlayers)) {
             cardPlayers = indexPlayers;
-            image = useStored ? stored : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
           } else {
             const healed = await playersWithPicks(id, players);
-            if (hasPicks(healed)) {
-              cardPlayers = healed;
-              image = buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
-            } else {
-              cardPlayers = players;
-              image = useStored ? stored : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
-            }
+            cardPlayers = hasPicks(healed) ? healed : players;
           }
+          // The image MUST reflect the roster we're returning. A stored og was
+          // snapshotted at draft time (client post-draft / refresh-draft write) and
+          // could be a PARTIAL roster — reuse it ONLY when its baked roster still
+          // matches cardPlayers; otherwise rebuild from truth. This is what stops
+          // the card art from silently dropping a 2nd TE / 2nd DST while the roster
+          // detail (built from the same cardPlayers) shows them correctly.
+          const image = (useStored && ogRosterKey(stored) === rosterKey(cardPlayers))
+            ? stored
+            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
           return { image, drafted: true, level, players: cardPlayers };
         }
       }
