@@ -295,7 +295,9 @@ export function BatchProgressIndicator() {
                       {p.pct !== null && (
                         <span className={`text-[10.5px] lg:text-[12.5px] font-extrabold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
                       )}
-                      <span className="text-[8px] lg:text-[9.5px] font-semibold tabular-nums text-white/70">{p.remaining}/{p.left}</span>
+                      <span className="text-[8px] lg:text-[9.5px] font-semibold tabular-nums text-white/75">
+                        <span className="text-white/90">{p.remaining}</span>/{p.left}
+                      </span>
                     </div>
                   )}
                 </div>
