@@ -146,9 +146,9 @@ export function EntryFlowModal({
             </div>
 
             <div className="space-y-3">
-<<<<<<< Updated upstream
-              {/* Row 1 — the paid seat. Your pass when you hold one, the $25
-                  buy-in when you don't. */}
+              {/* Row 1 — the paid seat. Your Paid Draft Pass when you hold one,
+                  the $25 buy-in (from balance, or Add Funds if short) when you
+                  don't. Never a greyed "0" in the deposit world. */}
               <button
                 onClick={handleSeatSelect}
                 disabled={(!hasPaid && !buyingSeat) || isSubmitting}
@@ -177,52 +177,20 @@ export function EntryFlowModal({
                 </div>
               </button>
 
-              <button
-                onClick={() => hasFree && handlePassSelect('free')}
-                disabled={!hasFree || isSubmitting}
-                className={`w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 text-left transition-all ${
-                  hasFree
-                    ? 'border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer'
-                    : 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <p className={`font-semibold ${hasFree ? 'text-white' : 'text-white/40'}`}>Free Draft Pass</p>
-                  <p className={`text-3xl font-bold ${hasFree ? 'text-green-500' : 'text-white/40'}`}>
-                    {freePasses}
-                  </p>
-                </div>
-              </button>
-=======
-              {/* A pass type only appears when the user actually HAS one — a
-                  greyed "0" card is noise (Boris 2026-07-22). The modal only
-                  opens with ≥1 pass or a balance option, so it's never empty. */}
-              {hasPaid && (
-                <button
-                  onClick={() => handlePassSelect('paid')}
-                  disabled={isSubmitting}
-                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-banana/30 bg-banana/5 hover:border-banana hover:bg-banana/10 hover:scale-[1.02] cursor-pointer text-left transition-all disabled:opacity-60"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-white">Paid Draft Pass</p>
-                    <p className="text-3xl font-bold text-banana">{paidPasses}</p>
-                  </div>
-                </button>
-              )}
-
+              {/* Free Draft Pass — only shown when the user actually HAS one; a
+                  greyed "0" card is noise (Boris 2026-07-22). */}
               {hasFree && (
                 <button
                   onClick={() => handlePassSelect('free')}
                   disabled={isSubmitting}
                   className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer text-left transition-all disabled:opacity-60"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex w-full items-center justify-between">
                     <p className="font-semibold text-white">Free Draft Pass</p>
                     <p className="text-3xl font-bold text-green-500">{freePasses}</p>
                   </div>
                 </button>
               )}
->>>>>>> Stashed changes
 
               {/* Row 3 — stock up without drafting. This is the only route to
                   buying several at once, which the buy-4 / buy-10 promos need,
