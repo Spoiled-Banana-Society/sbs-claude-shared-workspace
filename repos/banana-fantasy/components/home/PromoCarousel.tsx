@@ -386,28 +386,28 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Chase Your Pick — bottom row like the 4-in-24h timer: the
-                          countdown, plus (once a draft locks a pick) the slot,
-                          attempts, and next-hit Spins. No meter bar. */}
+                      {/* Match Your Pick — mirrors the 4-in-24h bottom layout so the
+                          countdown lands at the SAME vertical spot: timer row, then a
+                          spacer the height of that promo's progress bar. Once a draft
+                          locks a pick, the slot · attempt · next-hit Spins show above. */}
                       {isChase && (
                         <div className="-mt-2">
-                          {chase?.active ? (
-                            <div className="flex flex-col items-center gap-0.5 mb-1">
-                              <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] whitespace-nowrap">
-                                <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
-                                <span className="text-[#c4c4c8]">·</span>
-                                <span className="font-semibold">Att {chase.attempt}</span>
-                                <span className="text-[#c4c4c8]">·</span>
-                                <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
-                              </div>
-                              <span className="text-[13px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
-                            </div>
-                          ) : (
-                            <div className="flex justify-center mb-1">
-                              <span className="text-[13px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          {chase?.active && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
+                              <span className="text-[#c4c4c8]">·</span>
+                              <span className="font-semibold">Att {chase.attempt}</span>
+                              <span className="text-[#c4c4c8]">·</span>
+                              <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                             </div>
                           )}
-                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-1 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          </div>
+                          {/* Invisible spacer = the 4-in-24h progress-bar height (h-1.5),
+                              so both timers sit at the same height. */}
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                             Learn more
                           </p>
                         </div>
