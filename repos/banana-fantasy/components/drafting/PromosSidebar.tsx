@@ -126,7 +126,7 @@ export function PromosSidebar({
                         <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
                         <span className="text-[#c4c4c8]">·</span>
                         <span className="font-semibold">Att {chase.attempt}</span>
-                        <span className="text-[#c4c4c8]">·</span>
+                        <span className="text-[#c4c4c8]">→</span>
                         <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                       </div>
                     )}

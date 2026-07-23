@@ -541,7 +541,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
                 <span className="text-[13px] whitespace-nowrap text-white/70">
                   <span className="font-bold text-[#f97316]">Pick {chase.slot}</span>
                   <span className="text-white/25"> · </span>Att {chase.attempt}
-                  <span className="text-white/25"> · </span>
+                  <span className="text-white/25"> → </span>
                   <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                 </span>
                 <span className="shrink-0 text-sm tabular-nums text-white/70">{timeRemaining}</span>

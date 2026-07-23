@@ -296,9 +296,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 <div className="text-2xl font-bold text-[#f97316] leading-tight">Pick {chase.slot}</div>
               </div>
               <div className="text-right">
-                <div className="text-text-secondary text-sm">Attempt {chase.attempt}</div>
+                <div className="text-text-muted text-xs">Next hit</div>
                 <div className="text-white font-semibold">
-                  Land it → <span className="text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                  Attempt {chase.attempt} → <span className="text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                 </div>
               </div>
             </div>
