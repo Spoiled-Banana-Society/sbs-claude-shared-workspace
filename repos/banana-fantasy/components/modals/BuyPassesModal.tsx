@@ -1351,7 +1351,7 @@ export function BuyPassesModal({
                 disabled={isJoiningDraft}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-yellow-500/30 bg-yellow-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-yellow-500/60 hover:bg-yellow-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
@@ -1367,7 +1367,7 @@ export function BuyPassesModal({
                 disabled={isJoiningDraft}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-blue-500/30 bg-blue-500/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-blue-500/60 hover:bg-blue-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
