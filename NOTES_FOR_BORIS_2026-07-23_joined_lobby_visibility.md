@@ -99,3 +99,16 @@ partly from this). Worth a product rethink.
 
 Shipped tonight, in order: v1 hydration (88c9c20a) → v2 drafting-visible
 (c37896d3) → v3 prune-404 guard (e2aaeb0f) → v4 blacklist fix (d2615ae7).
+
+---
+## UPDATE 5: v4 caused a 3s flicker loop — fixed in v5 (e0bcf537)
+
+FC reported rows blinking in for ~.2s post-v4 (survived refresh). Log-proven
+oscillation: completion sweep hides finished draft → token roster lags <15
+right after completion → v4's active-seat un-heal saw an "active" token and
+un-hid it → re-hidden next 3s pass → list re-rendered every 3s
+(mydrafts.unhid.active.drafts repeating for the same id across 4 wallets).
+v5: completion sweep records ids in the banana-completed-drafts ledger (key
+already in logout/Clear All cleanup); un-heal never resurrects ledgered ids.
+Live seats still always un-hide. Also stops the 3s /api/debug/log spam the
+loop was generating per affected user.
