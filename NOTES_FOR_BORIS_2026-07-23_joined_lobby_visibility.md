@@ -73,3 +73,29 @@ Fix: on 404 for a filling-looking row, cross-check /api/drafts/league-players
 (RTDB): numPlayers>=1 → KEEP; 0 → prune. Verify-failure errs on keep.
 The server-hydration endpoint (v1/v2) stays — it heals rows already lost and
 covers cross-device. Deploying now.
+
+---
+## UPDATE 4 — FINAL root cause: Clear All blacklist (FIXED, d2615ae7)
+
+The full loop for the 10 refunded IND-TE-draft users: bugged draft sat stuck on
+their pages → they tapped Clear All → it backend-LEAVES every draft (the
+02:35:53-02:36:14Z leave bursts in Cloud Run logs are these batches) AND
+permanently blacklists every league id (explicit-clear exemption in the
+self-heal, f22fad19 5/22) → re-entry seated them back into the SAME reopened
+lobby ids → real seats the page refused to render, forever. Enter again → next
+lobby → also blacklisted. This defeated the server hydration too (blacklist
+filters at display time). Only the refund cohort cleared → only they were hit.
+
+Fix (d2615ae7): server truth beats the blacklist — any league the wallet
+currently holds a token for un-hides + leaves the explicit-clear ledger; a
+successful join strips its id from both lists immediately. Cleared dead drafts
+stay hidden (their tokens never re-confirm).
+
+⚠️ DESIGN OVERRIDE FYI: this reverses the deliberate "Clear All is never
+un-hidden" rule from f22fad19. Tonight proved the rule wrong for live seats.
+Also flagging: clearAllDrafts() batch-leaving every draft is itself spicy —
+one tap yanks seats from filling lobbies (bot-feed counts bounced tonight
+partly from this). Worth a product rethink.
+
+Shipped tonight, in order: v1 hydration (88c9c20a) → v2 drafting-visible
+(c37896d3) → v3 prune-404 guard (e2aaeb0f) → v4 blacklist fix (d2615ae7).
