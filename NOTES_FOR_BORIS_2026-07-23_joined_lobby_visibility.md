@@ -112,3 +112,14 @@ v5: completion sweep records ids in the banana-completed-drafts ledger (key
 already in logout/Clear All cleanup); un-heal never resurrects ledgered ids.
 Live seats still always un-hide. Also stops the 3s /api/debug/log spam the
 loop was generating per affected user.
+
+---
+## UPDATE 6 (v6, 94a5de7e): hydration purges hidden-lists for confirmed seats
+
+FC still couldn't see his LIVE draft (seat 9, BBB #246/fast-235) post-v5 —
+render logs show every other row rendering but never 235: his device's
+banana-hidden-drafts had the id (hidden during the flicker chaos), and the
+page-level un-heal wasn't rescuing it. v6 strips server-confirmed seat ids
+from banana-hidden-drafts + banana-cleared-drafts inside hydrateActiveDrafts
+itself (every mount/focus), completed-ledger excluded. Gave FC the direct
+draft-room?id= link as the immediate unblock.
