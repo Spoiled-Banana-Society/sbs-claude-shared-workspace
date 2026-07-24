@@ -33,3 +33,26 @@ there's other in-flight uncommitted work in the tree (Live Draft Activity line)
 left untouched.
 
 Deploying frontend now via clean-worktree Vercel CLI (git-committed code only).
+
+---
+## UPDATE 2 (10pm): root cause CONFIRMED from Go logs + v2 shipped
+
+Full story, log-verified (Cloud Run join logs, pick-for-pick matched to the live
+board): users WERE seated in the real draft the whole time — the drafting page
+just never showed the row, so they had "no way in." Two stacked causes:
+
+1. Cross-device/localStorage gap (fixed in v1): the page only lists drafts
+   joined ON that device.
+2. v1 was filling-only, so the row vanished the moment the draft filled and
+   started — the exact moment users need it. v2 (commit c37896d3) also returns
+   actively-drafting drafts (Go state/info: pick<150) and is DEPLOYED now.
+
+Amplifier discovered on the way: jetsonjets (0x466d) entered ~17 fast drafts
+today (every scanForPartialLeague after his first returned 0 → each entry
+seeded a fresh 1/10 lobby). Extra Enters from other users then landed in these
+ghosts ("only shows 2 people"), causing join/leave churn (0x09c1: ~6 joins +
+8 leaves in 8 min, passes refunded on leave). Nobody lost seats or passes.
+
+Watch item for Boris: leave on fast-draft-234 returned 200 at 02:42:41Z seconds
+before the draft locked, yet the roster kept 10 — possible leave-during-fill
+race, same family as the 7/22 wedge. Not urgent, worth a look.
