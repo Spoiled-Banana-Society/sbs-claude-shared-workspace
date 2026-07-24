@@ -56,3 +56,20 @@ ghosts ("only shows 2 people"), causing join/leave churn (0x09c1: ~6 joins +
 Watch item for Boris: leave on fast-draft-234 returned 200 at 02:42:41Z seconds
 before the draft locked, yet the roster kept 10 — possible leave-during-fill
 race, same family as the 7/22 wedge. Not urgent, worth a look.
+
+---
+## UPDATE 3: TRUE root cause found — prune deleted filling rows (FIXED, e2aaeb0f)
+
+Richard's observation (the 10 refunded IND-TE-draft users were the affected
+cohort) led to it. Verified live: Go state/info returns HTTP 404 for a fast
+draft's ENTIRE filling life (state only created at fill). pruneMissingDrafts
+(a5b7eb1d, 5/26) treats 404 on a >30s-old row as "deleted" → the drafting page
+was deleting users' own just-joined rows whenever they returned mid-fill.
+Dormant for 2 months (fast fills took minutes, users sat in the room; slow
+drafts pre-create state since 7/19). Tonight's ~1h fills exposed it; the
+refunded 10 re-entered during that window → hit hardest.
+
+Fix: on 404 for a filling-looking row, cross-check /api/drafts/league-players
+(RTDB): numPlayers>=1 → KEEP; 0 → prune. Verify-failure errs on keep.
+The server-hydration endpoint (v1/v2) stays — it heals rows already lost and
+covers cross-device. Deploying now.
