@@ -5,9 +5,15 @@ export const runtime = 'nodejs';
 import { createHash } from 'crypto';
 
 import { json } from '@/lib/api/routeUtils';
-import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminDatabase, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, laneDraftsLeft, lanePct } from '@/lib/rollingLanes';
+import {
+  LIVE_ACTIVITY_ENABLED,
+  LIVE_ACTIVITY_RTDB_PATH,
+  LIVE_ACTIVITY_STALE_MS,
+  formatLiveActivity,
+} from '@/lib/liveActivity';
 
 /**
  * GET /api/bot/league?include_unfilled=true
@@ -196,8 +202,37 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
   };
 }
 
+// The live draft-activity snapshot appended to fill-alert pings — read from the
+// SAME RTDB node the in-app line subscribes to, so every surface reads identically.
+// Returns '' (append nothing) when the feature is off, the value is missing/stale,
+// or there's nothing to show (0 fast drafts / no valid round). It's a SNAPSHOT: it
+// only refreshes on pings that already fire for a real reason (see the injection
+// logic in loadLeagues), so a round ticking up NEVER causes an extra ping.
+async function loadActivitySuffix(): Promise<string> {
+  if (!LIVE_ACTIVITY_ENABLED) return '';
+  try {
+    const snap = await getAdminDatabase().ref(LIVE_ACTIVITY_RTDB_PATH).get();
+    const v = snap.val() as { count?: unknown; round?: unknown; updatedAt?: unknown } | null;
+    if (!v || typeof v !== 'object') return '';
+    const count = Number(v.count) || 0;
+    const round = Number(v.round) || 0;
+    const updatedAt = Number(v.updatedAt) || 0;
+    if (count < 1 || round < 1) return '';
+    // Fail-closed: a stalled/dead aggregator appends nothing, not a frozen line.
+    if (Date.now() - updatedAt > LIVE_ACTIVITY_STALE_MS) return '';
+    // Leading blank line so it sits under the odds with a gap (Discord + X).
+    return `\n\n${formatLiveActivity(count, round)}`;
+  } catch (err) {
+    // A bad read must never take the feed down — just append nothing.
+    logger.error('[api/bot/league] live-activity read failed', err);
+    return '';
+  }
+}
+
 async function loadLeagues(): Promise<AbbrevLeague[]> {
   const db = getAdminFirestore();
+  // Kick off the activity read in parallel with the Firestore reads below.
+  const activitySuffixPromise = loadActivitySuffix();
   const stateRef = db.collection('bot_feed_state').doc('state');
   const [trackerSnap, snap, stateSnap] = await Promise.all([
     db.collection('drafts').doc('draftTracker').get(),
@@ -341,6 +376,9 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     : NO_ODDS;
   const pendingOddsLine = buildOddsLine(pendingOdds);
 
+  // Snapshot of the live draft-activity line, resolved once for this poll.
+  const activitySuffix = await activitySuffixPromise;
+
   const leagues: AbbrevLeague[] = [];
   for (const p of parsed) {
     const { numPlayers, maxPlayers, draftType, isFilled, label, rawName, leagueNumber } = p;
@@ -395,12 +433,18 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
 
     let displayName = base;
+    // The activity snapshot is appended to the SERVED text but never to `base`,
+    // so it can't affect change-detection: a round ticking up won't re-ping. It
+    // refreshes only when a real change recomputes the text (below); the
+    // no-change path replays stored.final byte-for-byte (its snapshot frozen in).
+    let appendActivity = true;
     if (stateOk && !isFilled) {
       const stored = state.lastServed[p.docId];
       if (stored && stored.numPlayers === numPlayers && stored.base === base) {
         // Nothing changed since the last poll — serve the exact same text
-        // (repeat bananas included) so the bot stays silent.
+        // (repeat bananas + frozen activity snapshot included) so the bot stays silent.
         displayName = stored.final;
+        appendActivity = false;
       } else {
         // Text changed → the bot will post this. If this exact message
         // (remaining count + text) was already served recently, suffix one
@@ -409,6 +453,8 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
         const prior = state.seen[key]?.n ?? 0;
         displayName =
           prior > 0 ? `${base}\n\n${'🍌'.repeat(Math.min(prior, REPEAT_BANANA_CAP))}` : base;
+        displayName += activitySuffix; // bake the snapshot into the fresh, stored text
+        appendActivity = false;
         state.seen[key] = { n: prior + 1, at: Date.now() };
         state.lastServed[p.docId] = { numPlayers, base, final: displayName };
         stateDirty = true;
@@ -418,11 +464,19 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       delete state.lastServed[p.docId];
       stateDirty = true;
     }
+    // Filled posts and the degraded (no-ledger) path fall through with
+    // displayName === base; append the snapshot here. (These fire once, so no
+    // dedup bookkeeping is needed.)
+    if (appendActivity) displayName += activitySuffix;
 
     leagues.push({
       leagueId: p.leagueId,
       displayName,
-      displayNameClean: draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart,
+      // displayNameClean carries the snapshot too for when Discord's template is
+      // pointed at it; it's recomputed fresh each poll (no dedup), so a consumer
+      // that reposts on any byte-change must key on the name/odds, not this whole
+      // string. Unused by the bot today, so zero current repost risk.
+      displayNameClean: (draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart) + activitySuffix,
       numPlayers,
       maxPlayers,
       draftType,

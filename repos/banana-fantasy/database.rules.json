@@ -10,6 +10,11 @@
     },
     "userEvents": {
       "$userId": { ".read": true, ".write": false }
+    },
+    "globalChatPing": { ".read": true, ".write": false },
+    "presence": { ".read": true, ".write": false },
+    "stats": {
+      "liveDraftActivity": { ".read": true, ".write": false }
     }
   }
 }
