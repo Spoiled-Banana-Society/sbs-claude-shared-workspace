@@ -89,6 +89,47 @@ export function eventNotificationContent(
         // No stable id in payload — server fires once per buy; auto-id.
       };
     }
+    case 'deposit-received': {
+      // The ONE deposit-moment bell (Boris 2026-07-24): confirms the money is
+      // in, folds in whatever this deposit came with (free-pass front / fee
+      // milestone / pending first-purchase spins) so deposit day is a single
+      // ping — creditCardDeposit suppresses the separate free-pass bell when
+      // it fires this. Copy scales with amount; spins line only when a NEW
+      // player has budgeted spins waiting (see computeDepositBudgetGrant).
+      const amount = payload.amountUsd ?? 0;
+      const spins = payload.spins ?? 0;
+      const freePasses = payload.freePasses ?? 0;
+      const title = `Thanks for depositing $${amount} — it's in your account`;
+      // Aim the spins line at the BALANCE — a first depositor also holds the
+      // fronted FREE pass, and entering with that pass earns no spins (spins
+      // fire when balance is SPENT). "Using your $X balance" points them at
+      // the action that actually pays (Boris 2026-07-24).
+      const spinsLine = spins > 0
+        ? (spins <= 2
+          ? ` Enter a draft using your $${amount} balance to receive your ${spins} Free Spins.`
+          : ` Enter drafts using your $${amount} balance to receive your ${spins} Free Spins.`)
+        : '';
+      let lead: string;
+      if (freePasses > 0 && payload.fronted) {
+        lead = 'You also got a FREE Paid Draft Pass — we cover your first card fee, and every $25 in card fees earns another, automatically.';
+      } else if (freePasses > 0) {
+        lead = freePasses === 1
+          ? 'Your card fees just earned you another FREE Paid Draft Pass.'
+          : `Your card fees just earned you ${freePasses} more FREE Paid Draft Passes.`;
+      } else {
+        lead = spins > 0 ? '' : 'Jump into a draft — your balance covers entries in one tap.';
+      }
+      return {
+        type: 'promo',
+        title,
+        message: `${lead}${spinsLine}`.trim(),
+        link: '/drafting',
+        dedupeKey: `deposit-${payload.txHash || `${userId}-${amount}`}`,
+        // Money-in moment: 'bag' (distinct from 'ticket' purchases and 'gift'
+        // free-draft awards).
+        icon: 'bag',
+      };
+    }
     case 'promo-card-free-draft': {
       const count = payload.awardedCount ?? 1;
       // Fronted = the first-card-purchase bonus draft. Explain the program:

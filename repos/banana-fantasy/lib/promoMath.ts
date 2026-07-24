@@ -30,6 +30,38 @@ export function classicFirstPurchaseSpins(quantity: number): number {
   return Math.floor(quantity / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN);
 }
 
+export interface DepositBudgetGrant {
+  /** Spins to credit for THIS purchase. */
+  spins: number;
+  /** Passes of the budget consumed by this purchase. */
+  passesUsed: number;
+  /** True when the budget is now fully consumed → mark the bonus granted. */
+  exhausted: boolean;
+}
+
+/**
+ * Deposit-budget first-purchase grant (NEW players who DEPOSITED first).
+ * Their first deposit sets a pass budget (deposit ÷ $25) and EVERY pass they
+ * subsequently buy earns FIRST_PURCHASE_SPINS_PER_PASS spins until the budget
+ * is used up — so the deposit-time bell ("your $50 → 4 Free Spins") is always
+ * exactly honored even when they enter drafts one at a time (each entry is its
+ * own purchase; the classic one-transaction rule would pay only the first).
+ */
+export function computeDepositBudgetGrant(
+  budget: number,
+  used: number,
+  quantity: number,
+): DepositBudgetGrant {
+  if (!Number.isFinite(budget) || budget <= 0) return { spins: 0, passesUsed: 0, exhausted: false };
+  const remaining = Math.max(0, Math.floor(budget) - Math.max(0, Math.floor(used)));
+  const credit = Math.min(Math.max(0, Math.floor(quantity)), remaining);
+  return {
+    spins: credit * FIRST_PURCHASE_SPINS_PER_PASS,
+    passesUsed: credit,
+    exhausted: remaining - credit <= 0,
+  };
+}
+
 export interface FirstPurchaseGrant {
   /** Whether the one-time bonus should be marked consumed. */
   consume: boolean;

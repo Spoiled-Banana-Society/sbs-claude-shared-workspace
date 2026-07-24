@@ -48,6 +48,10 @@ export type StreamEventType =
   | 'first-purchase-unlocked'
   | 'referral-milestone'
   | 'promo-card-free-draft'
+  // Card deposit verified in the user's account — the "your money's in" bell,
+  // with the pending first-purchase spins (and any free-pass front) folded in
+  // so deposit day is ONE ping, not a stack.
+  | 'deposit-received'
   // Content-less "a new persisted notification exists — refetch the bell"
   // ping. Fired by createNotification (lib/queueNotifications.ts) so the
   // server-backed notification inbox updates in ~100ms across every device.
@@ -76,6 +80,12 @@ export interface StreamEventPayload {
    * the program instead of the "$25 reached" copy.
    */
   fronted?: boolean;
+  /** deposit-received: verified deposit amount in whole USD. */
+  amountUsd?: number;
+  /** deposit-received: free Paid Draft Passes earned by this deposit's fees. */
+  freePasses?: number;
+  /** deposit-received: the on-chain arrival tx — content-stable dedupe. */
+  txHash?: string;
   /**
    * For the `'notification'` ping: the bell entry's content, so receiving
    * devices render it INSTANTLY without a refetch round-trip. Non-sensitive

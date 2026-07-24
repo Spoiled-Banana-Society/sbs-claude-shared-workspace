@@ -41,7 +41,7 @@ import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
-import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { applyCompletionGate, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { runInBackground } from '@/lib/serverBackground';
 
@@ -1389,20 +1389,42 @@ async function _incrementMintPromosInTx(
   // (interconnection).
   let firstPurchaseSpinsEarned = 0;
   if (opts.handleFirstPurchase && userSnap) {
-    const userData = userSnap.data() as (User & { isReturningPlayer?: boolean }) | undefined;
+    const userData = userSnap.data() as (User & {
+      isReturningPlayer?: boolean;
+      firstDepositPassBudget?: number;
+      firstDepositPassesUsed?: number;
+    }) | undefined;
     const isReturning = userData?.isReturningPlayer === true || isReturningWalletSync(userRef.id);
-    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
-    if (grant.consume) {
-      tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
-      if (grant.spins > 0) {
-        const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
-        if (fpDoc) {
-          const fpPromo = deepClone(fpDoc.data() as Promo);
-          fpPromo.claimCount = (fpPromo.claimCount || 0) + grant.spins;
-          recalcPromoClaimable(fpPromo);
-          tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
-          firstPurchaseSpinsEarned = grant.spins;
-        }
+    const creditFpSpins = (spins: number) => {
+      const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
+      if (!fpDoc) return;
+      const fpPromo = deepClone(fpDoc.data() as Promo);
+      fpPromo.claimCount = (fpPromo.claimCount || 0) + spins;
+      recalcPromoClaimable(fpPromo);
+      tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
+      firstPurchaseSpinsEarned = spins;
+    };
+    const depositBudget = userData?.firstDepositPassBudget ?? 0;
+    if (!userData?.firstPurchaseBonusGranted && !isReturning && depositBudget > 0) {
+      // Deposit-first NEW player: the first deposit set a pass budget, and
+      // every pass bought earns 2 spins until it's used up — this keeps the
+      // deposit-time bell promise exact even across one-at-a-time draft
+      // entries (each entry is its own purchase; the one-transaction rule
+      // below would pay only the first). See computeDepositBudgetGrant.
+      const used = userData?.firstDepositPassesUsed ?? 0;
+      const g = computeDepositBudgetGrant(depositBudget, used, quantity);
+      if (g.passesUsed > 0) {
+        tx.set(userRef, {
+          firstDepositPassesUsed: used + g.passesUsed,
+          ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
+        }, { merge: true });
+        if (g.spins > 0) creditFpSpins(g.spins);
+      }
+    } else {
+      const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
+      if (grant.consume) {
+        tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+        if (grant.spins > 0) creditFpSpins(grant.spins);
       }
     }
   }

@@ -9,6 +9,7 @@ import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { isReturningWalletSync } from '@/lib/returningUsers';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
 import { ApiError } from '@/lib/api/errors';
@@ -112,13 +113,17 @@ export async function creditCardDeposit(opts: {
   let earned = 0;
   let fronted = 0;
   let rolloverCents = 0;
+  // Pending first-purchase spins to promise in the deposit bell (NEW players
+  // only): their first deposit sets a pass budget — every pass bought with it
+  // earns 2 spins (see computeDepositBudgetGrant in the purchase award path).
+  let pendingSpins = 0;
 
   for (const cand of candidates) {
     const markerRef = db.collection(CARD_FEE_CREDIT_COLLECTION).doc(`deposit_${cand.txHash}_${cand.logIndex}`);
     const feeCents = feeForDepositUsd(cand.valueUsd);
     const res = await db.runTransaction(async (tx) => {
       const marker = await tx.get(markerRef);
-      if (marker.exists) return { duplicate: true, earned: 0, fronted: 0, rolloverCents: 0 };
+      if (marker.exists) return { duplicate: true, earned: 0, fronted: 0, rolloverCents: 0, pendingSpins: 0 };
       const userSnap = await tx.get(userRef);
       const udata = userSnap.data() ?? {};
       const cur = Math.max(0, (udata.cardFeeCreditCents as number | undefined) ?? 0);
@@ -126,7 +131,26 @@ export async function creditCardDeposit(opts: {
       const front = udata.cardFeeFrontGranted === true ? 0 : 1;
       const earnedNow = front + Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
       const rollover = credit % FREE_DRAFT_CREDIT_CENTS;
-      tx.set(userRef, { cardFeeCreditCents: rollover, cardFeeFrontGranted: true }, { merge: true });
+      // First deposit of a NEW player (bonus untouched, not returning): set
+      // the first-purchase pass budget from the verified amount, so the bell's
+      // spin promise ("$50 → 4 Free Spins") is exactly honored as they buy.
+      const isNewPlayer = udata.firstPurchaseBonusGranted !== true
+        && udata.isReturningPlayer !== true
+        && !isReturningWalletSync(wallet);
+      const existingBudget = Math.max(0, (udata.firstDepositPassBudget as number | undefined) ?? 0);
+      const usedBudget = Math.max(0, (udata.firstDepositPassesUsed as number | undefined) ?? 0);
+      let budgetUpdate: Record<string, number> = {};
+      let spinsPending = 0;
+      if (isNewPlayer) {
+        if (existingBudget === 0) {
+          const budget = Math.max(1, Math.floor(cand.valueUsd / 25));
+          budgetUpdate = { firstDepositPassBudget: budget };
+          spinsPending = budget * 2;
+        } else {
+          spinsPending = Math.max(0, existingBudget - usedBudget) * 2;
+        }
+      }
+      tx.set(userRef, { cardFeeCreditCents: rollover, cardFeeFrontGranted: true, ...budgetUpdate }, { merge: true });
       tx.set(markerRef, {
         source: 'deposit',
         txHash: cand.txHash,
@@ -141,13 +165,14 @@ export async function creditCardDeposit(opts: {
         status: earnedNow > 0 ? 'pending' : 'credited',
         createdAt: FieldValue.serverTimestamp(),
       });
-      return { duplicate: false, earned: earnedNow, fronted: front, rolloverCents: rollover };
+      return { duplicate: false, earned: earnedNow, fronted: front, rolloverCents: rollover, pendingSpins: spinsPending };
     });
     if (res.duplicate) continue; // already credited (e.g. client retry) — try an older transfer
     creditedTx = { txHash: cand.txHash, logIndex: cand.logIndex, from: cand.from, valueUsd: cand.valueUsd, feeCents };
     earned = res.earned;
     fronted = res.fronted;
     rolloverCents = res.rolloverCents;
+    pendingSpins = res.pendingSpins;
     break;
   }
 
@@ -222,10 +247,20 @@ export async function creditCardDeposit(opts: {
           depositAmountUsd: creditedTx.valueUsd,
         },
       }).catch((e) => logger.warn('depositCredit.reward_activity_failed', { userId: wallet, err: (e as Error).message }));
-      // Same synced bell + bottom toast the card-purchase reward fires.
-      pushStreamEventBg(wallet, 'promo-card-free-draft', { awardedCount: earned, fronted: fronted > 0 });
     }
   }
+
+  // The ONE deposit-moment bell (Boris 2026-07-24): "your money's in", with
+  // any free-pass award AND the pending first-purchase spins folded into a
+  // single ping — replaces the separate 'promo-card-free-draft' bell on the
+  // deposit path (the purchase-path version of that bell is untouched).
+  pushStreamEventBg(wallet, 'deposit-received', {
+    amountUsd: Math.round(creditedTx.valueUsd),
+    spins: pendingSpins,
+    freePasses: earned,
+    fronted: fronted > 0,
+    txHash: creditedTx.txHash,
+  });
 
   return {
     credited: true,
