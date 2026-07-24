@@ -226,6 +226,44 @@ export function subscribeRealTimeDraftInfo(
 }
 
 /**
+ * The single live draft-activity summary the Go aggregator publishes to
+ * /stats/liveDraftActivity every ~10s. One value, read by every surface (lobby,
+ * draft room, and the fill-alert feed) so they can never disagree:
+ *   count     — FAST drafts currently in progress (slow drafts excluded)
+ *   round     — furthest-along round among them (the one about to wrap)
+ *   updatedAt — unix ms of the last write (present for debugging; the client
+ *               uses its own receipt time for fail-closed staleness, not this,
+ *               to avoid server/client clock skew).
+ */
+export interface LiveDraftActivity {
+  count: number;
+  round: number;
+  updatedAt: number;
+}
+
+/**
+ * Subscribe to the live draft-activity summary node. Coerces to numbers and
+ * passes null when the node is missing/malformed so callers can hide the line.
+ * This is ONE tiny node (not the whole /drafts subtree), so it's a cheap
+ * always-on subscription safe for high-traffic pages (lobby, draft room).
+ */
+export function subscribeLiveDraftActivity(
+  cb: (value: LiveDraftActivity | null) => void,
+): Unsubscribe {
+  return subscribeValue<Record<string, unknown>>('/stats/liveDraftActivity', (v) => {
+    if (!v || typeof v !== 'object') {
+      cb(null);
+      return;
+    }
+    cb({
+      count: Number(v.count) || 0,
+      round: Number(v.round) || 0,
+      updatedAt: Number(v.updatedAt) || 0,
+    });
+  });
+}
+
+/**
  * Subscribe to the shared randomize-bar anchor (epoch ms) the Go API writes at
  * fill-time. Lets every client run the "randomizing" bar on the same clock so
  * the bar + reveal line up across windows.

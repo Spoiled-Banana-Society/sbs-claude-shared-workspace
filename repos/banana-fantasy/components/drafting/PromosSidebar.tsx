@@ -84,7 +84,11 @@ export function PromosSidebar({
           return (
             <div
               onClick={() => onSelectPromo(promo)}
-              className="relative rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
+              // min-height (not fixed h-44): the Match Your Pick card carries an
+              // extra offer line + a tall countdown + CLAIM, which overran a rigid
+              // 176px box and jammed the clock onto "guaranteed at least 1". Letting
+              // it grow keeps the mt-auto bottom-pin intact for the shorter promos.
+              className="relative rounded-[20px] p-5 min-h-[11rem] bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
             >
               {promo.isNew && (
                 <span className="absolute top-2 right-2 px-2 py-0.5 bg-banana text-[#1d1d1f] text-[10px] font-bold rounded-full tracking-wide">
@@ -120,7 +124,9 @@ export function PromosSidebar({
                 {/* Chase Your Pick — bottom row: live countdown, plus (once a draft
                     locks a pick) the slot, attempts, and next-hit Spins. */}
                 {isChase && (
-                  <div className="mb-2 flex flex-col items-center gap-0.5">
+                  // mt-3 guarantees a gap above the clock even when the card has
+                  // grown to fit its content and mt-auto has no slack to give.
+                  <div className="mt-3 mb-2 flex flex-col items-center gap-0.5">
                     {chase?.active && (
                       <div className="flex items-center justify-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
                         <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>

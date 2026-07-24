@@ -273,6 +273,23 @@ export function useEnterDraft() {
         });
       });
 
+    // A successful join is fresh explicit intent: make sure this draft id is
+    // OFF the hidden/cleared blacklists before persisting the row. Without
+    // this, re-entering a lobby id you'd previously "Clear All"-ed left the
+    // new seat permanently invisible on the drafting page (2026-07-23 wave —
+    // Clear All leaves drafts backend-side, the router re-seats you into the
+    // same reopened lobby id, and the blacklist then hides your real seat).
+    try {
+      for (const key of ['banana-hidden-drafts', 'banana-cleared-drafts']) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const ids: string[] = JSON.parse(raw);
+        if (Array.isArray(ids) && ids.includes(newId)) {
+          localStorage.setItem(key, JSON.stringify(ids.filter((i) => i !== newId)));
+        }
+      }
+    } catch { /* non-fatal — the self-heal poll un-hides on next pass */ }
+
     // Persist the draft so the room + leave flow have the exact token/passType.
     draftStore.addDraft({
       id: newId,

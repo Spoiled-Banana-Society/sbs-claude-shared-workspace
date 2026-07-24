@@ -34,6 +34,14 @@ export function useActiveDrafts(): DraftState[] {
     // Initial read
     refresh();
 
+    // Pull the wallet's server-side filling seats and backfill any this device
+    // never recorded locally (join on another device/session, or a raced local
+    // write). Add-only + rate-limited internally, so it can't clobber live rows
+    // or hammer the API. Subscriber `refresh` picks up any inserted rows.
+    draftStore.hydrateActiveDrafts().catch(() => {
+      // Non-fatal — the local view stays as-is if hydration fails.
+    });
+
     // Prune drafts the backend has deleted — fires on every mount of the
     // drafting page. Conservative: only 404s + only drafts older than 30s.
     // 5xx / network errors leave the cache alone. Subscriber `refresh`
@@ -51,13 +59,18 @@ export function useActiveDrafts(): DraftState[] {
     };
     window.addEventListener('storage', onStorage);
 
-    // Re-read when window regains focus (catches anything missed)
-    window.addEventListener('focus', refresh);
+    // Re-read when window regains focus (catches anything missed), and re-pull
+    // server seats — hydrate is rate-limited internally so refocus churn is safe.
+    const onFocus = () => {
+      refresh();
+      draftStore.hydrateActiveDrafts().catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
 
     return () => {
       unsub();
       window.removeEventListener('storage', onStorage);
-      window.removeEventListener('focus', refresh);
+      window.removeEventListener('focus', onFocus);
     };
   }, [refresh]);
 

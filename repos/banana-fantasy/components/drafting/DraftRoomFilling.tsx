@@ -6,6 +6,7 @@ import { shouldShowPlayerCount } from '@/lib/draftRoomLobby';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { draftBandBackground, draftBandShadow } from '@/lib/draftBandStyle';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { bananaPlaceholderName } from '@/utils/helpers';
 
@@ -257,6 +258,15 @@ export function DraftRoomFilling({
             </span>
           )}
         </div>
+
+        {/* "Keep waiting" nudge — other drafts in progress + furthest round.
+            Hidden when nothing's live or the flag is off. Not uppercase/bold
+            like the count above, so wrap outside that styling context. */}
+        {!isRandomizing && (
+          <div className="flex justify-center normal-case mt-3">
+            <LiveDraftActivityLine />
+          </div>
+        )}
 
         {controls}
       </div>

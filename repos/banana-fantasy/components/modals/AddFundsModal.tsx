@@ -2,12 +2,14 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useFundWallet, usePrivy } from '@privy-io/react-auth';
+import { useFiatOnramp, useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
 import type { Address } from 'viem';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
 import { CardMethodsGraphic } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance, waitForUsdcArrival } from '@/lib/contracts/bbb4';
+import { getNySource } from '@/lib/onchain/cctp';
+import { runNyDeposit } from '@/lib/nyBuyFlow';
 import { DEPOSIT_PRESETS_USD } from '@/lib/deposits';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { clientLog } from '@/lib/clientLog';
@@ -60,6 +62,14 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
       logger.debug('[AddFunds] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
+  // NY deposit branch only — MoonPay blocks USDC-on-Base in New York, so NY
+  // depositors buy on the NY source chain (Optimism) and we bridge to their own
+  // Base wallet. Legacy fundWallet can't encode USDC on Optimism (falls back to
+  // native ETH) — useFiatOnramp is the one Privy path that can (same as the
+  // buy-passes NY branch). Hooks are inert for everyone else.
+  const { fund: fundFiatOnramp } = useFiatOnramp();
+  const { signTypedData } = useSignTypedData();
+  const { wallets } = useWallets();
 
   const [step, setStep] = useState<Step>('amount');
   const [amount, setAmount] = useState<number>(DEPOSIT_PRESETS_USD[0]); // default $25 (Richard 2026-07-21)
@@ -130,19 +140,70 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
         // resolves for the common (low prior balance) case.
       }
 
-      const result = await fundWallet({
-        address: walletAddress,
-        options: {
-          chain: BASE_SEPOLIA,
-          amount: String(effectiveAmount),
-          asset: 'USDC',
-          defaultFundingMethod: 'card',
-          card: { preferredProvider: 'moonpay' },
-        },
-      });
-      if ((result as { status?: string } | undefined)?.status === 'cancelled' || cancelledRef.current) {
-        setStep('amount');
-        return;
+      // NY detection — decided server-side; returns ny:false unless the caller
+      // is a NY buyer AND the flag is on, so this is a no-op for everyone else
+      // (they stay on the exact Base flow below). Must send the Bearer token —
+      // the route resolves the user via getPrivyUser (Authorization header only),
+      // so an unauthenticated fetch always returns ny:false (the bug that once
+      // kept the buy-passes NY branch from ever firing).
+      const nyToken = await getAccessToken();
+      const nyStatus = await fetch('/api/user/ny-status', {
+        headers: nyToken ? { Authorization: `Bearer ${nyToken}` } : {},
+      }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const isNy = !!nyStatus?.ny;
+
+      if (isNy) {
+        // MoonPay blocks USDC-on-Base (and Arbitrum) in NY, so buy on the NY
+        // source chain via the fiat-onramp API, then sweep + CCTP-bridge it ALL
+        // to the depositor's own Base wallet server-side. useFiatOnramp charges
+        // a FIAT amount with MoonPay's fee taken OUT of it, so gross the fiat up
+        // (same formula as the buy-passes NY branch) so the user RECEIVES their
+        // chosen amount — Base depositors pay the same fee, just added on top.
+        const nyFiatAmount = (effectiveAmount + Math.max(4.9, effectiveAmount * 0.045)).toFixed(2);
+        try {
+          const fr = await fundFiatOnramp({
+            source: { assets: ['usd'], defaultAsset: 'usd' },
+            destination: { asset: 'usdc', chain: getNySource().caip2, address: walletAddress },
+            environment: 'production',
+            defaultAmount: nyFiatAmount,
+          });
+          clientLog('payment', 'deposit_funding_result', { wallet: walletAddress, status: fr.status, ny: true });
+        } catch {
+          // User closed the onramp before paying — nothing charged, reset quietly.
+          clientLog('payment', 'deposit_funding_cancelled', { wallet: walletAddress, ny: true });
+          setStep('amount');
+          return;
+        }
+        if (cancelledRef.current) return;
+        // Wait for the USDC on the source chain, sign the sweep permit
+        // (embedded = silent), and let the server bridge it to their Base
+        // wallet. Then FALL THROUGH to the same Base arrival wait as everyone
+        // else — the bridged USDC landing is what resolves it.
+        setStep('waiting');
+        await runNyDeposit({
+          user: walletAddress as Address,
+          depositCost: BigInt(effectiveAmount) * 1_000_000n,
+          signTypedData: signTypedData as unknown as Parameters<typeof runNyDeposit>[0]['signTypedData'],
+          wallets: wallets as unknown as Parameters<typeof runNyDeposit>[0]['wallets'],
+          getAccessToken,
+          isCancelled: () => cancelledRef.current,
+        });
+        if (cancelledRef.current) return;
+      } else {
+        const result = await fundWallet({
+          address: walletAddress,
+          options: {
+            chain: BASE_SEPOLIA,
+            amount: String(effectiveAmount),
+            asset: 'USDC',
+            defaultFundingMethod: 'card',
+            card: { preferredProvider: 'moonpay' },
+          },
+        });
+        if ((result as { status?: string } | undefined)?.status === 'cancelled' || cancelledRef.current) {
+          setStep('amount');
+          return;
+        }
       }
 
       setStep('waiting');

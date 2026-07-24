@@ -135,8 +135,34 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal, walletAddress: authWalletAddress } = useAuth();
   const { getAccessToken } = usePrivy();
+
+  // Identity gate ("screen door"): if someone is logged in as a DIFFERENT
+  // wallet than the one this draft belongs to (?wallet=), they opened it via a
+  // crafted/shared link and could otherwise act as that wallet — bounce them to
+  // the lobby. This stops the casual URL-swap case inside the app.
+  //
+  // It FAILS OPEN in every uncertain state, so a legitimate drafter is NEVER
+  // blocked:
+  //   - waits out auth hydration (authLoading) — no decision while Privy settles
+  //   - ignores the logged-out case (the full-screen login gate already covers it)
+  //   - does nothing until useAuth has actually resolved a wallet (fail open)
+  // Only a POSITIVE mismatch — logged in, settled, resolved wallet != ?wallet=
+  // — triggers the bounce. Mirrors the wheel-pass ownership gate above. Note
+  // this is a client-side deterrent only (a "screen door"): it stops the casual
+  // in-app URL-swap case, but not a request sent directly to the pick endpoint.
+  // A fully authoritative fix would verify the caller's token server-side on the
+  // pick route; that is intentionally not implemented here.
+  useEffect(() => {
+    if (!walletParam || spectateParam) return;      // nothing to gate / intentional spectate
+    if (authLoading || !isLoggedIn) return;         // still settling, or logged-out (login gate handles that)
+    const me = authWalletAddress?.toLowerCase();
+    if (!me) return;                                // wallet not resolved yet — fail open, never bounce
+    if (me !== walletParam.toLowerCase()) {
+      router.replace('/drafting');
+    }
+  }, [walletParam, spectateParam, authLoading, isLoggedIn, authWalletAddress, router]);
   const {
     playSpinningSound,
     playReelStop,

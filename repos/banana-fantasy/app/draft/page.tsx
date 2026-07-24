@@ -4,6 +4,7 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
+import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
 import { PromosSidebar } from '@/components/drafting/PromosSidebar';
@@ -224,6 +225,10 @@ export default function DraftingPage() {
           </div>
         )}
       </div>
+
+      {/* "Keep waiting" nudge — how many fast drafts are going + the furthest
+          round. Renders nothing when the flag is off or nothing's live. */}
+      <LiveDraftActivityLine className="-mt-4 mb-6" />
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
