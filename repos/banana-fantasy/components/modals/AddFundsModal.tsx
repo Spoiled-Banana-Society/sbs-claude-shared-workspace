@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { CardMethodsGraphic } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance, waitForUsdcArrival } from '@/lib/contracts/bbb4';
 import { getNySource } from '@/lib/onchain/cctp';
+import { getOptimismUsdcBalance } from '@/lib/onchain/nyOptimismClient';
 import { runNyDeposit } from '@/lib/nyBuyFlow';
 import { DEPOSIT_PRESETS_USD } from '@/lib/deposits';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
@@ -153,32 +154,47 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
       const isNy = !!nyStatus?.ny;
 
       if (isNy) {
-        // MoonPay blocks USDC-on-Base (and Arbitrum) in NY, so buy on the NY
-        // source chain via the fiat-onramp API, then sweep + CCTP-bridge it ALL
-        // to the depositor's own Base wallet server-side. useFiatOnramp charges
-        // a FIAT amount with MoonPay's fee taken OUT of it, so gross the fiat up
-        // (same formula as the buy-passes NY branch) so the user RECEIVES their
-        // chosen amount — Base depositors pay the same fee, just added on top.
-        const nyFiatAmount = (effectiveAmount + Math.max(4.9, effectiveAmount * 0.045)).toFixed(2);
+        // Claim the shared NY-deposit lock so the zero-tap auto-recovery
+        // (NyDepositAutoRecovery) can't sweep concurrently with this flow.
+        window.__nyDepositInFlight = true;
         try {
-          const fr = await fundFiatOnramp({
-            source: { assets: ['usd'], defaultAsset: 'usd' },
-            destination: { asset: 'usdc', chain: getNySource().caip2, address: walletAddress },
-            environment: 'production',
-            defaultAmount: nyFiatAmount,
-          });
-          clientLog('payment', 'deposit_funding_result', { wallet: walletAddress, status: fr.status, ny: true });
-        } catch {
-          // User closed the onramp before paying — nothing charged, reset quietly.
-          clientLog('payment', 'deposit_funding_cancelled', { wallet: walletAddress, ny: true });
-          setStep('amount');
-          return;
+        // RESUME path: if a prior NY attempt already delivered enough USDC to
+        // the source chain (paid, then the sheet closed before the sweep — the
+        // money just sits in THEIR wallet), skip MoonPay entirely and finish
+        // the sweep + bridge. One tap completes the deposit, no second charge.
+        const priorOpBalance = await getOptimismUsdcBalance(walletAddress as Address).catch(() => 0n);
+        const alreadyFunded = priorOpBalance >= BigInt(effectiveAmount) * 1_000_000n;
+        if (alreadyFunded) {
+          clientLog('payment', 'deposit_ny_resume', { wallet: walletAddress, opBalance: priorOpBalance.toString(), amountUsd: effectiveAmount });
+        } else {
+          // MoonPay blocks USDC-on-Base (and Arbitrum) in NY, so buy on the NY
+          // source chain via the fiat-onramp API, then sweep + CCTP-bridge it ALL
+          // to the depositor's own Base wallet server-side. useFiatOnramp charges
+          // a FIAT amount with MoonPay's fee taken OUT of it, so gross the fiat up
+          // (same formula as the buy-passes NY branch) so the user RECEIVES their
+          // chosen amount — Base depositors pay the same fee, just added on top.
+          const nyFiatAmount = (effectiveAmount + Math.max(4.9, effectiveAmount * 0.045)).toFixed(2);
+          try {
+            const fr = await fundFiatOnramp({
+              source: { assets: ['usd'], defaultAsset: 'usd' },
+              destination: { asset: 'usdc', chain: getNySource().caip2, address: walletAddress },
+              environment: 'production',
+              defaultAmount: nyFiatAmount,
+            });
+            clientLog('payment', 'deposit_funding_result', { wallet: walletAddress, status: fr.status, ny: true });
+          } catch {
+            // User closed the onramp before paying — nothing charged, reset quietly.
+            clientLog('payment', 'deposit_funding_cancelled', { wallet: walletAddress, ny: true });
+            setStep('amount');
+            return;
+          }
         }
-        if (cancelledRef.current) return;
-        // Wait for the USDC on the source chain, sign the sweep permit
-        // (embedded = silent), and let the server bridge it to their Base
-        // wallet. Then FALL THROUGH to the same Base arrival wait as everyone
-        // else — the bridged USDC landing is what resolves it.
+        // Payment is COMMITTED (or already sitting on the source chain) — from
+        // here the collection MUST run to completion even if the sheet closes.
+        // Privy's onramp overlay closing can trip our Modal's close (seen live
+        // 2026-07-24: two NY deposits died 'cancelled' ~4s after 'submitted'),
+        // and an embedded wallet signs silently, so the sweep + bridge finish
+        // fine without any UI. Deliberately NOT passing isCancelled here.
         setStep('waiting');
         await runNyDeposit({
           user: walletAddress as Address,
@@ -186,9 +202,35 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
           signTypedData: signTypedData as unknown as Parameters<typeof runNyDeposit>[0]['signTypedData'],
           wallets: wallets as unknown as Parameters<typeof runNyDeposit>[0]['wallets'],
           getAccessToken,
-          isCancelled: () => cancelledRef.current,
         });
-        if (cancelledRef.current) return;
+        // The bridge ran synchronously server-side — the USDC is ALREADY in
+        // their Base wallet. Finish directly (balance, credit, done) instead of
+        // falling into the cancel-gated shared wait below, so a closed sheet
+        // can't skip the credit report or the funded callback.
+        clientLog('payment', 'deposit_funding_arrived', { wallet: walletAddress, amountUsd: effectiveAmount, ny: true });
+        void refreshBalance();
+        if (isEmbeddedWallet) {
+          void (async () => {
+            try {
+              const token = await getAccessToken();
+              if (!token) return;
+              await fetch('/api/deposits/card-credit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ amountUsd: effectiveAmount }),
+              });
+            } catch {
+              // Non-fatal — the deposit succeeded; credit is recoverable from
+              // the on-chain record if this report is ever missed.
+            }
+          })();
+        }
+        onFunded?.(effectiveAmount);
+        setStep('done');
+        return;
+        } finally {
+          window.__nyDepositInFlight = false;
+        }
       } else {
         const result = await fundWallet({
           address: walletAddress,

@@ -26,6 +26,7 @@ import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
+import { NyDepositAutoRecovery } from '@/components/NyDepositAutoRecovery';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -119,6 +120,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
+        {/* Zero-tap NY deposit recovery — silently finishes any NY web2 deposit
+            whose sweep+bridge died mid-job (money sitting on the source chain).
+            Renders nothing; embedded-wallet NY users only. */}
+        <NyDepositAutoRecovery />
         {/* First-purchase popup — opens DURING the "Generating your Digital
             Team" screen (Boris 2026-07-13: users are guaranteed to be watching
             it). Mounted UNCONDITIONALLY: the live unlock event fires at
