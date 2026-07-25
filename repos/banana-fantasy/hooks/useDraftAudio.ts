@@ -106,6 +106,44 @@ export function useDraftAudio() {
     } catch {}
   }, [initAudio]);
 
+  // Final-seconds urgency beep for YOUR pick clock — one per second at 3, 2, 1.
+  // Louder and pitched higher than playCountdownTick (the pre-draft tick), and
+  // rising each second so the last one reads as "now or never". Web Audio, not
+  // a .wav, so it isn't affected by iOS ignoring HTMLAudioElement.volume.
+  const playFinalCountdownTick = useCallback((secondsLeft: number) => {
+    try {
+      const ctx = initAudio();
+      const freq = secondsLeft <= 1 ? 1200 : secondsLeft === 2 ? 1000 : 850;
+      const t = ctx.currentTime;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.32, t + 0.008); // fast attack, no click
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      osc.start(t);
+      osc.stop(t + 0.16);
+
+      // Square harmonic an octave down gives it a hard edge so it still cuts
+      // through on a phone speaker.
+      const edge = ctx.createOscillator();
+      const edgeGain = ctx.createGain();
+      edge.connect(edgeGain);
+      edgeGain.connect(ctx.destination);
+      edge.type = 'square';
+      edge.frequency.value = freq / 2;
+      edgeGain.gain.setValueAtTime(0.0001, t);
+      edgeGain.gain.exponentialRampToValueAtTime(0.09, t + 0.008);
+      edgeGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      edge.start(t);
+      edge.stop(t + 0.1);
+    } catch {}
+  }, [initAudio]);
+
   const playWinSound = useCallback((isRare: boolean) => {
     try {
       const ctx = initAudio();
@@ -236,5 +274,5 @@ export function useDraftAudio() {
     newPickAudioRef.current = null;
   }, []);
 
-  return { playSpinningSound, playReelStop, playCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, resumeAudio, primeAudio, cleanup };
+  return { playSpinningSound, playReelStop, playCountdownTick, playFinalCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, resumeAudio, primeAudio, cleanup };
 }

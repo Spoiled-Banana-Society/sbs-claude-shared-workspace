@@ -135,12 +135,39 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal, walletAddress: authWalletAddress } = useAuth();
   const { getAccessToken } = usePrivy();
+
+  // Identity gate ("screen door"): if someone is logged in as a DIFFERENT
+  // wallet than the one this draft belongs to (?wallet=), they opened it via a
+  // crafted/shared link and could otherwise act as that wallet — bounce them to
+  // the lobby. This stops the casual URL-swap case inside the app.
+  //
+  // It FAILS OPEN in every uncertain state, so a legitimate drafter is NEVER
+  // blocked:
+  //   - waits out auth hydration (authLoading) — no decision while Privy settles
+  //   - ignores the logged-out case (the full-screen login gate already covers it)
+  //   - does nothing until useAuth has actually resolved a wallet (fail open)
+  // Only a POSITIVE mismatch — logged in, settled, resolved wallet != ?wallet=
+  // — triggers the bounce. Mirrors the wheel-pass ownership gate above. Note
+  // this is a client-side deterrent only (a "screen door"): it stops the casual
+  // in-app URL-swap case, but not a request sent directly to the pick endpoint.
+  // A fully authoritative fix would verify the caller's token server-side on the
+  // pick route; that is intentionally not implemented here.
+  useEffect(() => {
+    if (!walletParam || spectateParam) return;      // nothing to gate / intentional spectate
+    if (authLoading || !isLoggedIn) return;         // still settling, or logged-out (login gate handles that)
+    const me = authWalletAddress?.toLowerCase();
+    if (!me) return;                                // wallet not resolved yet — fail open, never bounce
+    if (me !== walletParam.toLowerCase()) {
+      router.replace('/drafting');
+    }
+  }, [walletParam, spectateParam, authLoading, isLoggedIn, authWalletAddress, router]);
   const {
     playSpinningSound,
     playReelStop,
     playCountdownTick,
+    playFinalCountdownTick,
     playWinSound,
     playYourTurnSound,
     resumeAudio,
@@ -1541,6 +1568,33 @@ function DraftRoomContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
+
+  // Final-seconds urgency beeps on YOUR pick clock: one at 3, one at 2, one at
+  // 1. Driven off the same bestTimeRemaining the visible clock renders, so the
+  // beep always lands on the number the user is looking at.
+  //
+  // Guard is MONOTONIC DESCENT per pick, not "sec === 3 || 2 || 1": the clock
+  // re-derives from the shared server pickEndTime and can bounce (RTDB resync,
+  // tab wake, clock skew). Only counting a strictly-lower value means a bounce
+  // back up can never replay a beep, and a skipped render (4 → 2) just drops
+  // the one we never saw instead of firing two at once.
+  const finalTickRef = useRef<{ pick: number; lastSec: number }>({ pick: -1, lastSec: Infinity });
+  useEffect(() => {
+    if (!isLiveMode || isMuted || phase !== 'drafting') return;
+    if (engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+
+    const state = finalTickRef.current;
+    const pick = engine.currentPickNumber;
+    if (state.pick !== pick) {
+      state.pick = pick;
+      state.lastSec = Infinity;
+    }
+
+    const sec = bestTimeRemaining;
+    if (sec >= state.lastSec) return; // no descent (or the clock bounced up)
+    state.lastSec = sec;
+    if (sec >= 1 && sec <= 3) playFinalCountdownTick(sec);
+  }, [isLiveMode, isMuted, phase, engine.draftStatus, engine.isUserTurn, engine.currentPickNumber, bestTimeRemaining, playFinalCountdownTick]);
 
   // iOS/PWA audio unlock. Draft sounds that fire on state changes (your-turn
   // ding, countdown ticks) can only play on mobile once they've been triggered
