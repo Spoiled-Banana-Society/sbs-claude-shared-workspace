@@ -360,8 +360,11 @@ const seedPromos: Promo[] = [
     },
   },
   {
-    // Chase Your Pick — limited-time (thru Sun 12pm PT). Draft, see your pick
-    // slot, then chase it again for escalating spins. Free + paid both count.
+    // Match Your Pick — PERMANENT (Boris 2026-07-25; no longer limited-time).
+    // Draft, see your pick slot, then chase it again for escalating spins.
+    // Base copy is PAID-ONLY; during the promo window getPromos rewrites it to
+    // "free drafts count too" (same de-paid injection daily-drafts/jackpot get),
+    // so it flips back on its own at the deadline with no deploy.
     id: 'pick-chase',
     type: 'pick-chase',
     title: 'Match Your Pick → up to 5 Spins',
@@ -374,13 +377,14 @@ const seedPromos: Promo[] = [
     // also keeps the card in its fixed order slot (after first-purchase) instead
     // of progress-bubbling above it when a chase is active.
     progressMax: 0,
-    isNew: true,
+    // NEW tag retired 2026-07-25 — the promo is permanent now, not a launch.
+    isNew: false,
     claimable: false,
     claimCount: 0,
     modalContent: {
       title: 'Match Your Pick → up to 5 Free Spins',
       explanation:
-        '• Your first draft locks your pick — the slot (1–10) you land when it fills. That starts your 24 hours.\n• Every draft after is an ATTEMPT to match it. Land that same slot again to win — the more attempts it takes, the bigger the reward:\n   · 1st attempt = 1 Spin\n   · 2nd attempt = 2 Spins\n   · 3rd attempt = 3 Spins\n   · 4th attempt = 4 Spins\n   · 5th attempt & beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• FREE and paid drafts both count.\n• Limited time — through Sunday 12pm PT.',
+        '• Your first draft locks your pick — the slot (1–10) you land when it fills. That starts your 24 hours.\n• Every draft after is an ATTEMPT to match it. Land that same slot again to win — the more attempts it takes, the bigger the reward:\n   · 1st attempt = 1 Spin\n   · 2nd attempt = 2 Spins\n   · 3rd attempt = 3 Spins\n   · 4th attempt = 4 Spins\n   · 5th attempt & beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• Paid Drafts Only.',
     },
   },
   {

@@ -31,19 +31,27 @@ export function ActiveDraftsList({
   const slowDrafts = regularDrafts.filter(d => d.draftSpeed === 'slow');
   const showSpeedHeaders = fastDrafts.length > 0 && slowDrafts.length > 0;
 
+  // Within every section, closest-to-filling sits on top (9/10 above 2/10
+  // above 1/10). Drafts that already filled and are past the fill bar count
+  // as 10 and lead the list. Sort on the LIVE count, not draft.players, so
+  // the order matches the number the row actually shows. Array.sort is
+  // stable, so same-count rows keep the store's order instead of shuffling.
   const renderRows = (drafts: Draft[], withExit: boolean) =>
-    drafts.map((draft) => (
-      <DraftRow
-        key={draft.id}
-        draft={draft}
-        live={getLiveState(draft)}
-        isCreating={creatingQueueDraft === draft.id}
-        onDraftClick={onDraftClick}
-        onExitDraft={withExit ? onExitDraft : undefined}
-        formatRelativeTime={formatRelativeTime}
-        formatCountdown={formatCountdown}
-      />
-    ));
+    drafts
+      .map((draft) => ({ draft, live: getLiveState(draft) }))
+      .sort((a, b) => (b.live.playerCount || 0) - (a.live.playerCount || 0))
+      .map(({ draft, live }) => (
+        <DraftRow
+          key={draft.id}
+          draft={draft}
+          live={live}
+          isCreating={creatingQueueDraft === draft.id}
+          onDraftClick={onDraftClick}
+          onExitDraft={withExit ? onExitDraft : undefined}
+          formatRelativeTime={formatRelativeTime}
+          formatCountdown={formatCountdown}
+        />
+      ));
 
   return (
     <>

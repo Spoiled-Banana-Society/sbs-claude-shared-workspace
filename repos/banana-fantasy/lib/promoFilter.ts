@@ -212,6 +212,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // New-user welcome card carries the NEW ribbon too (Boris 2026-07-12) —
     // forced here so already-seeded accounts match fresh seeds.
     if (p.type === 'new-user') return { ...p, isNew: true };
+    // Match Your Pick is PERMANENT now, not a launch (Boris 2026-07-25) — drop
+    // the NEW badge. Force-cleared rather than seed-only because every doc
+    // seeded during launch stored isNew:true, and the getPromos overlay does
+    // not copy isNew; without this those users keep the badge forever.
+    if (p.type === 'pick-chase') return { ...p, isNew: false };
     // Featured promo always carries the (big) NEW badge on every surface.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
       return { ...p, isNew: true, featured: true };

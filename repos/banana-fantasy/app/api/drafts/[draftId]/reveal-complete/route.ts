@@ -67,7 +67,7 @@ export async function POST(req: Request, { params }: { params: { draftId: string
         }
       }
 
-      // Chase Your Pick (limited-time, thru Sun 12pm PT): every HUMAN seat's own
+      // Chase Your Pick (limited-time, thru Sun midnight PT): every HUMAN seat's own
       // slot (1–10) advances their personal chase — set target on the first
       // draft, then match it to win the escalating spins. Free + paid both
       // count. Bots excluded (their wallets have no promo docs, but skip them
