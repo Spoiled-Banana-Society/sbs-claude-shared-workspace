@@ -827,9 +827,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             logic reads; refreshed on every stream ping. */}
         {cycle && (
           <div className="bg-bg-tertiary rounded-xl p-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-text-primary font-medium">Draft #{cycle.filledCount}</span>
-              <span className="text-text-muted text-xs">#{cycle.position} of {cycle.windowLength} this cycle</span>
+            {/* Position only — the global draft number (#2,6xx) read as a
+                second, unrelated counter next to it and just confused people
+                (Boris 2026-07-25). What matters is where the cycle stands. */}
+            <div className="mb-2">
+              <span className="text-text-primary font-medium">{cycle.position} of {cycle.windowLength} this cycle</span>
             </div>
             <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
               <div
