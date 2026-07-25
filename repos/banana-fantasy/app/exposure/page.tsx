@@ -102,19 +102,22 @@ export default function ExposurePage() {
   //
   // This used to match by position GROUP because roster entries had lost their
   // slot number ("LAC WR" for everyone). mapRosterToUiRoster now derives the
-  // real slot from playerId, so both sides speak "LAC WR1" and an exact match
-  // works. Slot-1 is still normalized ("LAC WR" ≡ "LAC WR1") to stay correct
-  // for any roster built before that fix / from legacy data.
+  // real slot from playerId, so both sides speak "LAC WR1" and match exactly.
+  //
+  // NO normalization: a bare "LAC WR" is NOT "LAC WR1" (Boris 2026-07-25).
+  // Receivers and backs ALWAYS carry a slot number (WR1/WR2/WR3, RB1/RB2) —
+  // only QB/TE/DST are bare, and those are bare on BOTH sides so they still
+  // compare equal. A bare WR/RB can only come from the missing-playerId
+  // fallback, i.e. we genuinely don't know the slot; listing it under WR1
+  // would be a guess that shows the user a team that doesn't hold that pick.
   const matchingLeagues = useMemo(() => {
     if (!selectedExposure) return [] as League[];
     const team = selectedExposure.team;
-    // "WR" → "WR1" so the two conventions compare equal.
-    const canonical = (slot: string) => (/\d$/.test(slot) ? slot : `${slot}1`);
-    const wantSlot = canonical(selectedExposure.position.toUpperCase());
+    const wantSlot = selectedExposure.position.toUpperCase();
     return leagues.filter(l =>
       l.roster.some(r => {
         const [rTeam, rSlot = ''] = r.teamPosition.split(' ');
-        return rTeam === team && canonical(rSlot.toUpperCase()) === wantSlot;
+        return rTeam === team && rSlot.toUpperCase() === wantSlot;
       }),
     );
   }, [leagues, selectedExposure]);

@@ -163,7 +163,11 @@ function mapRosterToUiRoster(roster?: ApiDraftToken['roster']): RosterPlayer[] {
         const suffix = pid.slice(dash + 1).toUpperCase();
         return suffix.startsWith(slotPrefix) ? suffix : null;
       })();
-      const slot = slotFromId ?? (idx === 0 ? slotPrefix : `${slotPrefix}${idx + 1}`);
+      // No playerId ⇒ the slot is genuinely unknown. Fall back to the bare
+      // group ("WR") rather than inventing a number from the array index —
+      // index is draft order, so `WR${idx+1}` would label a LAR-WR2 drafted
+      // 4th as "WR4" and make it match the wrong slot everywhere.
+      const slot = slotFromId ?? slotPrefix;
       out.push({
         slot,
         teamPosition: `${p.team} ${slot}`,
