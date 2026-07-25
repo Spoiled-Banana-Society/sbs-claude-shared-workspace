@@ -144,7 +144,7 @@ function mapRosterToUiRoster(roster?: ApiDraftToken['roster']): RosterPlayer[] {
 
   const pushGroup = (slotPrefix: string, players: ApiRosterPlayer[] | undefined) => {
     if (!players?.length) return;
-    players.forEach((p, idx) => {
+    players.forEach((p) => {
       // The REAL slot lives in playerId ("LAC-WR1"), and nowhere else:
       //  - `p.position` comes back UNDEFINED from /owner/{w}/draftToken/all, so
       //    the old `p.position || slotPrefix` always fell back to the position
