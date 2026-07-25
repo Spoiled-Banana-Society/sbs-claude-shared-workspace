@@ -1,9 +1,11 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
 
@@ -224,8 +226,48 @@ func (pick *PlayerStateInfo) UpdatePlayerInDraft(draftId string) error {
 	if pick.PlayerId == "" {
 		return fmt.Errorf("cannot update this pick in the draft player state as the pick object is nil")
 	}
-	// Routed through the timed wrapper (slow>2s WARN / failure ERROR with
-	// path+ms) — this exact write hit a 60s DeadlineExceeded on 2026-06-10
-	// and froze draft 2024-fast-draft-1381, invisibly.
-	return utils.Db.UpdateDocumentField(fmt.Sprintf("drafts/%s/state", draftId), "playerState", pick.PlayerId, pick)
+	// GUARD (2026-07-23, dup-pick incident BBB #240): playerState was the only
+	// pick store with NO conflict check — when a racing second commit landed for
+	// the same turn (buzzer manual pick vs auto-pick timer, or a redelivered
+	// auto-pick task), the summary/roster guards rejected the loser but this
+	// blind field write accepted it, stamping a SECOND player with the same
+	// PickNum. That player was owned here but on no roster and in no summary —
+	// invisible on the board and undraftable ("vanished"). 189 phantoms across
+	// 186 drafts were cleaned on 2026-07-23; this guard stops new ones.
+	//
+	// Same write as before (single field-path update), now read-guarded in a
+	// transaction that mirrors the other stores' guards:
+	//   - our own identical entry already present → replay → success. Keeps
+	//     mid-pick retries + the watchdog re-assert working (2026-06-10 rule:
+	//     every step treats its own replay as done).
+	//   - any OTHER player already owned with this PickNum → reject, no write.
+	// No ordering, lock, or advance changes — a loser here already returned an
+	// error from its roster write today; now it just doesn't leave a phantom.
+	docRef := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/state", draftId)).Doc("playerState")
+	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(docRef) // tx.Get, NOT ref.Get!
+		if err != nil {
+			return err
+		}
+		var state map[string]PlayerStateInfo
+		if err := doc.DataTo(&state); err != nil {
+			return err
+		}
+		if own, ok := state[pick.PlayerId]; ok && own.OwnerAddress == pick.OwnerAddress && own.PickNum == pick.PickNum {
+			// Replay of our own already-landed write — success, not a conflict.
+			return nil
+		}
+		for id, p := range state {
+			if id != pick.PlayerId && p.OwnerAddress != "" && p.PickNum == pick.PickNum {
+				fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"pick_playerstate_conflict_rejected","pickNum":%d,"incoming":"%s","holder":"%s","owner":"%s"}`+"\n",
+					draftId, pick.PickNum, pick.PlayerId, id, pick.OwnerAddress)
+				return fmt.Errorf("playerState conflict: pick %d already held by %s, rejecting %s", pick.PickNum, id, pick.PlayerId)
+			}
+		}
+		return tx.Update(docRef, []firestore.Update{{Path: pick.PlayerId, Value: pick}})
+	})
+	if err != nil {
+		return fmt.Errorf("error updating playerState field %s at drafts/%s/state: %w", pick.PlayerId, draftId, err)
+	}
+	return nil
 }

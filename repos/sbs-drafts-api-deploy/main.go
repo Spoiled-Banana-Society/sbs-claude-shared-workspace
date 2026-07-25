@@ -11,6 +11,7 @@ import (
 	draftActions "github.com/Spoiled-Banana-Society/sbs-drafts-api/draft-actions"
 	draftState "github.com/Spoiled-Banana-Society/sbs-drafts-api/draft-state"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/leagues"
+	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/owner"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/staging"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
@@ -55,6 +56,11 @@ func main() {
 	}
 
 	utils.NewDatabaseClient(false)
+
+	// Publish the live draft-activity summary (in-progress fast drafts + furthest
+	// round) to a single RTDB node every ~10s. Read-only, off the pick path,
+	// panic-isolated, fail-closed. Kill with LIVE_ACTIVITY_AGGREGATOR=off.
+	models.StartLiveActivityAggregator()
 
 	// Initialize Cloud Tasks client for auto-draft functionality
 	if err := utils.InitCloudTasksClient(false); err != nil {
