@@ -829,17 +829,20 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <div className="bg-bg-tertiary rounded-xl p-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-text-primary font-medium">Draft #{cycle.filledCount}</span>
-              <span className="text-text-muted text-xs">#{cycle.position} of 100 this cycle</span>
+              <span className="text-text-muted text-xs">#{cycle.position} of {cycle.windowLength} this cycle</span>
             </div>
             <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
-              <div className="h-full bg-jackpot rounded-full transition-all duration-500" style={{ width: `${cycle.position}%` }} />
+              <div
+                className="h-full bg-jackpot rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, (cycle.position / (cycle.windowLength || 100)) * 100)}%` }}
+              />
             </div>
             <p className="text-text-secondary text-sm">
               {cycle.tenLeft > 0
                 ? `${cycle.tenLeft} ${cycle.tenLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 10 Free Spins — up to 200 free drafts.`
                 : cycle.fiveLeft > 0
                 ? `${cycle.fiveLeft} ${cycle.fiveLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 5 Free Spins — up to 100 free drafts.`
-                : 'Bonus windows closed for this cycle — a fresh cycle (and the 10-Spin window) starts at the next 100.'}
+                : 'Bonus windows are closed for this cycle. The moment this cycle’s Jackpot lands, a fresh cycle opens and the 10-Spin window is live again.'}
             </p>
             {latest && (
               <p className="text-text-muted text-xs mt-2">

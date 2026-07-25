@@ -451,8 +451,19 @@ export interface Promo {
     dailyHistory?: { date: string; count: number }[];
     /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
     lifetimePaidDrafts?: number;
-    /** Jackpot promo: live cycle data stamped at read time. */
-    cycle?: { filledCount: number; position: number; tenLeft: number; fiveLeft: number };
+    /** Jackpot promo: live cycle data stamped at read time. `position` is
+     *  1-indexed within the JP lane's CURRENT window (which resets the draft
+     *  after a hit), not within a fixed block of 100. */
+    cycle?: {
+      filledCount: number;
+      position: number;
+      /** Window length, so the UI never hardcodes 100. */
+      windowLength: number;
+      /** Spins a jackpot hitting right now would pay: 10 / 5 / 0. */
+      reward: number;
+      tenLeft: number;
+      fiveLeft: number;
+    };
     /** Jackpot promo: most recent draw (social proof in the modal). */
     latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
   };

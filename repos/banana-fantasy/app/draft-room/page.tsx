@@ -167,6 +167,7 @@ function DraftRoomContent() {
     playSpinningSound,
     playReelStop,
     playCountdownTick,
+    playFinalCountdownTick,
     playWinSound,
     playYourTurnSound,
     resumeAudio,
@@ -1567,6 +1568,33 @@ function DraftRoomContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
+
+  // Final-seconds urgency beeps on YOUR pick clock: one at 3, one at 2, one at
+  // 1. Driven off the same bestTimeRemaining the visible clock renders, so the
+  // beep always lands on the number the user is looking at.
+  //
+  // Guard is MONOTONIC DESCENT per pick, not "sec === 3 || 2 || 1": the clock
+  // re-derives from the shared server pickEndTime and can bounce (RTDB resync,
+  // tab wake, clock skew). Only counting a strictly-lower value means a bounce
+  // back up can never replay a beep, and a skipped render (4 → 2) just drops
+  // the one we never saw instead of firing two at once.
+  const finalTickRef = useRef<{ pick: number; lastSec: number }>({ pick: -1, lastSec: Infinity });
+  useEffect(() => {
+    if (!isLiveMode || isMuted || phase !== 'drafting') return;
+    if (engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+
+    const state = finalTickRef.current;
+    const pick = engine.currentPickNumber;
+    if (state.pick !== pick) {
+      state.pick = pick;
+      state.lastSec = Infinity;
+    }
+
+    const sec = bestTimeRemaining;
+    if (sec >= state.lastSec) return; // no descent (or the clock bounced up)
+    state.lastSec = sec;
+    if (sec >= 1 && sec <= 3) playFinalCountdownTick(sec);
+  }, [isLiveMode, isMuted, phase, engine.draftStatus, engine.isUserTurn, engine.currentPickNumber, bestTimeRemaining, playFinalCountdownTick]);
 
   // iOS/PWA audio unlock. Draft sounds that fire on state changes (your-turn
   // ding, countdown ticks) can only play on mobile once they've been triggered

@@ -42,6 +42,7 @@ import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/rollingLanes';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { runInBackground } from '@/lib/serverBackground';
 
@@ -3461,67 +3462,70 @@ export async function announcePick10ExpansionIfActivated(): Promise<void> {
 // ==================== JACKPOT-HIT PROMO: RECORD WHEN USER LANDS IN A JACKPOT DRAFT ====================
 
 const JACKPOT_HIT_PROMO_ID = '4';
-const BATCH_SIZE = 100;
 
 /**
  * Bonus tiers for the jackpot promo:
- *   • slot 1–25  → 10 spins (early-batch hit)
+ *   • slot 1–25  → 10 spins (early-window hit)
  *   • slot 26–50 → 5 spins
  *   • slot 51–100 → 0 spins — NO bonus spin draw (Boris 2026-06-30). The jackpot
  *     draft still functions (league winner → finals); only the bonus spins are
- *     gated to the first 50 of each batch. awardJackpotDraw skips the entire draw
+ *     gated to the first 50 of each window. awardJackpotDraw skips the entire draw
  *     when this returns 0 (no winner, no credit, no bells, no receipt).
- * `position` is 1-indexed within the current batch (1..100).
+ * `position` is 1-indexed within the JP lane's current window (1..100).
+ * Delegates to lib/rollingLanes so the promo CARD advertises exactly the tiers
+ * the crediting path pays.
  */
-function jackpotSpinReward(position: number): number {
-  if (position >= 1 && position <= 25) return 10;
-  if (position >= 26 && position <= 50) return 5;
-  return 0;
-}
+const jackpotSpinReward = jpRewardForPosition;
 
 // (Legacy jackpotWinnerIndex + getDraftWinnerOwner helpers removed 2026-06-24 —
 // they only fed the retired recordJackpotHit path. The VRF draw winner is now
 // derived in awardJackpotDraw via deriveDrawWinnerIdx over the PAID list.)
 
 /**
- * Resolve the position-in-batch for the JP draft. Prefer reading the
- * draftTracker.FilledLeaguesCount counter (same source as
- * /api/batches/current); fall back to the last entry's position+1 if the
- * counter is unreadable. Slight drift if multiple drafts fill in parallel
- * is acceptable on staging.
+ * Read the JP lane inputs off draftTracker, then ask lib/rollingLanes where
+ * `draftNo` sits in its window. `draftNo` defaults to the draft that just
+ * filled (the crediting question: "which window did THIS jackpot land in?");
+ * pass `filled + 1` for the display question ("what would the NEXT jackpot
+ * pay?"). Falls back to a safe position 1 if the tracker is unreadable.
  */
-async function getCurrentBatchPosition(): Promise<number> {
+async function readJpCycle(draftNo?: number): Promise<JpCycleState & { filled: number }> {
+  const fallback = { ...computeJpCycle([], 0, 0, 1), filled: 0 };
   try {
     const db = getAdminFirestore();
     const snap = await db.collection('drafts').doc('draftTracker').get();
-    if (!snap.exists) return 1;
+    if (!snap.exists) return fallback;
     const d = snap.data() as {
       FilledLeaguesCount?: number;
       RollingStartDraft?: number;
       JackpotLeagueIds?: number[];
     } | undefined;
     const filled = Number(d?.FilledLeaguesCount ?? 0);
-    if (filled <= 0) return 1;
-    // ROLLING-LANE ERA (draft >= RollingStartDraft): "position" becomes the
-    // hit's 1-indexed spot within the JP lane's OWN window, replayed from the
-    // id array the same way lib/rollingLanes.ts does. The tracker already
-    // contains this hit (id == filled), so replay only the EARLIER hits to
-    // find the window this one landed in. Tiers (1-25 → 10 spins, 26-50 → 5)
-    // carry over unchanged, now window-relative (Boris 2026-07-20).
+    if (filled <= 0) return fallback;
     const rollingStart = Number(d?.RollingStartDraft ?? 0);
-    if (rollingStart > 0 && filled >= rollingStart) {
-      const priorHits = (Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [])
-        .filter((id) => Number(id) >= rollingStart && Number(id) < filled);
-      const { replayJpLane } = await import('@/lib/rollingLanes');
-      const windowStart = replayJpLane(priorHits, rollingStart, filled).windowStart;
-      const pos = filled - windowStart + 1;
-      return pos >= 1 && pos <= 100 ? pos : 1;
-    }
-    // Legacy fixed-batch era: 1-indexed position within the aligned batch.
-    return ((filled - 1) % BATCH_SIZE) + 1;
+    const jpIds = Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [];
+    return { ...computeJpCycle(jpIds, rollingStart, filled, draftNo ?? filled), filled };
   } catch {
-    return 1;
+    return fallback;
   }
+}
+
+/**
+ * Live Jackpot-promo cycle for the promo modal — the window the NEXT draft
+ * opens into, so the card answers "what does a jackpot pay if it hits now?".
+ * Shares computeJpCycle with the crediting path so the two can't drift.
+ */
+export async function getJackpotCycleState(): Promise<JpCycleState & { filled: number }> {
+  const { filled } = await readJpCycle();
+  return readJpCycle(filled + 1);
+}
+
+/**
+ * Resolve the position-in-window for the JP draft that just filled. Tiers
+ * (1-25 → 10 spins, 26-50 → 5, else 1) are window-relative in the rolling-lane
+ * era (Boris 2026-07-20) and aligned-batch-relative before it.
+ */
+async function getCurrentBatchPosition(): Promise<number> {
+  return (await readJpCycle()).position;
 }
 
 /**

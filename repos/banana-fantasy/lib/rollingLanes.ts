@@ -104,3 +104,92 @@ export function laneDraftsLeft(revealedFilled: number, windowStart: number): num
 export function lanePct(remaining: number, draftsLeft: number): number | null {
   return remaining > 0 && draftsLeft > 0 ? (remaining / draftsLeft) * 100 : null;
 }
+
+// ── Jackpot-hit promo cycle ─────────────────────────────────────────────────
+// A Jackpot landing early in its window pays a bonus. ONE definition, shared by
+// the CREDIT path (awardJackpotDraw → getCurrentBatchPosition) and the DISPLAY
+// path (/api/promos → the Jackpot promo modal), because they drifted once:
+// display kept the legacy `(filled - 1) % 100` batch math after the rolling-lane
+// cutover, so the modal read "bonus windows closed" while the JP lane had in
+// fact reset and the next hit was really worth 10 spins (Boris 2026-07-25).
+
+/** Positions 1..25 of a JP window pay this many spins. */
+export const JP_TEN_SPIN_THROUGH = 25;
+/** Positions 26..50 pay 5; everything after pays 1. */
+export const JP_FIVE_SPIN_THROUGH = 50;
+
+export interface JpCycleState {
+  /** Global draft number that opened the window `draftNo` sits in. */
+  windowStart: number;
+  /** 1-indexed position of `draftNo` within that window (1..WINDOW_SIZE). */
+  position: number;
+  /** Window length — always WINDOW_SIZE; exposed so UI never hardcodes 100. */
+  windowLength: number;
+  /** Spins a Jackpot landing on `draftNo` pays: 10 / 5 / 1. */
+  reward: number;
+  /** Drafts still in the 10-spin band, counting `draftNo` itself. 0 once past. */
+  tenLeft: number;
+  /** Drafts still in the 5-spin band, counting `draftNo` itself. */
+  fiveLeft: number;
+  /** True when the rolling-lane era drove this (vs. legacy fixed batches). */
+  rolling: boolean;
+}
+
+/**
+ * Spins paid for a Jackpot at a given 1-indexed window position.
+ * Past position 50 the bonus draw is skipped entirely — no winner, no credit,
+ * no bells, no receipt (Boris 2026-06-30). The jackpot draft itself still
+ * works; only the bonus spins are gated to the first 50 of the window.
+ */
+export function jpRewardForPosition(position: number): number {
+  if (position >= 1 && position <= JP_TEN_SPIN_THROUGH) return 10;
+  if (position <= JP_FIVE_SPIN_THROUGH) return 5;
+  return 0;
+}
+
+/**
+ * Where `draftNo` sits in the Jackpot lane's window, and what a Jackpot there
+ * would pay.
+ *
+ * `filled` is the tracker's FilledLeaguesCount and bounds which ids may count:
+ * Go writes each window's drawn position into JackpotLeagueIds UP FRONT, so an
+ * id above `filled` is a SCHEDULED draw, not a hit — honoring it would both
+ * close the window early and leak the secret position (see replayJpLane).
+ *
+ * Hits at or after `draftNo` are excluded too, so asking about the draft that
+ * just filled returns the window it landed IN (crediting), while asking about
+ * `filled + 1` returns the window the NEXT draft opens into (display). That
+ * one-draft difference is the whole reason both callers must share this.
+ */
+export function computeJpCycle(
+  jpIds: number[],
+  rollingStart: number,
+  filled: number,
+  draftNo: number,
+): JpCycleState {
+  const target = Math.max(1, Math.floor(draftNo));
+  let windowStart: number;
+  let rolling = false;
+
+  if (rollingStart > 0 && target >= rollingStart) {
+    rolling = true;
+    const prior = (Array.isArray(jpIds) ? jpIds : [])
+      .map(Number)
+      .filter((id) => Number.isFinite(id) && id >= rollingStart && id < target && id <= filled);
+    windowStart = replayJpLane(prior, rollingStart, filled).windowStart;
+  } else {
+    // Legacy fixed-batch era: windows are the aligned blocks of 100.
+    windowStart = target - ((target - 1) % WINDOW_SIZE);
+  }
+
+  const position = Math.max(1, Math.min(WINDOW_SIZE, target - windowStart + 1));
+  return {
+    windowStart,
+    position,
+    windowLength: WINDOW_SIZE,
+    reward: jpRewardForPosition(position),
+    tenLeft: Math.max(0, JP_TEN_SPIN_THROUGH - position + 1),
+    fiveLeft: Math.max(0, JP_FIVE_SPIN_THROUGH - position + 1),
+    rolling,
+  };
+}
