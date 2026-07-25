@@ -145,11 +145,28 @@ function mapRosterToUiRoster(roster?: ApiDraftToken['roster']): RosterPlayer[] {
   const pushGroup = (slotPrefix: string, players: ApiRosterPlayer[] | undefined) => {
     if (!players?.length) return;
     players.forEach((p, idx) => {
-      // Create stable-ish slot labels like QB, RB1/RB2, WR1/WR2/WR3, etc.
-      const slot = idx === 0 ? slotPrefix : `${slotPrefix}${idx + 1}`;
+      // The REAL slot lives in playerId ("LAC-WR1"), and nowhere else:
+      //  - `p.position` comes back UNDEFINED from /owner/{w}/draftToken/all, so
+      //    the old `p.position || slotPrefix` always fell back to the position
+      //    GROUP — every LAC receiver became "LAC WR", losing WR1 vs WR2.
+      //  - the array index is DRAFT ORDER, not slot, so the old
+      //    `idx === 0 ? 'WR' : 'WR'+(idx+1)` mislabeled a 4th-drafted LAR-WR2
+      //    as "WR4".
+      // Parse it exactly like the server's exposureSlotKey (lib/db-firestore.ts)
+      // so roster labels and exposure keys are the same string and can be
+      // matched EXACTLY — that mismatch is why the exposure drill-down showed
+      // 11 teams under "LAC WR1" when only 3 of them had WR1 (Boris 2026-07-25).
+      const slotFromId = (() => {
+        const pid = String(p.playerId ?? '');
+        const dash = pid.indexOf('-');
+        if (dash < 0) return null;
+        const suffix = pid.slice(dash + 1).toUpperCase();
+        return suffix.startsWith(slotPrefix) ? suffix : null;
+      })();
+      const slot = slotFromId ?? (idx === 0 ? slotPrefix : `${slotPrefix}${idx + 1}`);
       out.push({
         slot,
-        teamPosition: `${p.team} ${p.position || slotPrefix}`,
+        teamPosition: `${p.team} ${slot}`,
         weeklyPoints: typeof p.scoreWeek === 'number' ? p.scoreWeek : 0,
         seasonPoints: typeof p.scoreSeason === 'number' ? p.scoreSeason : 0,
         isInLineup: Boolean(p.isUsedInCardScore),

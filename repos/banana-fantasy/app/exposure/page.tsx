@@ -94,21 +94,27 @@ export default function ExposurePage() {
   // Off by default so the everyday view stays a portfolio, not a spreadsheet.
   const [showUndrafted, setShowUndrafted] = useState(false);
 
-  // Leagues whose roster contains the selected team+position. Match by
-  // team + base position group (RB / WR / QB / TE / DST), since roster
-  // entries use "IND RB" / "IND RB2" while exposure aggregation uses
-  // "IND RB1" / "IND RB2" — different first-slot conventions. Matching
-  // by group is also more useful (clicking IND RB1 surfaces every league
-  // where you drafted any IND RB).
+  // Leagues whose roster contains the EXACT team+slot you clicked. LAC WR1 and
+  // LAC WR2 are different players (different picks), so clicking "LAC WR1" must
+  // list only the teams that actually hold LAC WR1 — otherwise the header stat
+  // ("3 drafts") and this list (11 teams) contradict each other on the same
+  // screen, which is exactly what users reported (Boris 2026-07-25).
+  //
+  // This used to match by position GROUP because roster entries had lost their
+  // slot number ("LAC WR" for everyone). mapRosterToUiRoster now derives the
+  // real slot from playerId, so both sides speak "LAC WR1" and an exact match
+  // works. Slot-1 is still normalized ("LAC WR" ≡ "LAC WR1") to stay correct
+  // for any roster built before that fix / from legacy data.
   const matchingLeagues = useMemo(() => {
     if (!selectedExposure) return [] as League[];
     const team = selectedExposure.team;
-    const baseGroup = selectedExposure.position.replace(/\d+$/, '');
+    // "WR" → "WR1" so the two conventions compare equal.
+    const canonical = (slot: string) => (/\d$/.test(slot) ? slot : `${slot}1`);
+    const wantSlot = canonical(selectedExposure.position.toUpperCase());
     return leagues.filter(l =>
       l.roster.some(r => {
         const [rTeam, rSlot = ''] = r.teamPosition.split(' ');
-        const rGroup = rSlot.replace(/\d+$/, '');
-        return rTeam === team && rGroup === baseGroup;
+        return rTeam === team && canonical(rSlot.toUpperCase()) === wantSlot;
       }),
     );
   }, [leagues, selectedExposure]);
