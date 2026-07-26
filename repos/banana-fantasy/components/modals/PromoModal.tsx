@@ -816,12 +816,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
         {/* 3 — YOUR POSITION. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
+          {/* Odds callout removed (Boris 2026-07-26) — the leaderboard already
+              shows each player's share, so a second percentage here was noise. */}
           <div className="flex items-baseline justify-between">
             <span className="text-3xl font-bold text-banana tabular-nums">🍌 {bd.bananas}</span>
-            <span className="text-right">
-              <span className="block text-text-primary font-semibold tabular-nums">{bd.sharePct.toFixed(1)}%</span>
-              <span className="block text-text-muted text-xs">your odds tonight</span>
-            </span>
+            <span className="text-text-muted text-xs">this cycle</span>
           </div>
           {bd.pending > 0 && (
             <p className="text-text-muted text-xs mt-2">
@@ -867,10 +866,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                     <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
                     {r.isYou ? 'You' : r.name}
                   </span>
-                  <span className="flex items-center gap-3 shrink-0 tabular-nums">
-                    <span>🍌 {r.bananas}</span>
-                    <span className="text-text-muted w-12 text-right">{r.sharePct.toFixed(1)}%</span>
-                  </span>
+                  <span className="shrink-0 tabular-nums">🍌 {r.bananas}</span>
                 </div>
               ))}
             </div>

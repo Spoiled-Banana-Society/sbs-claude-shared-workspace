@@ -67,9 +67,14 @@ export function BananaDrawBanner({ myWallet }: { myWallet?: string | null }) {
   const users = useDraftRoomUsers(wallets);
   const nameFor = (w: string) => users[w?.toLowerCase?.() ?? '']?.displayName || bananaDefaultName(w || '');
 
-  if (!state || state.totalBananas <= 0) return null;
+  // Render even at zero. Hiding on an empty pool made the leaderboard vanish
+  // for the whole launch window — 657 users got a bell and would have clicked
+  // through to nothing. An empty state that says "be the first" is the point
+  // of a launch, not a failure case.
+  if (!state) return null;
   const me = myWallet?.toLowerCase();
   const lastWinner = state.recentWinners[0];
+  const empty = state.totalBananas <= 0;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-bg-tertiary/60 backdrop-blur p-4 mb-5">
@@ -85,6 +90,14 @@ export function BananaDrawBanner({ myWallet }: { myWallet?: string | null }) {
         </span>
       </div>
 
+      {empty ? (
+        <div className="py-4 text-center">
+          <p className="text-text-primary text-sm font-semibold">No Bananas in tonight&apos;s draw yet.</p>
+          <p className="text-text-muted text-xs mt-1">
+            Fill a draft and you&apos;re first on the board — free draft 🍌 1, paid 🍌 2.
+          </p>
+        </div>
+      ) : (
       <div className="space-y-1 mb-3">
         {state.leaderboard.slice(0, 5).map((r, i) => {
           const isYou = !!me && r.userId.toLowerCase() === me;
@@ -97,14 +110,12 @@ export function BananaDrawBanner({ myWallet }: { myWallet?: string | null }) {
                 <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
                 {isYou ? 'You' : nameFor(r.userId)}
               </span>
-              <span className="flex items-center gap-3 shrink-0 tabular-nums">
-                <span>🍌 {r.bananas}</span>
-                <span className="text-text-muted w-12 text-right">{r.sharePct.toFixed(1)}%</span>
-              </span>
+              <span className="shrink-0 tabular-nums">🍌 {r.bananas}</span>
             </div>
           );
         })}
       </div>
+      )}
 
       <div className="flex items-center justify-between text-xs text-text-muted border-t border-white/5 pt-2 gap-3">
         <span className="truncate">

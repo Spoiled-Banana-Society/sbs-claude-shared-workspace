@@ -573,8 +573,9 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
             )}
           </div>
         )}
-        {/* Banana Draw — live: what you hold, your odds, and the 24h clock.
-            Mirrors the Match Your Pick row so the cards read the same. */}
+        {/* Banana Draw — live: what you hold and the 24h clock. Mirrors the
+            Match Your Pick row so the cards read the same. Share % is
+            deliberately NOT shown anywhere (Boris 2026-07-26). */}
         {isBanana && (
           <div className="mt-auto mb-4">
             <div className="flex items-center justify-between gap-2">
@@ -582,8 +583,6 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
                 <span className="text-[13px] whitespace-nowrap text-white/70">
                   <span className="font-bold text-[#ef6c37]">🍌 {bd.bananas}</span>
                   {bd.pending > 0 && <><span className="text-white/25"> · </span>{bd.pending} filling</>}
-                  <span className="text-white/25"> → </span>
-                  <span className="font-bold text-[#ef6c37]">{bd.sharePct.toFixed(1)}%</span>
                 </span>
               ) : (
                 <span className="text-[13px] text-white/45">Fill a draft to earn Bananas</span>
