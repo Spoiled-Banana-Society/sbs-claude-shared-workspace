@@ -139,6 +139,24 @@ export function PromosSidebar({
                     <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime)}</span>
                   </div>
                 )}
+                {/* Banana Draw — same bottom row as Chase: Bananas (once earned)
+                    above a live countdown. Also missing before 2026-07-26. */}
+                {promo.type === 'banana-draw' && (
+                  <div className="mt-3 mb-2 flex flex-col items-center gap-0.5">
+                    {(promo.modalContent.bananaDraw?.bananas ?? 0) > 0 && (
+                      <div className="flex items-center justify-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
+                        <span className="font-bold text-[#ef6c37]">🍌 {promo.modalContent.bananaDraw?.bananas}</span>
+                        {(promo.modalContent.bananaDraw?.pending ?? 0) > 0 && (
+                          <>
+                            <span className="text-[#c4c4c8]">·</span>
+                            <span className="font-semibold">{promo.modalContent.bananaDraw?.pending} filling</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime) || '24:00:00'}</span>
+                  </div>
+                )}
                 {!isChase && hasProgress && (
                   <div className="mb-2">
                     <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">

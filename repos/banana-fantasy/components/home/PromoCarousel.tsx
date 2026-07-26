@@ -383,6 +383,64 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
+                      {/* Banana Draw — same bottom layout as Match Your Pick and
+                          4-in-24h so the countdown lands at the SAME vertical spot:
+                          optional stat row, timer row, then the invisible spacer
+                          that matches the other promos' progress-bar height.
+                          Was missing entirely, so the homepage card showed no clock
+                          at all (Boris 2026-07-26). */}
+                      {promo.type === 'banana-draw' && (
+                        <div className="-mt-2">
+                          {(promo.modalContent.bananaDraw?.bananas ?? 0) > 0 && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#ef6c37]">🍌 {promo.modalContent.bananaDraw?.bananas}</span>
+                              {(promo.modalContent.bananaDraw?.pending ?? 0) > 0 && (
+                                <>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold">{promo.modalContent.bananaDraw?.pending} filling</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
+                          </div>
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Banana Draw — same bottom layout as Match Your Pick and
+                          4-in-24h so the countdown lands at the SAME vertical spot:
+                          optional Bananas row, timer row, then the invisible spacer
+                          matching the other promos' progress-bar height. This branch
+                          was missing entirely, so the homepage card rendered no clock
+                          at all while /promos did (Boris 2026-07-26). */}
+                      {promo.type === 'banana-draw' && (
+                        <div className="-mt-2">
+                          {(promo.modalContent.bananaDraw?.bananas ?? 0) > 0 && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#ef6c37]">🍌 {promo.modalContent.bananaDraw?.bananas}</span>
+                              {(promo.modalContent.bananaDraw?.pending ?? 0) > 0 && (
+                                <>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold">{promo.modalContent.bananaDraw?.pending} filling</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
+                          </div>
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
+
                       {/* Match Your Pick — mirrors the 4-in-24h bottom layout so the
                           countdown lands at the SAME vertical spot: timer row, then a
                           spacer the height of that promo's progress bar. Once a draft
