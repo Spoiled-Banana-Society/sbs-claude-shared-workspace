@@ -29,6 +29,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
+  'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
@@ -50,16 +51,11 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
 // "Match Your Pick" (pick-chase) LAUNCHED 2026-07-23 — now in
 // VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase).
 //
-// 🍌 'banana-draw' ("Collect Bananas → JACKHOF SEAT") is BUILT AND STAGED but
-// NOT LIVE — admin wallets only. Boris ships it at 12pm PT on 2026-07-26,
-// alongside the paid-only cutover.
-//
-// ⚠️ TO GO LIVE: move 'banana-draw' out of this array and into
-// VISIBLE_PROMO_TYPES_ORDER at index 2 — right AFTER 'first-purchase' and
-// right BEFORE 'pick-chase' (Boris 2026-07-26: near the front, where Match
-// Your Pick sits, but ahead of it; new-user and first-purchase stay in front).
-// That single move is the whole launch; nothing else is gated.
-export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['banana-draw'];
+// 🍌 'banana-draw' LAUNCHED 2026-07-26 — now in VISIBLE_PROMO_TYPES_ORDER
+// above, at index 2. Emptying this array also releases the draw cron, which
+// holds itself while a promo is in admin preview (app/api/crons/banana-draw).
+// Nothing staged for admin-only preview right now.
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
