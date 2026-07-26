@@ -12,9 +12,10 @@ import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
-import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { API_CONFIG } from '@/lib/api/config';
 import { deriveChaseState } from '@/lib/chasePromo';
+import { bananaDefaultName } from '@/utils/helpers';
+import { BananaDrawReveal } from '@/components/promos/BananaDrawReveal';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -43,19 +44,14 @@ function fmtWhen(d: string | undefined): string {
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
-  // Pick 10 expands to slots 6 & 9 (on top of 10) while the current 100-batch
-  // has all its specials (1 JP + 5 HOF) hit — surface that live in the modal.
-  const { data: batchData } = useBatchProgress();
-  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
-  // When the bonus is live, the Pick-10 modal title + explainer speak to all
-  // three winning slots (6, 9 & 10), not just 10.
-  const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
-  const modalTitle = isPickBonus ? 'Get Pick 6 9 10 → SPIN' : (promo?.modalContent.title ?? '');
-  const pickExplanation = isPickBonus
-    ? (promoWeekendActive()
-      ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• FREE and paid drafts BOTH count — through Sunday 12pm PT.'
-      : '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.')
-    : (promo?.modalContent.explanation ?? '');
+  // ⛔ Client-side Pick-slot LADDER REMOVED 2026-07-26. It read the SSE's
+  // legacy per-100 counters (jackpotRemaining/hofRemaining), which don't know
+  // the rolling-lane era retired the ladder on 2026-07-20 — so a batch's 5th
+  // HOF landing made the modal announce "Pick 6 9 10" while the server only
+  // ever credited slot 10. Pick 10 is the ONLY winning slot; the server owns
+  // the copy (getPick10DisplayTier → PICK_TIER_COPY), so just render it.
+  const modalTitle = promo?.modalContent.title ?? '';
+  const pickExplanation = promo?.modalContent.explanation ?? '';
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
@@ -89,6 +85,27 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // Live names + pfps for jackpot draw entrants (default-or-edited, same
   // resolver as the draft room). Empty unless a draw is loaded.
   const jpEntryUsers = useDraftRoomUsers((jpEntries ?? []).map((e) => e.wallet));
+
+  // Banana Draw leaderboard + winners arrive as WALLETS; resolve them through
+  // the same live resolver so they read as the handles people know, never as
+  // raw addresses ([[reference_default_identity_and_badges]]).
+  const bananaWallets = promo?.type === 'banana-draw'
+    ? [
+        ...(promo.modalContent.bananaDraw?.leaderboard ?? []).map((r) => r.name),
+        ...(promo.modalContent.bananaDraw?.recentWinners ?? []).map((w) => w.name),
+      ]
+    : [];
+  const bananaUsers = useDraftRoomUsers(bananaWallets);
+  const displayNameFor = (wallet: string): string =>
+    bananaUsers[wallet?.toLowerCase?.() ?? '']?.displayName
+    || bananaDefaultName(wallet || '');
+
+  const BANANA_SOURCE_LABEL: Record<string, string> = {
+    'draft-free': 'Free draft filled',
+    'draft-paid': 'Paid draft filled',
+    'referral-draft': 'A friend you invited drafted',
+    'referral-purchase': 'That friend made a purchase',
+  };
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -456,23 +473,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
     return (
       <>
-        {/* Expanded-window banner — live when the current 100-batch has had all
-            its specials (1 Jackpot + 5 HOF) hit. Until the next batch, slots 6
-            and 9 also win, on top of the usual slot 10. */}
-        {pickExpanded ? (
-          <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
-            <p className="text-banana font-semibold text-sm">🔥 Bonus active — this batch&apos;s Jackpot &amp; HOFs are all gone</p>
-            <p className="text-text-secondary text-sm mt-1">
-              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin, not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-xl p-4 bg-bg-tertiary">
-            <p className="text-text-secondary text-sm">
-              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin.
-            </p>
-          </div>
-        )}
+        {/* Slot 10 is the only winning slot — no ladder (see the note by
+            modalTitle). Copy follows the promo window: free drafts count until
+            Sun 12pm PT, paid-only after. */}
+        <div className="rounded-xl p-4 bg-bg-tertiary">
+          <p className="text-text-secondary text-sm">
+            Land <span className="text-text-primary font-semibold">slot 10</span> in a{promoWeekendActive() ? '' : ' paid'} draft for a free spin.
+          </p>
+        </div>
 
         {/* Total Pick 10s */}
         {promo.modalContent.totalPick10s !== undefined && (
@@ -506,7 +514,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               ))}
             </div>
           ) : (
-            <p className="text-text-muted text-sm">{isPickBonus ? 'Every slot 6, 9 & 10 you land in a draft lands here with the draft and date.' : 'Every 10th slot pick you land in a paid draft lands here with the draft and date.'}</p>
+            <p className="text-text-muted text-sm">{'Every 10th slot pick you land lands here with the draft and date.'}</p>
           )}
         </div>
       </>
@@ -755,6 +763,150 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                   {entry.pendingReason && entry.status === 'pending' && (
                     <p className="text-text-muted text-xs mt-2">{entry.pendingReason}</p>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // ── Banana Draw ───────────────────────────────────────────────────────
+  // Order is deliberate: what you HAVE, then what you're chasing, then how to
+  // get more, then who's winning. "All it takes is one Banana" sits directly
+  // under the odds so the number and the reassurance are read together.
+  const renderBananaDrawContent = () => {
+    const bd = promo.modalContent.bananaDraw;
+    if (!bd) return null;
+    const row = (label: string, count: number, bananas: number) => (
+      <div key={label} className="flex items-center justify-between py-1.5 text-sm">
+        <span className="text-text-secondary">{label}</span>
+        <span className="flex items-center gap-3">
+          <span className="text-text-muted tabular-nums w-6 text-right">{count}</span>
+          <span className="text-banana font-semibold tabular-nums w-12 text-right">🍌 {bananas}</span>
+        </span>
+      </div>
+    );
+
+    const lastWin = bd.recentWinners[0];
+    return (
+      <>
+        {/* Last night's reveal — replays for everyone who was in the draw, so
+            the result is something you watch rather than something you read. */}
+        {lastWin && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <BananaDrawReveal
+              entrants={bd.leaderboard.map((r) => (r.isYou ? 'You' : displayNameFor(r.name)))}
+              winnerName={displayNameFor(lastWin.name)}
+              winnerBananas={lastWin.bananas}
+            />
+          </div>
+        )}
+
+        {/* Your Bananas + odds */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-3xl font-bold text-banana tabular-nums">🍌 {bd.bananas}</span>
+            <span className="text-text-muted text-xs">this cycle</span>
+          </div>
+          {bd.pending > 0 && (
+            <p className="text-text-muted text-xs mb-2">
+              {bd.pending} {bd.pending === 1 ? 'draft' : 'drafts'} filling — your{' '}
+              {bd.pending === 1 ? 'Banana lands' : 'Bananas land'} the moment{' '}
+              {bd.pending === 1 ? 'it fills' : 'they fill'}.
+            </p>
+          )}
+          <p className="text-text-secondary text-sm">
+            {bd.totalBananas > 0
+              ? <>Your odds tonight: <span className="text-text-primary font-semibold">{bd.sharePct.toFixed(1)}%</span> of {bd.totalBananas} Bananas from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.</>
+              : <>No Bananas in the draw yet — fill a draft and you&apos;re in.</>}
+          </p>
+          <p className="text-text-muted text-xs mt-1">More Bananas, better odds — but all it takes is one.</p>
+        </div>
+
+        {/* Seats in the first-ever JackHOF draft */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-text-primary font-medium">First ever JackHOF draft</span>
+            <span className="text-text-muted text-xs tabular-nums">{bd.seatsClaimed} of {bd.seatsTotal} seats</span>
+          </div>
+          <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${Math.min(100, (bd.seatsClaimed / (bd.seatsTotal || 10)) * 100)}%`,
+                background: 'linear-gradient(90deg,#ef4444,#D4AF37)',
+              }}
+            />
+          </div>
+          <p className="text-text-secondary text-sm mt-2">
+            One seat goes out every 24 hours. When all {bd.seatsTotal} are claimed, it drafts.
+          </p>
+        </div>
+
+        {/* How to earn */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-2 text-text-primary">How it works</h4>
+          <div className="text-text-muted text-[11px] uppercase tracking-wider mt-1 mb-1">Your drafts</div>
+          {row('Free draft', bd.freeDrafts, bd.free)}
+          {row('Paid draft', bd.paidDrafts, bd.paid)}
+          <div className="text-text-muted text-[11px] uppercase tracking-wider mt-3 mb-1">Friends you invite</div>
+          {row('Their first draft / purchase', bd.referrals, bd.referral)}
+          <p className="text-text-muted text-xs mt-3">
+            Drafts count once they FILL. Bananas reset every 24 hours — use your drafts.
+          </p>
+        </div>
+
+        {/* Leaderboard — ranked by Bananas, SURFACED as share. "The leader has
+            14%" invites people in; "you're 47th" pushes them out. */}
+        {bd.leaderboard.length > 0 && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-3 text-text-primary">Tonight&apos;s leaderboard</h4>
+            <div className="space-y-1">
+              {bd.leaderboard.slice(0, 10).map((r, i) => (
+                <div
+                  key={`${r.name}-${i}`}
+                  className={`flex items-center justify-between text-sm py-1 ${r.isYou ? 'text-banana font-semibold' : 'text-text-secondary'}`}
+                >
+                  <span className="truncate mr-3">{r.isYou ? 'You' : displayNameFor(r.name)}</span>
+                  <span className="flex items-center gap-3 shrink-0 tabular-nums">
+                    <span>🍌 {r.bananas}</span>
+                    <span className="text-text-muted w-12 text-right">{r.sharePct.toFixed(1)}%</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Past winners — the day someone wins on 2 Bananas is the best proof
+            that one Banana can win, so the count is shown alongside. */}
+        {bd.recentWinners.length > 0 && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-3 text-text-primary">Recent winners</h4>
+            {bd.recentWinners.map((w) => (
+              <div key={w.cycleId} className="flex justify-between text-sm py-1">
+                <span className="text-text-secondary">{displayNameFor(w.name)}</span>
+                <span className="text-text-muted tabular-nums">won on 🍌 {w.bananas}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* All-time history — permanent, never resets. Doubles as the dispute
+            trail for "I drafted and got nothing". */}
+        {bd.allTime.length > 0 && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-3 text-text-primary">Your Banana history</h4>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {bd.allTime.map((h, i) => (
+                <div key={`${h.at}-${i}`} className="flex justify-between text-sm py-0.5">
+                  <span className="text-text-secondary">{BANANA_SOURCE_LABEL[h.source] ?? h.source}</span>
+                  <span className="flex items-center gap-3 tabular-nums">
+                    <span className="text-text-muted text-xs">{h.at.slice(5, 10)}</span>
+                    <span className="text-banana">🍌 {h.bananas}</span>
+                  </span>
                 </div>
               ))}
             </div>
@@ -1192,6 +1344,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderTweetEngagementContent();
       case 'pick-chase':
         return renderChaseContent();
+      case 'banana-draw':
+        return renderBananaDrawContent();
       default:
         return null;
     }

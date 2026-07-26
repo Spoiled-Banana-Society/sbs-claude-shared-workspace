@@ -43,6 +43,7 @@ import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/rollingLanes';
+import { creditReferralBananas } from '@/lib/bananaDraw';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { runInBackground } from '@/lib/serverBackground';
 
@@ -493,25 +494,25 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     : '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
       + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
       + '• Paid Drafts Only.';
-  const PICK_LADDER_EXPLANATION =
-    '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
-    + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
-    + '• When every special is gone (Jackpot + all 5 HOF), Pick 9 unlocks too — Pick 6, 9 & 10 each win a Free Spin.\n'
-    + '• The reward escalates as the batch’s chase prizes run out, then resets when the next 100-draft batch begins.\n'
-    + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
-    + '• Paid Drafts Only.';
+  // The 6/9/10 LADDER copy is gone (Boris 2026-07-26: "it should never do
+  // that, it should always be on pick 10 only"). Both the credit path and the
+  // display tier are hard-pinned to base, so any ladder wording here could
+  // only ever promise a slot that won't pay.
+  const PICK_LADDER_EXPLANATION = PICK_BASE_EXPLANATION;
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
     ? {
       // Weekend window copy — same slots, but free & paid drafts both count.
       // NEW tag removed (Boris 2026-07-23): Pick 10 is not a new promo.
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
+      // jp/all are unreachable (tier is pinned to 'base') and deliberately
+      // carry the SAME slot-10 copy, so no code path can advertise 6 or 9.
+      jp: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
+      all: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
     }
     : {
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: false },
+      jp: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
+      all: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
     };
 
   // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed
@@ -1625,6 +1626,12 @@ export async function incrementReferralPromos(
     return _incrementReferralPromosInTx(tx, buyerUser, buyerUserId, quantity);
   });
   await notifyReferrerOfMilestones(result, quantity);
+  // Banana Draw: the referrer earns 5 Bananas the FIRST time their friend
+  // buys. Independent of the 1/4/10 milestone ladder — a purchase that fires
+  // no milestone still pays this — and idempotent per friend, so it lands
+  // once ever no matter how many times a purchase path re-runs.
+  await creditReferralBananas({ friendUserId: buyerUserId, kind: 'purchase' })
+    .catch((err) => logger.warn('banana.referral_purchase_credit_failed', { buyerUserId, err: String(err) }));
   return { referralMilestonesEarned: result.referralMilestonesEarned };
 }
 
@@ -3332,8 +3339,12 @@ export async function allBatchSpecialsHit(): Promise<boolean> {
  */
 export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
   const state = await getBatchSpecialsState();
-  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
-  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
+  // ⛔ HARD-PINNED TO SLOT 10 (Boris 2026-07-26: "it should never do that, it
+  // should always be on pick 10 only"). The 6/9/10 ladder was retired with the
+  // rolling-lane cutover and is now structurally unreachable — pinning here
+  // rather than relying on `rolling` means it can't come back even if
+  // RollingStartDraft were ever unset. The tier branches below are kept only
+  // so the shape/telemetry stay intact; they no longer change the payout.
   return { slots: [10], tier: 'base', batchStart: state.batchStart };
 }
 
@@ -3349,10 +3360,9 @@ export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: '
  */
 export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number; rolling: boolean }> {
   const state = await getBatchSpecialsState({ display: true });
-  const rolling = state.rolling === true;
-  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart, rolling };
-  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart, rolling };
-  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling };
+  // Pinned to base for the same reason as getPick10ActiveSlots — display must
+  // never advertise a slot the credit path won't pay.
+  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling: state.rolling === true };
 }
 
 // Bound the bell fan-out so a misread tracker can never broadcast to an
@@ -3373,6 +3383,18 @@ const PICK10_EXPANSION_MAX_FANOUT = 10000;
  * never throws into the promo-credit path that calls it.
  */
 export async function announcePick10ExpansionIfActivated(): Promise<void> {
+  // ⛔ RETIRED 2026-07-26. This broadcast told EVERY user "New Promo — Pick 6,
+  // 9 & 10 Free Spins" the moment a batch's specials were all hit. The ladder
+  // it announced no longer exists (slot 10 is the only winning slot, hard-
+  // pinned in getPick10ActiveSlots), so the bell would have promised spins
+  // that can never be paid — to the whole userbase at once.
+  //
+  // Kept as a no-op rather than deleted: it's still called from the promo-
+  // credit path and the reveal backstop, and a no-op is safer than chasing
+  // every caller. Delete the function and its call sites when convenient.
+  return;
+
+  // eslint-disable-next-line no-unreachable
   try {
     const { allHit, jpHit, batchStart } = await getBatchSpecialsState();
     if (!jpHit) return;

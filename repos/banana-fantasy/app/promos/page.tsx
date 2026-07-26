@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
-import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -13,6 +12,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { BananaDrawBanner } from '@/components/promos/BananaDrawBanner';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { deriveChaseState } from '@/lib/chasePromo';
 import type { Promo, PromoType } from '@/types';
@@ -40,6 +40,8 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
   'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
   'pick-chase':         { accent: '#f97316', label: 'Match' },
+  // JackHOF orange — the dual-tier accent, same as the wheel's JackHOF wedge.
+  'banana-draw':        { accent: '#ef6c37', label: 'Bananas' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
@@ -64,10 +66,15 @@ export default function PromosPage() {
 
   const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed, isBalanceLoaded } = useAuth();
   const promosQuery = usePromos({ userId: user?.id });
-  // Pick 10 expands to slots 6/9/10 while the current 100-batch's specials are
-  // all hit — surface that live on the card.
-  const { data: batchData } = useBatchProgress();
-  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
+  // ⛔ The client-side Pick-slot LADDER was REMOVED 2026-07-26. It derived
+  // "slots 6/9/10 are live" from the SSE's legacy per-100 batch counters
+  // (jackpotRemaining/hofRemaining), which know nothing about the rolling-lane
+  // era that RETIRED the ladder on 2026-07-20. Result: the moment a batch's
+  // 5th HOF landed (draft 297), the card advertised "Pick 6 9 10 → FREE SPIN"
+  // while the SERVER still only ever credited slot 10 — promising spins that
+  // could never be paid. Pick 10 is the only winning slot; the server's
+  // getPick10DisplayTier already puts the right copy on promo.title, so the
+  // card must just render what the server sends.
   const promos = promosQuery.promos;
 
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -287,6 +294,12 @@ export default function PromosPage() {
         )}
       </div>
 
+      {/* ── Banana Draw leaderboard ───────────────────────────────────
+          Pinned above everything so it's seen without opening the promo
+          (Boris 2026-07-26). Self-hides until there are Bananas in the pool,
+          so it never shows an empty board — including before launch. */}
+      <BananaDrawBanner myWallet={user?.walletAddress ?? null} />
+
       {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
           you've got to spend. Minimal single card with internal dividers. ─── */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] mb-10 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-white/[0.06]">
@@ -388,7 +401,6 @@ export default function PromosPage() {
               hasVisibleClaim={hasVisibleClaim(promo)}
               onClick={() => setSelectedPromo(promo)}
               onClaim={() => void handleClaim(promo)}
-              pickExpanded={pickExpanded}
             />
           ))}
         </div>
@@ -454,10 +466,9 @@ interface PromoCardProps {
   hasVisibleClaim: boolean;
   onClick: () => void;
   onClaim: () => void;
-  pickExpanded?: boolean;
 }
 
-function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickExpanded }: PromoCardProps) {
+function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: PromoCardProps) {
   const style = TYPE_STYLES[promo.type];
   const progressMax = promo.progressMax || 0;
   // Stacking promos (Buy-10 spin, buy-bonus) repeat: after claiming, the bar
@@ -525,11 +536,11 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
 
         {/* Title + description — Apple-style typographic hierarchy */}
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
-          {promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title}
+          {promo.title}
         </h3>
         <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
-          {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
+          {promo.description}
         </p>
 
         {/* Chase Your Pick — bottom row: live countdown, plus (once a draft locks
@@ -554,12 +565,6 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
             )}
           </div>
         )}
-        {promo.type === 'pick-10' && pickExpanded && (
-          <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">
-            🔥 Bonus: this batch&apos;s Jackpot + all 5 HOFs are gone, so slots 6, 9 &amp; 10 all win now
-          </p>
-        )}
-
         {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
         {showProgress && (
           <div className="mt-auto mb-4">

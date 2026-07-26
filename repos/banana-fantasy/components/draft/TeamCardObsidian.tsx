@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 
 /**
  * Obsidian NFT card — single source of truth for the in-app render of both:
@@ -125,7 +126,13 @@ export default function TeamCardObsidian({
                 <div className="tco-title">BANANA BEST BALL IV</div>
                 {idsLine ? <div className="tco-ids">{idsLine}</div> : null}
                 <div className="tco-badge" style={{ color: BADGE[tier].text, background: BADGE[tier].bg, boxShadow: `0 0 0 1px ${BADGE[tier].line} inset` }}>
-                  {BADGE[tier].label}
+                  {/* JackHOF is the one DUAL-tier card, so it gets the two-tone
+                      wordmark instead of a flat label — "JACK" in Jackpot red,
+                      "HOF" in gold. Same component the badge and league name
+                      use, so the three can never drift. */}
+                  {tier === 'jackhof'
+                    ? <JackHofWordmark size={11} />
+                    : BADGE[tier].label}
                 </div>
                 <div className="tco-colh">
                   <span className="tco-sp" />

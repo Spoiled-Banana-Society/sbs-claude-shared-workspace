@@ -28,6 +28,58 @@ export async function GET(req: Request) {
       }
     } catch { /* stats are decoration — promos still return */ }
 
+    // Banana Draw: everything the card + modal render, stamped at read time.
+    // timerEndTime drives the promo card's EXISTING bare countdown — no custom
+    // "next draw" label, same treatment as Match Your Pick (Boris 2026-07-26).
+    try {
+      const bd = promos.find((p) => p.type === 'banana-draw');
+      if (bd && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
+        const { getUserCycleState, getCycleLeaderboard, getUserLedger, getRecentWinners, getJackhofSeatCount, getPendingDrafts }
+          = await import('@/lib/bananaDraw');
+        const me = userId.toLowerCase();
+        const [state, board, ledger, winners, seats, pending] = await Promise.all([
+          getUserCycleState(me),
+          getCycleLeaderboard(),
+          getUserLedger(me, 50),
+          getRecentWinners(5),
+          getJackhofSeatCount(),
+          getPendingDrafts(me),
+        ]);
+
+        // The countdown is the cycle close — the existing formatter renders it.
+        bd.timerEndTime = new Date(state.cycle.closesAt).toISOString();
+
+        const e = state.entry;
+        bd.modalContent.bananaDraw = {
+          cycleId: state.cycle.cycleId,
+          closesAt: state.cycle.closesAt,
+          bananas: e?.bananas ?? 0,
+          free: e?.free ?? 0,
+          paid: e?.paid ?? 0,
+          referral: e?.referral ?? 0,
+          freeDrafts: e?.freeDrafts ?? 0,
+          paidDrafts: e?.paidDrafts ?? 0,
+          referrals: e?.referrals ?? 0,
+          pending, // entered but not yet filled — Bananas land at FILL
+          sharePct: state.sharePct,
+          totalBananas: state.totalBananas,
+          entrantCount: state.entrantCount,
+          leaderboard: board.rows.map((r) => ({
+            name: r.userId, // resolved to display names client-side via useDraftRoomUsers
+            bananas: r.bananas,
+            sharePct: r.sharePct,
+            isYou: r.userId === me,
+          })),
+          seatsClaimed: seats.claimed,
+          seatsTotal: seats.total,
+          recentWinners: winners,
+          allTime: ledger.map((l) => ({
+            cycleId: l.cycleId, source: l.source, bananas: l.bananas, at: l.at,
+          })),
+        };
+      }
+    } catch { /* live stats are decoration — promos still return */ }
+
     // Jackpot promo: live cycle position + latest draw. Position comes from
     // getJackpotCycleState → computeJpCycle, the SAME math awardJackpotDraw
     // credits with. It used to do its own `(filled - 1) % 100`, which ignored

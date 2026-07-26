@@ -115,6 +115,23 @@ export const BADGE_CATALOG: Badge[] = [
     color: '#cca54f',
     glyph: '🏛️',
   },
+  {
+    // The rarest badge in the set — JackHOF is a 0.1% wheel wedge, or a seat
+    // won in the daily Banana draw. Dual-tier by nature (Jackpot AND HOF on
+    // one roster), so it's the only badge with a split rim + the two-tone
+    // wordmark instead of flat text. Sits with the clubs, not the championships:
+    // you earn it by LANDING the draft, not by winning it.
+    id: 'jackhof-club',
+    label: 'JackHOF Club',
+    description: 'You landed a JackHOF draft.',
+    criteria: 'Land a JackHOF draft.',
+    category: 'club',
+    contentKind: 'jackhof',
+    rimColor: '#ef4444', // solid-red fallback; the sweep is drawn in BadgeIcon
+    contentColor: '#ffb37b',
+    color: '#ef6c37',
+    glyph: '🎰',
+  },
 
   // ── Status ───────────────────────────────────────────────────────────
   {

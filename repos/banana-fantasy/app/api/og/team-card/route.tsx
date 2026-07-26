@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ALL_POSITIONS } from '@/data/nfl-players';
+import { JACKPOT_RED, HOF_GOLD } from '@/components/ui/JackHofWordmark';
 
 export const runtime = 'nodejs';
 export const revalidate = 31536000;
@@ -110,6 +111,25 @@ function frameWrap(px: Px, cardW: number, cardH: number, children: React.ReactNo
   );
 }
 
+/**
+ * The JackHOF wordmark for the PNG renderer — "JACK" red, "HOF" gold.
+ *
+ * Deliberately NOT the shared <JackHofWordmark> component: this route renders
+ * through satori (next/og), which requires an explicit `display: flex` on any
+ * element with multiple children and rejects a few of the CSS shorthands the
+ * DOM version relies on. The COLORS are imported from the shared module, so
+ * the PNG and the on-screen card can still never disagree on the palette —
+ * only the markup differs.
+ */
+function ogJackHof(px: Px, size = 11) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', fontSize: px(size), fontWeight: 900, letterSpacing: px(1.5) }}>
+      <div style={{ display: 'flex', color: JACKPOT_RED }}>JACK</div>
+      <div style={{ display: 'flex', color: HOF_GOLD }}>HOF</div>
+    </div>
+  );
+}
+
 function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logoSrc?: string, idsLine?: string) {
   const b = BADGE[tier];
   const groups = POS_ORDER
@@ -124,7 +144,7 @@ function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logo
       <div style={{ marginTop: px(5), fontSize: px(12), fontWeight: 700, letterSpacing: px(0.6), color: 'rgba(255,255,255,.85)' }}>BANANA BEST BALL IV</div>
       {idsLine ? <div style={{ marginTop: px(4), fontSize: px(8.5), fontWeight: 700, letterSpacing: px(1.4), color: 'rgba(255,255,255,.42)' }}>{idsLine}</div> : null}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: px(7), padding: `${px(3)}px ${px(11)}px`, borderRadius: px(30), fontSize: px(11), fontWeight: 900, letterSpacing: px(1.5), color: b.text, background: b.bg, border: `1px solid ${b.line}` }}>
-        {b.label}
+        {tier === 'jackhof' ? ogJackHof(px) : b.label}
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', width: '100%', marginTop: px(12), paddingBottom: px(5), borderBottom: '1px solid rgba(255,255,255,.12)' }}>
         <div style={{ display: 'flex', flexGrow: 1 }} />
@@ -170,7 +190,7 @@ function renderPass(px: Px, passNo: string, logoSrc?: string, tier: Tier = 'pro'
             <div style={{ marginTop: px(16), fontSize: px(13.5), fontWeight: 900, letterSpacing: px(3.5), color: 'rgba(255,255,255,.9)' }}>{`DRAFT PASS ${passNo}`.trim()}</div>
             {special ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: px(8), padding: `${px(3)}px ${px(12)}px`, borderRadius: px(30), fontSize: px(11), fontWeight: 900, letterSpacing: px(1.5), color: b.text, background: b.bg, border: `1px solid ${b.line}` }}>
-                {b.label}
+                {tier === 'jackhof' ? ogJackHof(px) : b.label}
               </div>
             ) : null}
             {/* These tier-framed passes only come from the wheel (buildTieredDraftPassUrl),

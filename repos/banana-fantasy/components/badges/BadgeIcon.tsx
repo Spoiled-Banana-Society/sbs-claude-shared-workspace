@@ -3,6 +3,7 @@
 import React from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BananaGlyph } from './BananaGlyph';
+import { JackHofWordmark, JACKPOT_RED, HOF_GOLD } from '@/components/ui/JackHofWordmark';
 import type { Badge } from '@/types';
 
 interface BadgeIconProps {
@@ -162,6 +163,12 @@ export function BadgeIcon({
 
   const rim = unlocked ? badge.rimColor : LOCKED_RIM;
   const content = unlocked ? (badge.contentColor || '#f3f5f8') : LOCKED_CONTENT;
+  // JackHOF is the one dual-tier badge, so it gets the one non-solid rim: a
+  // red→gold sweep matching the team card's frame. Locked still falls back to
+  // the flat grey every other badge uses, so the set stays uniform when dim.
+  const rimFill = unlocked && badge.contentKind === 'jackhof'
+    ? `conic-gradient(from 210deg, ${JACKPOT_RED}, ${JACKPOT_RED} 22%, ${HOF_GOLD} 55%, ${HOF_GOLD} 72%, ${JACKPOT_RED})`
+    : rim;
 
   // ── Center content per kind ──────────────────────────────────────────
   let inner: React.ReactNode = null;
@@ -208,6 +215,25 @@ export function BadgeIcon({
       >
         {badge.text}
       </span>
+    );
+  } else if (badge.contentKind === 'jackhof') {
+    // The only DUAL-tier badge: JackHOF is Jackpot AND Hall of Fame on one
+    // roster, so the disc says both — "JACK" in jackpot red over "HOF" in gold
+    // (the shared JackHofWordmark, so it can't drift from the card or the
+    // league name). The rim is a red→gold sweep for the same reason; every
+    // other badge is a single solid rim, which is exactly what makes this one
+    // read as the rarest thing in the set.
+    // Two lines need room. Under 36px each line lands around 4px and turns to
+    // mush, and 20px is this component's DEFAULT (avatar corner, inline beside
+    // a username) — so small is the common case. Drop to "JH" there, which
+    // keeps the red/gold split legible at any size.
+    const small = s < 36;
+    inner = (
+      <JackHofWordmark
+        size={Math.round(s * (small ? 0.34 : 0.2))}
+        variant={small ? 'compact' : 'stacked'}
+        muted={!unlocked}
+      />
     );
   } else if (badge.contentKind === 'icon') {
     const px = Math.round(s * 0.42);
@@ -323,7 +349,7 @@ export function BadgeIcon({
         display: 'inline-flex',
         width: s,
         height: s,
-        background: rim,
+        background: rimFill,
         padding: pad,
         boxSizing: 'border-box',
         filter: `drop-shadow(0 ${dropY}px ${dropBlur}px rgba(0,0,0,.55))`,

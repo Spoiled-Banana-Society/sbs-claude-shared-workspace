@@ -424,6 +424,34 @@ export async function fetchOwnerPaidFilledCount(walletAddress: string): Promise<
 }
 
 /**
+ * Drafts this wallet is SEATED IN that haven't filled yet — i.e. "in a lobby,
+ * still filling". Powers the Banana Draw's pending count.
+ *
+ * Reads the raw `{ available, active }` split rather than getOwnerDraftTokens,
+ * which flattens the two and loses the only signal that matters here:
+ *   • `active` + NO leagueId → seated, draft still filling  → PENDING
+ *   • `active` + leagueId    → the draft filled (Go binds token→league at
+ *                              fill, see countPaidDraftsFilled) → Banana paid
+ *   • `available`            → an unused pass in their wallet → not pending
+ *
+ * Because it reflects live seat state, leaving a lobby clears it immediately
+ * (the pass returns to `available`) and a slow draft stays pending for as long
+ * as it genuinely takes — no time window, which would have wrongly expired a
+ * multi-day slow draft (Boris 2026-07-26).
+ */
+export async function fetchOwnerSeatedFillingCount(walletAddress: string): Promise<number> {
+  const wallet = normalizeWalletAddress(walletAddress);
+  const raw: unknown = await draftsApi().get<unknown>(`/owner/${wallet}/draftToken/all`);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+  const active = (raw as Record<string, unknown>).active;
+  if (!Array.isArray(active)) return 0;
+  return active.filter((t) => {
+    const tok = t as Record<string, unknown>;
+    return !String(tok._leagueId ?? tok.leagueId ?? '').trim();
+  }).length;
+}
+
+/**
  * Fetch draft tokens and map them to UI `League[]`.
  *
  * This is useful for pages that show a user's active leagues/teams.

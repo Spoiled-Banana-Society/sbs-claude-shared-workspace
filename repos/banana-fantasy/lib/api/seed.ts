@@ -229,7 +229,10 @@ const seedPromos: Promo[] = [
   {
     id: '2',
     type: 'pick-10',
-    title: 'Pick 6 & 10 → FREE SPINS',
+    // Slot 10 ONLY — the 6/9/10 ladder is retired (Boris 2026-07-26). This is
+    // the seed copy every freshly-created user doc inherits, so it must not
+    // mention slots the credit path won't pay.
+    title: 'Pick 10 → FREE SPIN',
     description: 'Every Spin wins up to 20 Free Drafts',
     ctaText: 'Draft Now',
     ctaLink: '/drafting',
@@ -243,9 +246,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Pick 6 & 10 → Free Spins',
+      title: 'Pick 10 → Free Spin',
       explanation:
-        '• Hit Pick 10 in any draft → Free Banana Spin.\n• When the Jackpot is hit, Pick 6 unlocks — Pick 6 and Pick 10 each win a Free Spin until the batch ends.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
+        '• Hit Pick 10 in any draft → Free Banana Spin.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
       // Per-user state — starts empty. Real Pick 10s are appended by
       // recordPick10 on actual paid drafts. (Previously this carried 3 fake
       // demo rows incl. 2 'claim' entries, which were cloned into every real
@@ -445,6 +448,38 @@ const seedPromos: Promo[] = [
       explanation:
         '• Share your Jackpot, HOF, or 5+ draft wins on X.\n• Every 3 verified shares earns you a Free Banana Spin.\n• Small wins can still be shared for bragging rights but don\'t count toward the Spin.\n• Link your X account in your profile first — verification can take up to a minute after tweeting.',
       additionalRules: '',
+    },
+  },
+  {
+    // Banana Draw — the 24h JackHOF-seat raffle. Sits near the FRONT (Boris)
+    // and carries the NEW tag. `timerEndTime` is stamped per-read with the
+    // cycle close, so the promo card's existing bare countdown renders it with
+    // no custom label — same treatment as Match Your Pick.
+    id: 'banana-draw',
+    type: 'banana-draw',
+    title: 'Collect Bananas → JACKHOF SEAT',
+    description: 'Every 24 hours, someone wins a JackHOF seat',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    // No x/N meter — Bananas are unbounded and reset each cycle, so a progress
+    // bar would read as a cap that doesn't exist (same reasoning as pick-chase).
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: 'Collect Bananas → JackHOF Seat',
+      explanation:
+        '• Every 24 hours, one player wins a seat in the FIRST EVER JackHOF draft.\n'
+        + '• More Bananas, better odds — but all it takes is one Banana.\n'
+        + '• Every draft you fill earns 1 Banana. Paid drafts earn 2.\n'
+        + '• A friend you invited drafts → 5 Bananas. That friend makes a purchase → 5 more.\n'
+        + '• Drafts count once they FILL, not when you enter.\n'
+        + '• Bananas reset every 24 hours — use your drafts.\n'
+        + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
+        + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in, however many days that takes.\n'
+        + '• A JackHOF team is Jackpot + Hall of Fame on ONE roster: win your league and skip straight to the finals, AND compete for HOF prizes.\n'
+        + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.',
     },
   },
   {

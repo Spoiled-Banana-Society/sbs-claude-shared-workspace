@@ -98,6 +98,7 @@ export type BadgeContentKind =
   | 'text'          // short letters (JP / HOF / OG)
   | 'numeral-crown' // small filled crown above a roman numeral (BBB champion)
   | 'hof-champ'     // small crown above "HOF" + season numeral (HOF champion)
+  | 'jackhof'       // "JACK" in Jackpot red over "HOF" in gold, split red→gold rim
   | 'icon'          // a flat line icon (King crown outline / Founders key)
   | 'logo';         // a full-color image (NFL team logo via iconUrl)
 
@@ -362,7 +363,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -466,6 +467,35 @@ export interface Promo {
     };
     /** Jackpot promo: most recent draw (social proof in the modal). */
     latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
+    /** Banana Draw: live cycle state, stamped at read time. Everything here
+     *  resets every 24h EXCEPT `allTime`, which is the permanent ledger. */
+    bananaDraw?: {
+      cycleId: string;
+      closesAt: number;
+      /** This user's Bananas this cycle + where they came from. */
+      bananas: number;
+      free: number;
+      paid: number;
+      referral: number;
+      freeDrafts: number;
+      paidDrafts: number;
+      referrals: number;
+      /** Drafts entered but not yet filled — Bananas land at FILL. */
+      pending: number;
+      /** Their odds right now, as a percentage of the whole pool. */
+      sharePct: number;
+      totalBananas: number;
+      entrantCount: number;
+      /** Ranked by Bananas, SURFACED as share — never as position. */
+      leaderboard: Array<{ name: string; bananas: number; sharePct: number; isYou: boolean }>;
+      /** Seats claimed in the first-ever JackHOF league. */
+      seatsClaimed: number;
+      seatsTotal: number;
+      /** Most recent winners, newest first. */
+      recentWinners: Array<{ cycleId: string; name: string; bananas: number }>;
+      /** Permanent all-time credit history for this user. */
+      allTime: Array<{ cycleId: string; source: string; bananas: number; at: string }>;
+    };
   };
 }
 

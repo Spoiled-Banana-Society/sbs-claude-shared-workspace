@@ -32,7 +32,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
-  'pick-10',        // "Pick 6 & 10 → FREE SPINS" — engagement reward
+  'pick-10',        // "Pick 10 → FREE SPIN" — engagement reward
   'referral',       // "Refer a friend" — top-of-funnel growth
   'jackpot',        // excitement, least direct on revenue
 ];
@@ -48,9 +48,16 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  * right before 'mint' so it sits next to the Buy 10 card.
  */
 // "Match Your Pick" (pick-chase) LAUNCHED 2026-07-23 — now in
-// VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase). Nothing staged
-// for admin-only preview right now.
-export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
+// VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase).
+//
+// 🍌 'banana-draw' ("Collect Bananas → JACKHOF SEAT") is BUILT AND STAGED but
+// NOT LIVE — admin wallets only. Boris ships it at 12pm PT on 2026-07-26,
+// alongside the paid-only cutover.
+//
+// ⚠️ TO GO LIVE: move 'banana-draw' out of this array and into
+// VISIBLE_PROMO_TYPES_ORDER (put it FIRST — Boris wants it at the front), then
+// deploy. That single move is the whole launch; nothing else is gated.
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['banana-draw'];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
@@ -74,7 +81,7 @@ function adminPreviewOrder(): PromoType[] {
  * the novelty fades.
  */
 export const NEW_PROMO_TYPES = new Set<PromoType>([
-  // Empty for now — populate when a fresh promo is unhidden.
+  'banana-draw', // launches 2026-07-26 — drop this once the novelty fades
 ]);
 
 export function isNewPromo(promo: Promo): boolean {

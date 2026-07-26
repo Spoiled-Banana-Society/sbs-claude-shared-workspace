@@ -8,7 +8,6 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
-import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { deriveChaseState } from '@/lib/chasePromo';
 
 interface PromoCarouselProps {
@@ -40,9 +39,7 @@ function useVisibleCount() {
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode, heading = 'Promos' }: PromoCarouselProps) {
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
-  // Pick 10 expands to 6, 9 & 10 while the batch's specials are all hit.
-  const { data: batchData } = useBatchProgress();
-  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
+  // Pick-slot ladder removed 2026-07-26 — see app/promos/page.tsx.
   const VISIBLE_COUNT = useVisibleCount();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -252,7 +249,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
-              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title;
+              const promoTitle = promo.title;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
