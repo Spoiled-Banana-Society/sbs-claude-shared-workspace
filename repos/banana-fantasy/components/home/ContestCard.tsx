@@ -84,16 +84,20 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             balance, or prompts Add Funds at $0. The Buy button only exists in
             the pre-deposit world (flag off). */}
         <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-6 sm:mt-10">
+          {/* Sizing (Boris 2026-07-26): mobile was `w-full py-4 text-xl` — a
+              full-bleed slab that dominated the card. Now an auto-width pill
+              with a min-width so it still reads as the primary CTA. Desktop
+              goes the other way: 200px → 240px, slightly bigger. */}
           <button
             onClick={onEnter}
-            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"
+            className="min-w-[176px] px-10 py-3 text-lg sm:min-w-0 sm:w-[240px] sm:px-0 sm:py-4 sm:text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"
           >
             Enter
           </button>
           {!DEPOSITS_ENABLED && (
             <Link
               href="/buy-drafts?buy=1"
-              className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
+              className="min-w-[176px] px-10 py-3 text-lg sm:min-w-0 sm:w-[240px] sm:px-0 sm:py-4 sm:text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
             >
               Buy
             </Link>

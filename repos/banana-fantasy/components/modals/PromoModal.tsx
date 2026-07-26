@@ -51,7 +51,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // ever credited slot 10. Pick 10 is the ONLY winning slot; the server owns
   // the copy (getPick10DisplayTier → PICK_TIER_COPY), so just render it.
   const modalTitle = promo?.modalContent.title ?? '';
-  const pickExplanation = promo?.modalContent.explanation ?? '';
+  // Banana Draw owns its whole modal body (renderBananaDrawContent) — leading
+  // with the generic bullet list too would print the same rules twice and bury
+  // the mechanic under a wall of text (Boris 2026-07-26).
+  const pickExplanation = promo?.type === 'banana-draw' ? '' : (promo?.modalContent.explanation ?? '');
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });

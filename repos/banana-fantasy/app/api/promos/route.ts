@@ -64,8 +64,10 @@ export async function GET(req: Request) {
           sharePct: state.sharePct,
           totalBananas: state.totalBananas,
           entrantCount: state.entrantCount,
+          // Names resolved SERVER-side from the stored username/bananaNumber —
+          // never derived from the wallet hash, which invents handles.
           leaderboard: board.rows.map((r) => ({
-            name: r.userId, // resolved to display names client-side via useDraftRoomUsers
+            name: r.name,
             bananas: r.bananas,
             sharePct: r.sharePct,
             isYou: r.userId === me,

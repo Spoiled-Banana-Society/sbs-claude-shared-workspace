@@ -55,8 +55,10 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
 // alongside the paid-only cutover.
 //
 // ⚠️ TO GO LIVE: move 'banana-draw' out of this array and into
-// VISIBLE_PROMO_TYPES_ORDER (put it FIRST — Boris wants it at the front), then
-// deploy. That single move is the whole launch; nothing else is gated.
+// VISIBLE_PROMO_TYPES_ORDER at index 2 — right AFTER 'first-purchase' and
+// right BEFORE 'pick-chase' (Boris 2026-07-26: near the front, where Match
+// Your Pick sits, but ahead of it; new-user and first-purchase stay in front).
+// That single move is the whole launch; nothing else is gated.
 export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['banana-draw'];
 
 /**
@@ -67,11 +69,16 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['banana-draw'];
  */
 export const FEATURED_PROMO_TYPE: PromoType | null = null;
 
-/** Display order with the admin-preview types spliced in (before 'mint'). */
+/**
+ * Display order with the admin-preview types spliced in before 'pick-chase' —
+ * i.e. near the front, behind only new-user and first-purchase. Previewing a
+ * promo in the slot it will actually launch into means the admin preview shows
+ * the real ordering, not a different one.
+ */
 function adminPreviewOrder(): PromoType[] {
   const order = [...VISIBLE_PROMO_TYPES_ORDER];
-  const mintIdx = order.indexOf('mint');
-  order.splice(mintIdx === -1 ? order.length : mintIdx, 0, ...ADMIN_PREVIEW_PROMO_TYPES);
+  const anchor = order.indexOf('pick-chase');
+  order.splice(anchor === -1 ? order.length : anchor, 0, ...ADMIN_PREVIEW_PROMO_TYPES);
   return order;
 }
 

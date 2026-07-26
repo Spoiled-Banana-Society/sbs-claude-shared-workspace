@@ -479,7 +479,9 @@ const seedPromos: Promo[] = [
         + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
         + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in, however many days that takes.\n'
         + '• A JackHOF team is Jackpot + Hall of Fame on ONE roster: win your league and skip straight to the finals, AND compete for HOF prizes.\n'
-        + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.',
+        + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.\n'
+        + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.',
     },
   },
   {

@@ -11,6 +11,7 @@ import { logger } from '@/lib/logger';
 import { closeCycleAndDraw, ensureCycle } from '@/lib/bananaDraw';
 import { cycleFor } from '@/lib/bananaDrawMath';
 import { unlockBadge } from '@/lib/db';
+import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
 
 /**
  * GET /api/crons/banana-draw — the noon-PT Banana Draw.
@@ -41,6 +42,18 @@ function authed(req: Request): boolean {
 export async function GET(req: Request) {
   if (!authed(req)) return jsonError('Unauthorized', 401);
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
+
+  // ⚠️ PRE-LAUNCH HOLD. Bananas accrue quietly (harmless — nobody sees them),
+  // but DRAWING would bell the winner "You won a JackHOF seat" and bell every
+  // entrant with the result, for a promo they have never been shown. Worse, it
+  // would seat someone in the first-ever JackHOF league before launch.
+  //
+  // Gated on the same launch switch as the UI: the draw stays parked until
+  // 'banana-draw' moves out of ADMIN_PREVIEW_PROMO_TYPES. Cycles stay OPEN, so
+  // nothing is lost — the first post-launch tick draws them in order.
+  if (ADMIN_PREVIEW_PROMO_TYPES.includes('banana-draw')) {
+    return json({ ok: true, held: 'pre-launch', drawn: 0 });
+  }
 
   const now = Date.now();
   const db = getAdminFirestore();

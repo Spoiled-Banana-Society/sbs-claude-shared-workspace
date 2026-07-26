@@ -272,6 +272,37 @@ export interface LeaderboardRow {
   userId: string;
   bananas: number;
   sharePct: number;
+  /** Real display name, resolved SERVER-side. */
+  name: string;
+}
+
+/**
+ * Resolve wallets → the handle people actually display as.
+ *
+ * ⚠️ Never derive the name from the wallet hash (`bananaNumberFromWallet`).
+ * That helper is display-forbidden: it's only 90k wide, it does NOT match the
+ * server-assigned `bananaNumber` stored on the user doc, and it has already
+ * mis-identified a user once (2026-07-04 name-twin mis-grant; again on
+ * 2026-07-25 when a lookup by hash "found" nothing for Banana10546, whose
+ * wallet hashes to 46904). Read the STORED field — a leaderboard full of
+ * hash-invented names reads as fake data, because it is.
+ */
+async function resolveNames(userIds: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (!isFirestoreConfigured() || userIds.length === 0) return out;
+  const db = getAdminFirestore();
+  const refs = [...new Set(userIds.map((u) => u.toLowerCase()))]
+    .map((u) => db.collection(USERS).doc(u));
+  const snaps = await db.getAll(...refs).catch(() => []);
+  for (const s of snaps) {
+    const d = s.data() ?? {};
+    const raw = String(d.username ?? '').trim();
+    // Skip the "User-0x…" placeholder — it's not a name anyone recognises.
+    const real = raw && !/^user-0x/i.test(raw) && !/^0x[0-9a-f]{6,}/i.test(raw) ? raw : null;
+    out[s.id] = real
+      ?? (typeof d.bananaNumber === 'number' ? `Banana${d.bananaNumber}` : `${s.id.slice(0, 6)}…${s.id.slice(-4)}`);
+  }
+  return out;
 }
 
 /** Leaderboard for the current cycle, ranked by Bananas but SURFACED as share
@@ -298,11 +329,17 @@ export async function getCycleLeaderboard(nowMs = Date.now(), limit = 25): Promi
   });
   entries.sort((a, b) => b.bananas - a.bananas || (a.userId < b.userId ? -1 : 1));
 
+  const top = entries.slice(0, limit);
+  const names = await resolveNames(top.map((e) => e.userId));
   return {
     cycle,
     totalBananas,
     entrantCount: entries.length,
-    rows: entries.slice(0, limit).map((e) => ({ ...e, sharePct: shareOf(e.bananas, totalBananas) })),
+    rows: top.map((e) => ({
+      ...e,
+      sharePct: shareOf(e.bananas, totalBananas),
+      name: names[e.userId] ?? `${e.userId.slice(0, 6)}…${e.userId.slice(-4)}`,
+    })),
   };
 }
 
@@ -371,13 +408,19 @@ export async function getRecentWinners(limit = 5): Promise<Array<{
   });
   const snaps = await db.getAll(...refs).catch(() => null);
   if (!snaps) return [];
-  return snaps.flatMap((s) => {
+  const winners = snaps.flatMap((s) => {
     if (!s.exists) return [];
     const c = s.data() as CycleDoc;
     if (c.status !== 'drawn' || !c.winnerId) return [];
     const won = (c.snapshot ?? []).find((e) => e.userId === c.winnerId);
-    return [{ cycleId: c.cycleId, name: c.winnerId, bananas: won?.bananas ?? 0 }];
+    return [{ cycleId: c.cycleId, userId: c.winnerId, bananas: won?.bananas ?? 0 }];
   }).slice(0, limit);
+  const names = await resolveNames(winners.map((w) => w.userId));
+  return winners.map((w) => ({
+    cycleId: w.cycleId,
+    name: names[w.userId] ?? `${w.userId.slice(0, 6)}…${w.userId.slice(-4)}`,
+    bananas: w.bananas,
+  }));
 }
 
 /** Seats taken in the FIRST (lowest-numbered still-filling) JackHOF league —
