@@ -855,9 +855,13 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         </div>
 
         {/* 5 — LEADERBOARD, by share not rank. */}
-        {bd.leaderboard.length > 0 && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Tonight&apos;s leaderboard</h4>
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Tonight&apos;s leaderboard</h4>
+          {bd.leaderboard.length === 0 ? (
+            <p className="text-text-muted text-sm">
+              Nobody has earned a Banana yet this cycle. Fill a draft and you&apos;re first on the board.
+            </p>
+          ) : (
             <div className="space-y-1">
               {bd.leaderboard.slice(0, 10).map((r, i) => (
                 <div key={`${r.name}-${i}`}
@@ -870,8 +874,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* 6 — Last winner + the reveal. Only once a draw has happened. */}
         {lastWin && (
@@ -897,9 +901,13 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         </div>
 
         {/* 8 — All-time history. */}
-        {bd.allTime.length > 0 && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Your Banana history</h4>
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Your Banana history</h4>
+          {bd.allTime.length === 0 ? (
+            <p className="text-text-muted text-sm">
+              Every Banana you earn lands here with the date and where it came from — your drafts, and friends you invite.
+            </p>
+          ) : (
             <div className="max-h-48 overflow-y-auto space-y-1">
               {bd.allTime.map((h, i) => (
                 <div key={`${h.at}-${i}`} className="flex justify-between text-sm py-0.5">
@@ -911,8 +919,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </>
     );
   };
