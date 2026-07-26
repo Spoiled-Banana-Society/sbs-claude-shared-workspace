@@ -14,8 +14,8 @@ import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { API_CONFIG } from '@/lib/api/config';
 import { deriveChaseState } from '@/lib/chasePromo';
-import { bananaDefaultName } from '@/utils/helpers';
 import { BananaDrawReveal } from '@/components/promos/BananaDrawReveal';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -89,19 +89,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // resolver as the draft room). Empty unless a draw is loaded.
   const jpEntryUsers = useDraftRoomUsers((jpEntries ?? []).map((e) => e.wallet));
 
-  // Banana Draw leaderboard + winners arrive as WALLETS; resolve them through
-  // the same live resolver so they read as the handles people know, never as
-  // raw addresses ([[reference_default_identity_and_badges]]).
-  const bananaWallets = promo?.type === 'banana-draw'
-    ? [
-        ...(promo.modalContent.bananaDraw?.leaderboard ?? []).map((r) => r.name),
-        ...(promo.modalContent.bananaDraw?.recentWinners ?? []).map((w) => w.name),
-      ]
-    : [];
-  const bananaUsers = useDraftRoomUsers(bananaWallets);
-  const displayNameFor = (wallet: string): string =>
-    bananaUsers[wallet?.toLowerCase?.() ?? '']?.displayName
-    || bananaDefaultName(wallet || '');
+  // Banana Draw names arrive ALREADY RESOLVED from the server (real username
+  // or the stored bananaNumber). Deliberately not resolved client-side: the
+  // old fallback derived a name from the wallet HASH, which invents handles
+  // that don't match the user's real one — it read as fake data because it was.
 
   const BANANA_SOURCE_LABEL: Record<string, string> = {
     'draft-free': 'Free draft filled',
@@ -776,103 +767,106 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   };
 
   // ── Banana Draw ───────────────────────────────────────────────────────
-  // Order is deliberate: what you HAVE, then what you're chasing, then how to
-  // get more, then who's winning. "All it takes is one Banana" sits directly
-  // under the odds so the number and the reassurance are read together.
+  // Order is deliberate (Boris 2026-07-26): the MECHANIC in one line, then how
+  // to earn, then their own numbers, then everything else. The generic bullet
+  // list is suppressed for this promo (see pickExplanation) — it printed the
+  // same rules a second time and buried the point under a wall of text.
   const renderBananaDrawContent = () => {
     const bd = promo.modalContent.bananaDraw;
     if (!bd) return null;
-    const row = (label: string, count: number, bananas: number) => (
-      <div key={label} className="flex items-center justify-between py-1.5 text-sm">
-        <span className="text-text-secondary">{label}</span>
+    const lastWin = bd.recentWinners[0];
+
+    // One earning row. Count is shown only once they have some, so a new user
+    // reads a clean rate card instead of a column of zeros.
+    const earn = (label: string, bananas: number, count: number) => (
+      <div key={label} className="flex items-center justify-between py-2">
+        <span className="text-text-secondary text-sm">{label}</span>
         <span className="flex items-center gap-3">
-          <span className="text-text-muted tabular-nums w-6 text-right">{count}</span>
-          <span className="text-banana font-semibold tabular-nums w-12 text-right">🍌 {bananas}</span>
+          {count > 0 && <span className="text-text-muted text-xs tabular-nums">{count} so far</span>}
+          <span className="text-banana font-bold tabular-nums">🍌 {bananas}</span>
         </span>
       </div>
     );
 
-    const lastWin = bd.recentWinners[0];
     return (
       <>
-        {/* Last night's reveal — replays for everyone who was in the draw, so
-            the result is something you watch rather than something you read. */}
-        {lastWin && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <BananaDrawReveal
-              entrants={bd.leaderboard.map((r) => (r.isYou ? 'You' : displayNameFor(r.name)))}
-              winnerName={displayNameFor(lastWin.name)}
-              winnerBananas={lastWin.bananas}
-            />
-          </div>
-        )}
+        {/* 1 — THE MECHANIC. Two lines, nothing else. */}
+        <div className="text-center py-1">
+          <p className="text-text-primary text-base font-semibold leading-snug">
+            Every 24 hours, one player wins a seat in the<br />
+            first ever <JackHofWordmark size={16} /> draft.
+          </p>
+          <p className="text-text-muted text-sm mt-1.5">
+            More Bananas, better odds — but all it takes is one.
+          </p>
+        </div>
 
-        {/* Your Bananas + odds */}
+        {/* 2 — HOW YOU EARN. The rate card, straight after the mechanic. */}
+        <div className="bg-bg-tertiary rounded-xl px-4 py-3">
+          <div className="divide-y divide-white/5">
+            {earn('Free draft — once it fills', 1, bd.freeDrafts)}
+            {earn('Paid draft — once it fills', 2, bd.paidDrafts)}
+            {earn('A friend you invited drafts', 5, bd.referrals)}
+            {earn('…and when they buy passes', 5, 0)}
+          </div>
+          <p className="text-text-muted text-xs mt-2.5 pt-2.5 border-t border-white/5">
+            Bananas reset every 24 hours — use your drafts.
+          </p>
+        </div>
+
+        {/* 3 — YOUR POSITION. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
-          <div className="flex items-baseline justify-between mb-1">
+          <div className="flex items-baseline justify-between">
             <span className="text-3xl font-bold text-banana tabular-nums">🍌 {bd.bananas}</span>
-            <span className="text-text-muted text-xs">this cycle</span>
+            <span className="text-right">
+              <span className="block text-text-primary font-semibold tabular-nums">{bd.sharePct.toFixed(1)}%</span>
+              <span className="block text-text-muted text-xs">your odds tonight</span>
+            </span>
           </div>
           {bd.pending > 0 && (
-            <p className="text-text-muted text-xs mb-2">
-              {bd.pending} {bd.pending === 1 ? 'draft' : 'drafts'} filling — your{' '}
-              {bd.pending === 1 ? 'Banana lands' : 'Bananas land'} the moment{' '}
-              {bd.pending === 1 ? 'it fills' : 'they fill'}.
+            <p className="text-text-muted text-xs mt-2">
+              {bd.pending} {bd.pending === 1 ? 'draft' : 'drafts'} filling — {bd.pending === 1 ? 'that Banana lands' : 'those Bananas land'} when {bd.pending === 1 ? 'it fills' : 'they fill'}.
             </p>
           )}
-          <p className="text-text-secondary text-sm">
-            {bd.totalBananas > 0
-              ? <>Your odds tonight: <span className="text-text-primary font-semibold">{bd.sharePct.toFixed(1)}%</span> of {bd.totalBananas} Bananas from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.</>
-              : <>No Bananas in the draw yet — fill a draft and you&apos;re in.</>}
-          </p>
-          <p className="text-text-muted text-xs mt-1">More Bananas, better odds — but all it takes is one.</p>
+          {bd.totalBananas > 0 && (
+            <p className="text-text-secondary text-sm mt-2">
+              {bd.totalBananas} Bananas in tonight&apos;s draw from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.
+            </p>
+          )}
         </div>
 
-        {/* Seats in the first-ever JackHOF draft */}
+        {/* 4 — THE PRIZE + seats. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-text-primary font-medium">First ever JackHOF draft</span>
+            <span className="text-text-primary font-medium">
+              First ever <JackHofWordmark size={13} /> draft
+            </span>
             <span className="text-text-muted text-xs tabular-nums">{bd.seatsClaimed} of {bd.seatsTotal} seats</span>
           </div>
-          <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${Math.min(100, (bd.seatsClaimed / (bd.seatsTotal || 10)) * 100)}%`,
-                background: 'linear-gradient(90deg,#ef4444,#D4AF37)',
-              }}
-            />
+          <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, (bd.seatsClaimed / (bd.seatsTotal || 10)) * 100)}%`,
+                       background: 'linear-gradient(90deg,#ef4444,#D4AF37)' }} />
           </div>
-          <p className="text-text-secondary text-sm mt-2">
-            One seat goes out every 24 hours. When all {bd.seatsTotal} are claimed, it drafts.
+          <p className="text-text-secondary text-sm">
+            Jackpot + Hall of Fame on ONE roster — win your league and skip straight
+            to the finals, AND compete for HOF prizes. When all {bd.seatsTotal} seats are
+            claimed, it drafts.
           </p>
         </div>
 
-        {/* How to earn */}
-        <div className="bg-bg-tertiary rounded-xl p-4">
-          <h4 className="font-semibold mb-2 text-text-primary">How it works</h4>
-          <div className="text-text-muted text-[11px] uppercase tracking-wider mt-1 mb-1">Your drafts</div>
-          {row('Free draft', bd.freeDrafts, bd.free)}
-          {row('Paid draft', bd.paidDrafts, bd.paid)}
-          <div className="text-text-muted text-[11px] uppercase tracking-wider mt-3 mb-1">Friends you invite</div>
-          {row('Their first draft / purchase', bd.referrals, bd.referral)}
-          <p className="text-text-muted text-xs mt-3">
-            Drafts count once they FILL. Bananas reset every 24 hours — use your drafts.
-          </p>
-        </div>
-
-        {/* Leaderboard — ranked by Bananas, SURFACED as share. "The leader has
-            14%" invites people in; "you're 47th" pushes them out. */}
+        {/* 5 — LEADERBOARD, by share not rank. */}
         {bd.leaderboard.length > 0 && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-3 text-text-primary">Tonight&apos;s leaderboard</h4>
             <div className="space-y-1">
               {bd.leaderboard.slice(0, 10).map((r, i) => (
-                <div
-                  key={`${r.name}-${i}`}
-                  className={`flex items-center justify-between text-sm py-1 ${r.isYou ? 'text-banana font-semibold' : 'text-text-secondary'}`}
-                >
-                  <span className="truncate mr-3">{r.isYou ? 'You' : displayNameFor(r.name)}</span>
+                <div key={`${r.name}-${i}`}
+                  className={`flex items-center justify-between text-sm py-1 ${r.isYou ? 'text-banana font-semibold' : 'text-text-secondary'}`}>
+                  <span className="truncate mr-3">
+                    <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
+                    {r.isYou ? 'You' : r.name}
+                  </span>
                   <span className="flex items-center gap-3 shrink-0 tabular-nums">
                     <span>🍌 {r.bananas}</span>
                     <span className="text-text-muted w-12 text-right">{r.sharePct.toFixed(1)}%</span>
@@ -883,22 +877,30 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           </div>
         )}
 
-        {/* Past winners — the day someone wins on 2 Bananas is the best proof
-            that one Banana can win, so the count is shown alongside. */}
-        {bd.recentWinners.length > 0 && (
+        {/* 6 — Last winner + the reveal. Only once a draw has happened. */}
+        {lastWin && (
           <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Recent winners</h4>
-            {bd.recentWinners.map((w) => (
-              <div key={w.cycleId} className="flex justify-between text-sm py-1">
-                <span className="text-text-secondary">{displayNameFor(w.name)}</span>
-                <span className="text-text-muted tabular-nums">won on 🍌 {w.bananas}</span>
-              </div>
-            ))}
+            <BananaDrawReveal
+              entrants={bd.leaderboard.map((r) => (r.isYou ? 'You' : r.name))}
+              winnerName={lastWin.name}
+              winnerBananas={lastWin.bananas}
+            />
           </div>
         )}
 
-        {/* All-time history — permanent, never resets. Doubles as the dispute
-            trail for "I drafted and got nothing". */}
+        {/* 7 — The rest. Deliberately last: true, but not what you open for. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-2 text-text-primary">Good to know</h4>
+          <p className="whitespace-pre-line text-text-secondary text-sm leading-relaxed">
+            {'• Provably fair — the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
+            + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in.\n'
+            + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.\n'
+            + '• One account per person — more than one account makes you ineligible to win prizes.\n'
+            + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.'}
+          </p>
+        </div>
+
+        {/* 8 — All-time history. */}
         {bd.allTime.length > 0 && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-3 text-text-primary">Your Banana history</h4>

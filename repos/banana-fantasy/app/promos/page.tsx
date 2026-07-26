@@ -496,9 +496,15 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
     return () => clearInterval(i);
   }, [isChase, promo.timerEndTime]);
 
+  // Banana Draw draws its own inline row too (bananas · odds · countdown).
+  // Live numbers come from the promo payload, restamped on every /api/promos
+  // read, so the card updates without its own fetch.
+  const isBanana = promo.type === 'banana-draw';
+  const bd = isBanana ? promo.modalContent.bananaDraw : undefined;
+
   // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
   // so it's excluded from the generic progress bar below.
-  const showProgress = !isChase && progressMax > 0;
+  const showProgress = !isChase && !isBanana && progressMax > 0;
   // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
   const timeRemaining = promo.timerEndTime
     ? formatTimeRemaining(promo.timerEndTime)
@@ -572,6 +578,26 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
             )}
           </div>
         )}
+        {/* Banana Draw — live: what you hold, your odds, and the 24h clock.
+            Mirrors the Match Your Pick row so the cards read the same. */}
+        {isBanana && (
+          <div className="mt-auto mb-4">
+            <div className="flex items-center justify-between gap-2">
+              {bd && bd.bananas > 0 ? (
+                <span className="text-[13px] whitespace-nowrap text-white/70">
+                  <span className="font-bold text-[#ef6c37]">🍌 {bd.bananas}</span>
+                  {bd.pending > 0 && <><span className="text-white/25"> · </span>{bd.pending} filling</>}
+                  <span className="text-white/25"> → </span>
+                  <span className="font-bold text-[#ef6c37]">{bd.sharePct.toFixed(1)}%</span>
+                </span>
+              ) : (
+                <span className="text-[13px] text-white/45">Fill a draft to earn Bananas</span>
+              )}
+              <span className="shrink-0 text-sm tabular-nums text-white/70">{timeRemaining || '24:00:00'}</span>
+            </div>
+          </div>
+        )}
+
         {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
         {showProgress && (
           <div className="mt-auto mb-4">
