@@ -298,14 +298,9 @@ export default function PromosPage() {
           Pinned above everything so it's seen without opening the promo
           (Boris 2026-07-26). Self-hides until there are Bananas in the pool,
           so it never shows an empty board — including before launch. */}
-      {/* ⚠️ ADMIN-ONLY until launch. Gated on the SAME isWalletAdmin check the
-          promo card uses — the banner shipped ungated on 2026-07-26 and was
-          visible to every user the moment the first Bananas were credited,
-          because it self-shows whenever the pool is non-empty. Both gates must
-          flip together at launch. */}
-      {isWalletAdmin(user?.walletAddress) && (
-        <BananaDrawBanner myWallet={user?.walletAddress ?? null} />
-      )}
+      {/* Public since the 2026-07-26 launch. Self-hides while the pool is
+          empty, so it simply doesn't render until the first Bananas land. */}
+      <BananaDrawBanner myWallet={user?.walletAddress ?? null} />
 
       {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
           you've got to spend. Minimal single card with internal dividers. ─── */}
