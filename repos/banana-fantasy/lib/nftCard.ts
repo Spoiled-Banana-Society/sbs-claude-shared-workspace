@@ -48,3 +48,28 @@ export function buildTieredDraftPassUrl(
 ): string {
   return buildOgCardUrl({ preReveal: true, passNo: tokenId, tier }, base);
 }
+
+// ── Exposure share card ──────────────────────────────────────────────────
+export interface ExposureCardPayload {
+  name: string;
+  totalDrafts: number;
+  rows: Array<{ tp: string; pct: number }>;
+}
+
+/**
+ * URL for /api/og/exposure. Same base64url payload convention as
+ * buildOgCardUrl so both cards are built and cached the same way.
+ */
+export function buildExposureCardUrl(payload: ExposureCardPayload, base = siteBaseUrl()): string {
+  // base64url(), not Buffer — this runs in the BROWSER from the exposure page,
+  // where Buffer isn't reliably available. Same helper buildOgCardUrl uses.
+  const d = base64url(JSON.stringify(payload));
+  return `${base}/api/og/exposure?d=${d}`;
+}
+
+/** URL for /api/og/badge — the shareable badge card. */
+export function buildBadgeCardUrl(badgeId: string, displayName = '', base = siteBaseUrl()): string {
+  const q = new URLSearchParams({ b: badgeId });
+  if (displayName) q.set('n', displayName);
+  return `${base}/api/og/badge?${q.toString()}`;
+}

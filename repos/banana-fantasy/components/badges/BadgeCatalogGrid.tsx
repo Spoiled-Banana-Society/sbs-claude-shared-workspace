@@ -3,6 +3,10 @@
 import React, { useCallback, useMemo } from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
+import { ShareCard } from '@/components/share/ShareCard';
+import { getShareableUrl } from '@/lib/shareUtils';
+import { buildBadgeCardUrl } from '@/lib/nftCard';
+import { BADGE_BY_ID } from '@/lib/badges/catalog';
 import { useBadges } from '@/hooks/useBadges';
 import { useToast } from '@/components/ui/Toast';
 import { ripenessFromCount, RIPENESS_TIERS } from '@/lib/badges/ripeness';
@@ -68,12 +72,32 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
     return <div className="text-sm text-text-secondary">Loading badges…</div>;
   }
 
+  // The badge they're actually wearing — equipped, else their default banana.
+  // Only ever a badge they've unlocked, so a shared card can't show a locked one.
+  const shareBadgeId = (equipped && unlockedIds.has(equipped)) ? equipped : defaultBananaId;
+  const shareName = '';
+
   return (
     <div className="space-y-8">
       <p className="text-sm text-text-secondary">
         Badges show what you&apos;ve done in SBS. Equip one to show it next to your
         avatar across the site — or keep your banana.
       </p>
+
+      {/* Post the badge you're WEARING. One control above the grid rather than
+          a button per tile — the tiles are a dense 6-up click-to-equip grid and
+          per-tile actions would wreck it. Own profile only. */}
+      {!readOnlyForUserId && shareBadgeId && (
+        <div className="max-w-[340px]">
+          <ShareCard
+            imageUrl={buildBadgeCardUrl(shareBadgeId, shareName)}
+            pageUrl={getShareableUrl('/profile?tab=badges')}
+            tweetText={`${BADGE_BY_ID[shareBadgeId]?.label ?? 'Badge'} unlocked on @SBSFantasy 🍌🏈`}
+            fileName={`SBS-Badge-${BADGE_BY_ID[shareBadgeId]?.label ?? shareBadgeId}`}
+            label="Post badge"
+          />
+        </div>
+      )}
 
       {SECTIONS.map(section => {
         const badges = grouped[section.key] ?? [];

@@ -7,9 +7,19 @@ import { JACKPOT_RED, HOF_GOLD } from '@/components/ui/JackHofWordmark';
 export const runtime = 'nodejs';
 export const revalidate = 31536000;
 
-// ── 4:5 X-safe canvas (nothing cropped on X) ──
+// ── Two canvases, ONE card definition ─────────────────────────────────────
+// 4:5 (default) is what gets DOWNLOADED and what the mobile share sheet
+// attaches — X displays attached photos tall and uncropped, so this is the
+// best-looking path.
+//
+// `?w=wide` renders the SAME card on a 1200x628 canvas for the DESKTOP link
+// unfurl. X crops link cards to 1.91:1, so serving the 4:5 there would slice
+// off the SBS mark and the bottom line. Same card, different frame — the
+// design is defined once (Boris 2026-07-26).
 const CANVAS_W = 1080;
 const CANVAS_H = 1350;
+const WIDE_W = 1200;
+const WIDE_H = 628;
 
 type Tier = 'pro' | 'hof' | 'jackpot' | 'jackhof';
 interface Player { team: string; pos: string; bye?: string | number; adp?: string | number; pick?: string | number; playerId?: string }
@@ -82,20 +92,45 @@ export async function GET(req: Request) {
   const logoData = await readFile(path.join(process.cwd(), 'public/sbs-logo-white.png')).catch(() => null);
   const logoSrc = logoData ? `data:image/png;base64,${logoData.toString('base64')}` : undefined;
 
-  // Per-card scale so each fills ~88% of the canvas height, centered.
+  const wide = searchParams.get('w') === 'wide';
+  const W = wide ? WIDE_W : CANVAS_W;
+  const H = wide ? WIDE_H : CANVAS_H;
+
+  // Scale so the card fills ~88% of the canvas HEIGHT either way. On the short
+  // wide canvas that lands the card smaller, which is correct — it sits in a
+  // landscape frame with the identity line beside it rather than cropped.
   const cardH = preReveal ? 452 : 540;
-  const S = (CANVAS_H * 0.88) / (cardH + 8);
+  const S = (H * (wide ? 0.86 : 0.88)) / (cardH + 8);
   const px = (n: number) => Math.round(n * S);
 
   const card = preReveal ? renderPass(px, passNo, logoSrc, tier) : renderTeam(px, tier, players, logoSrc, idsLine);
+  const bg = 'linear-gradient(172deg,#0d0d12 0%,#08080b 70%,#060608 100%)';
 
   return new ImageResponse(
     (
-      <div style={{ width: CANVAS_W, height: CANVAS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter', background: 'linear-gradient(172deg,#0d0d12 0%,#08080b 70%,#060608 100%)' }}>
+      <div style={{ width: W, height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: wide ? 48 : 0, fontFamily: 'Inter', background: bg }}>
         {card}
+        {wide ? (
+          <div style={{ display: 'flex', flexDirection: 'column', maxWidth: 420 }}>
+            <div style={{ display: 'flex', fontSize: 30, fontWeight: 900, letterSpacing: -0.5, color: '#fff' }}>
+              BANANA BEST BALL IV
+            </div>
+            {idsLine ? (
+              <div style={{ display: 'flex', marginTop: 10, fontSize: 17, fontWeight: 700, letterSpacing: 1.6, color: 'rgba(255,255,255,.45)' }}>
+                {idsLine}
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', marginTop: 22, fontSize: 26, fontWeight: 900, color: '#fbbf24' }}>
+              $100K Guaranteed Prize Pool
+            </div>
+            <div style={{ display: 'flex', marginTop: 8, fontSize: 16, fontWeight: 700, letterSpacing: 1.4, color: 'rgba(255,255,255,.55)' }}>
+              SBSFANTASY.COM
+            </div>
+          </div>
+        ) : null}
       </div>
     ),
-    { width: CANVAS_W, height: CANVAS_H, fonts: fonts.length ? fonts : undefined },
+    { width: W, height: H, fonts: fonts.length ? fonts : undefined },
   );
 }
 

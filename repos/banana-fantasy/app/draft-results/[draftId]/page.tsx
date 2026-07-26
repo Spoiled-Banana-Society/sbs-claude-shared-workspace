@@ -13,7 +13,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
 import { teamNoFromToken } from '@/lib/teamCardData';
 import { buildOgCardUrl } from '@/lib/nftCard';
-import { saveImageToDevice } from '@/lib/saveImage';
+import { ShareCard } from '@/components/share/ShareCard';
+import { getShareableUrl } from '@/lib/shareUtils';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
@@ -602,19 +603,9 @@ export default function DraftResultsPage() {
     setTimeout(() => setRosterSaved(false), 2000);
   }, [generateRosterImage, title]);
 
-  // Save card image — fetch→blob→download via the shared helper (mobile gets
-  // the native share sheet). The old /api/save-card proxy rejected our
-  // same-origin /api/og/team-card URL, so it "downloaded" a JSON error named
-  // .png that failed to save on desktop and mobile.
-  const [saved, setSaved] = useState(false);
-  const handleSave = useCallback(async (url: string) => {
-    if (!url) return;
-    const ok = await saveImageToDevice(url, title);
-    if (ok) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    }
-  }, [title]);
+  // (The old standalone card-download handler lived here. <ShareCard> now owns
+  // both Post and Download for the team card — it wraps the same
+  // saveImageToDevice helper, so the mobile share-sheet behaviour is unchanged.)
 
   // Point this token's NFT image (OpenSea / marketplace / X) at the obsidian team
   // card, once per token, for the OWNER's own team. Fire-and-forget; deps are
@@ -748,24 +739,20 @@ export default function DraftResultsPage() {
           <div className="flex justify-center">
             <TeamCardObsidian tier={cardTier} players={cardPlayers} teamNumber={cardTeamNo} leagueNumber={leagueNumber} width={300} />
           </div>
+          {/* Post + Download. Replaced a 20px download icon that most people
+              never noticed — this is the moment with the highest volume of
+              genuinely postable content on the site (Boris 2026-07-26). */}
           {ogImageUrl && (
-            <button
-              onClick={() => handleSave(ogImageUrl)}
-              className="mt-3 p-2 text-white/30 hover:text-white/70 transition-colors"
-              aria-label="Download card"
-            >
-              {saved ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              )}
-            </button>
+            <div className="mt-4 flex justify-center">
+              <ShareCard
+                imageUrl={ogImageUrl}
+                pageUrl={getShareableUrl(`/draft-results/${draftId}`)}
+                tweetText={`My ${cardTier === 'jackhof' ? 'JackHOF' : cardTier === 'jackpot' ? 'Jackpot' : cardTier === 'hof' ? 'HOF' : ''} team in ${title} on @SBSFantasy 🍌🏈`.replace(/\s+/g, ' ')}
+                fileName={title}
+                label="Post on X"
+                className="w-full max-w-[320px]"
+              />
+            </div>
           )}
         </div>
 
