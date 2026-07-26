@@ -1335,6 +1335,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Trigger Privy's Twitter OAuth linking flow
   // linkTwitter() redirects to Twitter — when user returns, privy.user updates
   // with the new linkedAccount, which our effect above detects and verifies.
+  // ── Stuck-"Connecting…" watchdog ────────────────────────────────────────
+  // handleLinkTwitter sets isTwitterLinking(true) and hands off to Privy's
+  // OAuth popup. The only reset lives in the verify path's `finally`, which
+  // runs ONLY on a successful link — so closing the popup, cancelling on X, or
+  // any silent OAuth failure left the flag true FOREVER. Every Connect button
+  // is disabled={isTwitterLinking}, so one abandoned attempt bricked X-connect
+  // app-wide until a full page reload. That's the "I can't click Connect
+  // anymore" report (Levi / Banana10549, 2026-07-26).
+  //
+  // Two escapes, both no-ops on the happy path (a real link clears the flag
+  // first): come back to the tab without a link → clear; and a hard timeout in
+  // case focus never fires (mobile in-app browsers, redirect flows).
+  useEffect(() => {
+    if (!isTwitterLinking) return;
+
+    const clear = (msg?: string) => {
+      setIsTwitterLinking(false);
+      if (msg) setTwitterError(msg);
+    };
+
+    const onFocus = () => {
+      // Give Privy a beat to finish a link that DID succeed before deciding
+      // the user bailed — otherwise we'd race a good connect.
+      window.setTimeout(() => {
+        setIsTwitterLinking((linking) => {
+          if (!linking) return false;
+          setTwitterError('X wasn\u2019t connected. Tap Connect to try again.');
+          return false;
+        });
+      }, 2500);
+    };
+
+    window.addEventListener('focus', onFocus);
+    const hardStop = window.setTimeout(
+      () => clear('That took too long. Tap Connect to try again.'),
+      90_000,
+    );
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.clearTimeout(hardStop);
+    };
+  }, [isTwitterLinking]);
+
   const handleLinkTwitter = useCallback(() => {
     // Don't silently no-op when we're not ready yet — that invisible failure
     // (user taps Connect, NOTHING happens, no error, no spinner) was a top
