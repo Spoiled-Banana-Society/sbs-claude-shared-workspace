@@ -489,7 +489,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     ? '• Hit Pick 10 in any draft → Free Banana Spin.\n'
       + '• FREE and paid drafts BOTH count.\n'
       + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
-      + '• Through Sunday midnight PT.'
+      + '• Through Sunday 12pm PT.'
     : '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
       + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
       + '• Paid Drafts Only.';
@@ -504,9 +504,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     ? {
       // Weekend window copy — same slots, but free & paid drafts both count.
       // NEW tag removed (Boris 2026-07-23): Pick 10 is not a new promo.
-      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun midnight PT!', isNew: false },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun midnight PT!', isNew: false },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun midnight PT!', isNew: false },
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
+      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
+      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: false },
     }
     : {
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
@@ -559,20 +559,20 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         }
       }
     }
-    // Weekend window (auto-reverts Sun midnight PT): free drafts count too — strip
+    // Weekend window (auto-reverts Sun 12pm PT): free drafts count too — strip
     // the paid-only language from the draft-based promos' copy and say so.
     if (promoWeekendActive() && (promo.type === 'daily-drafts' || promo.type === 'jackpot' || promo.type === 'pick-chase')) {
       const dePaid = (t: string | undefined): string | undefined =>
         t === undefined ? undefined : t.replace(/\bpaid draft/gi, 'draft').replace(/\bPaid Drafts Only\.?/gi, '').trim();
       promo.title = dePaid(promo.title) ?? promo.title;
       const desc = dePaid(promo.description) ?? promo.description;
-      promo.description = desc ? `${desc} · Free drafts count thru Sun midnight PT` : desc;
+      promo.description = desc ? `${desc} · Free drafts count thru Sun 12pm PT` : desc;
       if (promo.modalContent?.explanation) {
         const lines = promo.modalContent.explanation
           .split('\n')
           .map((l: string) => dePaid(l) ?? l)
           .filter((l: string) => l && l !== '•');
-        lines.push('• This week: FREE and paid drafts BOTH count (through Sunday midnight PT)!');
+        lines.push('• This week: FREE and paid drafts BOTH count (through Sunday 12pm PT)!');
         promo.modalContent.explanation = lines.join('\n');
       }
     }
@@ -3127,13 +3127,13 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
   });
 }
 
-// ─── Chase Your Pick (limited-time, thru Sun midnight PT) ───────────────────────
+// ─── Chase Your Pick (limited-time, thru Sun 12pm PT) ───────────────────────
 const PICK_CHASE_PROMO_ID = 'pick-chase';
 const PICK_CHASE_MAX_SPINS = 5;           // cap: +1 spin per draft, maxes at 5
 const PICK_CHASE_SEEN_LEDGER_MAX = 60;    // idempotency ledger cap per user
 
 /**
- * Chase Your Pick (Boris 2026-07-22, live thru Sun midnight PT — gated by
+ * Chase Your Pick (Boris 2026-07-22, live thru Sun 12pm PT — gated by
  * promoWeekendActive). Called from reveal-complete for EVERY human seat with
  * that seat's draft slot (1–10):
  *

@@ -178,7 +178,7 @@ export async function grantFounderDraftSpins(
   for (const wallet of recipients) {
     try {
       const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
-      // Weekend promo window: free passes earn the founder spin too (auto-reverts Sun midnight PT).
+      // Weekend promo window: free passes earn the founder spin too (auto-reverts Sun 12pm PT).
       if (passType !== 'paid' && !(passType === 'free' && promoWeekendActive())) { skippedFree += 1; continue; }
       await db.runTransaction(async (tx) => {
         tx.set(db.collection(USERS_COLLECTION).doc(wallet), { wheelSpins: FieldValue.increment(1) }, { merge: true });
