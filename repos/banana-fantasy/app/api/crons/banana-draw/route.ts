@@ -12,6 +12,9 @@ import { closeCycleAndDraw, ensureCycle } from '@/lib/bananaDraw';
 import { cycleFor } from '@/lib/bananaDrawMath';
 import { unlockBadge } from '@/lib/db';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
+import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
+import { recordPassOrigins } from '@/lib/onchain/passOrigin';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 
 /**
  * GET /api/crons/banana-draw — the noon-PT Banana Draw.
@@ -128,22 +131,83 @@ export async function GET(req: Request) {
       // lands in the NEXT JackHOF league automatically — Boris's rule, already
       // in the existing code (lib/db-firestore.ts joinQueue, the
       // `!r.members.some(m => m.wallet === userId)` clause).
-      await db.collection('v2_users').doc(winnerId)
-        .set({ jackhofEntries: FieldValue.increment(1) }, { merge: true });
+      // PREFERRED PATH — mint a REAL JackHOF pass NFT and bind the seat to it.
+      //
+      // The wheel already does exactly this (app/api/wheel/spin/route.ts, the
+      // mintJpHof branch) and it is what makes a won seat behave like a pass:
+      // it shows up under the winner's passes carrying the JackHOF level (and
+      // therefore the red-and-gold treatment), and it stays SELLABLE on the
+      // marketplace until the league fills, with the swap endpoint handing the
+      // seat to the buyer.
+      //
+      // This cron previously only ran the legacy wallet-keyed joinQueue below.
+      // That seats the winner and nothing more: no token, so no pass in the
+      // wallet, nothing on the marketplace, and no way to sell the seat — even
+      // though the comment here claimed otherwise (caught 2026-07-27, before
+      // the first draw). Boris's spec is explicit that the seat is sellable, so
+      // the token path is the one that has to run.
+      let seated = false;
+      if (isAdminMintConfigured()) {
+        try {
+          const res = await reserveTokensToWallet({ to: winnerId, count: 1 });
+          // Free-origin: a won seat cost nothing, and pass_origin is what keeps
+          // it out of the PAID revenue count (lib/onchain/reconcilePasses).
+          await recordPassOrigins({
+            tokenIds: res.tokenIds,
+            origin: 'admin_grant',
+            ownerAtMint: winnerId,
+            txHash: res.txHash,
+            reason: `banana_draw:${cycleId}`,
+            level: 'jackhof',
+          });
+          await registerMintedTokens(winnerId, res.tokenIds, 'free')
+            .catch((e) => logger.warn('banana.draw.register_go_failed', { cycleId, err: (e as Error).message }));
 
-      try {
-        const { joinQueue } = await import('@/lib/db');
-        const { joinedRoundIds } = await joinQueue(winnerId, 'jackhof');
-        const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
-        for (const rid of joinedRoundIds) {
-          await ensureSpecialDraftSeat('jackhof', rid, winnerId);
+          // Stamp the special level so the Go engine's selectTokensByType and
+          // countSpendableTokens both SKIP it — without this the pass could be
+          // spent to enter an ordinary fast draft, burning the JackHOF seat.
+          await Promise.all(res.tokenIds.map((tid) => db
+            .collection('owners').doc(winnerId.toLowerCase())
+            .collection('validDraftTokens').doc(String(tid))
+            .set({ Level: 'JackHOF' }, { merge: true })));
+
+          const tokenId = res.tokenIds[0];
+          if (tokenId) {
+            const { joinQueueWithToken } = await import('@/lib/db');
+            const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackhof', String(tokenId));
+            if (joinedRoundId !== null) {
+              const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+              await ensureSpecialDraftSeat('jackhof', joinedRoundId, winnerId);
+            }
+            seated = true;
+            logger.info('banana.draw.seated_with_token', { cycleId, winnerId, tokenId, round: joinedRoundId });
+          }
+        } catch (mintErr) {
+          logger.error('banana.draw.mint_failed', { cycleId, winnerId, err: (mintErr as Error).message });
         }
-        logger.info('banana.draw.seated', { cycleId, winnerId, rounds: joinedRoundIds });
-      } catch (qErr) {
-        // The entry credit survives, so the seat can be recovered by hand or on
-        // a retry — but this must be loud, because a winner without a seat is
-        // the single worst failure this promo can have.
-        logger.error('banana.draw.seat_failed', { cycleId, winnerId, err: (qErr as Error).message });
+      }
+
+      // FALLBACK — mint unavailable or failed. A seat that can't be sold still
+      // beats no seat at all, so we never let a winner walk away empty.
+      // jackhofEntries is credited HERE only: joinQueue consumes the counter,
+      // while the token path above doesn't use it, and crediting in both cases
+      // would leave a stale entry that could seat them a second time.
+      if (!seated) {
+        try {
+          await db.collection('v2_users').doc(winnerId)
+            .set({ jackhofEntries: FieldValue.increment(1) }, { merge: true });
+          const { joinQueue } = await import('@/lib/db');
+          const { joinedRoundIds } = await joinQueue(winnerId, 'jackhof');
+          const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+          for (const rid of joinedRoundIds) {
+            await ensureSpecialDraftSeat('jackhof', rid, winnerId);
+          }
+          logger.warn('banana.draw.seated_legacy_no_token', { cycleId, winnerId, rounds: joinedRoundIds });
+        } catch (qErr) {
+          // Loud: a winner without a seat is the single worst failure this
+          // promo can have. The entry credit survives for manual recovery.
+          logger.error('banana.draw.seat_failed', { cycleId, winnerId, err: (qErr as Error).message });
+        }
       }
 
       // The badge unlocks the moment they win the seat (Boris) — and again

@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
-import { bananaDefaultName } from '@/utils/helpers';
 import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
+import {
+  BANANAS_PER_DRAFT,
+  BANANAS_PAID_BONUS,
+  BANANAS_REFERRAL_DRAFT,
+  BANANAS_REFERRAL_PURCHASE,
+} from '@/lib/bananaDrawMath';
 
 /**
  * The Banana Draw leaderboard, pinned to the top of /promos so everyone sees
@@ -32,7 +36,9 @@ interface PublicState {
   closesAt: number;
   totalBananas: number;
   entrantCount: number;
-  leaderboard: Array<{ userId: string; bananas: number; sharePct: number }>;
+  /** `name` is resolved SERVER-side (lib/bananaDraw.resolveNames) from the
+   *  stored username — see the note on nameFor's removal below. */
+  leaderboard: Array<{ userId: string; bananas: number; sharePct: number; name: string }>;
   recentWinners: Array<{ cycleId: string; name: string; bananas: number }>;
   seatsClaimed: number;
   seatsTotal: number;
@@ -92,12 +98,21 @@ export function BananaDrawBanner({
     return () => clearInterval(tick);
   }, []);
 
-  const wallets = [
-    ...(state?.leaderboard ?? []).map((r) => r.userId),
-    ...(state?.recentWinners ?? []).map((w) => w.name),
-  ];
-  const users = useDraftRoomUsers(wallets);
-  const nameFor = (w: string) => users[w?.toLowerCase?.() ?? '']?.displayName || bananaDefaultName(w || '');
+  // NAMES COME FROM THE PAYLOAD — do not re-resolve them client-side.
+  //
+  // This used to run every wallet through useDraftRoomUsers and fall back to
+  // bananaDefaultName() while that request was in flight, so the board painted
+  // a full column of invented "Banana####" names and then swapped them for the
+  // real usernames a beat later (Boris 2026-07-27). The server already resolves
+  // the STORED username in resolveNames() and ships it as `row.name`, so the
+  // round-trip bought us nothing but the flash.
+  //
+  // It was also wrong for the winner line: recentWinners[].name is ALREADY a
+  // display name, and it was being fed back into the wallet resolver, which
+  // hashed a username string into a nonsense Banana number.
+  //
+  // A user who genuinely has no username still reads as Banana#### — but from
+  // their stored bananaNumber, which is the real one.
 
   // Render even at zero. Hiding on an empty pool made the leaderboard vanish
   // for the whole launch window — 657 users got a bell and would have clicked
@@ -166,7 +181,7 @@ export function BananaDrawBanner({
             >
               <span className="truncate mr-3">
                 <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
-                {isYou ? 'You' : nameFor(r.userId)}
+                {isYou ? 'You' : r.name}
               </span>
               <span className="shrink-0 tabular-nums">🍌 {r.bananas}</span>
             </div>
@@ -191,15 +206,40 @@ export function BananaDrawBanner({
             </span>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={onExplain}
-            className="w-full text-left text-xs text-text-muted hover:text-text-secondary transition-colors py-1 mb-2 border-t border-white/5 pt-2"
-          >
-            You have 🍌 0 — fill a draft to get in{myPending > 0 ? ` (${myPending} filling)` : ''}.
-          </button>
+          <div className="text-xs text-text-muted py-1 mb-2 border-t border-white/5 pt-2">
+            You have <span className="text-text-secondary font-semibold">🍌 0 Bananas</span>
+            {myPending > 0 ? ` · ${myPending} filling` : ''}.
+          </div>
         )
       )}
+
+      {/* THE FOUR WAYS. Boris 2026-07-27: everyone should be able to see how a
+          Banana is earned without opening the modal — the old copy just said
+          "fill a draft", which hid three of the four routes (and both referral
+          ones, the highest-value pair).
+
+          Order and wording follow the framing rule in bananaDrawMath: 1 Banana
+          is the BASELINE every draft earns and paid is a BONUS on top. Never
+          render free as the lesser tier — burning the free stack is the entire
+          point of the promo. */}
+      <div className="border-t border-white/5 pt-2 mb-1">
+        <div className="text-[11px] uppercase tracking-wider text-text-muted/70 mb-1.5">
+          4 ways to earn Bananas
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          {[
+            ['Fill any draft', BANANAS_PER_DRAFT],
+            ['Make it a paid draft', BANANAS_PER_DRAFT + BANANAS_PAID_BONUS],
+            ['A friend you invite drafts', BANANAS_REFERRAL_DRAFT],
+            ['That friend buys passes', BANANAS_REFERRAL_PURCHASE],
+          ].map(([label, n]) => (
+            <div key={label as string} className="flex items-center justify-between text-xs gap-3">
+              <span className="text-text-secondary truncate">{label}</span>
+              <span className="shrink-0 tabular-nums text-banana font-semibold">🍌 {n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {canExpand && !empty && (
         <button
@@ -214,10 +254,20 @@ export function BananaDrawBanner({
       <div className="flex items-center justify-between text-xs text-text-muted border-t border-white/5 pt-2 gap-3">
         <span className="truncate">
           {state.seatsClaimed} of {state.seatsTotal} seats claimed
-          {lastWinner ? <> · last winner {nameFor(lastWinner.name)} on 🍌 {lastWinner.bananas}</> : null}
+          {lastWinner ? <> · last winner {lastWinner.name} on 🍌 {lastWinner.bananas}</> : null}
         </span>
         <span className="shrink-0">{state.totalBananas} 🍌 in the draw</span>
       </div>
+
+      {/* The closing line, and the one that matters most: odds scale with
+          Bananas, but the floor is ONE. Someone holding a single Banana who
+          reads "the leader has 10" needs to be told, right there, that they can
+          still win — otherwise the leaderboard argues them out of playing
+          (Boris 2026-07-27). */}
+      <p className="text-center text-[11px] text-text-muted/80 pt-2">
+        More Bananas, more shots at a <JackHofWordmark size={11} /> seat
+        <span className="text-text-muted"> — all it takes is one.</span>
+      </p>
     </div>
   );
 }

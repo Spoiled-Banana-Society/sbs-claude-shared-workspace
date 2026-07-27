@@ -471,6 +471,20 @@ const seedPromos: Promo[] = [
       title: 'Collect Bananas → JackHOF Seat',
       explanation:
         '• Every 24 hours, one player wins a seat in the FIRST EVER JackHOF draft.\n'
+        // WHAT THE PRIZE ACTUALLY IS. This used to be one thin line near the
+        // bottom, under the rules — so the promo explained how to enter at
+        // length and barely explained what you were entering FOR (Boris
+        // 2026-07-27). Wording matches the canonical answers in
+        // lib/faqContent.ts so the two can never drift.
+        + '\n'
+        + 'WHAT IS A JACKHOF DRAFT?\n'
+        + '• The rarest draft in SBS — the Jackpot and a HOF landing on the SAME draft (~1 in 800).\n'
+        + '• It carries BOTH perks. Two perks, one draft:\n'
+        + '   – Jackpot perk: win your league and skip straight to the Week 17 finals, past both playoff rounds.\n'
+        + '   – HOF perk: your team also enters the separate HOF playoff track, competing for bonus prizes on top.\n'
+        + '• Your team card gets the exclusive red-and-gold JackHOF border.\n'
+        + '\n'
+        + 'HOW TO EARN BANANAS — 4 WAYS\n'
         + '• More Bananas, better odds — but all it takes is one Banana.\n'
         + '• Every draft you fill earns 1 Banana. Paid drafts earn 2.\n'
         + '• A NEW friend you invite drafts → 5 Bananas. That friend makes a purchase → 5 more. Invites from before this promo started don’t count.\n'
@@ -478,8 +492,7 @@ const seedPromos: Promo[] = [
         + '• Bananas reset every 24 hours — use your drafts.\n'
         + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
         + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in, however many days that takes.\n'
-        + '• A JackHOF team is Jackpot + Hall of Fame on ONE roster: win your league and skip straight to the finals, AND compete for HOF prizes.\n'
-        + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.\n'
+        + '• Your seat arrives as a JackHOF draft pass in your passes — you can sell it on the marketplace right up until the draft fills. It is a slow draft.\n'
         + '• One account per person — more than one account makes you ineligible to win prizes.\n'
         + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.',
     },
