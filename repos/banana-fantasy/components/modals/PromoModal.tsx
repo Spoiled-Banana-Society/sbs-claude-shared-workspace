@@ -877,17 +877,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           )}
         </div>
 
-        {/* 6 — Last winner + the reveal. Only once a draw has happened. */}
-        {lastWin && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <BananaDrawReveal
-              entrants={bd.leaderboard.map((r) => (r.isYou ? 'You' : r.name))}
-              winnerName={lastWin.name}
-              winnerBananas={lastWin.bananas}
-            />
-          </div>
-        )}
-
         {/* 7 — The rest. Deliberately last: true, but not what you open for. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
           <h4 className="font-semibold mb-2 text-text-primary">Good to know</h4>
@@ -921,6 +910,29 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             </div>
           )}
         </div>
+
+        {/* 9 — The draw ceremony, LAST (Boris 2026-07-27). It used to sit
+            mid-modal, where a reel captioned "Drawing from the sealed
+            number…" read as a draw happening RIGHT NOW — mid-cycle, hours
+            after the number was actually drawn ("its pretending to do it").
+            Down here, under the history, framed as "Seat N winner", the same
+            animation reads as what it is: the replay of a finished draw.
+            Entrants who got the result bell land in this modal and can watch
+            it play out; the winner is server-decided either way. */}
+        {lastWin && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-1 text-text-primary">
+              Seat {Math.max(1, bd.seatsClaimed)} winner — {lastWin.name}
+            </h4>
+            <BananaDrawReveal
+              entrants={bd.lastDrawEntrants?.length
+                ? bd.lastDrawEntrants
+                : bd.leaderboard.map((r) => (r.isYou ? 'You' : r.name))}
+              winnerName={lastWin.name}
+              winnerBananas={lastWin.bananas}
+            />
+          </div>
+        )}
       </>
     );
   };

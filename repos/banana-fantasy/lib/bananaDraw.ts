@@ -437,6 +437,31 @@ export async function getRecentWinners(limit = 5): Promise<Array<{
   }));
 }
 
+/** Entrant display names from the most recent DRAWN cycle — the cast of the
+ *  draw the modal replays. The reel used to cycle the CURRENT cycle's board,
+ *  which right after the noon reset is empty or a different set of people
+ *  entirely: a replay of yesterday's draw performed by today's entrants.
+ *  Reads the same cycle docs getRecentWinners does (7 doc gets, no index). */
+export async function getLastDrawEntrantNames(limit = 60): Promise<string[]> {
+  if (!isFirestoreConfigured()) return [];
+  const db = getAdminFirestore();
+  const today = cycleFor(Date.now());
+  const refs = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today.closesAt);
+    d.setUTCDate(d.getUTCDate() - i);
+    return db.collection(CYCLES).doc(d.toISOString().slice(0, 10));
+  });
+  const snaps = await db.getAll(...refs).catch(() => null);
+  if (!snaps) return [];
+  const latest = snaps
+    .filter((s) => s.exists && (s.data() as CycleDoc).status === 'drawn')
+    .sort((a, b) => (a.id > b.id ? -1 : 1))[0];
+  if (!latest) return [];
+  const snapshot = ((latest.data() as CycleDoc).snapshot ?? []).slice(0, limit);
+  const names = await resolveNames(snapshot.map((e) => e.userId));
+  return snapshot.map((e) => names[e.userId] ?? `${e.userId.slice(0, 6)}…${e.userId.slice(-4)}`);
+}
+
 /** Seats taken in the FIRST (lowest-numbered still-filling) JackHOF league —
  *  the "7 of 10 seats claimed" counter. Reads the same v2_queues doc the
  *  wheel's seating path writes, so it can never disagree with reality. */

@@ -34,16 +34,17 @@ export async function GET(req: Request) {
     try {
       const bd = promos.find((p) => p.type === 'banana-draw');
       if (bd && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
-        const { getUserCycleState, getCycleLeaderboard, getUserLedger, getRecentWinners, getJackhofSeatCount, getPendingDrafts }
+        const { getUserCycleState, getCycleLeaderboard, getUserLedger, getRecentWinners, getJackhofSeatCount, getPendingDrafts, getLastDrawEntrantNames }
           = await import('@/lib/bananaDraw');
         const me = userId.toLowerCase();
-        const [state, board, ledger, winners, seats, pending] = await Promise.all([
+        const [state, board, ledger, winners, seats, pending, lastDrawEntrants] = await Promise.all([
           getUserCycleState(me),
           getCycleLeaderboard(),
           getUserLedger(me, 50),
           getRecentWinners(5),
           getJackhofSeatCount(),
           getPendingDrafts(me),
+          getLastDrawEntrantNames(),
         ]);
 
         // The countdown is the cycle close — the existing formatter renders it.
@@ -72,6 +73,8 @@ export async function GET(req: Request) {
             sharePct: r.sharePct,
             isYou: r.userId === me,
           })),
+          // Cast of the replayed draw — yesterday's entrants, not today's board.
+          lastDrawEntrants,
           seatsClaimed: seats.claimed,
           seatsTotal: seats.total,
           recentWinners: winners,

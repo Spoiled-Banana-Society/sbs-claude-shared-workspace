@@ -488,6 +488,10 @@ export interface Promo {
       entrantCount: number;
       /** Ranked by Bananas, SURFACED as share — never as position. */
       leaderboard: Array<{ name: string; bananas: number; sharePct: number; isYou: boolean }>;
+      /** Entrant names from the most recent DRAWN cycle — the cast the
+       *  winner-reveal reel cycles. Yesterday's draw is replayed by
+       *  yesterday's entrants, not whoever is on today's fresh board. */
+      lastDrawEntrants?: string[];
       /** Seats claimed in the first-ever JackHOF league. */
       seatsClaimed: number;
       seatsTotal: number;
