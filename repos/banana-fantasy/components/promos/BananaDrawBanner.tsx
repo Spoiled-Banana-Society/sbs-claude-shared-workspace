@@ -190,6 +190,20 @@ export function BananaDrawBanner({
       </div>
       )}
 
+      {/* "See all N" sits DIRECTLY under the top five (Boris 2026-07-27). It
+          used to sit below your own row and the rate card, which put the one
+          control that opens the full board as far from the board as it could
+          get. Next to the rows it reads as "there are more of these". */}
+      {canExpand && !empty && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full text-center text-xs text-text-muted hover:text-text-primary transition-colors py-1.5 mb-1"
+        >
+          {expanded ? 'Show less' : `See all ${state.entrantCount}`}
+        </button>
+      )}
+
       {/* Your own line — always visible when you're signed in and not already
           in the rows above, so you never have to scroll the page to find out
           what you're holding. */}
@@ -213,50 +227,34 @@ export function BananaDrawBanner({
         )
       )}
 
-      {/* THE FOUR WAYS. Boris 2026-07-27: everyone should be able to see how a
-          Banana is earned without opening the modal — the old copy just said
-          "fill a draft", which hid three of the four routes (and both referral
-          ones, the highest-value pair).
-
-          Order and wording follow the framing rule in bananaDrawMath: 1 Banana
-          is the BASELINE every draft earns and paid is a BONUS on top. Never
-          render free as the lesser tier — burning the free stack is the entire
-          point of the promo. */}
-      <div className="border-t border-white/5 pt-2 mb-1">
-        <div className="text-[11px] uppercase tracking-wider text-text-muted/70 mb-1.5">
-          4 ways to earn Bananas
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-          {[
-            ['Fill any draft', BANANAS_PER_DRAFT],
-            ['Make it a paid draft', BANANAS_PER_DRAFT + BANANAS_PAID_BONUS],
-            ['A friend you invite drafts', BANANAS_REFERRAL_DRAFT],
-            ['That friend buys passes', BANANAS_REFERRAL_PURCHASE],
-          ].map(([label, n]) => (
-            <div key={label as string} className="flex items-center justify-between text-xs gap-3">
-              <span className="text-text-secondary truncate">{label}</span>
-              <span className="shrink-0 tabular-nums text-banana font-semibold">🍌 {n}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {canExpand && !empty && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="w-full text-center text-xs text-text-muted hover:text-text-primary transition-colors py-1.5 mb-1"
-        >
-          {expanded ? 'Show less' : `See all ${state.entrantCount}`}
-        </button>
-      )}
-
       <div className="flex items-center justify-between text-xs text-text-muted border-t border-white/5 pt-2 gap-3">
         <span className="truncate">
           {state.seatsClaimed} of {state.seatsTotal} seats claimed
           {lastWinner ? <> · last winner {lastWinner.name} on 🍌 {lastWinner.bananas}</> : null}
         </span>
         <span className="shrink-0">{state.totalBananas} 🍌 in the draw</span>
+      </div>
+
+      {/* THE RATE CARD, at the foot of the board (Boris 2026-07-27).
+          Deliberately the SAME four lines and the same divided-row treatment as
+          the promo modal's card (PromoModal, the `earn` rows) — one wording for
+          one mechanic, so the board and the modal can never tell a user two
+          different things. The counts ("3 so far") stay modal-only; here it's
+          the rate card alone. */}
+      <div className="mt-3 rounded-xl bg-bg-tertiary/70 px-3">
+        <div className="divide-y divide-white/5">
+          {[
+            ['Free draft — once it fills', BANANAS_PER_DRAFT],
+            ['Paid draft — once it fills', BANANAS_PER_DRAFT + BANANAS_PAID_BONUS],
+            ['A friend you invited drafts', BANANAS_REFERRAL_DRAFT],
+            ['…and when they buy passes', BANANAS_REFERRAL_PURCHASE],
+          ].map(([label, n]) => (
+            <div key={label as string} className="flex items-center justify-between py-2 gap-3">
+              <span className="text-text-secondary text-sm">{label}</span>
+              <span className="shrink-0 text-banana font-bold tabular-nums">🍌 {n}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* The closing line, and the one that matters most: odds scale with
