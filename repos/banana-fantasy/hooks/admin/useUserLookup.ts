@@ -181,6 +181,10 @@ export interface UserLookupResponse {
   kyc: Record<string, unknown>[] | { ok: false; reason: string };
   payments: {
     onramps: Record<string, unknown>[] | { ok: false; reason: string };
+    /** Chain-verified card deposits (Add Funds) — card_fee_credits markers
+     *  with source:'deposit'. Plain USDC sends from self-custody wallets are
+     *  not recorded server-side and can't appear here. */
+    deposits: Record<string, unknown>[] | { ok: false; reason: string };
     offramps: Record<string, unknown>[] | { ok: false; reason: string };
     withdrawals: Record<string, unknown>[] | { ok: false; reason: string };
   };

@@ -922,7 +922,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {lastWin && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-1 text-text-primary">
-              Seat {Math.max(1, bd.seatsClaimed)} winner — {lastWin.name}
+              {(() => { const n = Math.max(1, bd.seatsClaimed); const v = n % 100; const suf = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4)] ?? 'th'; return `${n}${suf}`; })()} Seat — {lastWin.name}
             </h4>
             <BananaDrawReveal
               entrants={bd.lastDrawEntrants?.length

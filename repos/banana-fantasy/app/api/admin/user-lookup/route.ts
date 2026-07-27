@@ -684,6 +684,7 @@ export async function GET(req: Request) {
       kycRes,
       onrampRes,
       offrampRes,
+      depositsRes,
       withdrawalsRes,
       _draftsRes,  // stub — drafts derived from activity events below
       errorsRes,
@@ -700,9 +701,24 @@ export async function GET(req: Request) {
       // every send/mute/dedup/fail so "why didn't I get a notification?"
       // is answerable from one admin lookup without diving into Vercel logs.
       fetchRecentDeliveries(wallet, 25),
-      readList(wallet, { collection: 'kycAttempts', field: 'userId', limit: RECENT_LIMIT }),
-      readList(wallet, { collection: 'onrampAttempts', field: 'userId', limit: RECENT_LIMIT }),
-      readList(wallet, { collection: 'offrampAttempts', field: 'userId', limit: RECENT_LIMIT }),
+      // ⚠️ snake_case — these MUST match the audit writers (lib/kycAudit,
+      // lib/onrampAudit, lib/offrampAudit). This section shipped querying
+      // camelCase collections that have zero documents, so KYC/onramps/
+      // offramps showed "No records" for every wallet while 383 real onramp
+      // records sat unread (found 2026-07-27, via a card-deposit user whose
+      // fee credit looked like it came from nowhere).
+      readList(wallet, { collection: 'kyc_attempts', field: 'userId', limit: RECENT_LIMIT }),
+      readList(wallet, { collection: 'onramp_attempts', field: 'userId', limit: RECENT_LIMIT }),
+      readList(wallet, { collection: 'offramp_attempts', field: 'userId', limit: RECENT_LIMIT }),
+      // DEPOSITS — chain-verified card deposits (Add Funds). These are the
+      // `card_fee_credits` markers with source:'deposit' that
+      // lib/purchases/creditCardDeposit writes after confirming the USDC
+      // transfer on Base. Without this list, a user who deposits by card but
+      // hasn't bought passes shows a fee credit that appears to come from
+      // nowhere (the Docdelirious head-scratch, 2026-07-27). Plain USDC sends
+      // from a self-custody wallet are NOT recorded anywhere server-side —
+      // they exist only on-chain, so they cannot appear here.
+      readList(wallet, { collection: 'card_fee_credits', field: 'userId', limit: RECENT_LIMIT }),
       readList(wallet, {
         collection: 'withdrawalRequests',
         field: 'userId',
@@ -800,6 +816,22 @@ export async function GET(req: Request) {
     });
 
     const kyc = kycRes.status === 'fulfilled' ? kycRes.value : [];
+    // card_fee_credits holds two marker shapes: deposit markers
+    // (source:'deposit', doc id deposit_<tx>_<logIndex>) and card pass-mint
+    // fee markers (no source field, doc id = mint txHash). Only the former
+    // are deposits; both carry feeCents/earned/fronted.
+    const deposits = (depositsRes.status === 'fulfilled' ? depositsRes.value : [])
+      .filter((r) => r.source === 'deposit')
+      .map((r) => ({
+        id: r.id,
+        method: 'Card (MoonPay)', // the only server-recorded deposit path
+        amountUsd: typeof r.valueUsd === 'number' ? r.valueUsd : null,
+        feeCents: typeof r.feeCents === 'number' ? r.feeCents : null,
+        freeDraftsEarned: typeof r.earned === 'number' ? r.earned : 0,
+        status: typeof r.status === 'string' ? r.status : '—',
+        txHash: typeof r.txHash === 'string' ? r.txHash : null,
+        createdAt: toIsoDate(r.createdAt),
+      }));
     const withdrawals = withdrawalsRes.status === 'fulfilled' ? withdrawalsRes.value : [];
 
     // Derive per-user draft history from activity events. Boris's
@@ -878,6 +910,7 @@ export async function GET(req: Request) {
       kyc: kycRes.status === 'fulfilled' ? kyc : sectionFail('kyc', kycRes.reason),
       payments: {
         onramps: onrampRes.status === 'fulfilled' ? onrampRes.value : sectionFail('onramps', onrampRes.reason),
+        deposits: depositsRes.status === 'fulfilled' ? deposits : sectionFail('deposits', depositsRes.reason),
         offramps: offrampRes.status === 'fulfilled' ? offrampRes.value : sectionFail('offramps', offrampRes.reason),
         withdrawals: withdrawalsRes.status === 'fulfilled' ? withdrawals : sectionFail('withdrawals', withdrawalsRes.reason),
       },

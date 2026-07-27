@@ -44,6 +44,13 @@ interface PublicState {
   seatsTotal: number;
 }
 
+/** 1 → "1st", 2 → "2nd" … for the seat record line. */
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4)] ?? 'th'}`;
+}
+
 /** Same H:MM:SS shape the other promo countdowns use — no custom label. */
 function countdown(closesAt: number, nowMs: number): string {
   const diff = closesAt - nowMs;
@@ -230,7 +237,6 @@ export function BananaDrawBanner({
       <div className="flex items-center justify-between text-xs text-text-muted border-t border-white/5 pt-2 gap-3">
         <span className="truncate">
           {state.seatsClaimed} of {state.seatsTotal} seats claimed
-          {lastWinner ? <> · last winner {lastWinner.name} on 🍌 {lastWinner.bananas}</> : null}
         </span>
         <span className="shrink-0">{state.totalBananas} 🍌 in the draw</span>
       </div>
@@ -266,6 +272,14 @@ export function BananaDrawBanner({
         More Bananas, more shots at a <JackHofWordmark size={11} /> seat
         <span className="text-text-muted"> — all it takes is one.</span>
       </p>
+
+      {lastWinner && (
+        <p className="text-center text-xs pt-2 border-t border-white/5 mt-2">
+          <span className="text-text-muted">{ordinal(Math.max(1, state.seatsClaimed))} Seat</span>
+          <span className="text-text-muted"> — </span>
+          <span className="text-text-primary font-semibold">{lastWinner.name}</span>
+        </p>
+      )}
     </div>
   );
 }
