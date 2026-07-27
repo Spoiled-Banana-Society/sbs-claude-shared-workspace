@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { FounderTag } from '@/components/drafting/FounderTag';
@@ -103,11 +104,16 @@ export function DraftRow({
   // Wheel-won drafts know their tier up front, so label them clearly instead of
   // the generic "Draft Room" (filling) / "League #N" (filled). Regular drafts
   // keep "Draft Room" while filling — their tier is hidden until the slot reveal.
-  const wheelLabel = draft.specialType === 'jackpot'
+  // jackhof was missing here, so the Banana Draw league fell back to the
+  // generic "Draft Lobby" name (2026-07-27). JSX so the wordmark keeps its
+  // locked two-tone.
+  const wheelLabel: React.ReactNode = draft.specialType === 'jackpot'
     ? 'Jackpot (from Wheel)'
     : draft.specialType === 'hof'
       ? 'HOF (from Wheel)'
-      : null;
+      : draft.specialType === 'jackhof'
+        ? <><JackHofWordmark size={12} /> Draft</>
+        : null;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
     ? { ...live, displayPhase: 'draft-starting' as const, countdown: live.countdown != null ? live.countdown + 45 : null }
     : live;
@@ -167,10 +173,20 @@ export function DraftRow({
             // Founder row). On mobile we make room for the FOUNDER tag by hiding
             // the round/pick column instead (see below).
             <span className="flex items-center gap-1 sm:gap-1.5">
+              {resolvedType === 'jackhof' ? (
+                // The locked two-tone (JACK red / HOF gold) — a single
+                // accentColor painted the whole word Jackpot-red (Boris
+                // 2026-07-27).
+                <span className="whitespace-nowrap">
+                  <span className="sm:hidden"><JackHofWordmark size={11} /></span>
+                  <span className="hidden sm:inline"><JackHofWordmark size={14} /></span>
+                </span>
+              ) : (
               <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
-                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
-                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
+                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
+                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
               </span>
+              )}
               {/* Prefer the live-resolved global league number for the
                   badge URL. Falls back to the slot id (which the proof
                   page itself can resolve) while the API call is in

@@ -2640,7 +2640,10 @@ function DraftRoomContent() {
               textShadow: draftWordShadow(visibleDraftType),
             }}
           >
-            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
+            {/* jackhof fell through this ternary to 'PRO' — the band behind it
+                was already the red→gold sweep, but the word on it said PRO
+                (Boris, first JackHOF league, 2026-07-27). */}
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : visibleDraftType === 'jackhof' ? 'JACKHOF' : 'PRO'}
           </span>
         );
         // No hover copy on the JP/HOF word (Boris 2026-06-16) — the band word stands alone.

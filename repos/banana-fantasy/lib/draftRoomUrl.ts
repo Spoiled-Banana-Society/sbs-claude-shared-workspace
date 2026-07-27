@@ -22,7 +22,7 @@ export function buildDraftRoomUrl(
     params.set('wallet', opts.wallet);
   }
   if (draft.passType) params.set('passType', draft.passType);
-  const st = draft.specialType || ((draft.type === 'jackpot' || draft.type === 'hof') && draft.draftSpeed === 'slow' ? draft.type : undefined);
+  const st = draft.specialType || ((draft.type === 'jackpot' || draft.type === 'hof' || draft.type === 'jackhof') && draft.draftSpeed === 'slow' ? draft.type : undefined);
   if (st) params.set('specialType', st);
   return `/draft-room?${params.toString()}`;
 }
