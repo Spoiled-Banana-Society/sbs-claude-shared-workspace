@@ -4,8 +4,7 @@ import React, { useCallback, useMemo } from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
 import { ShareCard } from '@/components/share/ShareCard';
-import { getShareableUrl } from '@/lib/shareUtils';
-import { buildBadgeCardUrl } from '@/lib/nftCard';
+import { buildBadgeCardUrl, buildBadgeSharePageUrl } from '@/lib/nftCard';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 import { useBadges } from '@/hooks/useBadges';
 import { useToast } from '@/components/ui/Toast';
@@ -91,7 +90,8 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
         <div className="max-w-[340px]">
           <ShareCard
             imageUrl={buildBadgeCardUrl(shareBadgeId, shareName)}
-            pageUrl={getShareableUrl('/profile?tab=badges')}
+            // /s/badge, not /profile — /profile carries no og:image of its own.
+            pageUrl={buildBadgeSharePageUrl(shareBadgeId, shareName)}
             tweetText={`${BADGE_BY_ID[shareBadgeId]?.label ?? 'Badge'} unlocked on @SBSFantasy 🍌🏈`}
             fileName={`SBS-Badge-${BADGE_BY_ID[shareBadgeId]?.label ?? shareBadgeId}`}
             label="Post badge"

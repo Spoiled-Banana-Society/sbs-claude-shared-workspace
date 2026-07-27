@@ -73,3 +73,19 @@ export function buildBadgeCardUrl(badgeId: string, displayName = '', base = site
   if (displayName) q.set('n', displayName);
   return `${base}/api/og/badge?${q.toString()}`;
 }
+
+// ── Public share PAGES (/s/<kind>) ───────────────────────────────────────
+// A tweet's desktop image comes from the LINKED page's og:image. App pages
+// like /exposure and /profile don't declare one, so they'd unfurl the generic
+// site card. These URLs point at pages whose metadata resolves to the right
+// card (see app/s/[kind]/layout.tsx). Mobile is unaffected — the share sheet
+// attaches the PNG directly.
+export function buildExposureSharePageUrl(payload: ExposureCardPayload, base = siteBaseUrl()): string {
+  return `${base}/s/exposure?d=${base64url(JSON.stringify(payload))}`;
+}
+
+export function buildBadgeSharePageUrl(badgeId: string, displayName = '', base = siteBaseUrl()): string {
+  const q = new URLSearchParams({ b: badgeId });
+  if (displayName) q.set('n', displayName);
+  return `${base}/s/badge?${q.toString()}`;
+}
