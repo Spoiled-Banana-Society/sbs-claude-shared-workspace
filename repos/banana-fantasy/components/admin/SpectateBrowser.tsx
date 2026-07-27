@@ -125,6 +125,9 @@ function PickClock({ endsAt }: { endsAt?: number }) {
 function levelPillStyle(level: string | null): { bg: string; color: string; label: string } {
   if (!level) return { bg: '#a855f7', color: '#fff', label: 'PRO' };
   const l = level.toLowerCase();
+  // JackHOF first: 'jackhof' matches none of the checks below, so before this
+  // guard a completed JackHOF draft rendered as PRO (2026-07-27).
+  if (l.includes('jackhof')) return { bg: 'linear-gradient(90deg, #ef4444 0%, #D4AF37 100%)', color: '#fff', label: 'JACKHOF' };
   if (l.includes('jackpot')) return { bg: '#ef4444', color: '#fff', label: 'JP' };
   if (l.includes('hall of fame') || l === 'hof') return { bg: '#D4AF37', color: '#000', label: 'HOF' };
   return { bg: '#a855f7', color: '#fff', label: 'PRO' };
@@ -537,9 +540,15 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
               </thead>
               <tbody>
                 {specialRounds.map(({ type, round }) => {
+                  // Three types, three pills. The old two-way ternary dumped
+                  // 'jackhof' into the HOF bucket, so the first-ever JackHOF
+                  // league showed as a plain HOF row (Boris, 2026-07-27 — the
+                  // day it started filling). JackHOF wears both colors.
                   const pill = type === 'jackpot'
                     ? { bg: '#ef4444', color: '#fff', label: 'JP' }
-                    : { bg: '#D4AF37', color: '#000', label: 'HOF' };
+                    : type === 'jackhof'
+                      ? { bg: 'linear-gradient(90deg, #ef4444 0%, #D4AF37 100%)', color: '#fff', label: 'JACKHOF' }
+                      : { bg: '#D4AF37', color: '#000', label: 'HOF' };
                   const memberCount = round.members?.length || 0;
                   const fillPct = (memberCount / 10) * 100;
                   // Live pick state for drafting rounds — joined from the same
