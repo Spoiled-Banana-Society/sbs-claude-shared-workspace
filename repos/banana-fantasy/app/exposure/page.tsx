@@ -14,8 +14,6 @@ import {
 } from '@/lib/exposureUtils';
 import { getTeamPosition, getTeamPositionDepthChart } from '@/lib/teamPositions';
 import { useExposure } from '@/hooks/useExposure';
-import { ShareCard } from '@/components/share/ShareCard';
-import { buildExposureCardUrl, buildExposureSharePageUrl } from '@/lib/nftCard';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
@@ -328,14 +326,6 @@ export default function ExposurePage() {
 
   // ── Render ────────────────────────────────────────────────────────────
 
-  // One payload drives both the image and the share page, so the card someone
-  // sees in the tweet is exactly the card on the landing page.
-  const exposureSharePayload = {
-    name: userExposure.username || '',
-    totalDrafts,
-    rows: exposures.slice(0, 12).map((e) => ({ tp: e.teamPosition, pct: e.exposure })),
-  };
-
   return (
     <div className="w-full min-h-screen px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
 
@@ -351,24 +341,6 @@ export default function ExposurePage() {
                 : 'Draft to start tracking your portfolio exposure'}
           </p>
         </div>
-        {/* Post your exposure — the single most native format on fantasy X.
-            Only offered once there's something worth showing (Boris 2026-07-26). */}
-        {exposures.length > 0 && (
-          <div className="w-full sm:w-auto sm:mr-2">
-            <ShareCard
-              imageUrl={buildExposureCardUrl(exposureSharePayload)}
-              // /s/exposure, NOT /exposure — the tweet's desktop image comes
-              // from the LINKED page's og:image, and /exposure has none of its
-              // own (it inherits the generic site card).
-              pageUrl={buildExposureSharePageUrl(exposureSharePayload)}
-              tweetText={`My BBB4 exposure through ${totalDrafts} ${totalDrafts === 1 ? 'draft' : 'drafts'} on @SBSFantasy 🍌🏈`}
-              fileName={`SBS-Exposure-${userExposure.username || 'team'}`}
-              label="Post exposure"
-              className="w-full sm:w-[320px]"
-            />
-          </div>
-        )}
-
         {/* Back to Teams + Marketplace — mirrors the Teams-page header so the
             two views feel like one section. */}
         <div className="flex items-center gap-2 flex-shrink-0">

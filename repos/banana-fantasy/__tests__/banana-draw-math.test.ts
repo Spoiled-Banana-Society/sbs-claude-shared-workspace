@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bananasForDraft, bananasForSource, cycleFor, pickWinner, shareOf,
+  referralCountsForBananas, BANANA_DRAW_LAUNCH_MS,
   BANANAS_MAX_PER_FRIEND, DRAW_HOUR_PT,
 } from '@/lib/bananaDrawMath';
 
@@ -17,6 +18,26 @@ describe('banana earning rates', () => {
     expect(bananasForSource('referral-draft')).toBe(5);
     expect(bananasForSource('referral-purchase')).toBe(5);
     expect(BANANAS_MAX_PER_FRIEND).toBe(10);
+  });
+});
+
+describe('referralCountsForBananas', () => {
+  it('pays for a friend who signed up after launch', () => {
+    expect(referralCountsForBananas(BANANA_DRAW_LAUNCH_MS)).toBe(true);
+    expect(referralCountsForBananas(BANANA_DRAW_LAUNCH_MS + 1)).toBe(true);
+  });
+
+  // The launch-day bug: an invite from 25 days earlier paid out the moment
+  // the friend happened to fill a draft.
+  it('pays nothing for a friend invited before the promo existed', () => {
+    expect(referralCountsForBananas(BANANA_DRAW_LAUNCH_MS - 1)).toBe(false);
+    expect(referralCountsForBananas(Date.UTC(2026, 6, 1))).toBe(false);
+  });
+
+  it('treats a missing or unparseable signup stamp as legacy', () => {
+    expect(referralCountsForBananas(null)).toBe(false);
+    expect(referralCountsForBananas(undefined)).toBe(false);
+    expect(referralCountsForBananas(NaN)).toBe(false);
   });
 });
 

@@ -108,6 +108,11 @@ export default function PromosPage() {
     setSelectedPromo(match);
   }, [promoQueryId, promos]);
 
+  // The Banana Draw promo doc feeds the pinned leaderboard banner two things
+  // the public endpoint deliberately doesn't carry: YOUR Banana count (authed
+  // payload only) and the modal that explains the whole mechanic.
+  const bananaPromo = useMemo(() => promos.find(p => p.type === 'banana-draw') ?? null, [promos]);
+
   const isClaimed = (p: Promo) =>
     claimedLocally.has(p.id) || (p.type === 'new-user' && newUserPromoClaimed);
 
@@ -300,7 +305,12 @@ export default function PromosPage() {
           so it never shows an empty board — including before launch. */}
       {/* Public since the 2026-07-26 launch. Self-hides while the pool is
           empty, so it simply doesn't render until the first Bananas land. */}
-      <BananaDrawBanner myWallet={user?.walletAddress ?? null} />
+      <BananaDrawBanner
+        myWallet={user?.walletAddress ?? null}
+        myBananas={bananaPromo?.modalContent?.bananaDraw?.bananas ?? 0}
+        myPending={bananaPromo?.modalContent?.bananaDraw?.pending ?? 0}
+        onExplain={bananaPromo ? () => setSelectedPromo(bananaPromo) : undefined}
+      />
 
       {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
           you've got to spend. Minimal single card with internal dividers. ─── */}

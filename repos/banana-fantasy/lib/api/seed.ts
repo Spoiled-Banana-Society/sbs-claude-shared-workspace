@@ -473,7 +473,7 @@ const seedPromos: Promo[] = [
         '• Every 24 hours, one player wins a seat in the FIRST EVER JackHOF draft.\n'
         + '• More Bananas, better odds — but all it takes is one Banana.\n'
         + '• Every draft you fill earns 1 Banana. Paid drafts earn 2.\n'
-        + '• A friend you invited drafts → 5 Bananas. That friend makes a purchase → 5 more.\n'
+        + '• A NEW friend you invite drafts → 5 Bananas. That friend makes a purchase → 5 more. Invites from before this promo started don’t count.\n'
         + '• Drafts count once they FILL, not when you enter.\n'
         + '• Bananas reset every 24 hours — use your drafts.\n'
         + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'

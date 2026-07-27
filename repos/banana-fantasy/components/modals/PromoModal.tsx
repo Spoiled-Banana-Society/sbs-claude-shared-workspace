@@ -829,7 +829,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           )}
           {bd.totalBananas > 0 && (
             <p className="text-text-secondary text-sm mt-2">
-              {bd.totalBananas} Bananas in tonight&apos;s draw from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.
+              {bd.totalBananas} Bananas in this draw from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.
             </p>
           )}
         </div>
@@ -856,7 +856,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
         {/* 5 — LEADERBOARD, by share not rank. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
-          <h4 className="font-semibold mb-3 text-text-primary">Tonight&apos;s leaderboard</h4>
+          <h4 className="font-semibold mb-3 text-text-primary">Current leaderboard</h4>
           {bd.leaderboard.length === 0 ? (
             <p className="text-text-muted text-sm">
               Nobody has earned a Banana yet this cycle. Fill a draft and you&apos;re first on the board.

@@ -23,6 +23,28 @@ export const BANANAS_REFERRAL_PURCHASE = 5;
 /** A single friend can never be worth more than this (5 + 5). */
 export const BANANAS_MAX_PER_FRIEND = BANANAS_REFERRAL_DRAFT + BANANAS_REFERRAL_PURCHASE;
 
+/**
+ * The Banana Draw went live at NOON PT on 2026-07-26 — the first cycle's open.
+ *
+ * ⚠️ Referrals only pay for friends who signed up AT OR AFTER this instant.
+ * Without the cut-off the promo back-pays the entire historic referral book:
+ * 53 accounts carried a `referredBy` on launch day, 52 of them from before the
+ * promo existed, and one referrer alone held 23 of them — up to 230 Bananas
+ * into a pool that was 34. The promo is a growth lever for NEW invites, not a
+ * settlement of old ones (Richard 2026-07-26).
+ */
+export const BANANA_DRAW_LAUNCH_MS = Date.UTC(2026, 6, 26, 19, 0, 0);
+
+/** True when a referred friend counts for Banana payouts — i.e. they joined
+ *  after the promo went live. A friend with no signup stamp is an old account
+ *  (createdAt has been written on every signup for far longer than the promo
+ *  has existed), so the absent case is legacy and pays nothing. */
+export function referralCountsForBananas(friendCreatedAtMs: number | null | undefined): boolean {
+  return typeof friendCreatedAtMs === 'number'
+    && Number.isFinite(friendCreatedAtMs)
+    && friendCreatedAtMs >= BANANA_DRAW_LAUNCH_MS;
+}
+
 /** The draw lands at NOON Pacific, matching the promo-window cutover hour. */
 export const DRAW_HOUR_PT = 12;
 

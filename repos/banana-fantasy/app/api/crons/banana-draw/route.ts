@@ -170,7 +170,7 @@ export async function GET(req: Request) {
       const others = entries.docs.map((d) => d.id).filter((id) => id !== winnerId);
       await Promise.allSettled(others.map((uid) => createNotification(uid, {
         type: 'promo',
-        title: "Tonight's JackHOF seat went out",
+        title: "Today's JackHOF seat went out",
         message: 'A new 24 hours just started — every draft you fill is another Banana in the draw.',
         link: '/promos?promo=banana-draw',
         dedupeKey: `banana-draw-result-${cycleId}`,

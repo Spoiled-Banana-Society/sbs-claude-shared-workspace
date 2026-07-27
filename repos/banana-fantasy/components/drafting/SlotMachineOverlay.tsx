@@ -6,8 +6,6 @@ import { startSlotSpin, playReelStop, playSlotReveal } from '@/lib/slotSounds';
 import { DRAFT_TYPES } from '@/lib/draftRoomConstants';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { useRng, type RngSeedData } from '@/hooks/useRng';
-import { ShareCard } from '@/components/share/ShareCard';
-import { getShareableUrl } from '@/lib/shareUtils';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface SlotMachineOverlayProps {
@@ -25,9 +23,6 @@ interface SlotMachineOverlayProps {
    *  to /proof/[draftId] for the full Chainlink VRF + salt-commit
    *  receipt. */
   draftId?: string;
-  /** Tier card image for the "Post it" share on a special reveal. Omitted →
-   *  the share is simply not offered (no broken button). */
-  shareCardUrl?: string;
 }
 
 export function SlotMachineOverlay({
@@ -42,7 +37,6 @@ export function SlotMachineOverlay({
   rngSeedData,
   autoVerifyRng = true,
   draftId,
-  shareCardUrl,
 }: SlotMachineOverlayProps) {
   const itemHeight = 130;
   const landingIndex = (allReelItems[0]?.length || 50) - 8;
@@ -277,33 +271,6 @@ export function SlotMachineOverlay({
             {rngSeedData && (
               <div className="mt-2 text-xs text-white/60">
                 {isVerifying ? 'Verifying fairness...' : isVerified ? 'Verified fair' : 'Fairness pending'}
-              </div>
-            )}
-            {/* Post it. This is the highest-emotion second in the whole
-                product — you just found out the draft type — and it had NO
-                share until 2026-07-26. Special tiers only: a Pro reveal isn't
-                news, and offering it would invite exactly the low-value
-                posting we don't want. stopPropagation because the overlay
-                closes on any click. */}
-            {draftType !== 'pro' && shareCardUrl && (
-              <div
-                className="mt-4 flex justify-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ShareCard
-                  imageUrl={shareCardUrl}
-                  pageUrl={getShareableUrl(draftId ? `/draft-results/${draftId}` : '/')}
-                  tweetText={
-                    draftType === 'jackhof'
-                      ? 'JACKHOF. The rarest draft in SBS — finals skip AND HOF prizes on one team @SBSFantasy 🍌🏈'
-                      : draftType === 'jackpot'
-                        ? 'JACKPOT draft on @SBSFantasy 🍌🏈 win the league, skip straight to the finals'
-                        : 'Hall of Fame draft on @SBSFantasy 🍌🏈 competing for bonus prizes'
-                  }
-                  fileName={`SBS-${String(draftType).toUpperCase()}-Draft`}
-                  label="Post it"
-                  className="w-full max-w-[300px]"
-                />
               </div>
             )}
             <p className="text-white/40 text-sm mt-2">Click anywhere or press X to close</p>

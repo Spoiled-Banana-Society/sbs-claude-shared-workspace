@@ -95,7 +95,7 @@ export function BananaDrawReveal({
   return (
     <div className="flex flex-col items-center gap-3 py-2">
       <div className="text-text-muted text-xs uppercase tracking-[0.18em]">
-        Tonight&apos;s <JackHofWordmark size={11} /> seat
+        Today&apos;s <JackHofWordmark size={11} /> seat
       </div>
 
       <div

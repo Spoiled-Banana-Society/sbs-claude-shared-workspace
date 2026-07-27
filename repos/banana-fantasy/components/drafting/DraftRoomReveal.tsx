@@ -1,6 +1,5 @@
 'use client';
 
-import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import React from 'react';
 import { SlotMachineOverlay } from '@/components/drafting/SlotMachineOverlay';
 import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
@@ -376,15 +375,6 @@ export function DraftRoomReveal({
           formatTime={formatTime}
           onClose={onCloseSlotMachine}
           draftId={draftId}
-          // The tier PASS card, not a team card — at reveal the draft has only
-          // just filled, so no roster exists yet. This is the red/gold-framed
-          // pass, which is exactly the thing worth bragging about at this
-          // moment. Pro is excluded inside the overlay.
-          shareCardUrl={
-            draftType === 'jackpot' || draftType === 'hof' || draftType === 'jackhof'
-              ? buildTieredDraftPassUrl(draftId ?? '', draftType)
-              : undefined
-          }
         />
       )}
     </>

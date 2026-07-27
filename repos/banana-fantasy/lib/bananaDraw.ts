@@ -19,7 +19,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getSealedDrawSeed, type SealedDrawSeed } from '@/lib/jackpotDrawProof';
 import {
-  bananasForSource, cycleFor, pickWinner, shareOf,
+  bananasForSource, cycleFor, pickWinner, shareOf, referralCountsForBananas,
   BANANAS_MAX_PER_FRIEND, type BananaSource, type DrawCycle, type DrawEntry,
 } from '@/lib/bananaDrawMath';
 
@@ -209,6 +209,12 @@ export async function creditBananas(opts: {
  * NEW players only: `referredBy` is only ever set through the /r/{code} signup
  * flow, so an existing account can't be retro-attributed. That's the same
  * anti-farm guard the referral ladder already relies on.
+ *
+ * NEW REFERRALS only, too. `referredBy` says nothing about WHEN the invite
+ * happened, so on launch day this paid out on the whole historic referral
+ * book — one referrer collected 5 Bananas for a friend he'd invited 25 days
+ * earlier, and was sitting on 22 more of them. The friend must have signed up
+ * after the promo went live (Richard 2026-07-26).
  */
 export async function creditReferralBananas(opts: {
   friendUserId: string;
@@ -219,9 +225,17 @@ export async function creditReferralBananas(opts: {
   const friendId = opts.friendUserId.toLowerCase();
   try {
     const snap = await getAdminFirestore().collection('v2_users').doc(friendId).get();
-    const referrerId = (snap.data()?.referredBy as string | undefined)?.toLowerCase();
+    const friendData = snap.data() ?? {};
+    const referrerId = (friendData.referredBy as string | undefined)?.toLowerCase();
     // No referrer, or a self-referral attempt — nothing to pay.
     if (!referrerId || referrerId === friendId) return { credited: false };
+
+    // Invited BEFORE the promo existed → not a Banana referral. Silent by
+    // design: the referrer was never promised anything for it.
+    const createdMs = Date.parse(String(friendData.createdAt ?? ''));
+    if (!referralCountsForBananas(Number.isNaN(createdMs) ? null : createdMs)) {
+      return { credited: false, referrerId };
+    }
 
     const res = await creditBananas({
       userId: referrerId,

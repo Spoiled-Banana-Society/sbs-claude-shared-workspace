@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       // 4 Drafts Daily: +1 (and the 24h timer on the first) for every human.
       await Promise.allSettled(wallets.map((w) => recordDraftCompletion(w.toLowerCase(), draftId)));
 
-      // BANANA DRAW: every filled draft is Bananas toward tonight's JackHOF
+      // BANANA DRAW: every filled draft is Bananas toward the next JackHOF
       // seat — free 1, paid 2. Deliberately credited for FREE drafts too: the
       // promo exists to make people burn the free stack they're hoarding, so
       // it does NOT go through promoCreditAllowed (which is paid-only). The
@@ -144,7 +144,10 @@ export async function POST(req: NextRequest) {
           meta: { via: 'fill_webhook' },
         }).catch((err) => logger.warn('banana.fill_credit_failed', { draftId, wallet, err: String(err) }));
 
-        // ...and pay whoever invited them, once ever, on their first fill.
+        // ...and pay whoever invited them — once ever per friend, and ONLY if
+        // that friend signed up after the promo launched. This used to fire on
+        // any fill by anyone ever referred, which back-paid the whole historic
+        // referral book on launch day. See creditReferralBananas.
         await creditReferralBananas({ friendUserId: wallet, kind: 'draft' })
           .catch((err) => logger.warn('banana.referral_fill_credit_failed', { draftId, wallet, err: String(err) }));
       }));
