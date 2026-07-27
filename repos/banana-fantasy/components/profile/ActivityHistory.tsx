@@ -20,6 +20,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
   cashout_completed: 'Cashed out',
+  deposit_completed: 'Deposited',
   // Presence events exist for the ADMIN live feed only — hidden below.
   user_signed_up: 'Account created',
   user_returned: 'Logged in',
@@ -41,6 +42,7 @@ const TYPE_ICON: Record<ActivityEventType, string> = {
   draft_won: 'trophy',
   marketplace_sold: 'banknote',
   cashout_completed: 'banknote',
+  deposit_completed: 'banknote',
   user_signed_up: 'check',
   user_returned: 'check',
 };
@@ -83,6 +85,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
   cashout_completed: 'text-green-300',
+  deposit_completed: 'text-lime-300',
   user_signed_up: 'text-gray-400',
   user_returned: 'text-gray-400',
 };

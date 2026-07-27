@@ -20,6 +20,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_won: 'Draft won',
   marketplace_sold: 'Marketplace sale',
   cashout_completed: 'Cashout completed',
+  deposit_completed: 'Deposit',
   user_signed_up: 'New account',
   user_returned: 'Logged in',
 };
@@ -35,6 +36,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_won: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
   marketplace_sold: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
   cashout_completed: 'text-green-300 bg-green-500/10 border-green-500/30',
+  deposit_completed: 'text-lime-300 bg-lime-500/10 border-lime-500/30',
   user_signed_up: 'text-banana bg-yellow-500/10 border-yellow-500/30',
   user_returned: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30',
 };
@@ -542,7 +544,18 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {WALLET_TYPE_LABEL[e.walletType]} · {e.devicePlatform}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-300 capitalize">{e.paymentMethod ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-300">
+                      {e.type === 'deposit_completed' ? (
+                        // Deposits carry the full answer in one cell: amount +
+                        // provider + method ("$25.00 · MoonPay card").
+                        <span className="text-lime-200 whitespace-nowrap">
+                          {typeof e.metadata?.amountUsd === 'number' ? `$${(e.metadata.amountUsd as number).toFixed(2)} · ` : ''}
+                          {String(e.metadata?.provider ?? '') === 'moonpay' ? 'MoonPay ' : ''}card
+                        </span>
+                      ) : (
+                        <span className="capitalize">{e.paymentMethod ?? '—'}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-xs text-right text-gray-200">{e.quantity}</td>
                     <td className="px-4 py-3 text-xs">
                       {tx ? (

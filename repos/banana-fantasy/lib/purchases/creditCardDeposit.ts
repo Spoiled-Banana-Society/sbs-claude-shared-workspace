@@ -187,6 +187,21 @@ export async function creditCardDeposit(opts: {
     feeCents: creditedTx.feeCents, rolloverCents, earned, fronted,
   });
 
+  // The deposit itself, as its own Live Activity row — Boris wants the feed to
+  // answer "who deposited, how much, via what" without a user lookup
+  // (2026-07-27). OUTSIDE the earned-branch below: a deposit whose fee only
+  // rolls over (earned 0) is still a deposit. The pass_granted event further
+  // down is the fee-credit REWARD, a different fact.
+  await logActivityEvent({
+    type: 'deposit_completed',
+    userId: wallet,
+    walletAddress: wallet,
+    paymentMethod: 'card',
+    quantity: 0,
+    txHash: creditedTx.txHash,
+    metadata: { amountUsd: creditedTx.valueUsd, feeCents: creditedTx.feeCents, provider: 'moonpay' },
+  }).catch(() => { /* feed row is best-effort — never fail the credit */ });
+
   // 3. Grant any earned draft(s) as PAID-type, exactly like bookkeepPaidMint 4b.
   let rewardTokenIds: string[] = [];
   let rewardMintTxHash: string | undefined;

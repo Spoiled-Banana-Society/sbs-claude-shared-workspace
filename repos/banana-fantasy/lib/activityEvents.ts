@@ -27,6 +27,7 @@ export type ActivityEventType =
   | 'draft_won'           // league finalized, user finished in paying place
   | 'marketplace_sold'    // team listed → sold
   | 'cashout_completed'   // offramp settled — Coinbase or direct USDC/bank
+  | 'deposit_completed'   // card deposit (Add Funds) verified on-chain — metadata: { amountUsd, feeCents, provider }
   // ── Presence events (admin Live Activity only — hidden from the user-facing
   //    profile history; see HIDDEN types in ActivityHistory). metadata carries
   //    { isReturning, isNewAccount, firstSession?, accountCreatedAt? }.
