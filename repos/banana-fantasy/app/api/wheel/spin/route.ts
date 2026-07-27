@@ -17,6 +17,13 @@ import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
+import {
+  PROMO_SPINS_FIELD,
+  PURCHASE_SPINS_FIELD,
+  bonusDraftsFor,
+  nextSpinSource,
+  type SpinSource,
+} from '@/lib/spinTypes';
 import { recountFromInventory } from '@/lib/passLedger';
 import { unlockBadge } from '@/lib/db';
 import { claimSpinIndex, getCurrentPeriod, periodSegments } from '@/lib/wheelPeriod';
@@ -271,10 +278,25 @@ export async function POST(req: Request) {
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
     const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
 
-    const draftPassCount =
+    // Which stack this spin comes out of decides what it pays. Promo spins pay
+    // the wedge in full; purchase spins pay wedge-minus-one because the buyer
+    // already owns the first draft. Resolved pre-tx because the prize, the
+    // activity doc and the mint decision below are all built from the credited
+    // amount — the transaction re-reads the counters and asserts the same
+    // source is still available (same fail-safe as the spin-index claim).
+    const preSpinSnap = await userRef.get();
+    const preSpinData = preSpinSnap.data();
+    const spinSource: SpinSource =
+      nextSpinSource(
+        Math.max(0, (preSpinData?.[PROMO_SPINS_FIELD] as number | undefined) ?? 0),
+        Math.max(0, (preSpinData?.[PURCHASE_SPINS_FIELD] as number | undefined) ?? 0),
+      ) ?? 'promo';
+
+    const wedgeDrafts =
       segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number'
         ? segment.prizeValue
         : 0;
+    const draftPassCount = bonusDraftsFor(spinSource, wedgeDrafts);
     const mintOnChain = isAdminMintConfigured() && draftPassCount > 0;
 
     // A Jackpot/HOF wheel win. When the feature flag is ON we mint a REAL pass
@@ -311,9 +333,17 @@ export async function POST(req: Request) {
     await db.runTransaction(async (tx) => {
       const userDoc = await tx.get(userRef);
       const userData = userDoc.data();
-      const spinsLeft = userData?.wheelSpins ?? 0;
-      if (spinsLeft <= 0) {
+      const promoLeft = Math.max(0, (userData?.[PROMO_SPINS_FIELD] as number | undefined) ?? 0);
+      const purchaseLeft = Math.max(0, (userData?.[PURCHASE_SPINS_FIELD] as number | undefined) ?? 0);
+      const txSpinSource = nextSpinSource(promoLeft, purchaseLeft);
+      if (txSpinSource === null) {
         throw new ApiError(429, 'No spins remaining');
+      }
+      // The pre-tx read decided what this spin pays. If a concurrent grant or
+      // spin changed which stack is next, the credited amount above is stale —
+      // roll back rather than pay the wrong number.
+      if (txSpinSource !== spinSource) {
+        throw new ApiError(409, 'Spin balance changed — please spin again.');
       }
 
       // Period-aware path: atomically claim the next index in the active
@@ -362,18 +392,25 @@ export async function POST(req: Request) {
         nonce,
         periodNumber,
         spinIndexInPeriod,
+        // `prize.value` stays the WEDGE the wheel landed on (that's the provable
+        // outcome). `bonusDrafts` is what was actually credited — they differ by
+        // one on purchase spins. History and result copy read these, never the
+        // wedge alone, or a 5-Draft hit reads as "5 free drafts" when 4 landed.
+        spinSource,
+        bonusDrafts: draftPassCount,
       });
 
       // Atomic counter update with floor-of-0 on every counter so legacy
       // bad data can't cascade. Spin decrement, optional pass / entry
       // increments — all in one transaction.
-      const currentSpins = Math.max(0, (userData?.wheelSpins as number | undefined) ?? 0);
       const currentFree = Math.max(0, (userData?.freeDrafts as number | undefined) ?? 0);
       const currentJp = Math.max(0, (userData?.jackpotEntries as number | undefined) ?? 0);
       const currentHof = Math.max(0, (userData?.hofEntries as number | undefined) ?? 0);
 
       const balanceUpdate: Record<string, number | boolean> = {
-        wheelSpins: Math.max(0, currentSpins - 1),
+        // Decrement the stack this spin actually came out of.
+        [spinSource === 'purchase' ? PURCHASE_SPINS_FIELD : PROMO_SPINS_FIELD]:
+          Math.max(0, (spinSource === 'purchase' ? purchaseLeft : promoLeft) - 1),
         // Mark that the user has now spun at least once — hides the first-time
         // "what's a spin?" explainer on promo cards going forward.
         hasSpunWheel: true,
@@ -654,8 +691,35 @@ export async function POST(req: Request) {
     // the client now fetches lazily AFTER the wheel lands via
     // GET /api/wheel/proof/{spinId} — off the critical path. periodNumber +
     // spinIndex are returned so the client knows the spin is verifiable.
+    // Cost telemetry. Every settled spin logs the stack it came from, the wedge
+    // it landed on and the seats actually credited, so realized $/spin can be
+    // measured from logs rather than assumed from the config's expected value.
+    // Query: jsonPayload.event="wheel.spin.settled" → sum seatsCredited / count.
+    logger.info('wheel.spin.settled', {
+      spinId,
+      userId,
+      spinSource,
+      segmentId: segment.id,
+      wedgeDrafts,
+      seatsCredited: draftPassCount,
+      special: jphofKind,
+    });
+
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain, periodNumber, spinIndex: spinIndexInPeriod },
+      {
+        spinId,
+        result: segment.id,
+        prize,
+        angle,
+        mintOnChain,
+        periodNumber,
+        spinIndex: spinIndexInPeriod,
+        // `prize.value` is the wedge; `bonusDrafts` is what was credited. They
+        // differ by one on purchase spins, so result copy must read these two
+        // rather than inferring the award from the wedge label.
+        spinSource,
+        bonusDrafts: draftPassCount,
+      },
       200,
     );
   } catch (err) {

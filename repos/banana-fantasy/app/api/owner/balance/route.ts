@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
+      return json({ wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
     }
 
     const db = getAdminFirestore();
@@ -81,6 +81,7 @@ export async function GET(req: Request) {
 
     return json({
       wheelSpins: nonNeg(data.wheelSpins),
+      purchaseSpins: nonNeg(data.purchaseSpins),
       freeDrafts: freeDraftsCount,
       jackpotEntries: nonNeg(data.jackpotEntries),
       hofEntries: nonNeg(data.hofEntries),

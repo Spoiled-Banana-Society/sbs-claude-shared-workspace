@@ -1268,6 +1268,11 @@ export async function getWheelHistory(userId: string): Promise<WheelSpin[]> {
       prize: data.prize as WheelPrize,
       claimed: Boolean(data.claimed),
       result: (data.result as string) || '',
+      // Which stack paid the spin and what was actually CREDITED (wedge minus
+      // one on Bonus Spins). Absent on legacy rows — callers must fall back to
+      // the wedge. Same passthrough bug class as the balance routes (7/27).
+      spinSource: (data.spinSource as string) || undefined,
+      bonusDrafts: typeof data.bonusDrafts === 'number' ? (data.bonusDrafts as number) : undefined,
     } as WheelSpin & { spinId: string; result: string };
   });
 }

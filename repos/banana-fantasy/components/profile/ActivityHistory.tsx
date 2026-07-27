@@ -125,7 +125,15 @@ function describe(e: LiveActivityEvent): string {
     case 'spin_won': {
       const prizeType = String(e.metadata?.prizeType ?? '');
       const prizeValue = e.metadata?.prizeValue;
-      if (prizeType === 'draft_pass') return `${prizeValue} free draft pass${Number(prizeValue) !== 1 ? 'es' : ''}`;
+      // `e.quantity` is what was actually CREDITED; `prizeValue` is the wedge
+      // the wheel landed on. On a Bonus Spin they differ by one (the first
+      // draft is the seat already bought), so a 5-Draft wedge credits 4 —
+      // printing the wedge here would claim a pass the user never received.
+      if (prizeType === 'draft_pass') {
+        const credited = Number.isFinite(Number(e.quantity)) ? Number(e.quantity) : Number(prizeValue);
+        if (credited <= 0) return 'No bonus (landed on your own draft)';
+        return `${credited} free draft pass${credited !== 1 ? 'es' : ''}`;
+      }
       if (prizeType === 'custom' && prizeValue === 'jackpot') return 'Jackpot entry';
       if (prizeType === 'custom' && prizeValue === 'hof') return 'HOF entry';
       if (prizeType === 'custom' && prizeValue === 'jackhof') return 'JackHOF entry';

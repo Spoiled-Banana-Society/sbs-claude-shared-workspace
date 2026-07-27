@@ -1,4 +1,5 @@
 import type { FAQSection } from '@/types';
+import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 
 export const mockFAQSections: FAQSection[] = [
   {
@@ -217,10 +218,35 @@ export const mockFAQSections: FAQSection[] = [
         question: 'How do I earn Banana Wheel spins?',
         answer: 'Earn spins by completing promotions like "Draft 3 times in a day", "Buy 10 draft passes" (1 spin per 10 passes), landing the last pick (Pick 10) in a paid draft, or participating in special events. One exception: in a Founder Draft the Pick 10 spin doesn\'t apply — paid entries already get the Founder Free Banana Spin, so it doesn\'t stack. Check the promotions section for current ways to earn spins.',
       },
-      {
-        question: 'What prizes can I win on the Banana Wheel?',
-        answer: 'Every spin wins! Prizes include: 1, 2, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, guaranteed HOF draft entries — and the 0.1% JackHOF wedge, a guaranteed seat in a draft with BOTH perks. The wheel is weighted but every outcome is a winner.',
-      },
+      // ⚠️ "Every spin wins" is true ONLY of promo spins. A purchase spin pays
+      // the wedge MINUS the seat already bought, so landing on 1 Draft credits
+      // nothing. Swapped at build time on NEXT_PUBLIC_SPIN_ON_PURCHASE so the
+      // page can never promise a win the wheel won't pay.
+      SPIN_ON_PURCHASE_UI_ENABLED
+        ? {
+            question: 'What prizes can I win on the Banana Wheel?',
+            answer: 'Prizes include 1, 2, 5, 10, or up to 20 draft passes, guaranteed Jackpot draft entries, guaranteed HOF draft entries — and the 0.1% JackHOF wedge, a guaranteed seat in a draft with BOTH perks. Spins you earn from promotions always win something. Bonus spins that come free with a purchase pay whatever the wheel lands on beyond the draft you already bought, so landing on 1 Draft means no extra drafts that spin — you keep the draft you paid for either way.',
+          }
+        : {
+            question: 'What prizes can I win on the Banana Wheel?',
+            answer: 'Every spin wins! Prizes include: 1, 2, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, guaranteed HOF draft entries — and the 0.1% JackHOF wedge, a guaranteed seat in a draft with BOTH perks. The wheel is weighted but every outcome is a winner.',
+          },
+      ...(SPIN_ON_PURCHASE_UI_ENABLED
+        ? [
+            {
+              question: 'Do I get a spin when I buy a draft?',
+              answer: 'Yes. Every draft entry you buy comes with one free bonus spin on the Banana Wheel. The spin is a bonus and nothing more — your draft entry is confirmed the moment you buy it, whatever the wheel does. You can spin right away or save it for later.',
+            },
+            {
+              question: 'The wheel landed on "1 Draft" — did I win anything?',
+              answer: 'On a bonus spin from a purchase, no — that 1 draft is the entry you already bought, so there are no extra drafts on that spin. You keep your draft regardless. On a promo spin, landing on 1 Draft does win you a free draft pass.',
+            },
+            {
+              question: 'What is the difference between Promo Spins and Bonus Spins?',
+              answer: 'Promo Spins are earned from promotions — sharing, referrals, events, new-player offers — and always win something, starting at 1 free draft pass. Bonus Spins come free with a draft you bought and pay out anything the wheel lands on above that draft — land on 5 Drafts and 1 of them is the draft you bought, so 4 bonus passes are added. Your spin balance shows both separately, and Promo Spins are always used first.',
+            },
+          ]
+        : []),
       {
         question: 'What is a "special draft"?',
         answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (until the draft fills). They\'re free drafts, so they never earn promos.',

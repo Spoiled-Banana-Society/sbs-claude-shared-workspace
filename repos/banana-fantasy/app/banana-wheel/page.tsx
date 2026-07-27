@@ -18,6 +18,12 @@ import { useWheelHistory, useSpin, type WheelSpinOutcome } from '@/hooks/useWhee
 import { usePromos } from '@/hooks/usePromos';
 import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
 import { useWheelSegments } from '@/hooks/useWheelSegments';
+import {
+  SPIN_LABELS,
+  SPIN_ON_PURCHASE_UI_ENABLED,
+  nextSpinSource,
+  totalSpins,
+} from '@/lib/spinTypes';
 import { SPIN_DURATION_MS } from '@/components/wheel/BananaWheel';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -164,7 +170,9 @@ export default function BananaWheelPage() {
     for (const s of spinHistory) {
       const p = s.prize;
       if (p && typeof p === 'object' && p.type) {
-        if (p.type === 'draft_pass' && typeof p.value === 'number') drafts += p.value;
+        // Credited amount, not the wedge — a Bonus Spin on "5 Drafts" paid 4,
+        // and its "1 Draft" floor paid 0. Legacy rows have no bonusDrafts.
+        if (p.type === 'draft_pass' && typeof p.value === 'number') drafts += (typeof s.bonusDrafts === 'number' ? s.bonusDrafts : p.value);
         else if (p.type === 'custom' && p.value === 'jackpot') jackpot += 1;
         else if (p.type === 'custom' && p.value === 'hof') hof += 1;
         else if (p.type === 'custom' && p.value === 'jackhof') jackhof += 1;
@@ -182,7 +190,16 @@ export default function BananaWheelPage() {
     return { drafts, jackpot, hof, jackhof };
   }, [spinHistory]);
 
-  const spinsAvailable = Math.max(0, user?.wheelSpins ?? 0);
+  // Two stacks, deliberately NOT merged into one number. A Promo Spin always
+  // wins something; a Bonus Spin pays only what the wheel lands on above the
+  // draft already bought. Showing one total would promise a win the wheel
+  // won't pay. Promo spins are consumed first (they expire with their promo) —
+  // the server enforces that order; this mirrors it so the button label is
+  // honest about what's being spent.
+  const promoSpins = Math.max(0, user?.wheelSpins ?? 0);
+  const bonusSpins = SPIN_ON_PURCHASE_UI_ENABLED ? Math.max(0, user?.purchaseSpins ?? 0) : 0;
+  const spinsAvailable = totalSpins(promoSpins, bonusSpins);
+  const nextSource = nextSpinSource(promoSpins, bonusSpins);
 
   // Active-period wedge set (falls back to the static classic config).
   const { segments: activeSegments } = useWheelSegments();
@@ -265,13 +282,19 @@ export default function BananaWheelPage() {
       if (!user || !segment) return;
       // Any win that delivers a prize on-chain: start watching for a delayed
       // delivery so we can reassure the user if it needs retries.
+      // What this spin actually CREDITED — the server's answer, never the
+      // wedge. A Bonus Spin's "1 Draft" floor credits 0 (that draft was the
+      // one they bought): no mint fires, no balance bump, no win bell.
+      const credited = typeof _outcome?.bonusDrafts === 'number'
+        ? _outcome.bonusDrafts
+        : (typeof segment.prizeValue === 'number' ? segment.prizeValue : 0);
       const isDeliverableWin =
-        (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number' && segment.prizeValue > 0) ||
+        (segment.prizeType === 'draft_pass' && credited > 0) ||
         (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof' || segment.prizeValue === 'jackhof'));
       if (isDeliverableWin) watchRef.current();
-      if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
-        const expectedDraftPasses = (user.draftPasses ?? 0) + segment.prizeValue;
-        updateUser({ freeDrafts: (user.freeDrafts || 0) + segment.prizeValue });
+      if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number' && credited > 0) {
+        const expectedDraftPasses = (user.draftPasses ?? 0) + credited;
+        updateUser({ freeDrafts: (user.freeDrafts || 0) + credited });
         // Live-sync: wait for the reserveTokens mint fired by the spin endpoint
         // to be visible on-chain, then the UI reflects the new NFT without a
         // refresh. Self-heals admin panel via Firestore writethrough too.
@@ -293,8 +316,12 @@ export default function BananaWheelPage() {
         // fire one (it double-notified and the timing was off).
         pushNotification({
           type: 'promo',
-          title: segment.prizeValue === 1 ? 'Free Draft Won!' : `${segment.prizeValue} Free Drafts Won!`,
-          message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
+          title: _outcome?.spinSource === 'purchase'
+            ? `${credited} Bonus Draft${credited !== 1 ? 's' : ''} Won!`
+            : credited === 1 ? 'Free Draft Won!' : `${credited} Free Drafts Won!`,
+          message: _outcome?.spinSource === 'purchase'
+            ? `Your Bonus Spin paid ${credited} extra draft${credited !== 1 ? 's' : ''} on top of the one you bought!`
+            : `You won ${credited} free draft${credited !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
           // 'gift' = a FREE draft (won/earned), distinct from a PURCHASED pass
           // ('ticket'). Same icon for every free-draft notification (wheel win
@@ -563,9 +590,36 @@ export default function BananaWheelPage() {
         </div>
 
         {/* CENTER — Wheel. Mobile first (order-1), desktop middle column (order-2). */}
-        <div className="flex justify-center order-1 lg:order-2">
+        <div className="flex flex-col items-center gap-4 order-1 lg:order-2">
+          {SPIN_ON_PURCHASE_UI_ENABLED && spinsAvailable > 0 && (
+            <div className="w-full max-w-sm rounded-2xl px-5 py-4 backdrop-blur-md flex flex-col gap-2"
+              style={{ background: 'rgba(20, 20, 20, 0.7)' }}
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm text-text-secondary">{SPIN_LABELS.promo}</span>
+                <span className="text-sm font-semibold text-text-primary tabular-nums">{promoSpins}</span>
+              </div>
+              <p className="text-xs text-text-secondary -mt-1">Always win at least 1 free draft.</p>
+              <div className="flex items-baseline justify-between gap-3 mt-1">
+                <span className="text-sm text-text-secondary">{SPIN_LABELS.purchase}</span>
+                <span className="text-sm font-semibold text-text-primary tabular-nums">{bonusSpins}</span>
+              </div>
+              <p className="text-xs text-text-secondary -mt-1">
+                Free with each draft you buy. Pays anything above the draft you already own.
+              </p>
+            </div>
+          )}
           <BananaWheel
             spinsAvailable={spinsAvailable}
+            spinButtonText={(() => {
+              if (!SPIN_ON_PURCHASE_UI_ENABLED || !nextSource) return undefined;
+              // "Spin Promo" / "Spin Bonus" (Richard 2026-07-27) — count is the
+              // stack being SPENT, never the total, so it can't read as more
+              // promo spins than the user holds. No slot emoji.
+              const stackCount = nextSource === 'promo' ? promoSpins : bonusSpins;
+              const label = nextSource === 'promo' ? 'Promo' : 'Bonus';
+              return `Spin ${label}${stackCount > 1 ? ` (${stackCount} left)` : ''}`;
+            })()}
             onSpin={handleSpin}
             onSpinComplete={handleSpinComplete}
             specialDraftStatus={specialDraftStatus}
@@ -660,9 +714,22 @@ export default function BananaWheelPage() {
                     >
                       <span className="text-white/55 text-[12px] tabular-nums truncate">{formatSpinDate(spin.date)}</span>
                       <span className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[13px] font-medium" style={{ color: getPrizeColor(spin.result) }}>
-                          {getPrizeLabel(spin.result)}
-                        </span>
+                        {spin.spinSource && (
+                          <span className={`text-[9px] font-bold uppercase tracking-wider ${spin.spinSource === 'purchase' ? 'text-white/30' : 'text-banana/60'}`}>
+                            {spin.spinSource === 'purchase' ? 'Bonus' : 'Promo'}
+                          </span>
+                        )}
+                        {/* Show what the spin PAID: a Bonus Spin's 1-Draft floor
+                            credited nothing, and its 5-Drafts wedge credited 4. */}
+                        {spin.spinSource === 'purchase' && typeof spin.bonusDrafts === 'number' && spin.result.startsWith('draft-') ? (
+                          <span className={`text-[13px] font-medium ${spin.bonusDrafts === 0 ? 'text-white/35' : ''}`} style={spin.bonusDrafts === 0 ? undefined : { color: getPrizeColor(spin.result) }}>
+                            {spin.bonusDrafts === 0 ? 'No Bonus' : `+${spin.bonusDrafts} Draft${spin.bonusDrafts !== 1 ? 's' : ''}`}
+                          </span>
+                        ) : (
+                          <span className="text-[13px] font-medium" style={{ color: getPrizeColor(spin.result) }}>
+                            {getPrizeLabel(spin.result)}
+                          </span>
+                        )}
                         <span className="text-white/20 group-hover:text-banana text-[10px] transition-colors">↗</span>
                       </span>
                     </a>

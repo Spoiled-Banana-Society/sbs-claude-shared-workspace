@@ -30,6 +30,7 @@ import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
+import { grantPurchaseSpins } from '@/lib/purchases/grantPurchaseSpins';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -564,6 +565,10 @@ export async function POST(req: Request) {
           err: (refErr as Error).message,
         });
       }
+      // One free bonus spin per paid pass. Dark unless SPIN_ON_PURCHASE=1.
+      // ⚠️ This route duplicates bookkeepPaidMint's bookkeeping rather than
+      // calling it — the same grant lives there. KEEP IN SYNC.
+      await grantPurchaseSpins(userId, quantity);
     }
 
     // Onramp audit: log a tx_completed entry so admin dashboard

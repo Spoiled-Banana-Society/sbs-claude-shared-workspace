@@ -14,6 +14,13 @@ export type WheelSpinOutcome = {
     value?: number | string;
   };
   angle: number;
+  /** Which stack this spin came out of. Absent on legacy responses → treat as
+   *  'promo' (the pre-SPIN_ON_PURCHASE behaviour). */
+  spinSource?: 'promo' | 'purchase';
+  /** Drafts actually CREDITED. Differs from `prize.value` by one on a purchase
+   *  spin, where the first draft on the wedge is the seat already bought.
+   *  Result copy must read this, never the wedge value. */
+  bonusDrafts?: number;
   // Present when the spin was assigned by an active wheel-proof period. The spin
   // response NO LONGER carries the full Merkle proof — building it loads every
   // leaf in the period (~3s at 100k spins) and was blocking the wheel from
@@ -38,6 +45,10 @@ export interface WheelHistoryEntry {
   result: string;
   /** Prize the spin paid out — drives the lifetime "won" totals in My Winnings. */
   prize?: { type?: string; value?: number | string } | null;
+  /** Which stack paid it. Absent on legacy rows → treat as promo. */
+  spinSource?: 'promo' | 'purchase';
+  /** Drafts actually credited — wedge minus one on Bonus Spins. */
+  bonusDrafts?: number;
 }
 
 export function useWheelHistory(userId: string | undefined | null) {
@@ -45,7 +56,7 @@ export function useWheelHistory(userId: string | undefined | null) {
     queryKey: ['wheel', 'history', userId || ''],
     enabled: !!userId,
     queryFn: async () => {
-      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string; prize?: { type?: string; value?: number | string } | null }>>(
+      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string; prize?: { type?: string; value?: number | string } | null; spinSource?: 'promo' | 'purchase'; bonusDrafts?: number }>>(
         `/api/wheel/history?userId=${encodeURIComponent(userId!)}`,
       );
       if (!Array.isArray(raw)) return [];
@@ -56,6 +67,8 @@ export function useWheelHistory(userId: string | undefined | null) {
           date: h.date || '',
           result: h.result || '',
           prize: h.prize ?? null,
+          spinSource: h.spinSource,
+          bonusDrafts: h.bonusDrafts,
         }))
         .filter((h) => h.spinId && h.result);
     },

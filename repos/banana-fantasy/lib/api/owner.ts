@@ -129,6 +129,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
     usdcBalance: 0,
     freeDrafts: 0,
     wheelSpins: 0,
+    purchaseSpins: 0,
     jackpotEntries: 0,
     hofEntries: 0,
     cardPurchaseCount: 0,
@@ -306,6 +307,7 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
     user.draftPasses = balance.draftPasses;
     user.freeDrafts = balance.freeDrafts;
     user.wheelSpins = balance.wheelSpins;
+    user.purchaseSpins = balance.purchaseSpins;
     user.jackpotEntries = balance.jackpotEntries;
     user.hofEntries = balance.hofEntries;
     user.cardPurchaseCount = balance.cardPurchaseCount;
@@ -323,6 +325,7 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
 
 interface BalanceCounters {
   wheelSpins: number;
+  purchaseSpins: number;
   freeDrafts: number;
   jackpotEntries: number;
   hofEntries: number;
@@ -340,6 +343,7 @@ async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCount
     const data = (await res.json()) as Partial<BalanceCounters>;
     return {
       wheelSpins: typeof data.wheelSpins === 'number' ? data.wheelSpins : 0,
+      purchaseSpins: typeof data.purchaseSpins === 'number' ? data.purchaseSpins : 0,
       freeDrafts: typeof data.freeDrafts === 'number' ? data.freeDrafts : 0,
       jackpotEntries: typeof data.jackpotEntries === 'number' ? data.jackpotEntries : 0,
       hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,

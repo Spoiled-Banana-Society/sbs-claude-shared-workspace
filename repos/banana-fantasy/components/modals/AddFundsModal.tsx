@@ -15,6 +15,7 @@ import { DEPOSIT_PRESETS_USD } from '@/lib/deposits';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { clientLog } from '@/lib/clientLog';
 import { logger } from '@/lib/logger';
+import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 
 interface AddFundsModalProps {
   isOpen: boolean;
@@ -309,6 +310,13 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
           <p className="text-center text-text-muted text-xs">
             Already have USDC elsewhere? Send it to your connected wallet and you&apos;re set.
           </p>
+          {/* Depositing grants nothing by itself — the spin comes with each $25
+              entry afterward. Copy is written to promise exactly that. */}
+          {SPIN_ON_PURCHASE_UI_ENABLED && (
+            <p className="text-center text-banana/70 text-xs">
+              Every $25 draft entry from your balance comes with a free bonus spin on the Banana Wheel.
+            </p>
+          )}
         </div>
       )}
 
@@ -317,6 +325,13 @@ export function AddFundsModal({ isOpen, onClose, onFunded }: AddFundsModalProps)
           <p className="text-text-muted text-sm text-center -mt-2">
             Money goes to your balance — enter drafts in one tap.
           </p>
+          {/* Depositing grants nothing by itself — the spin comes with each $25
+              entry afterward. Copy is written to promise exactly that. */}
+          {SPIN_ON_PURCHASE_UI_ENABLED && (
+            <p className="text-center text-banana/70 text-xs -mt-1">
+              Every $25 draft entry from your balance comes with a free bonus spin on the Banana Wheel.
+            </p>
+          )}
 
           {/* Amount Selection — same grid language as the buy modal */}
           <div>

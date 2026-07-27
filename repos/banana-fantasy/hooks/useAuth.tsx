@@ -186,6 +186,7 @@ const MOCK_USER: User | null = MOCK_AUTH
       usdcBalance: 0,
       freeDrafts: 0,
       wheelSpins: 0,
+      purchaseSpins: 0,
       jackpotEntries: 0,
       hofEntries: 0,
       cardPurchaseCount: 0,
@@ -796,6 +797,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             usdcBalance: 0,
             freeDrafts: 0,
             wheelSpins: 0,
+            purchaseSpins: 0,
             jackpotEntries: 0,
             hofEntries: 0,
             cardPurchaseCount: 0,
@@ -1035,6 +1037,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           ...prev,
           wheelSpins: (d.wheelSpins as number) ?? prev.wheelSpins,
+          purchaseSpins: typeof d.purchaseSpins === 'number' ? d.purchaseSpins : prev.purchaseSpins,
           freeDrafts: (d.freeDrafts as number) ?? prev.freeDrafts,
           jackpotEntries: (d.jackpotEntries as number) ?? prev.jackpotEntries,
           hofEntries: (d.hofEntries as number) ?? prev.hofEntries,
@@ -1259,6 +1262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       draftPasses?: number;
       freeDrafts?: number;
       wheelSpins?: number;
+      purchaseSpins?: number;
       jackpotEntries?: number;
       hofEntries?: number;
       cardPurchaseCount?: number;
@@ -1281,6 +1285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         draftPasses: typeof firestoreBalance!.draftPasses === 'number' ? firestoreBalance!.draftPasses : prev.draftPasses,
         freeDrafts: typeof firestoreBalance!.freeDrafts === 'number' ? firestoreBalance!.freeDrafts : prev.freeDrafts,
         wheelSpins: typeof firestoreBalance!.wheelSpins === 'number' ? firestoreBalance!.wheelSpins : prev.wheelSpins,
+        purchaseSpins: typeof firestoreBalance!.purchaseSpins === 'number' ? firestoreBalance!.purchaseSpins : prev.purchaseSpins,
         jackpotEntries: typeof firestoreBalance!.jackpotEntries === 'number' ? firestoreBalance!.jackpotEntries : prev.jackpotEntries,
         hofEntries: typeof firestoreBalance!.hofEntries === 'number' ? firestoreBalance!.hofEntries : prev.hofEntries,
         cardPurchaseCount: typeof firestoreBalance!.cardPurchaseCount === 'number' ? firestoreBalance!.cardPurchaseCount : prev.cardPurchaseCount,
@@ -1316,6 +1321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : 0,
               freeDrafts: typeof data.freeDrafts === 'number' ? data.freeDrafts : 0,
               wheelSpins: typeof data.wheelSpins === 'number' ? data.wheelSpins : 0,
+              purchaseSpins: typeof data.purchaseSpins === 'number' ? data.purchaseSpins : 0,
               jackpotEntries: typeof data.jackpotEntries === 'number' ? data.jackpotEntries : 0,
               hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,
             };

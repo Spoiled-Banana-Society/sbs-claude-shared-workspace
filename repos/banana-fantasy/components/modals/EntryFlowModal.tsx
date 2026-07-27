@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
+import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -169,6 +170,11 @@ export function EntryFlowModal({
                           ? `From your $${balanceUsd.toFixed(2)} balance`
                           : 'Add funds to enter'}
                       </p>
+                    )}
+                    {/* Only on the BUY variant — spending a pass you already own
+                        isn't a purchase, so it doesn't come with a spin. */}
+                    {buyingSeat && SPIN_ON_PURCHASE_UI_ENABLED && (
+                      <p className="text-banana/70 text-xs mt-0.5">Includes a free bonus spin</p>
                     )}
                   </div>
                   <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>

@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/components/NotificationCenter';
+import { totalSpins } from '@/lib/spinTypes';
 
 export function MobileTabBar() {
   const pathname = usePathname();
@@ -13,7 +14,9 @@ export function MobileTabBar() {
   // Don't show in draft room — it has its own UI
   if (pathname?.startsWith('/draft-room')) return null;
 
-  const wheelSpins = isLoggedIn && user ? user.wheelSpins : 0;
+  // Badge counts BOTH stacks — a bonus spin the user can't see is a spin
+  // they never take. The wheel page itself keeps them separate.
+  const wheelSpins = isLoggedIn && user ? totalSpins(user.wheelSpins, user.purchaseSpins) : 0;
   // Scalars only — the memoized inner bar re-renders ONLY when something
   // visible changed. The auth user object churns identity every few seconds;
   // re-rendering the nav mid-touch is what ate first taps (Boris 2026-06-11).

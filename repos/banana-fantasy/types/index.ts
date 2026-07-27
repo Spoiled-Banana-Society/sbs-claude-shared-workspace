@@ -10,7 +10,15 @@ export interface User {
   draftPasses: number;
   usdcBalance: number; // USDC balance on Base (human-readable, e.g. 25.00)
   freeDrafts: number;
+  /** Promo Spins — earned from promotions. Pay the wedge value in full. */
   wheelSpins: number;
+  /**
+   * Bonus Spins — one per paid pass, granted only while SPIN_ON_PURCHASE is on.
+   * Pay the wedge value MINUS the seat already bought, so landing on 1 Draft
+   * credits nothing. Optional: absent on every user until the flag is flipped.
+   * See lib/spinTypes.ts.
+   */
+  purchaseSpins?: number;
   jackpotEntries: number;
   hofEntries: number;
   jackhofEntries?: number;

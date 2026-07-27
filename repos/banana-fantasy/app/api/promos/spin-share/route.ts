@@ -132,11 +132,17 @@ export async function POST(req: Request) {
       const userSnap = await tx.get(userRef);
       const prevCount = (userSnap.data()?.verifiedShareCount as number | undefined) ?? 0;
       const newCount = prevCount + 1;
+      // Fire on EXACTLY reaching the threshold, then roll the counter back down
+      // by one full rung. `>=` without a reset kept firing on every share after
+      // the 3rd — one spin per share instead of one per three — and left
+      // progressCurrent rendering "4/3". Carrying the remainder (rather than
+      // zeroing) keeps a burst of shares landing in one transaction honest.
       const reachedThreshold = newCount >= SHARE_CREDIT_THRESHOLD;
+      const carriedCount = reachedThreshold ? newCount - SHARE_CREDIT_THRESHOLD : newCount;
 
       tx.set(
         userRef,
-        { verifiedShareCount: newCount },
+        { verifiedShareCount: carriedCount },
         { merge: true },
       );
 
@@ -148,7 +154,7 @@ export async function POST(req: Request) {
             {
               claimable: true,
               claimCount: FieldValue.increment(1),
-              progressCurrent: newCount,
+              progressCurrent: carriedCount,
             },
             { merge: true },
           );
@@ -156,12 +162,12 @@ export async function POST(req: Request) {
       } else if ((await tx.get(promoRef)).exists) {
         tx.set(
           promoRef,
-          { progressCurrent: newCount },
+          { progressCurrent: carriedCount },
           { merge: true },
         );
       }
 
-      return { verifiedShareCount: newCount, claimable: reachedThreshold };
+      return { verifiedShareCount: carriedCount, claimable: reachedThreshold };
     });
 
     return json({

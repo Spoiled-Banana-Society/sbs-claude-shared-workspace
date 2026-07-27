@@ -15,6 +15,7 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
+import { totalSpins } from '@/lib/spinTypes';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
 const HEADER_SPOKES: [number, number][] = [
@@ -276,7 +277,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         <p className="font-semibold">Banana Wheel</p>
                         {isLoggedIn && user ? (
                           <p className="text-text-secondary text-xs mt-1">
-                            {user.wheelSpins} spin{user.wheelSpins !== 1 ? 's' : ''} available
+                            {totalSpins(user.wheelSpins, user.purchaseSpins)} spin{totalSpins(user.wheelSpins, user.purchaseSpins) !== 1 ? 's' : ''} available
                           </p>
                         ) : (
                           <p className="text-text-muted text-xs mt-1">Win drafts, Jackpots, HOF entries</p>
@@ -286,13 +287,13 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   >
                     <Link
                       href="/banana-wheel"
-                      aria-label={`Banana Wheel${isLoggedIn && user && user.wheelSpins > 0 ? `: ${user.wheelSpins} spins available` : ''}`}
+                      aria-label={`Banana Wheel${isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 ? `: ${totalSpins(user.wheelSpins, user.purchaseSpins)} spins available` : ''}`}
                       className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
                       <HeaderWheel size={28} />
-                      {isLoggedIn && user && user.wheelSpins > 0 && (
+                      {isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                          {user.wheelSpins}
+                          {totalSpins(user.wheelSpins, user.purchaseSpins)}
                         </span>
                       )}
                     </Link>

@@ -10,6 +10,10 @@ interface WheelSpinDoc {
   result: string;
   prize: { type: string; value: string | number };
   timestamp: string;
+  /** Present on spins settled after SPIN_ON_PURCHASE: which stack it came from
+   *  and the drafts actually credited (wedge minus one on purchase spins). */
+  spinSource?: 'promo' | 'purchase';
+  bonusDrafts?: number;
 }
 
 async function fetchSpin(spinId: string): Promise<WheelSpinDoc | null> {
@@ -33,7 +37,31 @@ interface PrizeDisplay {
   glowClass: string;
 }
 
-function displayForResult(result: string): PrizeDisplay {
+function displayForResult(result: string, spin?: Pick<WheelSpinDoc, 'spinSource' | 'bonusDrafts'>): PrizeDisplay {
+  // Purchase-spin share cards must state what was CREDITED, not the wedge —
+  // a Bonus Spin landing "5 Drafts" paid 4 (one is the draft they bought), and
+  // a no-bonus result must never share as "1 DRAFT PASS" won.
+  if (spin?.spinSource === 'purchase' && /^draft-\d+$/.test(result)) {
+    const bonus = Math.max(0, spin.bonusDrafts ?? 0);
+    if (bonus === 0) {
+      return {
+        headline: 'BONUS SPIN',
+        subheadline: 'Every SBS draft entry comes with a free bonus spin',
+        imageSrc: '/banana-wheel.png',
+        imageAlt: 'Banana Wheel',
+        accentColor: '#fbbf24',
+        glowClass: 'glow-banana',
+      };
+    }
+    return {
+      headline: `+${bonus} BONUS DRAFT${bonus === 1 ? '' : 'S'}`,
+      subheadline: 'Won on a free bonus spin — every SBS draft entry comes with one',
+      imageSrc: '/banana-wheel.png',
+      imageAlt: 'Banana Wheel',
+      accentColor: '#fbbf24',
+      glowClass: 'glow-banana',
+    };
+  }
   if (result === 'jackpot') {
     return {
       headline: 'JACKPOT',
@@ -80,7 +108,7 @@ export default async function WheelResultPage({ params }: { params: { spinId: st
   const spin = await fetchSpin(params.spinId);
   if (!spin) notFound();
 
-  const display = displayForResult(spin.result);
+  const display = displayForResult(spin.result, spin);
 
   return (
     <main className="min-h-screen bg-bg-primary flex items-center justify-center px-4 py-12">

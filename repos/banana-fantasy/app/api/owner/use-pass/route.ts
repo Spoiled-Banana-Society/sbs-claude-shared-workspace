@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
+import { buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
 import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
 import { runInBackground } from '@/lib/serverBackground';
@@ -82,7 +82,6 @@ export async function POST(req: Request) {
     }
 
     const db = getAdminFirestore();
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
     // Hard gate: never let a user spend a pass they don't really have. We check
     // the engine's REAL spendable inventory (owners/{wallet}/validDraftTokens —
@@ -112,26 +111,28 @@ export async function POST(req: Request) {
       },
     });
 
-    const result = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(userRef);
-      const mirror = (snap.exists ? (snap.data()?.[field] as number | undefined) : undefined) ?? 0;
-      // `available` (the wallet's REAL spendable inventory in validDraftTokens,
-      // confirmed > 0 by the hard gate above) is the source of truth. The scalar
-      // counter is only a fast-read MIRROR and can legitimately lag BELOW the real
-      // inventory: a mint/grant that writes the token but dies before
-      // recountFromInventory (slow on-chain grant + serverless timeout — the exact
-      // failure Boris hit) leaves the mirror stale-low while the token really
-      // exists. The OLD `if (current <= 0) return decremented:false` here then
-      // falsely blocked a pass the wallet genuinely owns, and the client showed a
-      // ghost "deducted then refunded" with no draft. Trust the real inventory:
-      // decrement from the true count and write the reconciled value so the mirror
-      // self-heals toward reality. Gate 1 guarantees available >= 1, so this always
-      // decrements — a stale mirror can never block a real pass again.
-      const trueCount = Math.max(mirror, available);
-      tx.set(userRef, { [field]: trueCount - 1 }, { merge: true });
-      addActivityEventToTx(tx, activityDoc);
-      return { decremented: true, before: mirror, after: trueCount - 1 };
-    });
+    // NO BLIND DECREMENT (2026-07-27, the AceJohn incident). This legacy
+    // branch decremented whichever field the CLIENT claimed ('paid'/'free').
+    // When the claim disagreed with the token the engine actually consumed —
+    // stale app bundles still call this pre-join — the split flipped (paid
+    // showed 0 while a paid pass sat in the wallet). The counter is a MIRROR
+    // of owners/{w}/validDraftTokens and may only ever be SET from it:
+    //   • gate passed (available > 0) → the client may proceed;
+    //   • the counter itself is recounted from inventory, not arithmetic'd.
+    // For a pre-join caller inventory hasn't shrunk yet, so this write is a
+    // no-op-at-worst; the Go join consumes the real token and the next
+    // recount (use-pass joined:true, balance GET, or the stream's drift
+    // guard) lands the decrement. The counter can no longer lie about the
+    // split, because nothing arithmetic ever touches it.
+    const before = await db.collection(USERS_COLLECTION).doc(userId).get()
+      .then((s) => Math.max(0, (s.data()?.[field] as number | undefined) ?? 0))
+      .catch(() => 0);
+    const counts = await recountFromInventory(userId, activityDoc);
+    const result = {
+      decremented: true,
+      before,
+      after: field === 'draftPasses' ? counts.draftPasses : counts.freeDrafts,
+    };
 
     // Admin heads-up when a genuinely new organic user takes a seat in a
     // filling draft (Boris 2026-07-03). Same gate + fan-out as the "left the

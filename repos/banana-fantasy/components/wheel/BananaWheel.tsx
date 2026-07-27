@@ -17,6 +17,25 @@ interface BananaWheelProps {
    *  queue poll): lobby fill count + a direct Join-the-Lobby URL. Null until
    *  the seat resolves server-side (a few seconds after the wheel stops). */
   specialDraftStatus?: { count: number; draftRoomUrl: string | null } | null;
+  /** Overrides the button label so it can name WHICH stack is about to be
+   *  spent ("Spin Promo Spin (3 left)"). Promo and Bonus spins pay differently,
+   *  so a bare "Spin" would hide which one the click consumes. */
+  spinButtonText?: string;
+}
+
+/** A Bonus Spin that landed on the draft the user already bought credited
+ *  nothing — confetti and win sounds on that result would celebrate "you won
+ *  nothing", which reads as mockery. Legacy outcomes (no spinSource) are promo
+ *  spins and always celebrate. */
+function isNoBonusResult(outcome: WheelSpinOutcome, segment: WheelSegment | null): boolean {
+  if (outcome.spinSource !== 'purchase') return false;
+  // Specials (Jackpot/HOF/JackHOF) pay a seat, not drafts — their bonusDrafts
+  // is 0 by definition, but they are the BIGGEST wins on the wheel and always
+  // celebrate. Caught live 7/27: Vertig0's HOF hit on a Bonus Spin landed with
+  // no confetti or win sound because this treated drafts-credited=0 as a loss.
+  if (segment?.prizeType === 'custom') return false;
+  if (typeof outcome.bonusDrafts === 'number') return outcome.bonusDrafts <= 0;
+  return typeof segment?.prizeValue === 'number' && segment.prizeValue <= 1 && segment.prizeType === 'draft_pass';
 }
 
 function fireCelebration(segment: WheelSegment) {
@@ -124,10 +143,24 @@ function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: numbe
   );
 }
 
-function getPrizeMessage(segment: WheelSegment): string {
+function getPrizeMessage(segment: WheelSegment, source: 'promo' | 'purchase', bonusDrafts: number): string {
   if (segment.id === 'jackpot') return 'You hit the JACKPOT!';
   if (segment.id === 'hof') return 'You won a Hall of Fame draft!';
   if (segment.id === 'jackhof') return 'You hit the JACKPOT and the Hall of Fame — one draft, both prizes!';
+  // A Bonus Spin pays only what the wheel lands on ABOVE the draft already
+  // bought. Landing on 1 Draft therefore credits nothing — and must never be
+  // phrased as a win, because that draft was purchased, not won. Saying "you
+  // won your draft" would recast the purchase itself as a wager.
+  if (source === 'purchase') {
+    if (bonusDrafts <= 0) return "That's the draft you bought — no bonus this spin.";
+    // Every bonus win explains the minus-one, or "5 Drafts → +4" reads like the
+    // wheel shorted them. The wedge counts the draft they bought; the payout is
+    // everything above it.
+    const explain = `1 of these is the draft you bought — +${bonusDrafts} bonus draft${bonusDrafts !== 1 ? 's' : ''} added to your balance.`;
+    if (bonusDrafts >= 19) return `Massive win! ${explain}`;
+    if (bonusDrafts >= 9) return `Big win! ${explain}`;
+    return explain;
+  }
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win!';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'Big win!';
   return 'Added to your balance';
@@ -205,7 +238,7 @@ interface PendingSpin {
   rotation: number;
 }
 
-export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus }: BananaWheelProps) {
+export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus, spinButtonText }: BananaWheelProps) {
   const [isSpinning, setIsSpinning] = useState(false);
   // 'free' = constant-speed spin while waiting on RNG; 'landing' = decel onto
   // the result; 'idle' = stopped (no transition). Drives the CSS transition.
@@ -214,6 +247,8 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const freeSpinStartRotationRef = useRef(0);
   const [rotation, setRotation] = useState(0);
   const [wonSegment, setWonSegment] = useState<WheelSegment | null>(null);
+  const [wonSource, setWonSource] = useState<'promo' | 'purchase'>('promo');
+  const [wonBonusDrafts, setWonBonusDrafts] = useState<number>(0);
   // Value binding dropped — it was only read by the removed "Share on X" button.
   // The setter stays so the surrounding spin logic is untouched.
   const [, setWonSpinId] = useState<string | null>(null);
@@ -255,9 +290,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           setIsSpinning(false);
           setWonSegment(segment);
           setWonSpinId(pending.outcome.spinId);
+          setWonSource(pending.outcome.spinSource ?? 'promo');
+          setWonBonusDrafts(
+            typeof pending.outcome.bonusDrafts === 'number'
+              ? pending.outcome.bonusDrafts
+              : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+          );
           setShowResult(true);
           localStorage.removeItem(PENDING_SPIN_KEY);
-          if (segment) {
+          if (segment && !isNoBonusResult(pending.outcome, segment)) {
             fireCelebration(segment);
             playWinSound(getWinTier(segment));
             if (isBigWin(segment)) rainPrizes(segment);
@@ -272,9 +313,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         setRotation(pending.rotation);
         setWonSegment(segment);
         setWonSpinId(pending.outcome.spinId);
+        setWonSource(pending.outcome.spinSource ?? 'promo');
+        setWonBonusDrafts(
+          typeof pending.outcome.bonusDrafts === 'number'
+            ? pending.outcome.bonusDrafts
+            : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+        );
         setShowResult(true);
         localStorage.removeItem(PENDING_SPIN_KEY);
-        if (segment) {
+        if (segment && !isNoBonusResult(pending.outcome, segment)) {
           fireCelebration(segment);
         }
         if (onSpinComplete) onSpinComplete(pending.outcome, segment);
@@ -455,9 +502,17 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       setIsSpinning(false);
       setWonSegment(segment);
       setWonSpinId(outcome.spinId);
+      // Legacy responses carry neither field → 'promo' + wedge value, i.e. the
+      // pre-SPIN_ON_PURCHASE behaviour.
+      setWonSource(outcome.spinSource ?? 'promo');
+      setWonBonusDrafts(
+        typeof outcome.bonusDrafts === 'number'
+          ? outcome.bonusDrafts
+          : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+      );
       setShowResult(true);
       localStorage.removeItem(PENDING_SPIN_KEY);
-      if (segment) {
+      if (segment && !isNoBonusResult(outcome, segment)) {
         fireCelebration(segment);
         playWinSound(getWinTier(segment));
         // Big four (jackpot / HOF / 10 / 20): rain the prize down the screen.
@@ -691,7 +746,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               </svg>
               Spinning...
             </span>
-          ) : 'Spin'}
+          ) : (spinButtonText ?? 'Spin')}
         </button>
 
         {spinError && (
@@ -758,8 +813,16 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 <PrizeIcon segment={wonSegment} size={68} />
               </div>
 
-              <p className="text-[#32d74b] text-sm font-semibold tracking-wide uppercase mb-2">
-                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof' ? 'LEGENDARY WIN!' : 'You Won!'}
+              <p
+                className={`text-sm font-semibold tracking-wide uppercase mb-2 ${
+                  wonSource === 'purchase' && wonBonusDrafts <= 0 ? 'text-[#86868b]' : 'text-[#32d74b]'
+                }`}
+              >
+                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof'
+                  ? 'LEGENDARY WIN!'
+                  : wonSource === 'purchase' && wonBonusDrafts <= 0
+                    ? 'No Bonus'
+                    : 'You Won!'}
               </p>
 
               <h3
@@ -773,7 +836,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 className="text-[#86868b] text-sm mb-6"
                 style={{ animation: 'fadeIn 0.6s ease-out 0.4s both' }}
               >
-                {getPrizeMessage(wonSegment)}
+                {getPrizeMessage(wonSegment, wonSource, wonBonusDrafts)}
               </p>
 
               {wonProofStatus === 'verified' && wonProofMeta && (() => {

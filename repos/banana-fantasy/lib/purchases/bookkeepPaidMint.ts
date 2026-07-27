@@ -7,6 +7,7 @@ import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
+import { grantPurchaseSpins } from '@/lib/purchases/grantPurchaseSpins';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -256,6 +257,9 @@ export async function bookkeepPaidMint(ctx: PaidMintContext): Promise<PaidMintBo
     } catch (refErr) {
       logger.warn('paidMint.referral_increment_failed', { userId, quantity, err: (refErr as Error).message });
     }
+    // 6b. One free bonus spin per paid pass. Dark unless SPIN_ON_PURCHASE=1.
+    //     Never granted for the reward draft — bonus spins ride paid seats only.
+    await grantPurchaseSpins(userId, quantity);
   }
 
   // Onramp audit: log a tx_completed entry so admin dashboard shows successful
