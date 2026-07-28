@@ -434,9 +434,35 @@ export function useAdminMetrics(enabled: boolean) {
     queryKey: ['admin', 'metrics'],
     enabled,
     queryFn: () => adminFetch<MetricsResponse>('/api/admin/metrics', getHeaders),
-    refetchInterval: 10_000, // live-polling every 10 seconds
+    // Manual refresh ONLY — each uncached /api/admin/metrics hit reads up to
+    // ~300K Firestore docs, and the old 10s auto-poll was the main driver of
+    // the $1K July 2026 GCP bill. Fetches once on dashboard open; after that
+    // only the Refresh buttons (which call refetch()) hit the endpoint.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
+export interface TreasurySnapshot {
+  opsWallet: string;
+  treasury: string;
+  contractUsdc: string;
+  opsUsdc: string;
+  treasuryUsdc: string;
+  owedReserve: string;
+}
+
+// On-chain read (3 RPC balance calls) — poll gently, unlike the 10s metrics.
+export function useTreasurySnapshot(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<TreasurySnapshot>({
+    queryKey: ['admin', 'treasury-snapshot'],
+    enabled,
+    queryFn: () => adminFetch<TreasurySnapshot>('/api/admin/withdraw-contract-usdc', getHeaders),
+    refetchInterval: 300_000,
     refetchIntervalInBackground: false,
-    staleTime: 0,
+    staleTime: 240_000,
   });
 }
 

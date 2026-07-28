@@ -27,7 +27,8 @@ export function MetricsDashboard({ enabled }: { enabled: boolean }) {
   const m = query.data;
   const [tick, setTick] = useState(0);
 
-  // Re-render "Xs ago" ticker every second — query itself polls every 10s
+  // Re-render "Xs ago" ticker every second — the query itself only refetches
+  // via the Refresh button (auto-poll removed to stop burning Firestore reads)
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
@@ -44,7 +45,7 @@ export function MetricsDashboard({ enabled }: { enabled: boolean }) {
         <div>
           <h2 className="text-xl font-bold text-white">Live Metrics</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Auto-updates every 10s ·{' '}
+            Manual refresh ·{' '}
             {query.isError
               ? 'error loading'
               : query.isFetching
