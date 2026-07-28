@@ -783,7 +783,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <span className="text-text-secondary text-sm">{label}</span>
         <span className="flex items-center gap-3">
           {count > 0 && <span className="text-text-muted text-xs tabular-nums">{count} so far</span>}
-          <span className="text-banana font-bold tabular-nums">🍌 {bananas}</span>
+          <span className="text-banana font-bold tabular-nums">{bananas} 🍌</span>
         </span>
       </div>
     );
@@ -819,7 +819,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           {/* Odds callout removed (Boris 2026-07-26) — the leaderboard already
               shows each player's share, so a second percentage here was noise. */}
           <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-bold text-banana tabular-nums">🍌 {bd.bananas}</span>
+            <span className="text-3xl font-bold text-banana tabular-nums">{bd.bananas} 🍌</span>
             <span className="text-text-muted text-xs">this cycle</span>
           </div>
           {bd.pending > 0 && (
@@ -870,7 +870,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                     <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
                     {r.isYou ? 'You' : r.name}
                   </span>
-                  <span className="shrink-0 tabular-nums">🍌 {r.bananas}</span>
+                  <span className="shrink-0 tabular-nums">{r.bananas} 🍌</span>
                 </div>
               ))}
             </div>
@@ -903,7 +903,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                   <span className="text-text-secondary">{BANANA_SOURCE_LABEL[h.source] ?? h.source}</span>
                   <span className="flex items-center gap-3 tabular-nums">
                     <span className="text-text-muted text-xs">{h.at.slice(5, 10)}</span>
-                    <span className="text-banana">🍌 {h.bananas}</span>
+                    <span className="text-banana">{h.bananas} 🍌</span>
                   </span>
                 </div>
               ))}
@@ -921,9 +921,21 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             it play out; the winner is server-decided either way. */}
         {lastWin && (
           <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-1 text-text-primary">
-              {(() => { const n = Math.max(1, bd.seatsClaimed); const v = n % 100; const suf = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4)] ?? 'th'; return `${n}${suf}`; })()} Seat — {lastWin.name}
-            </h4>
+            {/* EVERY seat winner, oldest first — not just the latest (Boris
+                2026-07-28: "show both their names"). The reveal below still
+                replays the most recent draw. */}
+            <div className="mb-2 space-y-0.5">
+              {[...bd.recentWinners].reverse().map((w, i, arr) => {
+                const n = Math.max(1, bd.seatsClaimed - (arr.length - 1 - i));
+                const v = n % 100;
+                const suf = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4)] ?? 'th';
+                return (
+                  <h4 key={w.cycleId} className="font-semibold text-text-primary">
+                    {n}{suf} Seat — {w.name}
+                  </h4>
+                );
+              })}
+            </div>
             <BananaDrawReveal
               entrants={bd.lastDrawEntrants?.length
                 ? bd.lastDrawEntrants

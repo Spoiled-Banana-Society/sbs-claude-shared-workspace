@@ -127,7 +127,6 @@ export function BananaDrawBanner({
   // of a launch, not a failure case.
   if (!state) return null;
   const me = myWallet?.toLowerCase();
-  const lastWinner = state.recentWinners[0];
   const empty = state.totalBananas <= 0;
 
   const rows = expanded ? state.leaderboard : state.leaderboard.slice(0, COLLAPSED_ROWS);
@@ -174,7 +173,7 @@ export function BananaDrawBanner({
         <button type="button" onClick={onExplain} className="w-full py-4 text-center">
           <p className="text-text-primary text-sm font-semibold">No Bananas in this draw yet.</p>
           <p className="text-text-muted text-xs mt-1">
-            Fill a draft and you&apos;re first on the board — free draft 🍌 1, paid 🍌 2.
+            Fill a draft and you&apos;re first on the board — free draft 1 🍌, paid 2 🍌.
           </p>
         </button>
       ) : (
@@ -190,7 +189,7 @@ export function BananaDrawBanner({
                 <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
                 {isYou ? 'You' : r.name}
               </span>
-              <span className="shrink-0 tabular-nums">🍌 {r.bananas}</span>
+              <span className="shrink-0 tabular-nums">{r.bananas} 🍌</span>
             </div>
           );
         })}
@@ -222,13 +221,13 @@ export function BananaDrawBanner({
               You
             </span>
             <span className="shrink-0 tabular-nums">
-              🍌 {myBananas}
+              {myBananas} 🍌
               {myPending > 0 && <span className="text-text-muted font-normal"> · {myPending} filling</span>}
             </span>
           </div>
         ) : (
           <div className="text-xs text-text-muted py-1 mb-2 border-t border-white/5 pt-2">
-            You have <span className="text-text-secondary font-semibold">🍌 0 Bananas</span>
+            You have <span className="text-text-secondary font-semibold">0 Bananas</span>
             {myPending > 0 ? ` · ${myPending} filling` : ''}.
           </div>
         )
@@ -257,7 +256,7 @@ export function BananaDrawBanner({
           ].map(([label, n]) => (
             <div key={label as string} className="flex items-center justify-between py-2 gap-3">
               <span className="text-text-secondary text-sm">{label}</span>
-              <span className="shrink-0 text-banana font-bold tabular-nums">🍌 {n}</span>
+              <span className="shrink-0 text-banana font-bold tabular-nums">{n} 🍌</span>
             </div>
           ))}
         </div>
@@ -273,11 +272,24 @@ export function BananaDrawBanner({
         <span className="text-text-muted"> — all it takes is one.</span>
       </p>
 
-      {lastWinner && (
+      {/* EVERY seat winner, oldest first — "1st Seat — NickW · 2nd Seat —
+          AceJohn". Showing only the newest hid the earlier winners the moment
+          seat 2 was drawn (Boris 2026-07-28). recentWinners arrives newest-
+          first and holds the last 5; seat numbers count back from
+          seatsClaimed so they stay correct even once older rows age out. */}
+      {state.recentWinners.length > 0 && (
         <p className="text-center text-xs pt-2 border-t border-white/5 mt-2">
-          <span className="text-text-muted">{ordinal(Math.max(1, state.seatsClaimed))} Seat</span>
-          <span className="text-text-muted"> — </span>
-          <span className="text-text-primary font-semibold">{lastWinner.name}</span>
+          {[...state.recentWinners].reverse().map((w, i, arr) => {
+            const seatNo = Math.max(1, state.seatsClaimed - (arr.length - 1 - i));
+            return (
+              <span key={w.cycleId}>
+                {i > 0 && <span className="text-text-muted/60"> · </span>}
+                <span className="text-text-muted">{ordinal(seatNo)} Seat</span>
+                <span className="text-text-muted"> — </span>
+                <span className="text-text-primary font-semibold">{w.name}</span>
+              </span>
+            );
+          })}
         </p>
       )}
     </div>

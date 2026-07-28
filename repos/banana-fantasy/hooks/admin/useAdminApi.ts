@@ -434,9 +434,13 @@ export function useAdminMetrics(enabled: boolean) {
     queryKey: ['admin', 'metrics'],
     enabled,
     queryFn: () => adminFetch<MetricsResponse>('/api/admin/metrics', getHeaders),
-    refetchInterval: 10_000, // live-polling every 10 seconds
-    refetchIntervalInBackground: false,
-    staleTime: 0,
+    // Manual refresh ONLY — each uncached /api/admin/metrics hit reads up to
+    // ~300K Firestore docs, and the old 10s auto-poll was the main driver of
+    // the $1K July 2026 GCP bill. Fetches once on dashboard open; after that
+    // only the Refresh buttons (which call refetch()) hit the endpoint.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
