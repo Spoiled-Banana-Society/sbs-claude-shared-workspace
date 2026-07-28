@@ -216,7 +216,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How do I earn Banana Wheel spins?',
-        answer: 'Earn spins by completing promotions like "Draft 3 times in a day", "Buy 10 draft passes" (1 spin per 10 passes), landing the last pick (Pick 10) in a paid draft, or participating in special events. One exception: in a Founder Draft the Pick 10 spin doesn\'t apply — paid entries already get the Founder Free Banana Spin, so it doesn\'t stack. Check the promotions section for current ways to earn spins.',
+        answer: 'Earn spins by completing promotions like "Draft 3 times in a day", landing the last pick (Pick 10) in a paid draft, or participating in special events. One exception: in a Founder Draft the Pick 10 spin doesn\'t apply — paid entries already get the Founder Free Banana Spin, so it doesn\'t stack. Check the promotions section for current ways to earn spins.',
       },
       // ⚠️ "Every spin wins" is true ONLY of promo spins. A purchase spin pays
       // the wedge MINUS the seat already bought, so landing on 1 Draft credits

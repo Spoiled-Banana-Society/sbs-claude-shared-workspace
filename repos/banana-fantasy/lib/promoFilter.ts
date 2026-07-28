@@ -14,6 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
+import { MINT_PROMO_END_MS } from '@/lib/promoWindow';
 
 /**
  * Promo types visible to users right now, in display order (after
@@ -146,6 +147,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   const visibleTypes = opts.isAdminPreview ? new Set<PromoType>(typeOrder) : VISIBLE_PROMO_TYPES;
   const filtered = promos.filter((p) => {
     if (!visibleTypes.has(p.type)) return false;
+    // Buy 10 → FREE SPIN retired at midnight PT Jul 28. Time-gated (not
+    // list-removed) so the card stayed live to the minute without a
+    // midnight deploy; safe to delete 'mint' from the list entirely later.
+    if (p.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) return false;
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
     if (p.type === 'new-user') {

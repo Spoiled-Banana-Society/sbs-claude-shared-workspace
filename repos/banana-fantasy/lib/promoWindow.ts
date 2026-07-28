@@ -22,3 +22,16 @@ export const PROMO_WEEKEND_END_MS = Date.UTC(2026, 6, 26, 19, 0, 0); // Sun Jul 
 export function promoWeekendActive(now: number = Date.now()): boolean {
   return now < PROMO_WEEKEND_END_MS;
 }
+
+/**
+ * "Buy 10 → FREE SPIN" (the `mint` promo) RETIRES at midnight PT, July 28
+ * (Boris, 2026-07-27 ~11:20pm — same-night order). At this instant:
+ *   • the card disappears from every surface (promoFilter gates on this),
+ *   • purchases stop advancing the bar / earning milestones
+ *     (_incrementMintPromosInTx gates on this),
+ *   • claiming is closed (claimPromo gates on this) — outstanding unclaimed
+ *     spins are auto-credited to wheels by the cutover job instead, and the
+ *     full progress state of every user is snapshotted to
+ *     `mint_promo_final_snapshot` as grandfathering proof ("I was at 2/10").
+ */
+export const MINT_PROMO_END_MS = Date.UTC(2026, 6, 28, 7, 0, 0); // Jul 28 2026, 12:00 AM PT

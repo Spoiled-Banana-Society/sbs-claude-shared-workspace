@@ -6,7 +6,7 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { promoWeekendActive } from '@/lib/promoWindow';
+import { MINT_PROMO_END_MS, promoWeekendActive } from '@/lib/promoWindow';
 import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
@@ -729,6 +729,12 @@ export async function claimPromo(userId: string, promoId: string) {
         else if (spinsAdded > 0) entry.status = 'pending';
       }
     } else {
+      // Buy 10 → FREE SPIN retired at midnight PT Jul 28. Claims are closed —
+      // every unclaimed milestone was auto-credited straight to the wheel by
+      // the cutover job, so a late claimer has nothing here by design.
+      if (promo.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
+        throw new ApiError(400, 'This promo has ended — any unclaimed spins were added to your wheel automatically.');
+      }
       if (!promo.claimable) throw new ApiError(400, 'Promo is not currently claimable');
       const count = promo.claimCount ?? 1;
       if (count <= 0) throw new ApiError(400, 'No claims available');
@@ -1363,7 +1369,11 @@ async function _incrementMintPromosInTx(
   let mintMilestonesEarned = 0;
   let newTotalMinted = 0;
   const mintPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'mint');
-  if (mintPromoDoc) {
+  // Buy 10 → FREE SPIN retired at midnight PT Jul 28: purchases after the
+  // cutoff advance NOTHING (no bar, no milestone, no history) — which also
+  // freezes every user's progress at exactly its cutover value, matching the
+  // grandfathering snapshot in mint_promo_final_snapshot.
+  if (mintPromoDoc && Date.now() < MINT_PROMO_END_MS) {
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
     mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
     newTotalMinted = mintPromo.modalContent.totalMinted;
