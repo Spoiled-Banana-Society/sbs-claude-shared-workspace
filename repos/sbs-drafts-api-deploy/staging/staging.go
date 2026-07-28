@@ -180,6 +180,7 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 			DraftType:    "slow",
 			Level:        level,
 			IsLocked:     false,
+			ADP:          models.SnapshotADPForLeague(draftId),
 		}
 		if err := utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league); err != nil {
 			http.Error(w, fmt.Sprintf("Error creating league: %s", err.Error()), http.StatusInternalServerError)
