@@ -150,8 +150,12 @@ export function BananaDrawBanner({
           {/* NOT "Tonight's" — the draw lands at NOON PT, so from launch time
               until midnight the seat is up to 24h out and "tonight" is simply
               false (Richard 2026-07-26). "Next" is true at every hour. */}
+          {/* Name the EXACT seat on the line (Boris 2026-07-28): "JACKHOF 3rd
+              Seat" beats "next seat" — it reads as a specific prize with a
+              number, and it ticks up as seats fill. seatsClaimed+1 = the seat
+              this draw awards. */}
           <span className="text-text-primary font-semibold truncate">
-            Next <JackHofWordmark size={13} /> seat
+            <JackHofWordmark size={13} /> {ordinal(Math.min(state.seatsTotal, state.seatsClaimed + 1))} Seat
           </span>
           <span
             aria-hidden
@@ -233,10 +237,7 @@ export function BananaDrawBanner({
         )
       )}
 
-      <div className="flex items-center justify-between text-xs text-text-muted border-t border-white/5 pt-2 gap-3">
-        <span className="truncate">
-          {state.seatsClaimed} of {state.seatsTotal} seats claimed
-        </span>
+      <div className="flex items-center justify-end text-xs text-text-muted border-t border-white/5 pt-2">
         <span className="shrink-0">{state.totalBananas} 🍌 in the draw</span>
       </div>
 
@@ -277,21 +278,23 @@ export function BananaDrawBanner({
           seat 2 was drawn (Boris 2026-07-28). recentWinners arrives newest-
           first and holds the last 5; seat numbers count back from
           seatsClaimed so they stay correct even once older rows age out. */}
-      {state.recentWinners.length > 0 && (
-        <p className="text-center text-xs pt-2 border-t border-white/5 mt-2">
-          {[...state.recentWinners].reverse().map((w, i, arr) => {
-            const seatNo = Math.max(1, state.seatsClaimed - (arr.length - 1 - i));
-            return (
-              <span key={w.cycleId}>
-                {i > 0 && <span className="text-text-muted/60"> · </span>}
-                <span className="text-text-muted">{ordinal(seatNo)} Seat</span>
-                <span className="text-text-muted"> — </span>
-                <span className="text-text-primary font-semibold">{w.name}</span>
-              </span>
-            );
-          })}
-        </p>
-      )}
+      {/* Seats-claimed lives HERE with the winners (Boris 2026-07-28) — the
+          count and the names are one fact told together: "2 of 10 seats
+          claimed · 1st Seat — NickW · 2nd Seat — AceJohn". */}
+      <p className="text-center text-xs pt-2 border-t border-white/5 mt-2">
+        <span className="text-text-muted">{state.seatsClaimed} of {state.seatsTotal} seats claimed</span>
+        {[...state.recentWinners].reverse().map((w, i, arr) => {
+          const seatNo = Math.max(1, state.seatsClaimed - (arr.length - 1 - i));
+          return (
+            <span key={w.cycleId}>
+              <span className="text-text-muted/60"> · </span>
+              <span className="text-text-muted">{ordinal(seatNo)} Seat</span>
+              <span className="text-text-muted"> — </span>
+              <span className="text-text-primary font-semibold">{w.name}</span>
+            </span>
+          );
+        })}
+      </p>
     </div>
   );
 }
