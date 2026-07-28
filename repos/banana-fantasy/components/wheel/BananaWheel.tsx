@@ -407,8 +407,17 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       outcome = await onSpin();
     } catch (err) {
       console.error('[BananaWheel] spin error:', err);
-      const msg = err instanceof Error ? err.message : 'Spin failed';
-      setSpinError(msg);
+      const raw = err instanceof Error ? err.message : '';
+      // Safari reports a dead network request as the bare string "Load
+      // failed" — which is exactly what a user screenshotted, reading it as
+      // a broken wheel that ate a spin (AceJohn, 2026-07-27). Translate
+      // network-shaped errors into what actually matters: nothing happened.
+      const looksNetwork = /load failed|failed to fetch|network|timeout|abort/i.test(raw);
+      setSpinError(
+        looksNetwork
+          ? 'Connection hiccup — no spin happened and nothing was used. Your spin count has been refreshed; tap to spin again.'
+          : raw || 'Spin failed — nothing was used. Please try again.',
+      );
     }
 
     if (!outcome) {

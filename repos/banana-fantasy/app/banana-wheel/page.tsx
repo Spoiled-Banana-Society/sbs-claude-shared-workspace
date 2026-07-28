@@ -230,10 +230,24 @@ export default function BananaWheelPage() {
     // A fresh spin invalidates any previous JP/HOF seat poll/modal state.
     setSpecialWin(null);
     setSpecialDraftStatus(null);
-    const outcome = await spinMutation.mutateAsync();
+    let outcome: WheelSpinOutcome;
+    try {
+      outcome = await spinMutation.mutateAsync();
+    } catch (err) {
+      // RESYNC ON FAILURE (AceJohn, 2026-07-27): his spin request's response
+      // died mid-flight (iOS PWA dead socket), so the page kept showing
+      // "1 spin available" for an hour after the server had already consumed
+      // it — then his next tap errored on a spin he no longer had. A failed
+      // spin request means our local count can no longer be trusted in
+      // EITHER direction (the server may or may not have processed it), so
+      // pull the authoritative balance immediately.
+      freezeSpinReveal(0);
+      void refreshBalance();
+      throw err;
+    }
     freezeSpinReveal(SPIN_DURATION_MS + 800);
     return outcome;
-  }, [spinMutation, freezeSpinReveal]);
+  }, [spinMutation, freezeSpinReveal, refreshBalance]);
 
   const handleSpinComplete = useCallback(
     (_outcome: WheelSpinOutcome, segment: WheelSegment | null) => {
@@ -714,7 +728,9 @@ export default function BananaWheelPage() {
                     >
                       <span className="text-white/55 text-[12px] tabular-nums truncate">{formatSpinDate(spin.date)}</span>
                       <span className="flex items-center gap-1.5 shrink-0">
-                        {spin.spinSource && (
+                        {/* "No Bonus" already names the spin type — pairing it with the
+                            BONUS tag reads "BONUS No Bonus", so drop the tag on zero rows. */}
+                        {spin.spinSource && !(spin.spinSource === 'purchase' && spin.bonusDrafts === 0 && spin.result.startsWith('draft-')) && (
                           <span className={`text-[9px] font-bold uppercase tracking-wider ${spin.spinSource === 'purchase' ? 'text-white/30' : 'text-banana/60'}`}>
                             {spin.spinSource === 'purchase' ? 'Bonus' : 'Promo'}
                           </span>

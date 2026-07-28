@@ -20,6 +20,12 @@ export const LIVE_ACTIVITY_STALE_MS = 45_000;
 // comparison that may hide a now-stale value).
 export const LIVE_ACTIVITY_STALE_CHECK_MS = 5_000;
 
+// Ride through a transient zero: the aggregator silently drops any draft whose
+// per-node RTDB read errors, so one flaky tick can briefly write count=0. Keep
+// showing the last real value this long before trusting a zero — a genuine
+// "nothing going" persists across ticks (10s apart) and still hides the line.
+export const LIVE_ACTIVITY_ZERO_LINGER_MS = 25_000;
+
 /** The one canonical string, shared by every surface so they read identically. */
 export function formatLiveActivity(count: number, round: number): string {
   const noun = count === 1 ? 'draft' : 'drafts';

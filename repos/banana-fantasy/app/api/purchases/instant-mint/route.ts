@@ -30,6 +30,7 @@ import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
 import { runInBackground } from '@/lib/serverBackground';
+import { grantPurchaseSpins } from '@/lib/purchases/grantPurchaseSpins';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -319,6 +320,11 @@ export async function POST(req: Request) {
             logger.warn('instant-mint.promo_increment_failed', { userId, err: (e as Error).message }));
           await incrementReferralPromos(userId, 1).catch((e) =>
             logger.warn('instant-mint.referral_increment_failed', { userId, err: (e as Error).message }));
+          // One free Bonus Spin per paid pass. This route does its OWN paid-mint
+          // bookkeeping (4th copy — bookkeepPaidMint / card-mint / creditCardDeposit
+          // are the others, KEEP IN SYNC) and was the one path missing the grant:
+          // user Ready's $25 balance entry got no spin (caught live 7/27).
+          await grantPurchaseSpins(userId, 1);
         }
         logger.info(LOG_SOURCES.payment.PURCHASE_COMPLETED, {
           userId, quantity: 1, paymentMethod: 'usdc', via: 'instant_seat',
