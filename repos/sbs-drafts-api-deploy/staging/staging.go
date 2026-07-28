@@ -116,8 +116,13 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if req.Type != "jackpot" && req.Type != "hof" {
-		http.Error(w, "type must be 'jackpot' or 'hof'", http.StatusBadRequest)
+	// 'jackhof' was mapped to its level below but REJECTED here — the gate
+	// predates the dual-type and was never widened, so the first-ever JackHOF
+	// league (Banana Draw winner, 2026-07-27) 400'd on creation and the seat
+	// sat queue-only with no Go league behind it. The wheel's 0.1% JackHOF
+	// wedge would have hit the same wall.
+	if req.Type != "jackpot" && req.Type != "hof" && req.Type != "jackhof" {
+		http.Error(w, "type must be 'jackpot', 'hof' or 'jackhof'", http.StatusBadRequest)
 		return
 	}
 
