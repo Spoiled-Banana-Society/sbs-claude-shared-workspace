@@ -602,6 +602,16 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         promo.progressCurrent = (promo.progressCurrent || 0) % stackMax;
       }
     }
+    // Buy 10 → FREE SPIN final lap: the box must SAY it's the last time
+    // (Boris 2026-07-27). Stamped at read time so every surviving card —
+    // card face and modal — carries the retirement message with no per-user
+    // writes. Only mid-lap / owed users still see this card at all.
+    if (promo.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
+      promo.description = 'FINAL ROUND — last chance to use this promo';
+      promo.modalContent.explanation =
+        '⏳ LAST TIME: this promo is retiring. Finish your current 10 and claim your Free Spin — once claimed, the promo is gone for good.\n'
+        + 'For every 10 drafts purchased, you get a Free Banana Spin. Passes beyond your final 10th don\u2019t start a new round.';
+    }
     // Inject real twitterConnected status for promos that depend on it
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
@@ -729,12 +739,6 @@ export async function claimPromo(userId: string, promoId: string) {
         else if (spinsAdded > 0) entry.status = 'pending';
       }
     } else {
-      // Buy 10 → FREE SPIN retired at midnight PT Jul 28. Claims are closed —
-      // every unclaimed milestone was auto-credited straight to the wheel by
-      // the cutover job, so a late claimer has nothing here by design.
-      if (promo.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
-        throw new ApiError(400, 'This promo has ended — any unclaimed spins were added to your wheel automatically.');
-      }
       if (!promo.claimable) throw new ApiError(400, 'Promo is not currently claimable');
       const count = promo.claimCount ?? 1;
       if (count <= 0) throw new ApiError(400, 'No claims available');
@@ -1369,29 +1373,45 @@ async function _incrementMintPromosInTx(
   let mintMilestonesEarned = 0;
   let newTotalMinted = 0;
   const mintPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'mint');
-  // Buy 10 → FREE SPIN retired at midnight PT Jul 28: purchases after the
-  // cutoff advance NOTHING (no bar, no milestone, no history) — which also
-  // freezes every user's progress at exactly its cutover value, matching the
-  // grandfathering snapshot in mint_promo_final_snapshot.
-  if (mintPromoDoc && Date.now() < MINT_PROMO_END_MS) {
+  // Buy 10 → FREE SPIN retirement, FINAL-LAP rules (Boris 2026-07-27):
+  // after the cutoff, ONLY users already mid-bar (≥1/10) keep earning, and
+  // only to the end of their CURRENT lap — the 10th pass awards exactly ONE
+  // final milestone, the bar wraps to 0, and overshoot passes past the 10th
+  // deliberately do NOT carry into a fresh lap (there is no next lap). Users
+  // at 0/10 stop advancing entirely at the cutoff. Before the cutoff,
+  // everything works exactly as it always has.
+  const mintRetired = Date.now() >= MINT_PROMO_END_MS;
+  if (mintPromoDoc) {
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
-    mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
-    newTotalMinted = mintPromo.modalContent.totalMinted;
-    // Purchase history for the modal ("big picture") — newest first, capped
-    // so the promo doc can't grow unbounded.
-    mintPromo.modalContent.mintHistory = [
-      { date: new Date().toISOString(), quantity, status: 'claimed' as const },
-      ...(mintPromo.modalContent.mintHistory || []),
-    ].slice(0, 50);
-    const max = mintPromo.progressMax || 10;
-    const { progressCurrent, milestonesEarned } = computeMintProgress(mintPromo.progressCurrent || 0, max, quantity);
-    mintPromo.progressCurrent = progressCurrent;
-    if (milestonesEarned > 0) {
-      mintPromo.claimCount = (mintPromo.claimCount || 0) + milestonesEarned;
-      recalcPromoClaimable(mintPromo);
-      mintMilestonesEarned = milestonesEarned;
+    const priorProgress = mintPromo.progressCurrent || 0;
+    const eligible = !mintRetired || priorProgress >= 1;
+    if (eligible) {
+      mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
+      newTotalMinted = mintPromo.modalContent.totalMinted;
+      // Purchase history for the modal ("big picture") — newest first, capped
+      // so the promo doc can't grow unbounded.
+      mintPromo.modalContent.mintHistory = [
+        { date: new Date().toISOString(), quantity, status: 'claimed' as const },
+        ...(mintPromo.modalContent.mintHistory || []),
+      ].slice(0, 50);
+      const max = mintPromo.progressMax || 10;
+      const { progressCurrent, milestonesEarned } = computeMintProgress(priorProgress, max, quantity);
+      if (mintRetired && milestonesEarned > 0) {
+        // Final lap complete: one spin, bar dead at 0, overshoot discarded.
+        mintPromo.progressCurrent = 0;
+        mintPromo.claimCount = (mintPromo.claimCount || 0) + 1;
+        recalcPromoClaimable(mintPromo);
+        mintMilestonesEarned = 1;
+      } else {
+        mintPromo.progressCurrent = progressCurrent;
+        if (milestonesEarned > 0) {
+          mintPromo.claimCount = (mintPromo.claimCount || 0) + milestonesEarned;
+          recalcPromoClaimable(mintPromo);
+          mintMilestonesEarned = milestonesEarned;
+        }
+      }
+      tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
     }
-    tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
   }
 
   // First-purchase bonus, TWO rates since 2026-07-10 (Boris):

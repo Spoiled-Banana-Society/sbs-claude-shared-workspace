@@ -147,10 +147,16 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   const visibleTypes = opts.isAdminPreview ? new Set<PromoType>(typeOrder) : VISIBLE_PROMO_TYPES;
   const filtered = promos.filter((p) => {
     if (!visibleTypes.has(p.type)) return false;
-    // Buy 10 → FREE SPIN retired at midnight PT Jul 28. Time-gated (not
-    // list-removed) so the card stayed live to the minute without a
-    // midnight deploy; safe to delete 'mint' from the list entirely later.
-    if (p.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) return false;
+    // Buy 10 → FREE SPIN retirement — FINAL-LAP model (Boris 2026-07-27):
+    // from the cutoff, the card survives ONLY for users mid-bar (≥1/10) or
+    // holding an unclaimed spin. They finish their current 10, claim, and
+    // the bar wraps to 0/10 with nothing claimable — which makes this same
+    // check hide it forever. Fresh users (0/10) lose it at the cutoff.
+    if (p.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
+      const midLap = (p.progressCurrent || 0) >= 1;
+      const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+      if (!midLap && !owed) return false;
+    }
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
     if (p.type === 'new-user') {
