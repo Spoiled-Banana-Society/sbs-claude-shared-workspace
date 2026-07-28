@@ -104,10 +104,13 @@ export function eventNotificationContent(
       // fronted FREE pass, and entering with that pass earns no spins (spins
       // fire when balance is SPENT). "Using your $X balance" points them at
       // the action that actually pays (Boris 2026-07-24).
+      // "+ a Bonus Spin with every pass" — Spin-on-Purchase stacks ON TOP of
+      // the promo spins, and the deposit bell is where a first buyer learns
+      // their total value (Boris 2026-07-28). One clause, not a lecture.
       const spinsLine = spins > 0
         ? (spins <= 2
-          ? ` Enter a draft using your $${amount} balance to receive your ${spins} Free Spins.`
-          : ` Enter drafts using your $${amount} balance to receive your ${spins} Free Spins.`)
+          ? ` Enter a draft using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every pass.`
+          : ` Enter drafts using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every pass.`)
         : '';
       let lead: string;
       if (freePasses > 0 && payload.fronted) {
@@ -184,7 +187,7 @@ export function eventNotificationContent(
       return {
         type: 'promo',
         title: 'First Purchase Promo — Win up to 40 Free Drafts',
-        message: 'Every Draft Pass = 2 Free Spins. Buy 1 → 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
+        message: 'Every Draft Pass = 2 Free Spins + a Bonus Spin, automatic. Buy 1 → 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',

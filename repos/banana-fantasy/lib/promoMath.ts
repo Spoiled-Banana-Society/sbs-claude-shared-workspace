@@ -91,6 +91,37 @@ export function computeFirstPurchaseGrant(
   return { consume: spins > 0, spins };
 }
 
+/** 24-hour classic window (returning players): from the FIRST paid purchase,
+ *  every pass bought within this window counts, and each completed PAIR pays
+ *  one spin the moment it lands. Closes for good when the window expires.
+ *  Kills the split-buy trap: deposit → instant-seat 1-at-a-time (or MetaMask
+ *  1-then-1) pays exactly what a single 2-pass cart always paid. */
+export const CLASSIC_FP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export interface ClassicWindowGrant {
+  /** Passes counted after this purchase. */
+  passesCounted: number;
+  /** Spins to credit NOW (new completed pairs only). */
+  spins: number;
+  /** True when the window had already expired — close the bonus, pay nothing. */
+  expired: boolean;
+}
+
+export function computeClassicWindowGrant(
+  windowStartMs: number | null,
+  passesSoFar: number,
+  spinsAwardedSoFar: number,
+  quantity: number,
+  nowMs: number,
+): ClassicWindowGrant {
+  if (windowStartMs !== null && nowMs - windowStartMs > CLASSIC_FP_WINDOW_MS) {
+    return { passesCounted: passesSoFar, spins: 0, expired: true };
+  }
+  const passesCounted = passesSoFar + Math.max(0, quantity);
+  const spins = Math.max(0, Math.floor(passesCounted / 2) - spinsAwardedSoFar);
+  return { passesCounted, spins, expired: false };
+}
+
 export interface FirstPurchaseUpsell {
   /** Spins this quantity earns right now (qty × 2). */
   spinsThisPurchase: number;

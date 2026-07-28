@@ -41,7 +41,7 @@ import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
-import { applyCompletionGate, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { CLASSIC_FP_WINDOW_MS, applyCompletionGate, computeClassicWindowGrant, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/rollingLanes';
 import { creditReferralBananas } from '@/lib/bananaDraw';
 import { isReturningWalletSync } from '@/lib/returningUsers';
@@ -521,10 +521,15 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // The grant math matches per-audience in _incrementMintPromosInTx.
   const CLASSIC_FIRST_PURCHASE_COPY = {
     title: 'First Purchase → FREE SPINS',
-    description: 'Every 2 passes on your first buy = 1 spin',
+    description: 'Every 2 passes in your first 24h = 1 spin',
     modalTitle: 'First Purchase → FREE SPINS',
+    // 24-HOUR WINDOW copy (Boris 2026-07-28): the old "buy them all in one
+    // transaction" warning existed because the grant judged only receipt #1 —
+    // the exact trap that burned Banana10084. Now the first buy opens a 24h
+    // window and every pass inside it counts, so the copy says that lightly:
+    // no all-at-once pressure, buying or entering drafts both work.
     explanation:
-      '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+      '• Your first purchase starts a 24-hour window — every 2 passes you pick up inside it = 1 Free Banana Spin.\n• Buy passes or jump straight into paid drafts, both count.\n• Buy 4 for 2 Spins, 6 for 3, and so on — no limit inside your 24 hours.\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of these.\n• Spins land automatically the moment each pair completes — claim them right here.',
   };
   const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
     || isReturningWalletSync(userId);
@@ -640,6 +645,17 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.modalContent = promo.modalContent || {};
       promo.modalContent.title = CLASSIC_FIRST_PURCHASE_COPY.modalTitle;
       promo.modalContent.explanation = CLASSIC_FIRST_PURCHASE_COPY.explanation;
+      // Window over → close the bonus LAZILY here (fire-and-forget), so a
+      // user who bought once and never again doesn't keep seeing a promise
+      // that would pay nothing. The purchase path also closes it; this
+      // covers the never-buys-again case.
+      const udRec = userData as unknown as Record<string, unknown>;
+      const winStart = udRec.firstPurchaseClassicWindowStart as number | undefined;
+      const alreadyGranted = udRec.firstPurchaseBonusGranted === true;
+      if (!alreadyGranted && typeof winStart === 'number' && Date.now() - winStart > CLASSIC_FP_WINDOW_MS) {
+        promo.claimable = promo.claimable && (promo.claimCount ?? 0) > 0; // unclaimed pairs stay claimable
+        void userRef.set({ firstPurchaseBonusGranted: true }, { merge: true }).catch(() => { /* next read retries */ });
+      }
     }
     // Pick-slot promo: overlay the LIVE tier copy (title + NEW badge + full
     // ladder explanation) AFTER the static seed overlay above, so the card
@@ -1456,6 +1472,32 @@ async function _incrementMintPromosInTx(
           ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
         }, { merge: true });
         if (g.spins > 0) creditFpSpins(g.spins);
+      }
+    } else if (isReturning) {
+      // RETURNING players, 24-HOUR CLASSIC WINDOW (Boris 2026-07-28). The old
+      // one-shot judged ONLY receipt #1: a returning player whose first buy
+      // was qty 1 (instant-seat forces exactly that; MetaMask users often buy
+      // 1-at-a-time too) got floor(1/2)=0 spins and the once-ever flag burned
+      // — the Banana10084 trap. Now the first paid purchase opens a 24h
+      // window; every pass bought inside it counts and each completed pair
+      // pays 1 spin immediately. Same money = same spins, regardless of how
+      // the checkout was shaped. The window closes lazily: the first purchase
+      // (or promo read) after expiry flips firstPurchaseBonusGranted.
+      if (!userData?.firstPurchaseBonusGranted && quantity > 0) {
+        const winStart = (userData as Record<string, unknown> | undefined)?.firstPurchaseClassicWindowStart as number | undefined ?? null;
+        const counted = (userData as Record<string, unknown> | undefined)?.firstPurchaseClassicPasses as number | undefined ?? 0;
+        const awarded = (userData as Record<string, unknown> | undefined)?.firstPurchaseClassicSpins as number | undefined ?? 0;
+        const g = computeClassicWindowGrant(winStart, counted, awarded, quantity, Date.now());
+        if (g.expired) {
+          tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+        } else {
+          tx.set(userRef, {
+            firstPurchaseClassicPasses: g.passesCounted,
+            ...(winStart === null ? { firstPurchaseClassicWindowStart: Date.now() } : {}),
+            ...(g.spins > 0 ? { firstPurchaseClassicSpins: awarded + g.spins } : {}),
+          }, { merge: true });
+          if (g.spins > 0) creditFpSpins(g.spins);
+        }
       }
     } else {
       const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);

@@ -76,7 +76,7 @@ const FAQS = [
   },
   {
     q: 'How many players do I draft?',
-    a: 'Each draft has 10 rounds. You\'ll pick 10 NFL players (QBs, RBs, WRs, TEs) in a snake draft against 9 other managers.',
+    a: 'Each draft has 15 rounds. You\'ll make 15 picks (QBs, RBs, WRs, TEs, DSTs) in a snake draft against 9 other managers.',
   },
   {
     q: 'What are Fast vs Slow drafts?',
@@ -92,7 +92,7 @@ const FAQS = [
   },
   {
     q: 'How does scoring work?',
-    a: 'Standard PPR scoring. Your best lineup is auto-calculated each week from your 10 players. Scores update live during NFL games.',
+    a: 'Standard PPR scoring. Your best lineup is auto-calculated each week from your 15 picks. Scores update live during NFL games.',
   },
   {
     q: 'Is the draft order fair?',
@@ -243,7 +243,7 @@ export default function HowItWorksPage() {
                 <div className="text-4xl mb-3">🎯</div>
                 <h3 className="text-lg font-bold mb-2">Draft &amp; Done</h3>
                 <p className="text-gray-400 text-sm">
-                  Pick your 10 players in a snake draft. That&apos;s your team for the entire NFL season. No adds, no drops, no trades.
+                  Make your 15 picks in a snake draft. That&apos;s your team for the entire NFL season. No adds, no drops, no trades.
                 </p>
               </div>
             </Reveal>

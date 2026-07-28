@@ -50,7 +50,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Is this like a traditional 12-man redraft league?',
-        answer: 'No — it\'s a tournament, not a season-long league. You draft a 10-position roster against 9 other players, and your team plays all season on cumulative points. Weeks 1-14 are the regular season in your 10-team pod; the top 2 finishers advance into the playoff pods (Weeks 15-16) and then the Week 17 finals, all competing for one big guaranteed prize pool. Enter as many drafts as you want — each draft is another team, and another shot at the prizes.',
+        answer: 'No — it\'s a tournament, not a season-long league. You draft a 15-slot roster against 9 other players, and your team plays all season on cumulative points. Weeks 1-14 are the regular season in your 10-team pod; the top 2 finishers advance into the playoff pods (Weeks 15-16) and then the Week 17 finals, all competing for one big guaranteed prize pool. Enter as many drafts as you want — each draft is another team, and another shot at the prizes.',
       },
       {
         question: 'How does a draft work?',
@@ -216,7 +216,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How do I earn Banana Wheel spins?',
-        answer: 'Earn spins by completing promotions like "Draft 3 times in a day", landing the last pick (Pick 10) in a paid draft, or participating in special events. One exception: in a Founder Draft the Pick 10 spin doesn\'t apply — paid entries already get the Founder Free Banana Spin, so it doesn\'t stack. Check the promotions section for current ways to earn spins.',
+        answer: `Earn spins by completing promotions like "4 Drafts in 24 Hours", landing the last pick (Pick 10) in a paid draft, or participating in special events.${SPIN_ON_PURCHASE_UI_ENABLED ? ' Plus, every draft pass you buy comes with a free bonus spin — automatically.' : ''} One exception: in a Founder Draft the Pick 10 spin doesn't apply — paid entries already get the Founder Free Banana Spin, so it doesn't stack. Check the promotions section for current ways to earn spins.`,
       },
       // ⚠️ "Every spin wins" is true ONLY of promo spins. A purchase spin pays
       // the wedge MINUS the seat already bought, so landing on 1 Draft credits
@@ -316,7 +316,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How much does it cost to enter?',
-        answer: 'Each draft costs $25. Add money to your balance once, then every entry is one tap - hit Enter, pick your speed, and $25 comes out of your balance. Any draft passes you already have are always used first, free. You can still buy multiple draft passes at once if you like to stock up - the more you buy, the more Banana Wheel spins you earn (1 spin per 10 drafts purchased).',
+        answer: `Each draft costs $25. Add money to your balance once, then every entry is one tap - hit Enter, pick your speed, and $25 comes out of your balance. Any draft passes you already have are always used first, free. You can still buy multiple draft passes at once if you like to stock up${SPIN_ON_PURCHASE_UI_ENABLED ? ' - and every draft pass you buy comes with a free bonus spin on the Banana Wheel' : ''}.`,
         link: {
           label: 'Buy Draft Passes',
           href: '/buy-drafts',

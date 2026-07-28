@@ -35,6 +35,7 @@ import { AuditTab } from '@/components/admin/AuditTab';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
 import { QuickActions } from '@/components/admin/TopBar/QuickActions';
 import { HealthPill } from '@/components/admin/TopBar/HealthPill';
+import { PrizePoolPill } from '@/components/admin/TopBar/PrizePoolPill';
 
 /* ─────────────────────────── Nav schema ─────────────────────────── */
 
@@ -353,6 +354,7 @@ export default function AdminPage() {
               <GlobalSearch enabled={isAuthorized} />
               <QuickActions />
               <HealthPill enabled={isAuthorized} />
+              <PrizePoolPill enabled={isAuthorized} />
             </div>
           </header>
 

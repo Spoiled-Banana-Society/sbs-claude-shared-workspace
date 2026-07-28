@@ -15,7 +15,7 @@
 
 ### Workflow
 - Always commit and push after completing changes
-- Always test against real staging backend — mint tokens, join league, fill bots. Never use fake draft IDs.
+- ⚠️ **The site is LIVE (staging-as-prod). NEVER mint/join/fill-bot drafts on the live lanes** — every draft appears in the real lobby, Discord feed, and BBB counter. Verify backend changes passively (logs, Firestore reads, route-level curls) or ask Richard first. The old "mint tokens, join league, fill bots" loop is retired with pre-launch staging. Never use fake draft IDs either.
 
 ### Tests Before Deploy (run when practical)
 - Preferred command: `cd ~/sbs-claude-shared-workspace/repos/banana-fantasy && npx playwright test e2e/draft-room.spec.ts`

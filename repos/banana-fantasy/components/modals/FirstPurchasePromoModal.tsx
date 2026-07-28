@@ -121,6 +121,7 @@ export function FirstPurchasePromoModal() {
         </div>
         <div className="mt-3 text-xs leading-relaxed text-white/45">
           <span className="block whitespace-nowrap">Buy 2 → 4 Spins · Buy 4 → 8 Spins — no cap</span>
+          <span className="block whitespace-nowrap">+ a Bonus Spin with every pass, automatic</span>
           <span className="block whitespace-nowrap">One-time offer: your first purchase only</span>
         </div>
         <button

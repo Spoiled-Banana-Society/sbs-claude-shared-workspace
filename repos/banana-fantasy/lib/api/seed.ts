@@ -326,7 +326,7 @@ const seedPromos: Promo[] = [
     id: '11',
     type: 'first-purchase',
     title: 'First Purchase → WIN UP TO 40 FREE DRAFTS',
-    description: 'Every Pass = 2 Free Spins · Buy 1 → 2 Free Drafts GTD, up to 40 Free Drafts ($1,000 in Drafts)',
+    description: 'Every Pass = 2 Free Spins + a Bonus Spin · Buy 1 → 2 Free Drafts GTD, up to 40 Free Drafts ($1,000 in Drafts)',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -341,7 +341,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Every Pass = 2 Free Spins — win up to 40 Free Drafts ($1,000 in Drafts)',
       explanation:
-        '• Every Draft Pass you buy = 2 Free Spins — no cap.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
+        '• Every Draft Pass you buy = 2 Free Spins — no cap.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of all of this.\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
     },
   },
   {
@@ -529,7 +529,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Founder Draft → FREE SPIN',
       explanation:
-        '• Founder Draft happens every week at the same time\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n• Every drafter in the Founder Draft earns 1 Free Banana Spin to claim\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
+        '• Founder Draft happens every week at the same time\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n• Every paid drafter in the Founder Draft earns 1 Free Banana Spin to claim (free entries get the badge and the perk, not the Spin)\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
       founderHistory: [],
     },
   },
