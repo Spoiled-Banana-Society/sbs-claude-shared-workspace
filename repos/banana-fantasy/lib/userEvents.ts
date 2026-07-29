@@ -88,6 +88,12 @@ export async function recordActivityAndDetectLogin(
 ): Promise<void> {
   if (!isFirestoreConfigured()) return;
   const lower = userId.toLowerCase();
+  // WALLETS ONLY. A user who just authenticated but has no embedded wallet
+  // yet reaches here as their raw Privy DID ("did:privy:…") — which minted a
+  // ghost v2_users doc keyed by the DID and a Live Activity row rendering as
+  // "Banana did:" (Boris, 2026-07-28). Their real presence event fires on the
+  // next request once the wallet exists; skipping the DID touch loses nothing.
+  if (!/^0x[0-9a-f]{40}$/.test(lower)) return;
   try {
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(lower);
