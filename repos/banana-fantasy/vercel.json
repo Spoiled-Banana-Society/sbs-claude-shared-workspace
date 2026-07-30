@@ -61,6 +61,10 @@
     {
       "path": "/api/crons/link-wheel-teams",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/crons/deposit-credit-sweep",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

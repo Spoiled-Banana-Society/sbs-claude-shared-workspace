@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
+import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
+import { useAuth } from '@/hooks/useAuth';
 
 interface BuyPassesBalanceModalProps {
   isOpen: boolean;
@@ -35,6 +37,11 @@ export function BuyPassesBalanceModal({
   onAddFunds,
 }: BuyPassesBalanceModalProps) {
   const [qty, setQty] = useState(1);
+  // First-purchase offer line — server-computed variant; math from the same
+  // promoMath helpers the purchase path grants with. Null once consumed;
+  // unknown (flags not yet loaded) → new-player math labeled "New players".
+  const { user } = useAuth();
+  const fpLine = firstPurchaseBuyLine(user?.firstPurchaseVariant ?? 'unknown', qty);
 
   useEffect(() => {
     if (!isOpen) setQty(1);
@@ -121,6 +128,9 @@ export function BuyPassesBalanceModal({
               ${affordable ? (balanceUsd - total).toFixed(2) : shortBy.toFixed(2)}
             </span>
           </div>
+          {fpLine && (
+            <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
+          )}
         </div>
 
         <button

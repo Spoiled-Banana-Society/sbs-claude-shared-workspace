@@ -51,6 +51,15 @@ export interface User {
   firstPurchaseBonusGranted?: boolean;
   pendingWheelWinnings?: number;
   firstPurchasePromoUnlocked?: boolean;
+  /**
+   * Which first-purchase offer this user should be pitched, computed
+   * SERVER-side from the same inputs computeFirstPurchaseGrant judges with
+   * (see lib/promoMath.ts firstPurchaseVariant) and delivered on the balance
+   * payload/stream. 'new' = every pass → 2 promo spins; 'returning' = classic
+   * every-2-passes-in-24h rate; 'done' = bonus consumed, pitch nothing.
+   * Absent (logged-out / not yet loaded) → surfaces render the 'new' copy.
+   */
+  firstPurchaseVariant?: 'new' | 'returning' | 'done';
   // True once the user has spun the Banana Wheel at least once. Drives the
   // first-time "what's a spin?" explainer on promo cards — shown until their
   // first spin, then hidden everywhere.

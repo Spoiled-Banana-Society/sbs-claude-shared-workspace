@@ -103,9 +103,78 @@ export async function creditCardDeposit(opts: {
     throw new ApiError(404, 'No matching USDC deposit found in your wallet yet — it may still be settling.');
   }
 
-  // 2. Claim the newest unclaimed candidate atomically and run the credit math
-  //    (identical to bookkeepPaidMint step 4). The marker existence check lives
-  //    INSIDE the transaction so a double-submit can't double-credit.
+  return creditDepositCandidates(wallet, candidates, { claimedAmountUsd: claimed });
+}
+
+export interface DepositCandidate {
+  txHash: string;
+  logIndex: number;
+  from: string;
+  valueUsd: number;
+  blockNumber: bigint;
+}
+
+export interface CreditDepositOptions {
+  /** Recorded on the marker as claimedAmountUsd; defaults to the credited transfer's on-chain value. */
+  claimedAmountUsd?: number;
+  /** Backfill: don't set firstDepositPassBudget / promise first-purchase spins for old deposits. */
+  skipNewPlayerBudget?: boolean;
+  /** Backfill: don't emit a deposit_completed Live Activity row for a days-old deposit. */
+  suppressActivity?: boolean;
+  /** Backfill: caller sends its own (aggregate) bell instead of the deposit-moment one. */
+  suppressBell?: boolean;
+}
+
+/**
+ * Look up the USDC Transfer(s) INTO `wallet` inside one specific transaction —
+ * the targeted-tx analogue of the recent-blocks scan above. Used by the admin
+ * backfill route to credit an exact audited deposit.
+ */
+export async function findDepositTransfersByTx(wallet: string, txHash: string): Promise<DepositCandidate[]> {
+  const w = wallet.toLowerCase();
+  const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+  const out: DepositCandidate[] = [];
+  for (const l of receipt.logs) {
+    if ((l.address ?? '').toLowerCase() !== BASE_SEPOLIA_USDC_ADDRESS.toLowerCase()) continue;
+    // Transfer(address,address,uint256): topics = [sig, from, to]
+    if ((l.topics?.length ?? 0) < 3) continue;
+    const to = `0x${(l.topics![2] ?? '').slice(-40)}`.toLowerCase();
+    if (to !== w) continue;
+    const from = `0x${(l.topics![1] ?? '').slice(-40)}`.toLowerCase();
+    if (from === w) continue;
+    const data = l.data && l.data !== '0x' ? l.data : '0x0';
+    const valueUsd = Number(BigInt(data)) / 1e6;
+    if (valueUsd < 5) continue;
+    out.push({
+      txHash: (l.transactionHash ?? txHash).toLowerCase(),
+      logIndex: l.logIndex ?? 0,
+      from,
+      valueUsd,
+      blockNumber: l.blockNumber ?? 0n,
+    });
+  }
+  return out;
+}
+
+/**
+ * The crediting core shared by the claimed-deposit route, the cron sweep and
+ * the admin backfill: claim the first unclaimed candidate atomically, run the
+ * credit math, mint any earned pass, feed + bell. Extracted 2026-07-29 so
+ * crediting no longer depends on the Add Funds modal staying open (4 users'
+ * deposits silently missed credit — see deposit-credit-sweep cron).
+ */
+export async function creditDepositCandidates(
+  walletAddr: string,
+  candidates: DepositCandidate[],
+  opts: CreditDepositOptions = {},
+): Promise<DepositCreditResult> {
+  const wallet = walletAddr.toLowerCase();
+  if (!isFirestoreConfigured()) throw new ApiError(503, 'Credit store unavailable');
+  const claimed = opts.claimedAmountUsd ?? candidates[0]?.valueUsd ?? 0;
+
+  // Claim the newest unclaimed candidate atomically and run the credit math
+  // (identical to bookkeepPaidMint step 4). The marker existence check lives
+  // INSIDE the transaction so a double-submit can't double-credit.
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(wallet);
 
@@ -134,7 +203,8 @@ export async function creditCardDeposit(opts: {
       // First deposit of a NEW player (bonus untouched, not returning): set
       // the first-purchase pass budget from the verified amount, so the bell's
       // spin promise ("$50 → 4 Free Spins") is exactly honored as they buy.
-      const isNewPlayer = udata.firstPurchaseBonusGranted !== true
+      const isNewPlayer = opts.skipNewPlayerBudget !== true
+        && udata.firstPurchaseBonusGranted !== true
         && udata.isReturningPlayer !== true
         && !isReturningWalletSync(wallet);
       const existingBudget = Math.max(0, (udata.firstDepositPassBudget as number | undefined) ?? 0);
@@ -192,15 +262,17 @@ export async function creditCardDeposit(opts: {
   // (2026-07-27). OUTSIDE the earned-branch below: a deposit whose fee only
   // rolls over (earned 0) is still a deposit. The pass_granted event further
   // down is the fee-credit REWARD, a different fact.
-  await logActivityEvent({
-    type: 'deposit_completed',
-    userId: wallet,
-    walletAddress: wallet,
-    paymentMethod: 'card',
-    quantity: 0,
-    txHash: creditedTx.txHash,
-    metadata: { amountUsd: creditedTx.valueUsd, feeCents: creditedTx.feeCents, provider: 'moonpay' },
-  }).catch(() => { /* feed row is best-effort — never fail the credit */ });
+  if (opts.suppressActivity !== true) {
+    await logActivityEvent({
+      type: 'deposit_completed',
+      userId: wallet,
+      walletAddress: wallet,
+      paymentMethod: 'card',
+      quantity: 0,
+      txHash: creditedTx.txHash,
+      metadata: { amountUsd: creditedTx.valueUsd, feeCents: creditedTx.feeCents, provider: 'moonpay' },
+    }).catch(() => { /* feed row is best-effort — never fail the credit */ });
+  }
 
   // 3. Grant any earned draft(s) as PAID-type, exactly like bookkeepPaidMint 4b.
   let rewardTokenIds: string[] = [];
@@ -269,13 +341,15 @@ export async function creditCardDeposit(opts: {
   // any free-pass award AND the pending first-purchase spins folded into a
   // single ping — replaces the separate 'promo-card-free-draft' bell on the
   // deposit path (the purchase-path version of that bell is untouched).
-  pushStreamEventBg(wallet, 'deposit-received', {
-    amountUsd: Math.round(creditedTx.valueUsd),
-    spins: pendingSpins,
-    freePasses: earned,
-    fronted: fronted > 0,
-    txHash: creditedTx.txHash,
-  });
+  if (opts.suppressBell !== true) {
+    pushStreamEventBg(wallet, 'deposit-received', {
+      amountUsd: Math.round(creditedTx.valueUsd),
+      spins: pendingSpins,
+      freePasses: earned,
+      fronted: fronted > 0,
+      txHash: creditedTx.txHash,
+    });
+  }
 
   return {
     credited: true,

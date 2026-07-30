@@ -87,6 +87,12 @@ export interface StreamEventPayload {
   /** deposit-received: the on-chain arrival tx — content-stable dedupe. */
   txHash?: string;
   /**
+   * first-purchase-unlocked only: the user is a RETURNING player, so the
+   * unlock bell must pitch the classic offer (buy 2 → 1 draft free in the
+   * 24h window), never the new-player buy-1-get-2 math.
+   */
+  isReturning?: boolean;
+  /**
    * For the `'notification'` ping: the bell entry's content, so receiving
    * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
    * (generic copy — no balances/PII), same bar as the rest of this payload.

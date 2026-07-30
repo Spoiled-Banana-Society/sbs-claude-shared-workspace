@@ -7,8 +7,10 @@ import {
   computeFirstPurchaseGrant,
   computeMintProgress,
   firstPurchaseUpsell,
+  firstPurchaseVariant,
   promoAwardsSpin,
 } from '@/lib/promoMath';
+import { firstPurchaseBuyLine, firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
 
 describe('First-purchase bonus math', () => {
   it('grants 2 spins per pass (upgraded from 1-per-2 on 2026-07-10)', () => {
@@ -123,6 +125,44 @@ describe('First-purchase bonus math', () => {
         passesToNextSpin: 1,
         nextSpinTotal: 1,
       });
+    });
+  });
+
+  describe('firstPurchaseVariant (which offer a surface should pitch)', () => {
+    it('mirrors the computeFirstPurchaseGrant inputs exactly', () => {
+      expect(firstPurchaseVariant(false, false)).toBe('new');
+      expect(firstPurchaseVariant(false, true)).toBe('returning');
+      // Granted always wins — no offer left to pitch, whatever the audience.
+      expect(firstPurchaseVariant(true, false)).toBe('done');
+      expect(firstPurchaseVariant(true, true)).toBe('done');
+    });
+  });
+
+  describe('firstPurchaseCopy lines (never promise more than the grant pays)', () => {
+    it('new-player buy line = qty × 2 (the exact firstPurchaseSpins grant)', () => {
+      expect(firstPurchaseBuyLine('new', 1)).toBe('First purchase: buy 1 → get 2 drafts free');
+      expect(firstPurchaseBuyLine('new', 5)).toBe('First purchase: buy 5 → get 10 drafts free');
+    });
+
+    it('returning buy line = floor(qty/2) (the classic window grant), with a pair fallback at qty 1', () => {
+      expect(firstPurchaseBuyLine('returning', 1)).toBe('First purchase: buy 2, get 1 draft free (first 24h)');
+      expect(firstPurchaseBuyLine('returning', 2)).toBe('First purchase: buy 2 → get 1 draft free (first 24h)');
+      expect(firstPurchaseBuyLine('returning', 5)).toBe('First purchase: buy 5 → get 2 drafts free (first 24h)');
+    });
+
+    it('variant done → no lines anywhere', () => {
+      expect(firstPurchaseBuyLine('done', 4)).toBeNull();
+      expect(firstPurchaseEntryLine('done')).toBeNull();
+    });
+
+    it("unknown (logged-out / flags not loaded) → new-player math, explicitly labeled 'New players'", () => {
+      expect(firstPurchaseEntryLine('unknown')).toBe('New players: buy 1, get 2 drafts free');
+      expect(firstPurchaseBuyLine('unknown', 3)).toBe('New players: buy 3 → get 6 drafts free');
+    });
+
+    it('entry-chooser lines state the per-variant guaranteed minimum', () => {
+      expect(firstPurchaseEntryLine('new')).toBe('First purchase: buy 1, get 2 drafts free');
+      expect(firstPurchaseEntryLine('returning')).toBe('First purchase: buy 2, get 1 draft free');
     });
   });
 

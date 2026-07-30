@@ -35,3 +35,8 @@ export function promoWeekendActive(now: number = Date.now()): boolean {
  *     `mint_promo_final_snapshot` as grandfathering proof ("I was at 2/10").
  */
 export const MINT_PROMO_END_MS = Date.UTC(2026, 6, 28, 7, 0, 0); // Jul 28 2026, 12:00 AM PT
+
+/** Banana Draw's final draw fires at noon PT Jul 31 (5th and last seat).
+ *  After this instant the promo card retires; cycle docs and per-user Banana
+ *  ledgers are kept forever. */
+export const BANANA_DRAW_END_MS = Date.UTC(2026, 6, 31, 19, 0, 0); // Jul 31 2026, 12:00 PM PT

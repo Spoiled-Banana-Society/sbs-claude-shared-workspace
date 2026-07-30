@@ -91,6 +91,22 @@ describe('computeJpCycle', () => {
     expect(c.reward).toBe(0); // past 50 → no draw at all
   });
 
+  it('a LATE draw still credits the draft at its own position (BBB #349 incident, 2026-07-29)', () => {
+    // BBB #349 was a SLOW draft: its draw fired at reveal, after draft 350 had
+    // filled and 349's own hit was already in JackpotLeagueIds. Crediting must
+    // ask about draft 349 itself — window opened at 256 (hit at 255), so the
+    // true position is 94 → no spin draw. Asking about the live filled count
+    // (350) counts 349's own hit as prior, "resets" the window, and pays
+    // position 1 → 10 spins. That wrong call is what awardJackpotDraw used to
+    // make via the readJpCycle default.
+    const right = computeJpCycle([255, 349, 434], 201, 350, 349);
+    expect(right.windowStart).toBe(256);
+    expect(right.position).toBe(94);
+    expect(right.reward).toBe(0);
+    const wrong = computeJpCycle([255, 349, 434], 201, 350, 350);
+    expect(wrong.position).toBe(1); // documents the failure mode, not desired behavior
+  });
+
   it('scheduled-but-unfilled ids never open a window early', () => {
     // 255 is pre-written by Go but only 210 has filled.
     const c = computeJpCycle([255], START, 210, 211);

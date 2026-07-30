@@ -500,6 +500,13 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
           {switchMode && view === 'main' && walletStatus === 'idle' && (
             <p className="text-[#7b8491] text-[13px] mt-1">Pick a different wallet account</p>
           )}
+          {/* New-user hook under the title — explicitly labeled for NEW users
+              (returning players get the classic offer, so no bait). "First
+              draft is free" = the welcome spin guarantees at least 1 Free
+              Draft (minimum wheel wedge = 1). */}
+          {!switchMode && view === 'main' && (
+            <p className="text-[#7b8491] text-[13px] mt-1">New here? Your first draft is free 🍌</p>
+          )}
           {view === 'otp' && (
             <p className="text-[#7b8491] text-[13px] mt-1">We sent a code to {email}</p>
           )}

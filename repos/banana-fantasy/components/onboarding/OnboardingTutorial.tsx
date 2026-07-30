@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
@@ -29,7 +30,8 @@ const sections = [
 ];
 
 export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, isBB3Holder, newUserPromoClaimed } = useAuth();
+  const router = useRouter();
   const privy = usePrivy();
   const {
     completeOnboarding,
@@ -221,6 +223,14 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     }
     await completeOnboarding({ displayName, avatar: avatarPreview });
     onComplete?.();
+  };
+
+  // Final-slide primary CTA: close the tutorial exactly like "Let's Go"
+  // (persists name/avatar, completes onboarding), then land on the new-user
+  // X-link promo so the free spin (≥1 Free Draft guaranteed) is one tap away.
+  const handleClaimFreeDraft = async () => {
+    await handleSkip();
+    router.push('/promos?promo=6');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -932,18 +942,49 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
 
     // Ready section
     if (currentSection.type === 'ready') {
+      // "Your first draft is FREE" CTA → the new-user X-link promo
+      // (/promos?promo=6): the welcome spin guarantees at least 1 Free Draft.
+      // NEW users only — the tutorial can also be (re)opened from the header
+      // by anyone, and returning players (classic offer) / users who already
+      // claimed or spun must not be pitched a free first draft they can't get.
+      const showFreeDraftCta =
+        !isBB3Holder &&
+        !newUserPromoClaimed &&
+        !user?.hasSpunWheel &&
+        user?.firstPurchaseVariant !== 'returning' &&
+        user?.firstPurchaseVariant !== 'done';
       return (
         <div className="text-center">
           <div className="text-7xl mb-6 animate-bounce">🍌</div>
           <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">You&apos;re ready.</h2>
-          <p className="text-white/50 text-xl mb-8">Draft smart. Win big.</p>
+          <p className={`text-white/50 text-xl ${showFreeDraftCta ? 'mb-3' : 'mb-8'}`}>Draft smart. Win big.</p>
 
-          <button
-            onClick={handleSkip}
-            className="px-8 py-4 bg-banana text-black font-bold text-lg rounded-2xl hover:bg-banana/90 transition-all hover:scale-105 active:scale-95"
-          >
-            Let&apos;s Go
-          </button>
+          {showFreeDraftCta ? (
+            <>
+              <p className="text-banana text-xl font-semibold mb-8">Your first draft is FREE</p>
+              <button
+                onClick={handleClaimFreeDraft}
+                className="px-8 py-4 bg-banana text-black font-bold text-lg rounded-2xl hover:bg-banana/90 transition-all hover:scale-105 active:scale-95"
+              >
+                Claim Your Free Draft
+              </button>
+              <div className="mt-4">
+                <button
+                  onClick={handleSkip}
+                  className="px-6 py-2.5 text-white/60 hover:text-white font-semibold transition-colors"
+                >
+                  Let&apos;s Go
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              onClick={handleSkip}
+              className="px-8 py-4 bg-banana text-black font-bold text-lg rounded-2xl hover:bg-banana/90 transition-all hover:scale-105 active:scale-95"
+            >
+              Let&apos;s Go
+            </button>
+          )}
         </div>
       );
     }

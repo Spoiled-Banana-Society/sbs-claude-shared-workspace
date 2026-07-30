@@ -1,5 +1,7 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
+import { firstPurchaseVariant, type FirstPurchaseVariant } from '@/lib/promoMath';
+import { isReturningWalletSync } from '@/lib/returningUsers';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -31,10 +33,14 @@ interface BalancePayload {
   // free drafts. Without these on the client the first-purchase flow is blind.
   firstPurchaseBonusGranted: boolean;
   firstPurchasePromoUnlocked: boolean;
+  // Which first-purchase offer to pitch ('new' | 'returning' | 'done') —
+  // derived from the SAME inputs computeFirstPurchaseGrant judges with, so
+  // client copy always matches the grant the server would actually pay.
+  firstPurchaseVariant: FirstPurchaseVariant;
   hasSpunWheel: boolean;
 }
 
-function buildPayload(data: Record<string, unknown> | undefined): BalancePayload {
+function buildPayload(data: Record<string, unknown> | undefined, userId: string): BalancePayload {
   const d = data ?? {};
   // Clamp at 0 — defense in depth so legacy negative values can't surface.
   const nonNeg = (v: unknown): number => Math.max(0, (typeof v === 'number' ? v : 0));
@@ -50,6 +56,10 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
     cardFeeFrontGranted: !!d.cardFeeFrontGranted,
     firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
+    firstPurchaseVariant: firstPurchaseVariant(
+      !!d.firstPurchaseBonusGranted,
+      d.isReturningPlayer === true || isReturningWalletSync(userId),
+    ),
     hasSpunWheel: !!d.hasSpunWheel,
   };
 }
@@ -80,7 +90,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
-      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false,
+      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false,
     };
     const stream = new ReadableStream({
       start(controller) {
@@ -154,7 +164,7 @@ export async function GET(req: Request) {
       try {
         const snap = await userRef.get();
         const data = snap.exists ? (snap.data() ?? {}) : {};
-        send('snapshot', buildPayload(data));
+        send('snapshot', buildPayload(data, userId));
         verifyCounters(data);
         firstSnapshotSent = true;
       } catch (err) {
@@ -172,7 +182,7 @@ export async function GET(req: Request) {
             return;
           }
           const data = snap.exists ? (snap.data() ?? {}) : {};
-          send('update', buildPayload(data));
+          send('update', buildPayload(data, userId));
           verifyCounters(data);
         },
         (err) => {

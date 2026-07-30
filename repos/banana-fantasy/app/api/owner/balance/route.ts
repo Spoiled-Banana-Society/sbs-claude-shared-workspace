@@ -5,6 +5,8 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
+import { firstPurchaseVariant } from '@/lib/promoMath';
+import { isReturningWalletSync } from '@/lib/returningUsers';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -40,7 +42,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
+      return json({ wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false });
     }
 
     const db = getAdminFirestore();
@@ -97,6 +99,13 @@ export async function GET(req: Request) {
       // card never hides after a purchase and never unlocks for new users.
       firstPurchaseBonusGranted: !!data.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!data.firstPurchasePromoUnlocked,
+      // Which first-purchase offer this user should be pitched ('new' |
+      // 'returning' | 'done') — same inputs computeFirstPurchaseGrant judges
+      // with server-side, so client copy always matches the actual grant.
+      firstPurchaseVariant: firstPurchaseVariant(
+        !!data.firstPurchaseBonusGranted,
+        data.isReturningPlayer === true || isReturningWalletSync(userId),
+      ),
       // Drives the spin-explainer text — must reach the client or the "a spin
       // wins up to 20…" line never disappears after a new user spins.
       hasSpunWheel: !!data.hasSpunWheel,

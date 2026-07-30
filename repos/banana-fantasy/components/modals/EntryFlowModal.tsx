@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
+import { firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
+import { useAuth } from '@/hooks/useAuth';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -56,6 +58,12 @@ export function EntryFlowModal({
 }: EntryFlowModalProps) {
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | 'balance' | null>(null);
+  // First-purchase offer line under the $25 join row. Variant is computed
+  // server-side (balance stream); logged-out / not-yet-loaded renders the
+  // new-player offer explicitly labeled "New players" so a returning player
+  // is never baited. 'done' → firstPurchaseEntryLine returns null → no line.
+  const { user } = useAuth();
+  const fpOfferLine = firstPurchaseEntryLine(user?.firstPurchaseVariant ?? 'unknown');
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
@@ -175,6 +183,12 @@ export function EntryFlowModal({
                         isn't a purchase, so it doesn't come with a spin. */}
                     {buyingSeat && SPIN_ON_PURCHASE_UI_ENABLED && (
                       <p className="text-banana/70 text-xs mt-0.5">Includes a free bonus spin</p>
+                    )}
+                    {/* First-purchase offer — only under the $25 buy-in row
+                        (spending a held pass isn't a purchase), hidden once
+                        the bonus is consumed (variant 'done'). */}
+                    {buyingSeat && fpOfferLine && (
+                      <p className="text-banana/70 text-xs mt-0.5">{fpOfferLine}</p>
                     )}
                   </div>
                   <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>

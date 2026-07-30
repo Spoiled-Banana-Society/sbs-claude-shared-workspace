@@ -184,10 +184,18 @@ export function eventNotificationContent(
       };
     }
     case 'first-purchase-unlocked':
+      // Fires the moment their LAST welcome-wheel free draft finishes — so the
+      // bell opens on the draft they just played, then pitches the offer.
+      // Variant-correct math: returning players (payload.isReturning, stamped
+      // by the unlock gate) get the classic buy-2-get-1 rate, everyone else
+      // the new-player buy-1-get-2. Bonus Spins are deliberately NOT mentioned
+      // here (flag-gated feature; surfaces that are gated on it pitch it).
       return {
         type: 'promo',
-        title: 'First Purchase Promo — Win up to 40 Free Drafts',
-        message: 'Every Draft Pass = 2 Free Spins + a Bonus Spin, automatic. Buy 1 → 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).',
+        title: 'Nice first draft 🍌',
+        message: payload.isReturning
+          ? 'Keep going — buy 2 passes in your first 24 hours, get 1 draft free.'
+          : 'Keep going — buy 1, get 2 drafts free. Win up to 40 Free Drafts.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',

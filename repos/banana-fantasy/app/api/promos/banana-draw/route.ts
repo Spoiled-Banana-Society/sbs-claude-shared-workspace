@@ -2,7 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
-import { getCycleLeaderboard, getRecentWinners, getJackhofSeatCount } from '@/lib/bananaDraw';
+import { getCycleLeaderboard, getRecentWinners, getBananaDrawSeatCount } from '@/lib/bananaDraw';
 import { logger } from '@/lib/logger';
 
 /**
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     const [board, winners, seats] = await Promise.all([
       getCycleLeaderboard(Date.now(), limit),
       getRecentWinners(5),
-      getJackhofSeatCount(),
+      getBananaDrawSeatCount(),
     ]);
 
     return json({

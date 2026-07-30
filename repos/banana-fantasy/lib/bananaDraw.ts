@@ -81,6 +81,8 @@ export function cycleSeedDigest(seed: SealedDrawSeed, cycleId: string): string {
  *  Idempotent — safe to call on every credit. */
 export async function ensureCycle(nowMs = Date.now()): Promise<DrawCycle> {
   const cycle = cycleFor(nowMs);
+  // The draw ends with BANANA_DRAW_FINAL_CYCLE_ID — no cycles open after it.
+  if (cycle.cycleId > BANANA_DRAW_FINAL_CYCLE_ID) return cycle;
   if (!isFirestoreConfigured()) return cycle;
   const ref = getAdminFirestore().collection(CYCLES).doc(cycle.cycleId);
   const snap = await ref.get();
@@ -120,6 +122,10 @@ export async function creditBananas(opts: {
   const nowMs = opts.nowMs ?? Date.now();
   const cycle = await ensureCycle(nowMs);
   const amount = bananasForSource(opts.source);
+  // Promo over (final cycle closed noon PT Jul 31) — later fills earn nothing.
+  if (cycle.cycleId > BANANA_DRAW_FINAL_CYCLE_ID) {
+    return { credited: false, bananas: 0, cycleId: cycle.cycleId };
+  }
   if (!isFirestoreConfigured() || amount <= 0) {
     return { credited: false, bananas: 0, cycleId: cycle.cycleId };
   }
@@ -460,6 +466,35 @@ export async function getLastDrawEntrantNames(limit = 60): Promise<string[]> {
   const snapshot = ((latest.data() as CycleDoc).snapshot ?? []).slice(0, limit);
   const names = await resolveNames(snapshot.map((e) => e.userId));
   return snapshot.map((e) => names[e.userId] ?? `${e.userId.slice(0, 6)}…${e.userId.slice(-4)}`);
+}
+
+/**
+ * THE PROMO'S FINAL CYCLE (Boris 2026-07-30): the Banana Draw awards FIVE
+ * seats total, and the cycle closing noon PT Jul 31 is the last one. After
+ * its draw: no new cycles open, fills stop earning Bananas, and the card
+ * retires. History (cycle docs, per-user ledgers) is kept forever.
+ */
+export const BANANA_DRAW_FINAL_CYCLE_ID = '2026-07-31';
+export const BANANA_DRAW_TOTAL_SEATS = 5;
+
+/** Seats framing changed 2026-07-30: count the DRAW's own winners (drawn
+ *  cycles), NOT league chairs — a wheel-wedge winner (roarstone, 7/29) sits in
+ *  the same league but is not a Banana Draw seat, and counting chairs made the
+ *  banner claim five seats when four were drawn. */
+export async function getBananaDrawSeatCount(): Promise<{ claimed: number; total: number }> {
+  const total = BANANA_DRAW_TOTAL_SEATS;
+  if (!isFirestoreConfigured()) return { claimed: 0, total };
+  try {
+    const snap = await getAdminFirestore().collection(CYCLES).get();
+    let claimed = 0;
+    snap.forEach((d) => {
+      const c = d.data() as CycleDoc;
+      if (c.status === 'drawn' && c.winnerId) claimed += 1;
+    });
+    return { claimed: Math.min(claimed, total), total };
+  } catch {
+    return { claimed: 0, total };
+  }
 }
 
 /** Seats taken in the FIRST (lowest-numbered still-filling) JackHOF league —

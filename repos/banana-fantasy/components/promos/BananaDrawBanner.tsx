@@ -126,6 +126,32 @@ export function BananaDrawBanner({
   // through to nothing. An empty state that says "be the first" is the point
   // of a launch, not a failure case.
   if (!state) return null;
+
+  // ALL SEATS DRAWN — the promo is over. One clean closing card: the five
+  // winners, no countdown, no rate card (nothing is earnable anymore).
+  if (state.seatsClaimed >= state.seatsTotal) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-bg-tertiary/60 backdrop-blur p-4 mb-5">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">🍌</span>
+          <span className="text-text-primary font-semibold"><JackHofWordmark size={13} /> Draw — all {state.seatsTotal} seats claimed</span>
+        </div>
+        <p className="text-center text-xs pt-1">
+          {[...state.recentWinners].reverse().map((w, i, arr) => {
+            const seatNo = Math.max(1, state.seatsClaimed - (arr.length - 1 - i));
+            return (
+              <span key={w.cycleId}>
+                {i > 0 && <span className="text-text-muted/60"> · </span>}
+                <span className="text-text-muted">{seatNo === state.seatsTotal ? 'Last' : ordinal(seatNo)} Seat</span>
+                <span className="text-text-muted"> — </span>
+                <span className="text-text-primary font-semibold">{w.name}</span>
+              </span>
+            );
+          })}
+        </p>
+      </div>
+    );
+  }
   const me = myWallet?.toLowerCase();
   const empty = state.totalBananas <= 0;
 
@@ -154,8 +180,12 @@ export function BananaDrawBanner({
               Seat" beats "next seat" — it reads as a specific prize with a
               number, and it ticks up as seats fill. seatsClaimed+1 = the seat
               this draw awards. */}
+          {/* Final-seat framing (Boris 2026-07-30): the Draw awards 5 seats
+              total and the one now filling is the LAST — say so instead of
+              "5th"; scarcity is the whole message on closing day. */}
           <span className="text-text-primary font-semibold truncate">
-            <JackHofWordmark size={13} /> {ordinal(Math.min(state.seatsTotal, state.seatsClaimed + 1))} Seat
+            <JackHofWordmark size={13} />{' '}
+            {state.seatsClaimed + 1 >= state.seatsTotal ? 'LAST Seat' : `${ordinal(state.seatsClaimed + 1)} Seat`}
           </span>
           <span
             aria-hidden

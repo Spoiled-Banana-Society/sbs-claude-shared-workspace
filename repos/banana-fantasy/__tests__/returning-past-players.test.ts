@@ -64,3 +64,42 @@ describe('all-time past-players → returning treatment', () => {
     expect(types).not.toContain('first-purchase');
   });
 });
+
+describe('logged-out promo visibility (Richard 2026-07-29)', () => {
+  const allTypes = [
+    { id: 'n', type: 'new-user' },
+    { id: 'fp', type: 'first-purchase' },
+    { id: 'bd', type: 'banana-draw' },
+    { id: 'pc', type: 'pick-chase' },
+    // mid-bar (1/10) so the Buy-10 final-lap retirement doesn't hide it —
+    // this test is about the logged-out gate, not the cutoff
+    { id: 'm', type: 'mint', progressCurrent: 1 },
+    { id: 'dd', type: 'daily-drafts' },
+    { id: 'p10', type: 'pick-10' },
+    { id: 'r', type: 'referral' },
+    { id: 'j', type: 'jackpot' },
+  ] as unknown as Promo[];
+
+  it('logged-out visitor sees ONLY new-user + first-purchase, in that order', () => {
+    const types = filterAndSortVisiblePromos(allTypes, {
+      isLoggedIn: false,
+      flagsKnown: false, // no balance stream when logged out
+    }).map((p) => p.type);
+    expect(types).toEqual(['new-user', 'first-purchase']);
+  });
+
+  it('logged-in user still sees the full whitelist', () => {
+    const types = filterAndSortVisiblePromos(allTypes, {
+      isLoggedIn: true,
+      flagsKnown: true,
+    }).map((p) => p.type);
+    expect(types).toContain('banana-draw');
+    expect(types).toContain('pick-chase');
+    expect(types).toContain('mint');
+  });
+
+  it('unknown login state (undefined) is treated as logged-in — no restriction', () => {
+    const types = filterAndSortVisiblePromos(allTypes, { flagsKnown: true }).map((p) => p.type);
+    expect(types).toContain('banana-draw');
+  });
+});

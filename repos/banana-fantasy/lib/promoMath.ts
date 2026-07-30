@@ -91,6 +91,25 @@ export function computeFirstPurchaseGrant(
   return { consume: spins > 0, spins };
 }
 
+/**
+ * Which first-purchase offer a user should SEE. Same decision inputs as
+ * computeFirstPurchaseGrant (alreadyGranted + isReturning) so the copy a
+ * surface renders can never disagree with the grant the server would pay:
+ *   - 'done'      → bonus consumed; show nothing.
+ *   - 'returning' → classic rate (every 2 passes in the 24h window = 1 spin).
+ *   - 'new'       → every pass = FIRST_PURCHASE_SPINS_PER_PASS spins.
+ * Logged-out / unknown users render the 'new' variant client-side.
+ */
+export type FirstPurchaseVariant = 'new' | 'returning' | 'done';
+
+export function firstPurchaseVariant(
+  alreadyGranted: boolean,
+  isReturning: boolean,
+): FirstPurchaseVariant {
+  if (alreadyGranted) return 'done';
+  return isReturning ? 'returning' : 'new';
+}
+
 /** 24-hour classic window (returning players): from the FIRST paid purchase,
  *  every pass bought within this window counts, and each completed PAIR pays
  *  one spin the moment it lands. Closes for good when the window expires.

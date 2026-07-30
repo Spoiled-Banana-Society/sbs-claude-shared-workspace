@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import type { Promo } from '@/types';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { deriveChaseState } from '@/lib/chasePromo';
+import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
+import { useAuth } from '@/hooks/useAuth';
 
 // Chase Your Pick clock — dormant reads a full 24:00:00 that hasn't started.
 function formatChaseTime(endTime?: string): string {
@@ -49,6 +51,12 @@ export function PromosSidebar({
     const i = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(i);
   }, []);
+  // First-purchase card body copy tracks the server-computed variant (new /
+  // returning). Logged-out / not-yet-loaded → new-player copy with an explicit
+  // NEW PLAYERS label, so a returning player never feels baited after login.
+  const { user, isLoggedIn } = useAuth();
+  const fpVariant = user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new';
+  const fpShowNewPlayerTag = !isLoggedIn || user?.firstPurchaseVariant == null;
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -110,13 +118,17 @@ export function PromosSidebar({
               </h4>
               {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy on
                   the box front as FIXED LINES — each line one complete idea,
-                  never wrapping mid-phrase. Other promos stay title-only. */}
+                  never wrapping mid-phrase. Other promos stay title-only.
+                  Lines are variant-aware (new vs returning classic rate); the
+                  logged-out default carries a NEW PLAYERS label. */}
               {promo.type === 'first-purchase' && (
                 <div className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a]">
-                  <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
-                  <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
-                  <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
-                  <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                  {fpShowNewPlayerTag && (
+                    <span className="block whitespace-nowrap font-bold uppercase tracking-wider text-[10px] text-[#1d1d1f]">New players</span>
+                  )}
+                  {firstPurchaseCardLines(fpVariant).map((line) => (
+                    <span key={line} className="block whitespace-nowrap">{line}</span>
+                  ))}
                 </div>
               )}
               <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />

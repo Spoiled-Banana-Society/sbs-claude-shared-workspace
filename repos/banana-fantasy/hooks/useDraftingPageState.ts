@@ -168,6 +168,7 @@ export function useDraftingPageState() {
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
       flagsKnown: isBalanceLoaded,
+      isLoggedIn,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
@@ -175,7 +176,7 @@ export function useDraftingPageState() {
       },
       isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, user?.walletAddress]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, isLoggedIn, user?.walletAddress]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   // Manual-only browsing (auto-rotate removed 2026-06-09): promos never

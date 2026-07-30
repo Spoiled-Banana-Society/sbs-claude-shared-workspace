@@ -45,6 +45,7 @@ import { CLASSIC_FP_WINDOW_MS, applyCompletionGate, computeClassicWindowGrant, c
 import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/rollingLanes';
 import { creditReferralBananas } from '@/lib/bananaDraw';
 import { isReturningWalletSync } from '@/lib/returningUsers';
+import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
 import { runInBackground } from '@/lib/serverBackground';
 
 const USERS_COLLECTION = 'v2_users';
@@ -520,16 +521,22 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // players keep the CLASSIC promo unchanged — these strings overlay theirs.
   // The grant math matches per-audience in _incrementMintPromosInTx.
   const CLASSIC_FIRST_PURCHASE_COPY = {
-    title: 'First Purchase → FREE SPINS',
-    description: 'Every 2 passes in your first 24h = 1 spin',
-    modalTitle: 'First Purchase → FREE SPINS',
+    // Headline = the guaranteed outcome (Richard 2026-07-28): 2 passes inside
+    // the 24h window → 1 promo spin → at least 1 Free Draft (minimum wedge).
+    title: 'First Purchase → BUY 2, GET 1 DRAFT FREE',
+    description: 'Every 2 passes in your first 24h = 1 Free Spin',
+    modalTitle: 'Buy 2, Get 1 Draft Free — every 2 passes in your first 24h = 1 Free Spin',
     // 24-HOUR WINDOW copy (Boris 2026-07-28): the old "buy them all in one
     // transaction" warning existed because the grant judged only receipt #1 —
     // the exact trap that burned Banana10084. Now the first buy opens a 24h
     // window and every pass inside it counts, so the copy says that lightly:
     // no all-at-once pressure, buying or entering drafts both work.
+    // Bonus Spin bullet is FLAG-GATED (Spin-on-Purchase) so the card never
+    // promises a spin the purchase path won't grant.
     explanation:
-      '• Your first purchase starts a 24-hour window — every 2 passes you pick up inside it = 1 Free Banana Spin.\n• Buy passes or jump straight into paid drafts, both count.\n• Buy 4 for 2 Spins, 6 for 3, and so on — no limit inside your 24 hours.\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of these.\n• Spins land automatically the moment each pair completes — claim them right here.',
+      '• Your first purchase starts a 24-hour window — every 2 passes you pick up inside it = 1 Free Banana Spin.\n• Every Spin wins at least 1 Free Draft — up to 20.\n• Buy passes or jump straight into paid drafts, both count.\n• Buy 4 for 2 Spins, 6 for 3, and so on — no limit inside your 24 hours.'
+      + (isSpinOnPurchaseEnabled() ? '\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of these.' : '')
+      + '\n• Spins land automatically the moment each pair completes — claim them right here.',
   };
   const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
     || isReturningWalletSync(userId);
@@ -2845,18 +2852,18 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(FIRST_PURCHASE_PROMO_ID);
 
-  const unlocked = await db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const [userSnap, promoSnap] = await Promise.all([tx.get(userRef), tx.get(promoRef)]);
-    if (!userSnap.exists) return false;
+    if (!userSnap.exists) return { unlock: false, isReturning: false };
     const user = userSnap.data() as User;
     // Past the gate already, or no winnings outstanding — nothing to do.
-    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return false;
-    if ((user.pendingWheelWinnings || 0) <= 0) return false;
+    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return { unlock: false, isReturning: false };
+    if ((user.pendingWheelWinnings || 0) <= 0) return { unlock: false, isReturning: false };
 
     // Idempotency: dedup completions on the first-purchase promo doc.
     const promo = promoSnap.exists ? deepClone(promoSnap.data() as Promo) : null;
     const seen = promo?.completedDraftIds || [];
-    if (seen.includes(draftId)) return false;
+    if (seen.includes(draftId)) return { unlock: false, isReturning: false };
 
     const gate = applyCompletionGate({
       usedFreePass: true,
@@ -2873,11 +2880,15 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
       promo.completedDraftIds = [...seen, draftId];
       tx.set(promoRef, stripUndefined(promo), { merge: true });
     }
-    return gate.unlock;
+    // Returning players get the CLASSIC first-purchase offer — carried on the
+    // stream event so the unlock bell can pitch the variant-correct math.
+    const isReturning = (user as { isReturningPlayer?: boolean }).isReturningPlayer === true
+      || isReturningWalletSync(userId);
+    return { unlock: gate.unlock, isReturning };
   });
 
-  if (unlocked) {
-    pushStreamEventBg(userId, 'first-purchase-unlocked', {});
+  if (result.unlock) {
+    pushStreamEventBg(userId, 'first-purchase-unlocked', { isReturning: result.isReturning });
   }
 }
 
@@ -3582,10 +3593,12 @@ const jackpotSpinReward = jpRewardForPosition;
 
 /**
  * Read the JP lane inputs off draftTracker, then ask lib/rollingLanes where
- * `draftNo` sits in its window. `draftNo` defaults to the draft that just
- * filled (the crediting question: "which window did THIS jackpot land in?");
- * pass `filled + 1` for the display question ("what would the NEXT jackpot
- * pay?"). Falls back to a safe position 1 if the tracker is unreadable.
+ * `draftNo` sits in its window. The CREDIT path must pass the jackpot draft's
+ * OWN global number (see getJackpotDraftPosition — defaulting to the live
+ * filled count paid BBB #349 ten spins at true position 94); pass `filled + 1`
+ * for the display question ("what would the NEXT jackpot pay?"). The
+ * no-argument default (the current filled count) is only a last-resort
+ * fallback. Falls back to a safe position 1 if the tracker is unreadable.
  */
 async function readJpCycle(draftNo?: number): Promise<JpCycleState & { filled: number }> {
   const fallback = { ...computeJpCycle([], 0, 0, 1), filled: 0 };
@@ -3619,12 +3632,30 @@ export async function getJackpotCycleState(): Promise<JpCycleState & { filled: n
 }
 
 /**
- * Resolve the position-in-window for the JP draft that just filled. Tiers
+ * Resolve the position-in-window for the JP draft being credited. Tiers
  * (1-25 → 10 spins, 26-50 → 5, else 1) are window-relative in the rolling-lane
  * era (Boris 2026-07-20) and aligned-batch-relative before it.
+ *
+ * ⚠️ Must be anchored to the DRAFT'S OWN global number, never the live
+ * FilledLeaguesCount. The draw can run long after the draft fills (slow drafts
+ * fire it at reveal/close; the backstop can fire days later), by which point
+ * the filled count has moved on AND the draft's own hit is already in
+ * JackpotLeagueIds — computeJpCycle then counts the draft's own hit as a
+ * "prior" hit, sees a freshly reset window, and pays position 1. That is
+ * exactly how BBB #349 (true position 94 → no draw at all) paid 10 spins on
+ * 2026-07-29. The draft number is parsed from the "BBB #N" display name; if
+ * that ever fails, position is null and the caller must pay NOTHING (Richard
+ * 2026-07-29) — a guessed position risks a repeat over-payment, and the draw
+ * doc's `positionUnresolved` flag makes the skip easy to spot and hand-fix.
  */
-async function getCurrentBatchPosition(): Promise<number> {
-  return (await readJpCycle()).position;
+async function getJackpotDraftPosition(draftId: string, displayName?: string): Promise<{ position: number | null; draftNo: number | null }> {
+  const parsed = /#\s*(\d+)/.exec(displayName ?? '');
+  const draftNo: number | null = parsed ? Number(parsed[1]) : null;
+  if (draftNo === null) {
+    logger.warn('promo.jackpot_draw.position_unresolved', { context: { draftId, displayName: displayName ?? null } });
+    return { position: null, draftNo: null };
+  }
+  return { position: (await readJpCycle(draftNo)).position, draftNo };
 }
 
 /**
@@ -3681,8 +3712,11 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     if (t === 'paid' || (t === 'free' && promoWeekendActive())) paid.push(w);
   }
 
-  const position = await getCurrentBatchPosition();
-  const reward = jackpotSpinReward(position);
+  // An unresolved position pays NOTHING (Richard 2026-07-29): guessing the
+  // window position is how BBB #349 over-paid. The skipped draw doc keeps the
+  // `positionUnresolved` flag so it can be found and hand-run if it was real.
+  const { position, draftNo } = await getJackpotDraftPosition(draftId, displayName);
+  const reward = position === null ? 0 : jackpotSpinReward(position);
 
   // Slots 51–100 of the batch award NO bonus spins (Boris 2026-06-30). Skip the
   // spin draw entirely: no winner pick, no spin credit, NO bells, no on-chain
@@ -3696,7 +3730,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     for (const w of paid) {
       await unlockBadge(w, 'jackpot-club', { source: 'jackpot-draw', draftId }, { silent: true }).catch(() => {});
     }
-    await drawRef.set({ noSpinDraw: true, reward: 0, position }, { merge: true });
+    await drawRef.set({ noSpinDraw: true, reward: 0, position, draftNo, positionUnresolved: position === null }, { merge: true });
     logger.info('promo.jackpot_draw.no_spins', { context: { draftId, position, paidCount: paid.length } });
     return null;
   }
@@ -3743,6 +3777,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     participants: humans.length,
     reward,
     position,
+    draftNo,
     filledCount,
     atIso,
     vrfPeriod: sealed?.periodNumber ?? null,

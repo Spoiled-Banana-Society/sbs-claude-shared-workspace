@@ -9,6 +9,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { deriveChaseState } from '@/lib/chasePromo';
+import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 
 interface PromoCarouselProps {
   /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
@@ -78,9 +79,17 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
     flagsKnown: isBalanceLoaded,
+    isLoggedIn,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
     isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
+
+  // First-purchase card body copy tracks the server-computed variant (new /
+  // returning). Logged-out or not-yet-loaded → new-player copy, explicitly
+  // labeled "NEW PLAYERS" so a returning player who logs in later and gets
+  // the classic rate never feels baited.
+  const fpVariant = user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new';
+  const fpShowNewPlayerTag = !isLoggedIn || user?.firstPurchaseVariant == null;
 
   // Create extended array with clones for infinite loop
   const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
@@ -336,13 +345,17 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy
                         on the box front as FIXED LINES — each line is one
                         complete idea and can never wrap mid-phrase ("40" on
-                        one line, "Drafts" on the next read broken). */}
+                        one line, "Drafts" on the next read broken). Lines are
+                        variant-aware (new vs returning classic rate) and the
+                        logged-out default carries a NEW PLAYERS label. */}
                     {promo.type === 'first-purchase' && (
                       <div className="mt-1.5 px-1 text-center text-[10px] leading-relaxed text-[#4a4a4a]">
-                        <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
-                        <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
-                        <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
-                        <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                        {fpShowNewPlayerTag && (
+                          <span className="block whitespace-nowrap font-bold uppercase tracking-wider text-[9px] text-[#1d1d1f]">New players</span>
+                        )}
+                        {firstPurchaseCardLines(fpVariant).map((line) => (
+                          <span key={line} className="block whitespace-nowrap">{line}</span>
+                        ))}
                       </div>
                     )}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />

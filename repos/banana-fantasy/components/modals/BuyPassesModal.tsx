@@ -20,6 +20,7 @@ import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
+import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
 import {
   type FlowStep,
   type ModalPhase,
@@ -1267,6 +1268,16 @@ export function BuyPassesModal({
                     {paymentMethod === 'usdc' && usdcTotal && !isWeb2 ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
                   </span>
                 </div>
+                {/* First-purchase offer — quantity-reactive, math from the same
+                    promoMath helpers the server grants with (new: qty × 2 spins,
+                    each ≥1 Free Draft; returning: classic floor(qty/2) inside
+                    the 24h window). Hidden once consumed (variant 'done'). */}
+                {(() => {
+                  const fpLine = firstPurchaseBuyLine(user?.firstPurchaseVariant ?? 'unknown', quantity);
+                  return fpLine ? (
+                    <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
+                  ) : null;
+                })()}
               </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
                 <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">

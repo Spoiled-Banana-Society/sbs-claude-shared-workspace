@@ -14,7 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
-import { MINT_PROMO_END_MS } from '@/lib/promoWindow';
+import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS } from '@/lib/promoWindow';
 
 /**
  * Promo types visible to users right now, in display order (after
@@ -40,6 +40,16 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
 ];
 
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
+
+/**
+ * The only promo types a LOGGED-OUT visitor sees (Richard 2026-07-29).
+ * A visitor can't have progress on Buy 10 / Match Your Pick / etc., so
+ * those cards are noise before login — the logged-out carousel is purely
+ * a conversion pitch: welcome free spin + the first-purchase offer
+ * (rendered with new-player copy + "NEW PLAYERS" tag, since we can't
+ * know new vs returning until they log in).
+ */
+export const LOGGED_OUT_PROMO_TYPES = new Set<PromoType>(['new-user', 'first-purchase']);
 
 /**
  * Promo types visible ONLY to admin-allowlisted wallets (isWalletAdmin) —
@@ -124,6 +134,17 @@ interface FilterOpts {
    */
   flagsKnown?: boolean;
   /**
+   * Explicit login state. Pass `false` for a LOGGED-OUT visitor: the
+   * first-purchase card then renders (with the default new-player copy the
+   * logged-out /api/promos payload carries) instead of being hidden by the
+   * flagsKnown guard — a logged-out visitor has no balance stream, so their
+   * flags are never "known" and the conversion card would otherwise never
+   * show. Logged-in users (or unknown) keep the flagsKnown guard, so a
+   * purchased user still never sees a flash of the card before their flags
+   * load.
+   */
+  isLoggedIn?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -147,6 +168,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   const visibleTypes = opts.isAdminPreview ? new Set<PromoType>(typeOrder) : VISIBLE_PROMO_TYPES;
   const filtered = promos.filter((p) => {
     if (!visibleTypes.has(p.type)) return false;
+    // Banana Draw ends with its 5th seat at noon PT Jul 31 (Boris 2026-07-30).
+    if (p.type === 'banana-draw' && Date.now() >= BANANA_DRAW_END_MS) return false;
+    // Logged-out visitors get ONLY the two conversion cards — everything
+    // else requires an account to even have progress, so it's noise.
+    if (opts.isLoggedIn === false && !LOGGED_OUT_PROMO_TYPES.has(p.type)) return false;
     // Buy 10 → FREE SPIN retirement — FINAL-LAP model (Boris 2026-07-27):
     // from the cutoff, the card survives ONLY for users mid-bar (≥1/10) or
     // holding an unclaimed spin. They finish their current 10, claim, and
@@ -181,8 +207,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // the start. The unlock flag still times the BELL + post-draft POPUP.
     if (p.type === 'first-purchase') {
       // Don't render until the gating flags are known — avoids flashing the card
-      // for a purchased user during the brief pre-balance window.
-      if (opts.flagsKnown === false) return false;
+      // for a purchased user during the brief pre-balance window. EXCEPT for
+      // explicitly LOGGED-OUT visitors (isLoggedIn === false): they have no
+      // balance stream so flags can never load, and they should see the
+      // new-player offer (the logged-out promos payload carries it).
+      if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
     }
     return true;

@@ -1051,6 +1051,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // after a purchase and unlocks for new users post free-drafts.
           firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
           firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
+          // Server-computed first-purchase pitch variant — drives which offer
+          // copy (buy 1 get 2 / buy 2 get 1 / nothing) every surface renders.
+          firstPurchaseVariant: d.firstPurchaseVariant === 'new' || d.firstPurchaseVariant === 'returning' || d.firstPurchaseVariant === 'done'
+            ? d.firstPurchaseVariant
+            : prev.firstPurchaseVariant,
           // Spin-explainer gating — so the "a spin wins up to 20" text hides
           // once they've actually spun.
           hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
@@ -1437,7 +1442,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isWalletAdmin(walletAddress) &&
     window.sessionStorage.getItem('sbs-view-as') === 'new';
   const exposedUser = viewAsNewPreview && user
-    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true }
+    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true, firstPurchaseVariant: 'new' as const }
     : user;
 
   return (

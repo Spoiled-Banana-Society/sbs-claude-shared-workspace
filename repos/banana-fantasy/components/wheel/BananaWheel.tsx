@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import confetti from 'canvas-confetti';
 import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
 import { useWheelSegments } from '@/hooks/useWheelSegments';
@@ -258,6 +259,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string; globalSpinNumber?: number | null } | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
+  // 0-spin state: the (visually muted) Spin button stays interactive enough to
+  // explain itself — tap/click toggles, hover shows, a small "how to get
+  // spins" popover with a /promos link. Never rendered while spins > 0.
+  const [showNoSpinsTip, setShowNoSpinsTip] = useState(false);
   const wheelRef = useRef<HTMLDivElement>(null);
   const resumedRef = useRef(false);
 
@@ -732,31 +737,55 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           <span className="ml-2">spin{spinsAvailable !== 1 ? 's' : ''} available</span>
         </p>
 
-        <button
-          onClick={spin}
-          disabled={spinsAvailable <= 0 || isSpinning}
-          className={`
-            relative px-16 py-3.5 text-lg sm:px-20 sm:py-4 sm:text-xl font-semibold tracking-wide rounded-full
-            transition-all duration-300 ease-out
-            ${spinsAvailable <= 0 || isSpinning
-              ? 'bg-[#2a2a35] text-[#666] cursor-not-allowed'
-              : 'bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.3)] hover:from-[#fcd34d] hover:to-[#fbbf24] hover:shadow-[0_4px_16px_rgba(251,191,36,0.4)] hover:scale-[1.02] active:scale-[0.98]'
-            }
-          `}
-          style={{
-            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif'
-          }}
-        >
-          {isSpinning ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Spinning...
-            </span>
-          ) : (spinButtonText ?? 'Spin')}
-        </button>
+        {/* At 0 spins the button is NOT disabled — it explains itself instead:
+            tap/click (mobile) or hover (desktop) opens the "how to get spins"
+            popover. Behavior with spins > 0 is unchanged. */}
+        <div className="relative inline-block">
+          {showNoSpinsTip && spinsAvailable <= 0 && !isSpinning && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 rounded-xl border border-white/10 bg-[#1c1c1e] px-4 py-3 text-center shadow-2xl z-20">
+              <p className="text-white/80 text-sm leading-snug">Get spins by completing promos or buying passes</p>
+              <Link href="/promos" className="mt-1.5 inline-block text-banana text-sm font-semibold hover:underline">
+                See promos →
+              </Link>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              if (isSpinning) return;
+              if (spinsAvailable <= 0) {
+                setShowNoSpinsTip((v) => !v);
+                return;
+              }
+              void spin();
+            }}
+            onMouseEnter={() => { if (spinsAvailable <= 0 && !isSpinning) setShowNoSpinsTip(true); }}
+            onMouseLeave={() => setShowNoSpinsTip(false)}
+            disabled={isSpinning}
+            className={`
+              relative px-16 py-3.5 text-lg sm:px-20 sm:py-4 sm:text-xl font-semibold tracking-wide rounded-full
+              transition-all duration-300 ease-out
+              ${isSpinning
+                ? 'bg-[#2a2a35] text-[#666] cursor-not-allowed'
+                : spinsAvailable <= 0
+                  ? 'bg-[#2a2a35] text-[#666] cursor-pointer'
+                  : 'bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.3)] hover:from-[#fcd34d] hover:to-[#fbbf24] hover:shadow-[0_4px_16px_rgba(251,191,36,0.4)] hover:scale-[1.02] active:scale-[0.98]'
+              }
+            `}
+            style={{
+              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif'
+            }}
+          >
+            {isSpinning ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Spinning...
+              </span>
+            ) : (spinButtonText ?? 'Spin')}
+          </button>
+        </div>
 
         {spinError && (
           <p className="mt-3 text-red-400 text-sm">{spinError}</p>

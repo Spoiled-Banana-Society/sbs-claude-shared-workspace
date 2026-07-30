@@ -11,6 +11,17 @@ import type {
 import type { DbSchema } from './dbTypes';
 import { API_CONFIG } from './config';
 import { seedUserBadges } from '@/lib/badges/catalog';
+import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
+
+// Bonus Spins exist only while Spin-on-Purchase is live — mention them ONLY
+// when the server flag is on, so the copy never promises a spin the purchase
+// path won't grant. (Bonus Spins pay wedge-minus-one and are never counted in
+// any guaranteed-drafts number here.) This file is server-only (imported by
+// db-firestore / db-json), so reading the server env flag here is safe.
+const FP_BONUS_SPIN_DESC = isSpinOnPurchaseEnabled() ? ' + a Bonus Spin with every pass' : '';
+const FP_BONUS_SPIN_BULLET = isSpinOnPurchaseEnabled()
+  ? '\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of all of this.'
+  : '';
 
 const seedBadges: UserBadge[] = seedUserBadges();
 
@@ -304,8 +315,11 @@ const seedPromos: Promo[] = [
   {
     id: '6',
     type: 'new-user',
-    title: 'New User → FREE SPIN',
-    description: 'Connect your X to claim your free spin',
+    // Outcome-first framing (Richard 2026-07-28): lead with what they GET —
+    // the free spin guarantees at least 1 Free Draft (minimum wheel wedge = 1),
+    // so the first draft really is free. The X-connect step is the how.
+    title: 'New User → YOUR FIRST DRAFT IS FREE',
+    description: 'Connect your X to claim your free spin — at least 1 Free Draft guaranteed',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
@@ -315,9 +329,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'New User → FREE SPIN',
+      title: 'New User → Your First Draft Is FREE',
       explanation:
-        '• Verify your account by connecting your X to claim your Free Banana Spin.\n• Then spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
+        '• Your first draft is FREE: verify your account by connecting your X to claim your Free Banana Spin.\n• Spin the Banana Wheel to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft. At least 1 Free Draft guaranteed.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
       additionalRules: '',
       twitterConnected: false,
     },
@@ -325,8 +339,12 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    title: 'First Purchase → WIN UP TO 40 FREE DRAFTS',
-    description: 'Every Pass = 2 Free Spins + a Bonus Spin · Buy 1 → 2 Free Drafts GTD, up to 40 Free Drafts ($1,000 in Drafts)',
+    // Headline = the guaranteed outcome (Richard 2026-07-28): 1 pass → 2 promo
+    // spins → at least 1 Free Draft each. "Win up to 40" is the kicker (2 spins
+    // × 20-draft max wedge). Bonus Spin mention is FLAG-GATED (see
+    // FP_BONUS_SPIN_* above) and never counted in the guarantee.
+    title: 'First Purchase → BUY 1, GET 2 DRAFTS FREE',
+    description: `Every Pass = 2 Free Spins${FP_BONUS_SPIN_DESC} · Win up to 40 Free Drafts ($1,000 in Drafts)`,
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -339,9 +357,11 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Every Pass = 2 Free Spins — win up to 40 Free Drafts ($1,000 in Drafts)',
+      title: 'Buy 1, Get 2 Drafts Free — win up to 40 Free Drafts ($1,000 in Drafts)',
       explanation:
-        '• Every Draft Pass you buy = 2 Free Spins — no cap.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of all of this.\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
+        '• Every Draft Pass you buy = 2 Free Spins — no cap. Every Spin wins at least 1 Free Draft.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).'
+        + FP_BONUS_SPIN_BULLET
+        + '\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
     },
   },
   {
@@ -551,9 +571,21 @@ export const seedDb: DbSchema = {
 
 /** Return default promo templates for logged-out users (no claim state). */
 export function getDefaultPromos(): Promo[] {
-  return seedPromos.map((p) => ({
-    ...p,
-    claimable: false,
-    claimCount: 0,
-  }));
+  return seedPromos.map((p) => {
+    const promo = { ...p, claimable: false, claimCount: 0 };
+    // LOGGED-OUT ONLY (Richard 2026-07-28): the seed carries the NEW-PLAYER
+    // first-purchase offer, and a logged-out visitor might be a returning
+    // player who gets the lesser classic rate after login. Label the offer
+    // explicitly so nobody feels baited — logged-in surfaces render the
+    // correct per-user variant instead (getPromos / firstPurchaseVariant).
+    if (promo.type === 'first-purchase') {
+      promo.description = `New players: ${promo.description}`;
+      promo.modalContent = {
+        ...promo.modalContent,
+        title: `New players: ${promo.modalContent.title}`,
+        explanation: `${promo.modalContent.explanation}\n• New players only — returning players get the classic offer (every 2 passes in your first 24h = 1 Free Spin).`,
+      };
+    }
+    return promo;
+  });
 }
