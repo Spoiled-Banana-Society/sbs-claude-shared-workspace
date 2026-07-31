@@ -10,7 +10,13 @@ import {
   firstPurchaseVariant,
   promoAwardsSpin,
 } from '@/lib/promoMath';
-import { firstPurchaseBuyLine, firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
+import {
+  firstPurchaseBuyLine,
+  firstPurchaseEntryLine,
+  firstPurchaseHeadline,
+  newPlayerFirstBuy,
+  returningFirstBuy,
+} from '@/lib/firstPurchaseCopy';
 
 describe('First-purchase bonus math', () => {
   it('grants 2 spins per pass (upgraded from 1-per-2 on 2026-07-10)', () => {
@@ -156,13 +162,32 @@ describe('First-purchase bonus math', () => {
     });
 
     it("unknown (logged-out / flags not loaded) → new-player math, explicitly labeled 'New players'", () => {
-      expect(firstPurchaseEntryLine('unknown')).toBe('New players: buy 1, get 2 drafts free');
+      expect(firstPurchaseEntryLine('unknown')).toBe('New players: buy 1 → 3 Drafts guaranteed');
       expect(firstPurchaseBuyLine('unknown', 3)).toBe('New players: buy 3 → get 6 drafts free');
     });
 
-    it('entry-chooser lines state the per-variant guaranteed minimum', () => {
-      expect(firstPurchaseEntryLine('new')).toBe('First purchase: buy 1, get 2 drafts free');
-      expect(firstPurchaseEntryLine('returning')).toBe('First purchase: buy 2, get 1 draft free');
+    // Boris review 2026-07-30: the entry line now quotes the GUARANTEE — the
+    // same number the promo card leads with — so the chooser and the card can
+    // never show two different figures. Both variants land on 3 because each
+    // buys the same thing (new: 1 pass + 2 promo spins; returning: 2 passes +
+    // 1 promo spin); only the quantity differs.
+    it('entry-chooser lines quote the guarantee, matching the promo card', () => {
+      expect(firstPurchaseEntryLine('new')).toBe('First purchase: buy 1 → 3 Drafts guaranteed');
+      expect(firstPurchaseEntryLine('returning')).toBe('First purchase: buy 2 → 3 Drafts guaranteed');
+    });
+
+    it('returningFirstBuy mirrors the new-player shape at the classic rate', () => {
+      const r = returningFirstBuy(2, true);
+      expect(r.guaranteed).toBe(3);   // 2 passes + 1 promo spin
+      expect(r.spins).toBe(3);        // 1 promo + 2 bonus
+      const n = newPlayerFirstBuy(1, true);
+      expect(r.max).toBe(n.max);      // both ceilings agree
+      expect(r.maxValueUsd).toBe(n.maxValueUsd);
+    });
+
+    it('headlines differ only in the quantity', () => {
+      expect(firstPurchaseHeadline('new', true)).toBe('Buy 1, Get 2 Drafts Free');
+      expect(firstPurchaseHeadline('returning', true)).toBe('Buy 2, Get 1 Draft Free');
     });
   });
 

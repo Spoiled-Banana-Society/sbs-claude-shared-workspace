@@ -83,6 +83,43 @@ export function newPlayerFirstBuy(
 }
 
 /**
+ * The RETURNING player's equivalent (classic rate: every 2 passes = 1 promo
+ * spin). Same shape and same counting rule as newPlayerFirstBuy — passes bought
+ * PLUS what the wheel pays — so both variants can share one set of copy and
+ * differ only in the quantity (Boris 2026-07-30). Buying 2 lands on the same
+ * headline numbers as a new player buying 1: 3 guaranteed, 3 spins.
+ */
+export function returningFirstBuy(
+  quantity: number,
+  bonusSpinsEnabled: boolean = SPIN_ON_PURCHASE_UI_ENABLED,
+): FirstBuyOutcome {
+  const qty = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
+  const promoSpins = classicFirstPurchaseSpins(qty);
+  const bonusSpins = bonusSpinsEnabled ? qty : 0;
+  const guaranteed = qty + promoSpins;
+  const max =
+    qty
+    + promoSpins * MAX_WEDGE_DRAFTS
+    + bonusSpins * bonusDraftsFor('purchase', MAX_WEDGE_DRAFTS);
+  return { spins: promoSpins + bonusSpins, guaranteed, max, maxValueUsd: max * ENTRY_PRICE_USD };
+}
+
+/** The quantity each variant's pitch is built around: new = 1, returning = 2
+ *  (the smallest buy that earns a promo spin at the classic rate). */
+export function firstBuyPitchQuantity(variant: FirstPurchasePitch): number {
+  return variant === 'returning' ? 2 : 1;
+}
+
+/** The offer as a headline — "Buy 1, Get 2 Drafts Free" / "Buy 2, Get 1 Draft
+ *  Free". Free = the promo spins earned, each guaranteeing a draft. */
+export function firstPurchaseHeadline(variant: FirstPurchasePitch, bonusSpinsEnabled: boolean = SPIN_ON_PURCHASE_UI_ENABLED): string {
+  const qty = firstBuyPitchQuantity(variant);
+  const o = variant === 'returning' ? returningFirstBuy(qty, bonusSpinsEnabled) : newPlayerFirstBuy(qty, bonusSpinsEnabled);
+  const free = o.guaranteed - qty;
+  return `Buy ${qty}, Get ${free} Draft${free === 1 ? '' : 's'} Free`;
+}
+
+/**
  * What a surface should pitch: the three server-confirmed variants, or
  * 'unknown' when the viewer is logged out / the balance payload hasn't landed.
  * 'unknown' renders the NEW-PLAYER math but explicitly LABELED "New players"
@@ -93,10 +130,13 @@ export type FirstPurchasePitch = FirstPurchaseVariant | 'unknown';
 
 /** One-line offer under the entry chooser's $25 join row. */
 export function firstPurchaseEntryLine(variant: FirstPurchasePitch): string | null {
-  if (variant === 'returning') return 'First purchase: buy 2, get 1 draft free';
-  if (variant === 'new') return 'First purchase: buy 1, get 2 drafts free';
-  if (variant === 'unknown') return 'New players: buy 1, get 2 drafts free';
-  return null;
+  // States the GUARANTEE, the same number the promo card leads with, so the
+  // chooser and the card never quote two different figures (Boris 2026-07-30).
+  if (variant === 'done') return null;
+  const qty = firstBuyPitchQuantity(variant);
+  const o = variant === 'returning' ? returningFirstBuy(qty) : newPlayerFirstBuy(qty);
+  const label = variant === 'unknown' ? 'New players' : 'First purchase';
+  return `${label}: buy ${qty} → ${o.guaranteed} Drafts guaranteed`;
 }
 
 /**

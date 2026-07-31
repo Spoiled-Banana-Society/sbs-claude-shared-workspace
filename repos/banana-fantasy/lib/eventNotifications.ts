@@ -13,7 +13,13 @@
  */
 
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
-import { newPlayerFirstBuy } from '@/lib/firstPurchaseCopy';
+import {
+  firstBuyPitchQuantity,
+  firstPurchaseHeadline,
+  firstPurchaseOfferLine,
+  newPlayerFirstBuy,
+  returningFirstBuy,
+} from '@/lib/firstPurchaseCopy';
 import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
 import type { StreamEventType, StreamEventPayload } from '@/lib/userEventStream';
 import type { CreateNotificationInput } from '@/lib/queueNotifications';
@@ -192,16 +198,29 @@ export function eventNotificationContent(
       // by the unlock gate) get the classic buy-2-get-1 rate, everyone else
       // the new-player buy-1-get-2. Bonus Spins are deliberately NOT mentioned
       // here (flag-gated feature; surfaces that are gated on it pitch it).
-      return {
-        type: 'promo',
-        title: 'Nice first draft 🍌',
-        message: payload.isReturning
-          ? 'Keep going — buy 2 passes in your first 24 hours, get 1 draft free.'
-          : `Keep going — buy 1, get 2 drafts free. Up to ${newPlayerFirstBuy(1, isSpinOnPurchaseEnabled()).max} Drafts.`,
-        link: '/buy-drafts',
-        dedupeKey: `first-purchase-unlocked-${userId}`,
-        icon: 'gift',
-      };
+      // Bell now carries the SAME sentence as the promo modal (Boris review
+      // 2026-07-30) — headline, guarantee, ceiling and spin count all from the
+      // shared helpers, so the bell can never drift from the card. Server
+      // passes both halves of the flag: copy must never count Bonus Spins the
+      // server isn't actually granting.
+      {
+        const variant = payload.isReturning ? 'returning' : 'new';
+        const bonusOn = isSpinOnPurchaseEnabled();
+        const qty = firstBuyPitchQuantity(variant);
+        const o = payload.isReturning ? returningFirstBuy(qty, bonusOn) : newPlayerFirstBuy(qty, bonusOn);
+        const passWord = qty === 1 ? 'Draft Pass' : `${qty} Draft Passes`;
+        return {
+          type: 'promo',
+          title: firstPurchaseHeadline(variant, bonusOn),
+          message:
+            `Buy your first ${passWord} → ${firstPurchaseOfferLine(o)}. `
+            + `You get ${o.spins} Banana Wheel Spin${o.spins === 1 ? '' : 's'} — spin to collect. `
+            + 'One-time offer, first purchase only.',
+          link: '/buy-drafts',
+          dedupeKey: `first-purchase-unlocked-${userId}`,
+          icon: 'gift',
+        };
+      }
     case 'referral-milestone': {
       // This generic event is ONLY emitted for the 'verified' milestone, and
       // verifying pays the REFERRER nothing — it's informational progress. The
