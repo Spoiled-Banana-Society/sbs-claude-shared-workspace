@@ -108,6 +108,7 @@ func publishLiveActivity(window int) {
 		mu       sync.Mutex
 		count    int
 		maxRound int
+		readErrs int
 		sem      = make(chan struct{}, liveActivityReadWorkers)
 	)
 	for n := maxN; n >= lo; n-- {
@@ -125,6 +126,9 @@ func publishLiveActivity(window int) {
 			ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s/realTimeDraftInfo", draftId))
 			var info RealTimeDraftInfo
 			if err := ref.Get(ctx, &info); err != nil {
+				mu.Lock()
+				readErrs++
+				mu.Unlock()
 				return
 			}
 			// A missing RTDB node deserializes to an all-zero struct, which must
@@ -142,6 +146,17 @@ func publishLiveActivity(window int) {
 		}(n)
 	}
 	wg.Wait()
+
+	// A zero computed while reads were erroring is indistinguishable from "this
+	// instance's RTDB connection is slow", and publishing it stomps a healthy
+	// instance's fresh nonzero value (every instance runs this ticker —
+	// last-writer-wins). Skip the tick instead: the last good value stands, and
+	// a genuinely dead aggregator is still caught by the readers' 45s
+	// updatedAt staleness check.
+	if count == 0 && readErrs > 0 {
+		fmt.Printf("[live-activity] skipping publish: count=0 with %d read errors\n", readErrs)
+		return
+	}
 
 	writeLiveActivity(count, maxRound)
 }

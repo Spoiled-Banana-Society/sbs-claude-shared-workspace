@@ -33,6 +33,8 @@ func (or *OwnerResources) Routes() chi.Router {
 	r.Post("/{ownerId}/card/{cardId}/actions/prizeTransfer", or.TransferETHFromCardToOwner)
 	r.Get("/{ownerId}/drafts/{draftId}/state/queue", or.GetQueueForDraft)
 	r.Post("/{ownerId}/drafts/{draftId}/state/queue", or.UpdateQueueForDraft)
+	r.Get("/{ownerId}/drafts/{draftId}/state/sort", or.GetSortForDraft)
+	r.Put("/{ownerId}/drafts/{draftId}/state/sort/{sortBy}", or.UpdateSortForDraft)
 	r.Get("/auth/type", or.GetAuthType)
 	r.Patch("/{ownerId}/sms/preferences", or.UpdateSmsPreferences)
 	r.Post("/{ownerId}/sms/onboarding-complete", or.CompleteSmsOnboarding)
@@ -804,6 +806,44 @@ func (or *OwnerResources) UpdateQueueForDraft(w http.ResponseWriter, r *http.Req
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// GetSortForDraft returns the owner's sort preference ("ADP" or "RANK") for
+// this draft. The draft room mirrors its ADP/RANK toggle here so the server
+// auto-picker uses the same order the user was browsing.
+func (or *OwnerResources) GetSortForDraft(w http.ResponseWriter, r *http.Request) {
+	draftId := chi.URLParam(r, "draftId")
+	ownerId := strings.ToLower(chi.URLParam(r, "ownerId"))
+
+	userInfo := models.FetchSortForDrafter(draftId, ownerId)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(userInfo.SortBy)
+}
+
+// UpdateSortForDraft sets the owner's sort preference for this draft. Only
+// SortBy changes — AutoDraft and the missed-pick counters are preserved,
+// matching the fetch-modify-write pattern in patchDraftPreferences.
+func (or *OwnerResources) UpdateSortForDraft(w http.ResponseWriter, r *http.Request) {
+	draftId := chi.URLParam(r, "draftId")
+	ownerId := strings.ToLower(chi.URLParam(r, "ownerId"))
+	sortBy := strings.ToUpper(chi.URLParam(r, "sortBy"))
+
+	if sortBy != "ADP" && sortBy != "RANK" {
+		http.Error(w, "sortBy must be ADP or RANK", http.StatusBadRequest)
+		return
+	}
+
+	userInfo := models.FetchSortForDrafter(draftId, ownerId)
+	if userInfo.SortBy != sortBy {
+		userInfo.SortBy = sortBy
+		if err := models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
+			fmt.Printf("UpdateSortForDraft error: draftId=%s ownerId=%s sortBy=%s err=%v\n", draftId, ownerId, sortBy, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(userInfo)
 }
 
 type AuthType struct {

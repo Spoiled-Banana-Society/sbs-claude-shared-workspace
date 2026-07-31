@@ -280,6 +280,33 @@ type CardScores struct {
 	PFP                 PfpInfo     `json:"pfp"`
 }
 
+// SnapshotADPForLeague returns the current live-ADP order (the hourly cron
+// keeps playerStats2026/rankings in ADP order) as a PlayerDraftInfo slice for
+// stamping onto a NEW draft doc. This gives the auto-picker's ADP branch a
+// stable order for the draft's whole life. Returns an empty slice on any
+// failure — the auto-picker then falls back to user rankings, which is
+// exactly the behavior of every draft created before this existed.
+func SnapshotADPForLeague(leagueId string) []PlayerDraftInfo {
+	adp := make([]PlayerDraftInfo, 0)
+	var globalRanks UserRankings
+	if err := utils.Db.ReadDocument("playerStats2026", "rankings", &globalRanks); err != nil {
+		fmt.Printf("SnapshotADPForLeague warn: leagueId=%s err=%v\n", leagueId, err)
+		return adp
+	}
+	// Order by the Rank field, not array position — the rerank cron compares
+	// and writes by Rank, so that field is the authoritative order.
+	sort.Slice(globalRanks.Ranking, func(a, b int) bool {
+		return globalRanks.Ranking[a].Rank < globalRanks.Ranking[b].Rank
+	})
+	for i := range globalRanks.Ranking {
+		adp = append(adp, PlayerDraftInfo{
+			PlayerId: globalRanks.Ranking[i].PlayerId,
+			ADP:      globalRanks.Ranking[i].Rank,
+		})
+	}
+	return adp
+}
+
 func CreateLeague(ownerId string, draftNum int, draftType string) (*League, error) {
 	loc, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
@@ -297,6 +324,7 @@ func CreateLeague(ownerId string, draftNum int, draftType string) (*League, erro
 		DraftType:    draftType,
 		Level:        "Pro",
 		IsLocked:     false,
+		ADP:          SnapshotADPForLeague(fmt.Sprintf(seasonYear+"-%s-draft-%d", draftType, draftNum)),
 	}
 
 	return res, nil

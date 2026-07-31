@@ -675,9 +675,11 @@ func CalculateDefaultPickForUser(pick *PlayerStateInfo, adpPick *PlayerStateInfo
 			obj := r.Ranking[i]
 			playerState, ok := globalCurrentPlayers[obj.PlayerId]
 			if !ok {
-				fmt.Printf("Could not find user rank %s in players map\r", obj.PlayerId)
-				fmt.Printf("PlayerId: %s, Object: %v, player State: %v\r", obj.PlayerId, obj, playerState)
-				return
+				// A ranked playerId missing from this draft's pool (e.g. a stale
+				// list after a pool change) must not abort the whole calculation —
+				// skip it and keep walking the list.
+				fmt.Printf("Skipping user rank %s: not in players map for draft %s\n", obj.PlayerId, draftInfo.DraftId)
+				continue
 			}
 			if playerState.OwnerAddress == "" && playerState.PickNum == 0 {
 				if strings.ToLower(playerState.Position) == "qb" && !needsQB {
@@ -708,9 +710,10 @@ func CalculateDefaultPickForUser(pick *PlayerStateInfo, adpPick *PlayerStateInfo
 		adpObj := adpUserRanks.Ranking[i]
 		adpPlayerState, ok := globalCurrentPlayers[adpObj.PlayerId]
 		if !ok {
-			fmt.Printf("Could not find ADP %s in players map\r", adpObj.PlayerId)
-			fmt.Printf("PlayerId: %s, Object: %v, player State: %v\r", adpObj.PlayerId, adpObj, adpPlayerState)
-			return
+			// Same rule as the user-rank loop: an unknown playerId skips that
+			// entry, never aborts the calculation.
+			fmt.Printf("Skipping ADP %s: not in players map for draft %s\n", adpObj.PlayerId, draftInfo.DraftId)
+			continue
 		}
 		if adpPlayerState.OwnerAddress == "" && adpPlayerState.PickNum == 0 {
 			if strings.ToLower(adpPlayerState.Position) == "qb" && !needsQB {
