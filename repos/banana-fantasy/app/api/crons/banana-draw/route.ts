@@ -174,7 +174,11 @@ export async function GET(req: Request) {
           const tokenId = res.tokenIds[0];
           if (tokenId) {
             const { joinQueueWithToken } = await import('@/lib/db');
-            const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackhof', String(tokenId));
+            // 'promo' keeps draw winners in their OWN round: a wheel winner who
+            // hit the 0.1% wedge must never be seated into the giveaway draft
+            // (Richard, 2026-07-30 — roarstone landed in it and had to be moved
+            // out by hand). Wheel wins fill wheel rounds, draws fill draw rounds.
+            const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackhof', String(tokenId), 'promo');
             if (joinedRoundId !== null) {
               const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
               await ensureSpecialDraftSeat('jackhof', joinedRoundId, winnerId);
@@ -197,7 +201,7 @@ export async function GET(req: Request) {
           await db.collection('v2_users').doc(winnerId)
             .set({ jackhofEntries: FieldValue.increment(1) }, { merge: true });
           const { joinQueue } = await import('@/lib/db');
-          const { joinedRoundIds } = await joinQueue(winnerId, 'jackhof');
+          const { joinedRoundIds } = await joinQueue(winnerId, 'jackhof', 'promo');
           const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
           for (const rid of joinedRoundIds) {
             await ensureSpecialDraftSeat('jackhof', rid, winnerId);

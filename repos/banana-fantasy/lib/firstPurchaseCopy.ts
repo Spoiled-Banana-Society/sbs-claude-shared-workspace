@@ -15,8 +15,72 @@
 
 import type { FirstPurchaseVariant } from '@/lib/promoMath';
 import { firstPurchaseSpins, classicFirstPurchaseSpins } from '@/lib/promoMath';
+import { wheelSegments, jackhofWheelSegments } from '@/lib/wheelConfig';
+import { SPIN_ON_PURCHASE_UI_ENABLED, bonusDraftsFor } from '@/lib/spinTypes';
+import { ENTRY_PRICE_USD } from '@/lib/deposits';
 
 export type { FirstPurchaseVariant } from '@/lib/promoMath';
+
+/**
+ * Biggest draft payout on any wedge of any live wheel set. Derived, not
+ * hardcoded, so re-tuning the wheel can never leave the promo copy promising
+ * a ceiling the wheel stopped paying.
+ */
+const MAX_WEDGE_DRAFTS = Math.max(
+  ...[...wheelSegments, ...jackhofWheelSegments]
+    .filter((s) => s.prizeType === 'draft_pass' && typeof s.prizeValue === 'number')
+    .map((s) => s.prizeValue as number),
+);
+
+export interface FirstBuyOutcome {
+  /** Wheel spins the purchase grants: promo spins + (flag-gated) Bonus Spins. */
+  spins: number;
+  /** Drafts the player is certain to end up with — INCLUDING the passes bought. */
+  guaranteed: number;
+  /** Best possible total drafts, every spin landing the top wedge. */
+  max: number;
+  /** `max` priced at the entry fee, for the "($1,500)" kicker. */
+  maxValueUsd: number;
+}
+
+/**
+ * What a NEW player's first purchase of `quantity` passes is actually worth,
+ * counted as TOTAL drafts in hand — the passes they bought PLUS everything the
+ * wheel pays (Richard 2026-07-30). Counting the bought pass is what makes the
+ * ceiling a round 60 and, more usefully, makes the guarantee (3) match the spin
+ * count (3) instead of sitting one below it and reading as a typo.
+ *
+ * Bonus Spins are included here but ONLY via the client-visible flag: they pay
+ * wedge-MINUS-ONE (the buyer already owns the first draft), so they lift the
+ * ceiling but can pay zero and must never lift the guarantee.
+ */
+export function newPlayerFirstBuy(
+  quantity: number,
+  /**
+   * Whether Bonus Spins are actually being granted. Defaults to the
+   * client-visible flag; SERVER callers pass the AND of both halves of the
+   * feature flag, since a server that isn't granting Bonus Spins must never
+   * ship copy that counts them.
+   */
+  bonusSpinsEnabled: boolean = SPIN_ON_PURCHASE_UI_ENABLED,
+): FirstBuyOutcome {
+  const qty = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
+  const promoSpins = firstPurchaseSpins(qty);
+  const bonusSpins = bonusSpinsEnabled ? qty : 0;
+  // Every promo spin pays at least the minimum wedge (1 draft); a Bonus Spin
+  // can land that same wedge and pay 0, so it adds nothing to the floor.
+  const guaranteed = qty + promoSpins;
+  const max =
+    qty
+    + promoSpins * MAX_WEDGE_DRAFTS
+    + bonusSpins * bonusDraftsFor('purchase', MAX_WEDGE_DRAFTS);
+  return {
+    spins: promoSpins + bonusSpins,
+    guaranteed,
+    max,
+    maxValueUsd: max * ENTRY_PRICE_USD,
+  };
+}
 
 /**
  * What a surface should pitch: the three server-confirmed variants, or
@@ -66,7 +130,16 @@ export function firstPurchaseBuyLine(variant: FirstPurchasePitch, quantity: numb
  * whitespace-nowrap, so keep them short. The card TITLE carries the headline
  * ("Buy 1, Get 2 Drafts Free" / "Buy 2, Get 1 Draft Free") server-side.
  */
-export function firstPurchaseCardLines(variant: FirstPurchaseVariant): string[] {
+export function firstPurchaseCardLines(
+  variant: FirstPurchaseVariant,
+  /**
+   * The promo's SERVER-built description. Preferred source: only the server
+   * knows both halves of the Spin-on-Purchase flag, so only the server can say
+   * whether Bonus Spins count toward the ceiling. Falling back to client-side
+   * math would let the card quote 41 while the server quotes 60.
+   */
+  serverDescription?: string,
+): string[] {
   if (variant === 'returning') {
     return [
       'Every 2 Passes = 1 Free Spin',
@@ -74,10 +147,37 @@ export function firstPurchaseCardLines(variant: FirstPurchaseVariant): string[] 
       'In your first 24 hours',
     ];
   }
+  // Server description is one ' · '-separated line per card row, optionally
+  // carrying the logged-out "New players:" label (the card renders that as its
+  // own tag). Single-row descriptions are normal — the card is deliberately one
+  // line (Richard 2026-07-30: the separate spin-count row was noise, "from the
+  // wheel" on the numbers line says it in three words).
+  const parts = (serverDescription ?? '')
+    .replace(/^\s*new players:\s*/i, '')
+    .split(' · ')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length > 0) return parts;
+
+  return firstPurchaseCardRows(newPlayerFirstBuy(1));
+}
+
+/**
+ * The offer as the CARD renders it: one idea across two rows.
+ *
+ * It is two rows purely for width — the promo card is 208px and its rows are
+ * whitespace-nowrap, so the full sentence clips on both ends (measured, not
+ * guessed). Splitting after the ceiling keeps every number and still lands
+ * "from the wheel" at the end, which is the point.
+ */
+export function firstPurchaseCardRows(o: FirstBuyOutcome): string[] {
   return [
-    'Every Pass = 2 Free Spins',
-    'Each Spin wins 1+ Free Drafts',
-    'Win up to 40 Free Drafts',
-    '($1,000 in Drafts)',
+    `${o.guaranteed} Drafts Guaranteed — up to ${o.max}`,
+    `from the wheel ($${o.maxValueUsd.toLocaleString('en-US')})`,
   ];
+}
+
+/** Same offer as one sentence, for surfaces with room (modal bullets). */
+export function firstPurchaseOfferLine(o: FirstBuyOutcome): string {
+  return `${o.guaranteed} Drafts Guaranteed — up to ${o.max} from the wheel ($${o.maxValueUsd.toLocaleString('en-US')})`;
 }

@@ -78,6 +78,11 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
+    // Defaults to the 'wheel' round source. The entries counters carry no origin
+    // of their own, and every path that credits them is a wheel win except the
+    // Banana Draw's mint-failed fallback — which consumes the entry itself, in
+    // the same call that credits it. So a counter that survives to here is a
+    // wheel entry in practice.
     const { queue, joinedRoundIds } = await joinQueue(userId, queueType);
 
     // Seat the user in each joined round's REAL Go league (creating it for the

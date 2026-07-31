@@ -91,9 +91,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   const fpVariant = user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new';
   const fpShowNewPlayerTag = !isLoggedIn || user?.firstPurchaseVariant == null;
 
+  // When every card fits in the viewport (e.g. logged-out shows only the
+  // 2 conversion cards), there's nothing to scroll: skip the clones and
+  // arrows and let the viewport hug the cards so they sit centered.
+  const isStatic = sortedPromos.length <= VISIBLE_COUNT;
+
   // Create extended array with clones for infinite loop
-  const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
-  const startOffset = sortedPromos.length; // Start at the middle copy
+  const extendedPromos = isStatic ? sortedPromos : [...sortedPromos, ...sortedPromos, ...sortedPromos];
+  const startOffset = isStatic ? 0 : sortedPromos.length; // Start at the middle copy
 
   // Snap back to the first promo ONLY when the ORDER / claim state actually
   // changes — a new claim becomes available, a promo is added/removed, or the
@@ -148,6 +153,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
   // Handle infinite loop reset
   useEffect(() => {
+    if (isStatic) return; // no clones → nothing to jump between
     const handleTransitionEnd = () => {
       // If we've gone too far left, jump to middle copy
       if (currentIndex < VISIBLE_COUNT) {
@@ -166,7 +172,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       container.addEventListener('transitionend', handleTransitionEnd);
       return () => container.removeEventListener('transitionend', handleTransitionEnd);
     }
-  }, [currentIndex, sortedPromos.length]);
+  }, [currentIndex, sortedPromos.length, isStatic]);
 
   const handlePromoClick = (promo: Promo) => {
     setSelectedPromo(promo);
@@ -214,7 +220,11 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
   };
 
-  const translateX = -(currentIndex * (CARD_WIDTH + GAP));
+  const translateX = isStatic ? 0 : -(currentIndex * (CARD_WIDTH + GAP));
+  // Viewport hugs the actual card count when everything fits (static mode),
+  // so the outer justify-center centers 1–2 cards instead of leaving a
+  // 3-wide viewport with dead space on the right.
+  const viewportCards = Math.min(VISIBLE_COUNT, Math.max(sortedPromos.length, 1));
 
   return (
     <div className="space-y-4">
@@ -224,6 +234,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       {/* Carousel with arrows */}
       <div className="flex items-center justify-center gap-6">
         {/* Left Arrow */}
+        {!isStatic && (
         <button
           onClick={goBack}
           className="p-2.5 rounded-full transition-all duration-200 flex-shrink-0 border border-white/30 text-white/60 hover:border-banana hover:text-banana active:scale-95"
@@ -242,11 +253,12 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
+        )}
 
         {/* Promo Cards Container */}
         <div
           className="overflow-hidden py-4 -my-4"
-          style={{ width: `${VISIBLE_COUNT * CARD_WIDTH + (VISIBLE_COUNT - 1) * GAP + 16}px`, paddingLeft: '8px', paddingRight: '8px', marginLeft: '-8px', marginRight: '-8px' }}
+          style={{ width: `${viewportCards * CARD_WIDTH + (viewportCards - 1) * GAP + 16}px`, paddingLeft: '8px', paddingRight: '8px', marginLeft: '-8px', marginRight: '-8px' }}
         >
           <div
             ref={containerRef}
@@ -353,7 +365,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         {fpShowNewPlayerTag && (
                           <span className="block whitespace-nowrap font-bold uppercase tracking-wider text-[9px] text-[#1d1d1f]">New players</span>
                         )}
-                        {firstPurchaseCardLines(fpVariant).map((line) => (
+                        {firstPurchaseCardLines(fpVariant, promo.description).map((line) => (
                           <span key={line} className="block whitespace-nowrap">{line}</span>
                         ))}
                       </div>
@@ -537,6 +549,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
         </div>
 
         {/* Right Arrow */}
+        {!isStatic && (
         <button
           onClick={goForward}
           className="p-2.5 rounded-full transition-all duration-200 flex-shrink-0 border border-white/30 text-white/60 hover:border-banana hover:text-banana active:scale-95"
@@ -555,6 +568,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
+        )}
       </div>
 
       {/* Promo Modal */}

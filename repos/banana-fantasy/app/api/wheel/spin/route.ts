@@ -475,9 +475,16 @@ export async function POST(req: Request) {
       } else if (jphofKind === 'hof') {
         await unlockBadge(userId, 'hof-club', { source: 'wheel-hof', spinId }).catch(() => {});
       } else if (jphofKind === 'jackhof') {
-        // JackHOF = both perks on one draft → both club badges.
+        // JackHOF = both perks on one draft → both club badges, PLUS the
+        // JackHOF club itself. The jackhof-club unlock was missing here
+        // (roarstone, 2026-07-30): a 0.1%-wedge winner sat with JackHOF
+        // LOCKED while every Banana-draw grantee got it instantly (the draw
+        // cron unlocks it at grant time). The queue-draft-filled unlock in
+        // notifications/draft-filled is the ONLY other path, and a jackhof
+        // round can take weeks to fill — far too late for "you landed it".
         await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
         await unlockBadge(userId, 'hof-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
+        await unlockBadge(userId, 'jackhof-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
       }
 
       let mintTxHash: string | undefined;
@@ -572,7 +579,8 @@ export async function POST(req: Request) {
           if (jphofTokenId) {
             try {
               const { joinQueueWithToken } = await import('@/lib/db');
-              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+              // 'wheel' — never seat a wedge winner into a promo giveaway round.
+              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId, 'wheel');
               if (joinedRoundId !== null) {
                 const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
                 await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);

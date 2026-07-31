@@ -604,6 +604,15 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                     <p className="text-white/50 text-xs">Standard draft</p>
                   </div>
                 </div>
+                <div className="flex items-center gap-3 bg-gradient-to-r from-red-500/10 to-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl p-3">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500/20 to-[#D4AF37]/20 flex items-center justify-center">
+                    <span className="text-[10px] font-bold"><span className="text-red-400">1</span><span className="text-white/50">/</span><span className="text-[#D4AF37]">800</span></span>
+                  </div>
+                  <div className="text-left">
+                    <p className="font-semibold text-sm"><span className="text-red-400">Jack</span><span className="text-[#D4AF37]">HOF</span></p>
+                    <p className="text-white/50 text-xs">Jackpot + HOF together — both perks, ultra-rare</p>
+                  </div>
+                </div>
               </div>
 
               {/* Guaranteed Distribution */}
@@ -709,7 +718,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
               </div>
 
               {/* Prizes */}
-              <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                   <div className="text-2xl mb-1">🎟️</div>
                   <span className="text-banana font-bold text-sm">Free Drafts</span>
@@ -724,6 +733,11 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   <div className="text-2xl mb-1">🏆</div>
                   <span className="text-[#d4af37] font-bold text-sm">HOF Entry</span>
                   <p className="text-white/40 text-[10px] mt-1">Bonus prizes</p>
+                </div>
+                <div className="bg-gradient-to-br from-red-500/10 to-[#d4af37]/10 rounded-xl p-3 border border-[#d4af37]/30">
+                  <div className="text-2xl mb-1">👑</div>
+                  <span className="font-bold text-sm"><span className="text-red-400">Jack</span><span className="text-[#d4af37]">HOF</span> Entry</span>
+                  <p className="text-white/40 text-[10px] mt-1">Both perks</p>
                 </div>
               </div>
 

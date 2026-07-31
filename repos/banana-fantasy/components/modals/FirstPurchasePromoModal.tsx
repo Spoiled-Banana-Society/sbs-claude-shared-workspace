@@ -4,6 +4,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useSyncedFlag } from '@/hooks/useSyncedFlag';
+import { newPlayerFirstBuy } from '@/lib/firstPurchaseCopy';
+
+// Same totals-in-hand math as the promo card + modal, so this popup can never
+// quote a different ceiling than the surfaces it's pitching alongside.
+const fpOne = newPlayerFirstBuy(1);
+const fpTwo = newPlayerFirstBuy(2);
+const fpThree = newPlayerFirstBuy(3);
 
 // App-wide popup for the first-purchase promo, shown to NEW users (not
 // returning players) when they finish their welcome-wheel free drafts —
@@ -115,14 +122,12 @@ export function FirstPurchasePromoModal() {
             ("40" / "Drafts" on separate lines read broken). Sized to fit a
             320px-wide phone inside the card padding. */}
         <div className="mt-3 text-sm leading-relaxed text-white/70">
-          <span className="block whitespace-nowrap font-semibold text-white">Every Draft Pass = 2 Free Spins</span>
-          <span className="block whitespace-nowrap">Buy 1 → <span className="font-semibold text-white">2 Free Drafts guaranteed</span></span>
-          <span className="block whitespace-nowrap">Win up to <span className="font-semibold text-banana">40 Free Drafts</span> ($1,000 in Drafts)</span>
+          <span className="block whitespace-nowrap"><span className="font-semibold text-white">{fpOne.guaranteed} Drafts Guaranteed</span> — up to <span className="font-semibold text-banana">{fpOne.max}</span> from the wheel</span>
+          <span className="block whitespace-nowrap">(${fpOne.maxValueUsd.toLocaleString('en-US')} in Drafts)</span>
         </div>
         <div className="mt-3 text-xs leading-relaxed text-white/45">
-          <span className="block whitespace-nowrap">Buy 2 → 4 Spins · Buy 4 → 8 Spins — no cap</span>
-          <span className="block whitespace-nowrap">+ a Bonus Spin with every pass, automatic</span>
-          <span className="block whitespace-nowrap">One-time offer: your first purchase only</span>
+          <span className="block whitespace-nowrap">Buy more, get more: 2 passes = {fpTwo.guaranteed} Drafts, 3 = {fpThree.guaranteed}</span>
+          <span className="block whitespace-nowrap">One-time offer, first purchase only</span>
         </div>
         <button
           onClick={() => {

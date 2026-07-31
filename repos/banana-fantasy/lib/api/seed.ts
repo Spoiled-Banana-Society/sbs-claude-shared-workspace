@@ -12,16 +12,20 @@ import type { DbSchema } from './dbTypes';
 import { API_CONFIG } from './config';
 import { seedUserBadges } from '@/lib/badges/catalog';
 import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
+import { newPlayerFirstBuy, firstPurchaseCardRows } from '@/lib/firstPurchaseCopy';
 
-// Bonus Spins exist only while Spin-on-Purchase is live — mention them ONLY
-// when the server flag is on, so the copy never promises a spin the purchase
-// path won't grant. (Bonus Spins pay wedge-minus-one and are never counted in
-// any guaranteed-drafts number here.) This file is server-only (imported by
-// db-firestore / db-json), so reading the server env flag here is safe.
-const FP_BONUS_SPIN_DESC = isSpinOnPurchaseEnabled() ? ' + a Bonus Spin with every pass' : '';
-const FP_BONUS_SPIN_BULLET = isSpinOnPurchaseEnabled()
-  ? '\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of all of this.'
-  : '';
+// New-player first-purchase numbers, counted as TOTAL drafts in hand (bought
+// passes + wheel payouts) — see lib/firstPurchaseCopy.
+//
+// Gated on the SERVER flag alone, deliberately: `grantPurchaseSpins` keys off
+// exactly this flag, so it is the only thing that decides whether a Bonus Spin
+// is actually handed out. The NEXT_PUBLIC half only toggles client chrome —
+// AND-ing it in here would make the copy UNDERSTATE the offer on a server that
+// really is granting the spins.
+const FP_BONUS_LIVE = isSpinOnPurchaseEnabled();
+const FP_ONE = newPlayerFirstBuy(1, FP_BONUS_LIVE);
+const FP_TWO = newPlayerFirstBuy(2, FP_BONUS_LIVE);
+const FP_THREE = newPlayerFirstBuy(3, FP_BONUS_LIVE);
 
 const seedBadges: UserBadge[] = seedUserBadges();
 
@@ -339,12 +343,13 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    // Headline = the guaranteed outcome (Richard 2026-07-28): 1 pass → 2 promo
-    // spins → at least 1 Free Draft each. "Win up to 40" is the kicker (2 spins
-    // × 20-draft max wedge). Bonus Spin mention is FLAG-GATED (see
-    // FP_BONUS_SPIN_* above) and never counted in the guarantee.
+    // Headline = the guaranteed outcome (Richard 2026-07-28). Body counts TOTAL
+    // drafts in hand, bought pass included (Richard 2026-07-30) — that is what
+    // makes the ceiling a round 60 and the guarantee (3) match the spin count
+    // (3) instead of sitting one below it and reading as a mistake. Every
+    // number comes from FP_ONE, so none of it can drift from the grant math.
     title: 'First Purchase → BUY 1, GET 2 DRAFTS FREE',
-    description: `Every Pass = 2 Free Spins${FP_BONUS_SPIN_DESC} · Win up to 40 Free Drafts ($1,000 in Drafts)`,
+    description: firstPurchaseCardRows(FP_ONE).join(' · '),
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -357,11 +362,15 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Buy 1, Get 2 Drafts Free — win up to 40 Free Drafts ($1,000 in Drafts)',
+      // No "New players" label here — getDefaultPromos prefixes it for
+      // LOGGED-OUT viewers (who might turn out to be returning players);
+      // a logged-in new player doesn't need to be told what they are.
+      title: 'Buy 1, Get 2 Drafts Free',
       explanation:
-        '• Every Draft Pass you buy = 2 Free Spins — no cap. Every Spin wins at least 1 Free Draft.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).'
-        + FP_BONUS_SPIN_BULLET
-        + '\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
+        `• Buy your first Draft Pass → ${FP_ONE.guaranteed} Drafts guaranteed, up to ${FP_ONE.max} from the wheel ($${FP_ONE.maxValueUsd.toLocaleString('en-US')}).`
+        + `\n• You get ${FP_ONE.spins} Banana Wheel Spins — spin to collect.`
+        + `\n• Buy more, get more: 2 passes = ${FP_TWO.guaranteed} Drafts, 3 passes = ${FP_THREE.guaranteed}.`
+        + '\n• One-time offer, first purchase only.',
     },
   },
   {
@@ -583,7 +592,11 @@ export function getDefaultPromos(): Promo[] {
       promo.modalContent = {
         ...promo.modalContent,
         title: `New players: ${promo.modalContent.title}`,
-        explanation: `${promo.modalContent.explanation}\n• New players only — returning players get the classic offer (every 2 passes in your first 24h = 1 Free Spin).`,
+        // The classic-offer footnote was cut 2026-07-30 (Richard): a new player
+        // reading a new-player modal doesn't care, returning players never see
+        // this copy (the server swaps in the classic variant for them), and the
+        // "New players" label above already covers logged-out ambiguity.
+        explanation: promo.modalContent.explanation,
       };
     }
     return promo;

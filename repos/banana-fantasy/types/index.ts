@@ -533,11 +533,19 @@ export interface QueueMember {
   tokenId?: string;
 }
 
+/** Where the passes in a round came from. Wheel wins and promo giveaways fill
+ *  SEPARATE rounds so a 0.1%-wedge winner never shares a draft with a Banana
+ *  Draw grantee (Richard, 2026-07-30). Untagged legacy rounds read as 'wheel' —
+ *  every pre-existing jackpot/hof round is wheel-origin. */
+export type QueueRoundSource = 'wheel' | 'promo';
+
 export interface QueueRound {
   roundId: number;
   members: QueueMember[];
   status: RoundStatus;
   draftId: string | null;
+  /** Absent on rounds created before 2026-07-30; treated as 'wheel'. */
+  source?: QueueRoundSource;
   /** Set (epoch ms) while one server request holds the right to create the Go
    *  league for this round — prevents two simultaneous wheel winners creating
    *  two leagues. Stale claims (>60s, create crashed) are taken over. */

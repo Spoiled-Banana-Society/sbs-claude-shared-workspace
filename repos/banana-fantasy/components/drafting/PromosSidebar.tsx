@@ -126,7 +126,7 @@ export function PromosSidebar({
                   {fpShowNewPlayerTag && (
                     <span className="block whitespace-nowrap font-bold uppercase tracking-wider text-[10px] text-[#1d1d1f]">New players</span>
                   )}
-                  {firstPurchaseCardLines(fpVariant).map((line) => (
+                  {firstPurchaseCardLines(fpVariant, promo.description).map((line) => (
                     <span key={line} className="block whitespace-nowrap">{line}</span>
                   ))}
                 </div>

@@ -134,7 +134,8 @@ export async function GET(req: Request) {
         if (jphofTokenId) {
           try {
             const { joinQueueWithToken } = await import('@/lib/db');
-            const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+            // Recovering a WHEEL mint — same round-source as the live wheel path.
+            const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId, 'wheel');
             if (joinedRoundId !== null) {
               const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
               await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);

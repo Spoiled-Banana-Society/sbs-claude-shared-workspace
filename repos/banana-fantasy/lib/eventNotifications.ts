@@ -13,6 +13,8 @@
  */
 
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
+import { newPlayerFirstBuy } from '@/lib/firstPurchaseCopy';
+import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
 import type { StreamEventType, StreamEventPayload } from '@/lib/userEventStream';
 import type { CreateNotificationInput } from '@/lib/queueNotifications';
 
@@ -104,13 +106,13 @@ export function eventNotificationContent(
       // fronted FREE pass, and entering with that pass earns no spins (spins
       // fire when balance is SPENT). "Using your $X balance" points them at
       // the action that actually pays (Boris 2026-07-24).
-      // "+ a Bonus Spin with every pass" — Spin-on-Purchase stacks ON TOP of
+      // "+ a Bonus Spin with every purchase" — Spin-on-Purchase stacks ON TOP of
       // the promo spins, and the deposit bell is where a first buyer learns
       // their total value (Boris 2026-07-28). One clause, not a lecture.
       const spinsLine = spins > 0
         ? (spins <= 2
-          ? ` Enter a draft using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every pass.`
-          : ` Enter drafts using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every pass.`)
+          ? ` Enter a draft using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every purchase.`
+          : ` Enter drafts using your $${amount} balance to receive your ${spins} Free Spins — plus a Bonus Spin with every purchase.`)
         : '';
       let lead: string;
       if (freePasses > 0 && payload.fronted) {
@@ -195,7 +197,7 @@ export function eventNotificationContent(
         title: 'Nice first draft 🍌',
         message: payload.isReturning
           ? 'Keep going — buy 2 passes in your first 24 hours, get 1 draft free.'
-          : 'Keep going — buy 1, get 2 drafts free. Win up to 40 Free Drafts.',
+          : `Keep going — buy 1, get 2 drafts free. Up to ${newPlayerFirstBuy(1, isSpinOnPurchaseEnabled()).max} Drafts.`,
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',

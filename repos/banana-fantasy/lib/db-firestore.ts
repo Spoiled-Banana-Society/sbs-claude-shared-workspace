@@ -22,6 +22,7 @@ import type {
   DraftQueue,
   LeaderboardEntry,
   QueueRound,
+  QueueRoundSource,
   Promo,
   PrizeWithdrawal,
   Purchase,
@@ -535,7 +536,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     // promises a spin the purchase path won't grant.
     explanation:
       '• Your first purchase starts a 24-hour window — every 2 passes you pick up inside it = 1 Free Banana Spin.\n• Every Spin wins at least 1 Free Draft — up to 20.\n• Buy passes or jump straight into paid drafts, both count.\n• Buy 4 for 2 Spins, 6 for 3, and so on — no limit inside your 24 hours.'
-      + (isSpinOnPurchaseEnabled() ? '\n• PLUS every pass always comes with a Bonus Spin — automatic, on top of these.' : '')
+      + (isSpinOnPurchaseEnabled() ? '\n• PLUS every purchase always comes with a Bonus Spin — automatic, on top of these.' : '')
       + '\n• Spins land automatically the moment each pair completes — claim them right here.',
   };
   const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
@@ -2375,8 +2376,30 @@ function emptyQueueDoc(type: 'jackpot' | 'hof' | 'jackhof'): DraftQueue {
   return { type, rounds: [], nextRoundId: 1 };
 }
 
-function newRound(roundId: number): QueueRound {
-  return { roundId, members: [], status: 'filling', draftId: null };
+function newRound(roundId: number, source: QueueRoundSource): QueueRound {
+  return { roundId, members: [], status: 'filling', draftId: null, source };
+}
+
+/** A round only accepts passes of its own origin. Legacy rounds carry no
+ *  `source` and read as 'wheel' — every round that predates the split is a
+ *  wheel win, except jackhof round 1 (the Banana Draw promo draft), which the
+ *  migration stamps 'promo' explicitly. */
+function roundSource(r: QueueRound): QueueRoundSource {
+  return r.source ?? 'wheel';
+}
+
+function findOpenRound(
+  queue: DraftQueue,
+  source: QueueRoundSource,
+  userId: string,
+): QueueRound | undefined {
+  return queue.rounds.find(
+    r =>
+      r.status === 'filling' &&
+      roundSource(r) === source &&
+      r.members.length < QUEUE_MAX &&
+      !r.members.some(m => m.wallet === userId),
+  );
 }
 
 export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
@@ -2405,6 +2428,7 @@ export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
 export async function joinQueue(
   userId: string,
   type: 'jackpot' | 'hof' | 'jackhof',
+  source: QueueRoundSource = 'wheel',
 ): Promise<{ queue: DraftQueue; joinedRoundIds: number[] }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
@@ -2427,11 +2451,9 @@ export async function joinQueue(
     // Add new entries to next available rounds (don't touch existing rounds)
     const joinedRoundIds: number[] = [];
     for (let i = 0; i < entries; i++) {
-      let round = queue.rounds.find(
-        r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
-      );
+      let round = findOpenRound(queue, source, userId);
       if (!round) {
-        round = newRound(queue.nextRoundId++);
+        round = newRound(queue.nextRoundId++, source);
         queue.rounds.push(round);
       }
       round.members.push({ wallet: userId, joinedAt: Date.now() });
@@ -2456,6 +2478,7 @@ export async function joinQueueWithToken(
   userId: string,
   type: 'jackpot' | 'hof' | 'jackhof',
   tokenId: string,
+  source: QueueRoundSource = 'wheel',
 ): Promise<{ queue: DraftQueue; joinedRoundId: number | null }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
@@ -2471,11 +2494,9 @@ export async function joinQueueWithToken(
     const existing = queue.rounds.find(r => r.members.some(m => m.tokenId === tokenId));
     if (existing) return { queue, joinedRoundId: existing.roundId };
 
-    let round = queue.rounds.find(
-      r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
-    );
+    let round = findOpenRound(queue, source, userId);
     if (!round) {
-      round = newRound(queue.nextRoundId++);
+      round = newRound(queue.nextRoundId++, source);
       queue.rounds.push(round);
     }
     round.members.push({ wallet: userId, joinedAt: Date.now(), tokenId });
