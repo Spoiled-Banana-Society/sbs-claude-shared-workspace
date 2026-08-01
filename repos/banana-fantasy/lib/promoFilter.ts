@@ -14,7 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
-import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS } from '@/lib/promoWindow';
+import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, eliminatorLive } from '@/lib/promoWindow';
 
 /**
  * Promo types visible to users right now, in display order (after
@@ -30,6 +30,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
+  'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
   'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
@@ -63,8 +64,12 @@ export const LOGGED_OUT_PROMO_TYPES = new Set<PromoType>(['new-user', 'first-pur
 // VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase).
 //
 // 🍌 'banana-draw' LAUNCHED 2026-07-26 — now in VISIBLE_PROMO_TYPES_ORDER
-// above, at index 2. Emptying this array also releases the draw cron, which
-// holds itself while a promo is in admin preview (app/api/crons/banana-draw).
+// above, at index 2. Its final cycle closed noon PT 2026-07-31.
+//
+// 🔥 'eliminator' LAUNCHED 2026-07-31 4pm PT — now in VISIBLE_PROMO_TYPES_ORDER
+// above at index 2, and FEATURED so it pins to position 1 on every surface.
+// Emptying this array also RELEASES the hourly burn cron, which holds itself
+// while a promo is in admin preview (app/api/crons/eliminator).
 // Nothing staged for admin-only preview right now.
 export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
@@ -74,7 +79,7 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
  * Set to null when no promo is being featured — 'buy-bonus' was removed
  * here when the July 4th promo ended (2026-07-06).
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = null;
+export const FEATURED_PROMO_TYPE: PromoType | null = 'eliminator';
 
 /**
  * Display order with the admin-preview types spliced in before 'pick-chase' —
@@ -95,6 +100,7 @@ function adminPreviewOrder(): PromoType[] {
  * the novelty fades.
  */
 export const NEW_PROMO_TYPES = new Set<PromoType>([
+  'eliminator',  // launches 2026-07-31 — drop this once the novelty fades
   'banana-draw', // launches 2026-07-26 — drop this once the novelty fades
 ]);
 
@@ -170,6 +176,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     if (!visibleTypes.has(p.type)) return false;
     // Banana Draw ends with its 5th seat at noon PT Jul 31 (Boris 2026-07-30).
     if (p.type === 'banana-draw' && Date.now() >= BANANA_DRAW_END_MS) return false;
+    // THE ELIMINATOR reveals itself on the clock at 4pm PT (Richard 2026-07-31).
+    // Gating here rather than on a second deploy means the code can ship early
+    // and still be invisible until the exact launch instant.
+    if (p.type === 'eliminator' && !eliminatorLive()) return false;
     // Logged-out visitors get ONLY the two conversion cards — everything
     // else requires an account to even have progress, so it's noise.
     if (opts.isLoggedIn === false && !LOGGED_OUT_PROMO_TYPES.has(p.type)) return false;

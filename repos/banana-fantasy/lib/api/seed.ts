@@ -480,6 +480,62 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // 🔥 THE ELIMINATOR — the hourly burn-down that succeeds the Banana Draw.
+    // Held behind ADMIN_PREVIEW_PROMO_TYPES until Richard's green light; the
+    // /promos leaderboard (EliminatorBanner) is the real surface, this card is
+    // what opens the modal explaining the mechanic.
+    id: 'eliminator',
+    type: 'eliminator',
+    title: 'THE ELIMINATOR → JACKHOF SEAT',
+    description: 'Every hour the list burns down to 5. Last 5 standing at 9pm win.',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    // No x/N meter — Bananas are unbounded and reset each day, so a progress
+    // bar would read as a cap that doesn't exist (same reasoning as the
+    // Banana Draw card and pick-chase).
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: '🔥 THE ELIMINATOR',
+      explanation:
+        '• Every hour on the hour, the list BURNS down to 5 survivors. Everyone else is wiped.\n'
+        + '• Enter any draft to get on the list — and to get back on after a burn.\n'
+        + '• You keep every Banana you earn. Getting burned only costs you your spot, never your stack.\n'
+        + '• The more Bananas you have, the harder you are to burn. But nobody is ever safe.\n'
+        + '• At 9pm PT the burning stops. The last 5 standing win.\n'
+        + '\n'
+        + 'HOW YOU EARN BANANAS\n'
+        + '• Enter a paid draft — +2\n'
+        + '• Enter a free draft — +1\n'
+        + '• Survive an hour on the list — +10, every single hour, no cap\n'
+        + '\n'
+        // Bananas come from DRAFTING, never from buying (Richard 2026-07-31).
+        // Stated explicitly because it's the first thing people assume wrong,
+        // and a purchase reward would let someone buy 30 passes at 8:45pm and
+        // instantly match a player who had survived six hours.
+        + 'Bananas come from DRAFTING, not from buying. Six hours on the list is 60 Bananas. All day is 120. Nobody who shows up at 8:55 is catching that.\n'
+        + '\n'
+        + 'THE PRIZE\n'
+        // Weighted, NOT a flat 1-in-5 (Richard 2026-07-31). Surviving all day
+        // pays twice over: it gets you into the final five, then it decides how
+        // big your slice of that five is. Verified over 100k simulated finals —
+        // 120/80/50/20/10 Bananas measured 42.86 / 28.56 / 17.80 / 7.26 / 3.52%.
+        + '• 1 of the final 5 wins a JACKHOF SEAT — and your odds are your BANANAS.\n'
+        + '• Finish on 120 Bananas and you have twice the shot of someone finishing on 60. Every Banana you bank all day is another ticket in the hat.\n'
+        + '• Everyone in the final 5 has a real chance — a smaller stack is a smaller slice, never a zero one.\n'
+        + '• The other 4 get 2 spins each.\n'
+        + '• Five nights, five seats.\n'
+        + '\n'
+        + 'THE SCHEDULE\n'
+        + '• Burns run every hour, 9am–9pm PT.\n'
+        + '• Overnight the list freezes — but Bananas still count. Anything you draft after 9pm banks into the 9am burn.\n'
+        + '• Bananas reset every morning. Five clean nights.',
+      additionalRules: '',
+    },
+  },
+  {
     // Banana Draw — the 24h JackHOF-seat raffle. Sits near the FRONT (Boris)
     // and carries the NEW tag. `timerEndTime` is stamped per-read with the
     // cycle close, so the promo card's existing bare countdown renders it with

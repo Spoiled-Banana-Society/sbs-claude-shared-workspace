@@ -12,7 +12,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
-import { BananaDrawBanner } from '@/components/promos/BananaDrawBanner';
+import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { deriveChaseState } from '@/lib/chasePromo';
 import type { Promo, PromoType } from '@/types';
@@ -42,6 +42,9 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'pick-chase':         { accent: '#f97316', label: 'Match' },
   // JackHOF orange — the dual-tier accent, same as the wheel's JackHOF wedge.
   'banana-draw':        { accent: '#ef6c37', label: 'Bananas' },
+  // Same JackHOF orange: the Eliminator gives out the same seat, so it reads as
+  // the successor to the Banana Draw rather than an unrelated promo.
+  'eliminator':         { accent: '#ef6c37', label: 'Eliminator' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
@@ -108,10 +111,10 @@ export default function PromosPage() {
     setSelectedPromo(match);
   }, [promoQueryId, promos]);
 
-  // The Banana Draw promo doc feeds the pinned leaderboard banner two things
-  // the public endpoint deliberately doesn't carry: YOUR Banana count (authed
-  // payload only) and the modal that explains the whole mechanic.
-  const bananaPromo = useMemo(() => promos.find(p => p.type === 'banana-draw') ?? null, [promos]);
+  // The Eliminator promo doc feeds the pinned leaderboard banner the modal
+  // that explains the whole mechanic. (The Banana Draw equivalent went away
+  // with its banner on 2026-07-31 — the draw is finished.)
+  const eliminatorPromo = useMemo(() => promos.find(p => p.type === 'eliminator') ?? null, [promos]);
 
   const isClaimed = (p: Promo) =>
     claimedLocally.has(p.id) || (p.type === 'new-user' && newUserPromoClaimed);
@@ -306,12 +309,23 @@ export default function PromosPage() {
           so it never shows an empty board — including before launch. */}
       {/* Public since the 2026-07-26 launch. Self-hides while the pool is
           empty, so it simply doesn't render until the first Bananas land. */}
-      <BananaDrawBanner
+      {/* ── THE ELIMINATOR leaderboard ────────────────────────────────
+          Pinned ABOVE the Banana Draw board it succeeds (Richard 2026-07-31).
+          Self-hides while nobody is on the list, so it renders nothing until
+          the promo is green-lit and the first draft entries land. */}
+      <EliminatorBanner
         myWallet={user?.walletAddress ?? null}
-        myBananas={bananaPromo?.modalContent?.bananaDraw?.bananas ?? 0}
-        myPending={bananaPromo?.modalContent?.bananaDraw?.pending ?? 0}
-        onExplain={bananaPromo ? () => setSelectedPromo(bananaPromo) : undefined}
+        onExplain={eliminatorPromo ? () => setSelectedPromo(eliminatorPromo) : undefined}
       />
+
+      {/* ── Banana Draw banner: RETIRED 2026-07-31 (Richard) ──────────
+          The draw gave out its 5th and final seat at noon PT today, after
+          which this banner sat here showing a permanent "all 5 seats claimed"
+          winners recap. The promo CARD retires itself on BANANA_DRAW_END_MS,
+          but the banner was mounted separately with no such gate — so a
+          finished promo kept occupying the top of the page, above the promo
+          that replaced it. Unmounted rather than gated: the draw is over for
+          good. components/promos/BananaDrawBanner.tsx is kept for reference. */}
 
       {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
           you've got to spend. Minimal single card with internal dividers. ─── */}

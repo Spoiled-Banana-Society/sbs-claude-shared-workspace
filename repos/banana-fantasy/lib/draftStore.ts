@@ -203,10 +203,19 @@ export async function hydrateActiveDrafts(): Promise<void> {
     // never resurrected. localStorage-only: the mounted page picks it up on
     // its next mount (cold reload), which is the documented recovery step.
     try {
-      const completedRaw = localStorage.getItem('banana-completed-drafts');
-      const completed = new Set(completedRaw ? (JSON.parse(completedRaw) as string[]) : []);
-      const serverIds = serverDrafts.map((d) => d.id).filter((id): id is string => !!id && !completed.has(id));
-      for (const key of ['banana-hidden-drafts', 'banana-cleared-drafts']) {
+      // The server is now authoritative: /api/owner/active-drafts only returns
+      // drafts it has verified as filling or still-drafting (a draft parked on
+      // its unmade final pick counts as drafting). So anything in this response
+      // is live by definition and must be purged from ALL three blacklists —
+      // including banana-completed-drafts.
+      //
+      // That ledger used to be exempt, which is what stranded FC: his device
+      // had wrongly marked BBB #183 "completed" at pick 150, and the exemption
+      // meant no amount of refreshing could ever un-hide it. The ledger still
+      // does its anti-flicker job for genuinely finished drafts — those simply
+      // don't come back in serverDrafts, so they're never purged here.
+      const serverIds = serverDrafts.map((d) => d.id).filter((id): id is string => !!id);
+      for (const key of ['banana-hidden-drafts', 'banana-cleared-drafts', 'banana-completed-drafts']) {
         const raw = localStorage.getItem(key);
         if (!raw) continue;
         const ids: string[] = JSON.parse(raw);

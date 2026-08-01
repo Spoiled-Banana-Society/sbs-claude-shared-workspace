@@ -73,6 +73,39 @@ function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 
   return 0;
 }
 
+/**
+ * Go clamps `pickNumber` at totalPicks, so "sitting on the unmade final pick"
+ * and "finished" are indistinguishable in /state/info. Treating both as
+ * completed removed the row from My Drafts for the one person on the clock for
+ * it — on a slow draft that's an 8-hour window (FC / BBB #183, 2026-07-31).
+ * The summary tells them apart: the last slot has no player name until the
+ * pick actually lands.
+ *
+ * Rule #0: this sits inside a 3s sync loop, so the verdict is cached per draft
+ * and only re-checked every FINAL_PICK_RECHECK_MS. Only drafts already at the
+ * final pick ever get here, so it's at most a couple of ids per user. On any
+ * error we return false = "not pending" = keep the old completion behavior,
+ * so a flaky Go call can never strand a finished draft in the list forever.
+ */
+const FINAL_PICK_RECHECK_MS = 30_000;
+const finalPickCache = new Map<string, { at: number; pending: boolean }>();
+
+async function finalPickStillPending(draftId: string, totalPicks: number): Promise<boolean> {
+  const hit = finalPickCache.get(draftId);
+  const now = Date.now();
+  if (hit && now - hit.at < FINAL_PICK_RECHECK_MS) return hit.pending;
+  let pending = false;
+  try {
+    const summary = await draftApi.getDraftSummary(draftId);
+    pending = summary.length >= totalPicks
+      && !(summary[totalPicks - 1]?.playerInfo?.displayName ?? '').trim();
+  } catch {
+    pending = false; // fail closed — behave exactly as before the check existed
+  }
+  finalPickCache.set(draftId, { at: now, pending });
+  return pending;
+}
+
 function computeTurnsFromServer(
   info: draftApi.DraftInfoResponse,
   walletAddress: string,
@@ -998,7 +1031,7 @@ export function useDraftingPageState() {
         // active-token list — completed drafts stay completed.
         {
           const totalPicks = (info.draftOrder?.length || 10) * 15;
-          if ((info.pickNumber ?? 0) >= totalPicks) {
+          if ((info.pickNumber ?? 0) >= totalPicks && !(await finalPickStillPending(draft.id, totalPicks))) {
             draftStore.removeDraft(draft.id);
             // Record WHY it's hidden: completed. Without this ledger the
             // active-seat un-heal in loadLiveDrafts can't distinguish

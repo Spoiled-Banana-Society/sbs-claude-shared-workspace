@@ -31,7 +31,9 @@ import { logger } from '@/lib/logger';
  *   full lobbies we ask the Go state endpoint:
  *     - "draft state not yet initialized" → still filling / revealing  → include
  *     - pickNumber < TOTAL_PICKS                → actively drafting     → include
- *     - pickNumber >= TOTAL_PICKS (150 = 10×15) → completed             → EXCLUDE
+ *     - pickNumber >= TOTAL_PICKS (150 = 10×15) → check the final pick:
+ *         summary slot 150 has no player       → still drafting        → include
+ *         summary slot 150 has a player        → completed             → EXCLUDE
  *   To keep this cheap for veterans with hundreds of finished drafts, only the
  *   most-recent RECENT_SLOTS ids per speed are considered — any active draft is
  *   near the current fill frontier; old completed slots are dropped without a
@@ -77,6 +79,36 @@ function slotOf(id: string): number {
   return m ? Number(m[2]) : -1;
 }
 
+/**
+ * Is the FINAL pick still unmade? Go clamps `pickNumber` at TOTAL_PICKS, so a
+ * draft sitting on its last pick and a draft that finished look identical in
+ * /state/info (both report 150, both name a currentDrafter). The only way to
+ * tell them apart is the summary: the pick-150 slot exists either way, but its
+ * player name is empty until the pick is actually made.
+ *
+ * This matters because the last drafter is on the clock for up to 8 hours on a
+ * slow draft, and calling that "completed" hid the draft from the one person
+ * who needed to find it (FC / BBB #183, 2026-07-31).
+ *
+ * Only called for drafts already known to be at pick >= TOTAL_PICKS, so the
+ * extra (heavier) summary fetch stays rare. Any failure returns false = treat
+ * as completed, i.e. we keep the old behavior rather than leak finished drafts.
+ */
+async function finalPickPending(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${GO_API}/draft/${id}/state/summary`, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const body = (await res.json()) as {
+      summary?: Array<{ playerInfo?: { displayName?: string } }>;
+    };
+    const picks = Array.isArray(body?.summary) ? body.summary : [];
+    if (picks.length < TOTAL_PICKS) return false;
+    return !(picks[TOTAL_PICKS - 1]?.playerInfo?.displayName ?? '').trim();
+  } catch {
+    return false;
+  }
+}
+
 /** Ask Go whether a full lobby is drafting (include) or completed (exclude). */
 async function goStatus(id: string): Promise<Status | 'completed' | 'unknown'> {
   try {
@@ -87,7 +119,9 @@ async function goStatus(id: string): Promise<Status | 'completed' | 'unknown'> {
     let pick = NaN;
     try { pick = Number((JSON.parse(text) as { pickNumber?: number }).pickNumber); } catch { /* non-JSON */ }
     if (!Number.isFinite(pick)) return 'unknown';
-    return pick >= TOTAL_PICKS ? 'completed' : 'drafting';
+    if (pick < TOTAL_PICKS) return 'drafting';
+    // At the frontier: still drafting if that last pick hasn't been made yet.
+    return (await finalPickPending(id)) ? 'drafting' : 'completed';
   } catch {
     return 'unknown';
   }

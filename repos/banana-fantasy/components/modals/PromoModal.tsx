@@ -771,6 +771,26 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // to earn, then their own numbers, then everything else. The generic bullet
   // list is suppressed for this promo (see pickExplanation) — it printed the
   // same rules a second time and buried the point under a wall of text.
+  /**
+   * THE ELIMINATOR — the modal explains the mechanic, but the thing people
+   * actually want after reading it is the live board. Without this button the
+   * only route there is closing the modal and scrolling, which on the home
+   * carousel means navigating to /promos by hand (Richard 2026-07-31).
+   */
+  const renderEliminatorContent = () => (
+    <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+      <p className="text-text-secondary text-sm mb-3">
+        See who&apos;s surviving right now and how far you are from a seat.
+      </p>
+      <Button
+        className="w-full"
+        onClick={() => { onClose(); window.location.href = '/promos#eliminator-board'; }}
+      >
+        View the Leaderboard
+      </Button>
+    </div>
+  );
+
   const renderBananaDrawContent = () => {
     const bd = promo.modalContent.bananaDraw;
     if (!bd) return null;
@@ -1379,6 +1399,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderChaseContent();
       case 'banana-draw':
         return renderBananaDrawContent();
+      case 'eliminator':
+        return renderEliminatorContent();
       default:
         return null;
     }

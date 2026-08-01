@@ -5,6 +5,7 @@ import { computeAndStoreRipeness, recordDraftCompletion, resolveDraftPassType, u
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { creditBananas, creditReferralBananas } from '@/lib/bananaDraw';
+import { creditDraft as creditEliminatorDraft } from '@/lib/eliminator';
 import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -150,6 +151,25 @@ export async function POST(req: NextRequest) {
         // referral book on launch day. See creditReferralBananas.
         await creditReferralBananas({ friendUserId: wallet, kind: 'draft' })
           .catch((err) => logger.warn('banana.referral_fill_credit_failed', { draftId, wallet, err: String(err) }));
+
+        // THE ELIMINATOR: credited at FILL, not at entry.
+        //
+        // ⚠️ This used to fire from /api/owner/use-pass the moment a seat was
+        // taken. Leaving a filling lobby REFUNDS the pass (see
+        // /api/owner/refund-pass), so entry-crediting meant: enter → earn →
+        // leave → get the pass back → enter again → earn again, without limit
+        // and for free. On launch day 16 users left 41 drafts and kept the
+        // Bananas from every one of them (Richard caught it 2026-07-31).
+        //
+        // Crediting here means the draft has actually filled and started, so
+        // the Bananas represent real play that can't be unwound. Same
+        // authoritative pass type and the same per-(day, wallet, draft)
+        // idempotency, so the backstop re-firing is harmless.
+        await creditEliminatorDraft({
+          userId: wallet,
+          draftId,
+          passType: passType === 'paid' ? 'paid' : 'free',
+        }).catch((err) => logger.warn('eliminator.fill_credit_failed', { draftId, wallet, err: String(err) }));
       }));
 
       // Per-wallet PAID-fill effects: the King-of-Drafts scoring record (King

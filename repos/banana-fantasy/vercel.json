@@ -27,6 +27,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/crons/eliminator",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/admin/daily-digest",
       "schedule": "0 13 * * *"
     },

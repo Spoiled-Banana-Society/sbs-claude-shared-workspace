@@ -40,3 +40,23 @@ export const MINT_PROMO_END_MS = Date.UTC(2026, 6, 28, 7, 0, 0); // Jul 28 2026,
  *  After this instant the promo card retires; cycle docs and per-user Banana
  *  ledgers are kept forever. */
 export const BANANA_DRAW_END_MS = Date.UTC(2026, 6, 31, 19, 0, 0); // Jul 31 2026, 12:00 PM PT
+
+/**
+ * THE ELIMINATOR goes live at 4:00 PM PT on Jul 31 2026 (Richard).
+ *
+ * Every surface gates on this instant, so the promo reveals itself on the clock
+ * with NO second deploy: the card is filtered out of promoFilter until then and
+ * the /promos leaderboard banner renders nothing while the day's status is
+ * still 'pending'. Shipping the code early is therefore safe — it simply isn't
+ * visible until the launch moment.
+ *
+ * ⚠️ This must equal the day's open hour in lib/eliminatorRates
+ * (SHORT_DAY_OPEN_HOUR_PT['2026-07-31'] = 16). If the two ever disagree, the
+ * card appears before the list accepts anyone, or the list opens to an
+ * invisible promo.
+ */
+export const ELIMINATOR_LAUNCH_MS = Date.UTC(2026, 6, 31, 23, 0, 0); // Jul 31 2026, 4:00 PM PT
+
+export function eliminatorLive(now: number = Date.now()): boolean {
+  return now >= ELIMINATOR_LAUNCH_MS;
+}

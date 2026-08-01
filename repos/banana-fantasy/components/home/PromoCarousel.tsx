@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
+import { useEliminatorMe } from '@/hooks/useEliminatorMe';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
@@ -40,6 +41,9 @@ function useVisibleCount() {
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode, heading = 'Promos' }: PromoCarouselProps) {
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
+  // Live Eliminator standing for the card front — your Banana count and
+  // whether you're holding one of the 5 seats (Richard 2026-07-31).
+  const elimMe = useEliminatorMe(user?.walletAddress);
   // Pick-slot ladder removed 2026-07-26 — see app/promos/page.tsx.
   const VISIBLE_COUNT = useVisibleCount();
 
@@ -283,9 +287,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               const progressPercent = isClaimed && !isStacking ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
-              // Featured (July 4th) card gets the patriotic treatment:
-              // flag stripe, chip, corner stars, red ribbon, red→blue bar.
-              const isJuly4 = !!promo.featured;
+              // ⚠️ `featured` means PINNED TO POSITION 1 — it does not mean
+              // July 4th. This used to read `!!promo.featured`, so the moment
+              // any other promo was featured it inherited the flag stripe,
+              // corner stars and a literal "🇺🇸 July 4th Weekend" chip. That
+              // shipped on 2026-07-31: THE ELIMINATOR went out featured and
+              // users screenshotted it asking why a July promo said July 4th.
+              // The patriotic treatment belongs to buy-bonus and nothing else.
+              const isJuly4 = !!promo.featured && promo.type === 'buy-bonus';
               // Chase Your Pick live state — pick slot, next-hit spins, 24h clock.
               const isChase = promo.type === 'pick-chase';
               const chase = isChase ? deriveChaseState(promo) : null;
@@ -368,6 +377,28 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         {firstPurchaseCardLines(fpVariant, promo.description).map((line) => (
                           <span key={line} className="block whitespace-nowrap">{line}</span>
                         ))}
+                      </div>
+                    )}
+                    {/* ELIMINATOR ONLY — your live standing on the card front.
+                        The board lives on /promos, but the number people care
+                        about is their own, so it rides here too: Banana count
+                        plus whether they're currently holding a seat. */}
+                    {promo.type === 'eliminator' && elimMe.bananas !== null && (
+                      <div className="mt-1.5 flex flex-col items-center gap-1">
+                        <span className="text-sm font-bold text-[#1d1d1f] tabular-nums">
+                          🍌 {elimMe.bananas}
+                        </span>
+                        {elimMe.inTop5 ? (
+                          <span className="inline-flex items-center rounded-full bg-[#1d1d1f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white">
+                            Top 5 · surviving
+                          </span>
+                        ) : elimMe.onList ? (
+                          <span className="text-[10px] text-[#4a4a4a]">
+                            <span className="font-bold">{elimMe.bananasToSeat}</span> from a seat
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[#4a4a4a]">Not on the list</span>
+                        )}
                       </div>
                     )}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />

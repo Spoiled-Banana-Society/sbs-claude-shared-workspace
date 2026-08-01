@@ -12,6 +12,22 @@ import { logger } from '@/lib/logger';
 const USERS_COLLECTION = 'v2_users';
 
 /**
+ * ⚠️ THE ELIMINATOR TOUCHES NOTHING HERE. Entering a draft neither credits
+ * Bananas nor puts you back on the list — both happen only when the draft
+ * actually FILLS, from the draft-filled webhook (Richard 2026-07-31).
+ *
+ * Do not re-add either one to this route. Leaving a filling lobby refunds the
+ * pass (/api/owner/refund-pass), so anything granted on entry is free and
+ * unbounded: enter → get it → leave → get the pass back → repeat. That was
+ * caught first for Bananas (16 wallets left 41 drafts and kept every Banana)
+ * and then for standing, which is worth more — standing is what enters you in
+ * the weighted burn draw, so a burned wallet could ride the list all night on
+ * lobbies it never completed.
+ *
+ * The known cost: fills are rarer than entries, so the list thins between
+ * burns. That's the intended shape — a spot has to be re-earned by real play.
+ */
+/**
  * POST /api/owner/use-pass
  *
  * Decrements `draftPasses` or `freeDrafts` in Firestore when a user enters
@@ -141,6 +157,7 @@ export async function POST(req: Request) {
     if (result.decremented) {
       runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
     }
+
 
     return json({
       success: true,
