@@ -19,6 +19,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getSealedDrawSeed, type SealedDrawSeed } from '@/lib/jackpotDrawProof';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import {
   bananasForSource, dayFor, dayFromId, prevDayId, dueBurns, pickSurvivors, pickJackhofWinner, survivalOdds,
   BANANAS_SURVIVE_HOUR, SURVIVORS_PER_BURN,
@@ -491,7 +492,21 @@ async function resolveNames(userIds: string[]): Promise<Record<string, string>> 
   for (const s of snaps) {
     const d = s.data() ?? {};
     const raw = String(d.username ?? '').trim();
-    if (raw) out[s.id] = raw;
+    // A freshly-seeded user carries the INTERNAL placeholder `User-<first6>`
+    // (db-firestore createUser). That is junk, never a display name — every
+    // other surface rejects it (admin, activity, jackpot, display-batch), and
+    // without the same guard here the board reads "User-0x7fc5" instead of the
+    // player's handle (Boris 2026-08-01).
+    const realUsername = raw && !raw.startsWith('User-') ? raw : null;
+    // ⚠️ Fall back to the SERVER-ASSIGNED banana number, never a wallet-derived
+    // one. bananaDefaultName()'s 90k hash space let two users collide on one
+    // "Banana#####", which mis-routed an admin pass grant (2026-07-04); the
+    // unique counter on the user doc is the only safe source. Neutral
+    // placeholder if assignment somehow never happened.
+    const bananaName = d.bananaNumber != null
+      ? `Banana${d.bananaNumber}`
+      : bananaPlaceholderName(s.id);
+    out[s.id] = realUsername ?? bananaName;
   }
   return out;
 }
