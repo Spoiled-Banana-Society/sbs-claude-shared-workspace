@@ -123,10 +123,20 @@ export async function creditBananas(opts: {
   refId: string;
   nowMs?: number;
   meta?: Record<string, unknown>;
+  /**
+   * Force the day this credit lands on, instead of deriving it from the clock.
+   *
+   * ⚠️ REQUIRED for survival awards. dayIdFor rolls at 9pm sharp, which is the
+   * same instant the final burn fires — so a survivor's +10 for the LAST burn
+   * of the night was landing on TOMORROW's list. The final five then started
+   * the next day already holding 10 Bananas while everyone else started at 0
+   * (2026-07-31). Burn credits belong to the day that burned.
+   */
+  dayId?: string;
 }): Promise<{ credited: boolean; bananas: number; dayId: string }> {
   const userId = opts.userId.toLowerCase();
   const nowMs = opts.nowMs ?? Date.now();
-  const day = await ensureDay(nowMs);
+  const day = opts.dayId ? dayFromId(opts.dayId) : await ensureDay(nowMs);
   const amount = bananasForSource(opts.source);
 
   if (!isFirestoreConfigured() || amount <= 0) {
@@ -324,7 +334,7 @@ export async function executeBurn(dayId: string, burnIndex: number, nowMs = Date
   // Survivors bank +10 and extend their streak. The ledger keeps this
   // idempotent per (day, user, burn) even if this half re-runs.
   await Promise.allSettled(result.survivors.map(async (uid) => {
-    await creditBananas({ userId: uid, source: 'survive', refId: `burn-${burnIndex}`, nowMs });
+    await creditBananas({ userId: uid, source: 'survive', refId: `burn-${burnIndex}`, nowMs, dayId });
     await playersCol.doc(uid).set({
       streak: FieldValue.increment(1),
       updatedAt: new Date(nowMs).toISOString(),
@@ -486,27 +496,85 @@ async function resolveNames(userIds: string[]): Promise<Record<string, string>> 
   return out;
 }
 
+export interface LastNight {
+  dayId: string;
+  winnerId: string | null;
+  winnerName: string | null;
+  finalists: Array<{ userId: string; name: string; bananas: number }>;
+}
+
+/** How long the finished board stays up after the seat is drawn, so the reveal
+ *  animation plays and the result gets a moment to land before the board turns
+ *  over to the summary card. */
+const REVEAL_HOLD_MS = 15 * 60 * 1000;
+
+function revealSettledAt(doc: DayDoc): number {
+  const base = doc.revealAt ?? (doc.closesAt + REVEAL_DELAY_MS);
+  return base + REVEAL_HOLD_MS;
+}
+
 /**
- * The day the BOARD shows — which is NOT always the day credits land in.
+ * The day the BOARD renders while the night is finishing.
  *
- * dayIdFor rolls at 9pm sharp so a draft entered at 9:30pm banks toward
- * tomorrow. Correct for crediting, wrong for display: it means the instant the
- * seat is won the board flips to an empty list and the payoff — the final 5 and
- * the winner — is never shown to anyone. Worse, EliminatorBanner bails on an
- * empty non-closed day, so the promo just vanishes off the page all night.
- *
- * So during the gap between the close and the next open (9pm → 9am) we keep
- * serving the finished day. The banner already renders that state fully. Once
- * the new list opens at 9am, it takes over.
+ * dayIdFor rolls at 9pm sharp — the same instant the final burn fires — so
+ * without this the board flips to an empty list at the exact moment the seat is
+ * won and nobody ever sees the final 5, the reveal, or the winner. We hold the
+ * finished day through the reveal; after that getLeaderboard's `lastNight`
+ * summary takes over and the live list becomes the board again.
  */
 async function displayDay(nowMs: number): Promise<EliminatorDay> {
   const today = dayFor(nowMs);
   if (nowMs >= today.opensAt || !isFirestoreConfigured()) return today;
   const prev = dayFromId(prevDayId(today.dayId));
   const snap = await getAdminFirestore().collection(DAYS).doc(prev.dayId).get();
-  // Only a genuinely finished day is worth holding up. An unclosed one would
-  // park the board on a stale in-progress list.
-  return (snap.data() as DayDoc | undefined)?.status === 'closed' ? prev : today;
+  const doc = snap.data() as DayDoc | undefined;
+  if (doc?.status !== 'closed') return today;
+  return nowMs < revealSettledAt(doc) ? prev : today;
+}
+
+/**
+ * Last night's result, for the board to show ALONGSIDE the live list.
+ *
+ * The board itself always shows the CURRENT day — dayIdFor rolls at 9pm, so
+ * from 9:00pm the live list is already tomorrow's and drafting right now banks
+ * onto it. That is the thing we want people acting on overnight, so it stays
+ * the main board. But the payoff still has to be visible or the night just ends
+ * in an empty list with no answer to "who won?" — hence this alongside it.
+ *
+ * Returns null once the new day has genuinely started (9am), and for any
+ * previous day that never closed.
+ */
+async function readLastNight(today: EliminatorDay, nowMs: number): Promise<LastNight | null> {
+  if (nowMs >= today.opensAt || !isFirestoreConfigured()) return null;
+  const db = getAdminFirestore();
+  const prevId = prevDayId(today.dayId);
+  const snap = await db.collection(DAYS).doc(prevId).get();
+  const doc = snap.data() as DayDoc | undefined;
+  if (doc?.status !== 'closed') return null;
+  // Hold off until the LIVE reveal has finished playing. Until then the board
+  // proper is still parked on last night (see displayDay) so the final-5 lock
+  // and the seat draw animate exactly as built; handing back a summary card
+  // here would yank the board out from under that.
+  if (nowMs < revealSettledAt(doc)) return null;
+
+  const finalIds = (doc.winners ?? []) as string[];
+  if (finalIds.length === 0) return null;
+  const names = await resolveNames(finalIds);
+  const players = await Promise.all(finalIds.map((uid) => db
+    .collection(DAYS).doc(prevId).collection(PLAYERS).doc(uid).get()));
+  const finalists = finalIds.map((uid, i) => ({
+    userId: uid,
+    name: names[uid] ?? 'Player',
+    bananas: Number((players[i].data() as PlayerDoc | undefined)?.bananas) || 0,
+  })).sort((a, b) => b.bananas - a.bananas);
+
+  const winnerId = doc.jackhofWinnerId ?? null;
+  return {
+    dayId: prevId,
+    winnerId,
+    winnerName: winnerId ? (names[winnerId] ?? 'Winner') : null,
+    finalists,
+  };
 }
 
 /**
@@ -541,6 +609,8 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
   survivorSlots: number;
   jackhofWinnerId?: string | null;
   winners?: string[];
+  /** Last night's final 5 + seat winner, shown above tonight's live list. */
+  lastNight?: LastNight | null;
 }> {
   const day = await displayDay(nowMs);
   const base = {
@@ -559,6 +629,9 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
   };
   if (!isFirestoreConfigured()) return { ...base, status: 'pending' as const };
 
+  // ⚠️ dayFor, NOT `day` — `day` may be last night while the reveal is still
+  // holding the board, and readLastNight works backwards from the real today.
+  const lastNight = await readLastNight(dayFor(nowMs), nowMs);
   const db = getAdminFirestore();
   const dayRef = db.collection(DAYS).doc(day.dayId);
   const [daySnap, playerSnap] = await Promise.all([
@@ -688,6 +761,7 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
     onListCount: onList.length,
     jackhofWinnerId: dayDoc?.jackhofWinnerId ?? null,
     winners: dayDoc?.winners,
+    lastNight,
   };
 }
 

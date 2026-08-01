@@ -73,6 +73,12 @@ interface State {
   survivorSlots: number;
   jackhofWinnerId?: string | null;
   winners?: string[];
+  lastNight?: {
+    dayId: string;
+    winnerId: string | null;
+    winnerName: string | null;
+    finalists: Array<{ userId: string; name: string; bananas: number }>;
+  } | null;
 }
 
 function useCountdown(target: number | null): string {
@@ -280,6 +286,104 @@ export function EliminatorBanner({
     return () => window.clearTimeout(t);
   }, [state?.nextBurnAt, phase]);
 
+  // ── OVERNIGHT (9pm close → 9am open) ──────────────────────────────────────
+  // Between the close and the next open we show last night's result plus the
+  // fact that the NEW list is already running. Deliberately NOT the live board:
+  // today's list is backfilled ahead of the open, and rendering it here is
+  // exactly the early leak the `pending` guard below exists to stop. Result +
+  // call to action only.
+  if (state?.lastNight && state.status === 'pending') {
+    const ln = state.lastNight;
+    return (
+      <div className="rounded-2xl border border-white/10 bg-[#12100e] overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-white/10">
+          <span className="text-sm font-black tracking-tight text-white">THE ELIMINATOR</span>
+          <span className="ml-auto text-xs font-bold tracking-[0.18em] uppercase text-banana">
+            List is open
+          </span>
+        </div>
+        <div className="px-5 py-4">
+          {ln.winnerName && (
+            <div className="mb-4 rounded-xl border border-jackpot/50 bg-jackpot/[0.08] px-4 py-4 text-center">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-jackpot">
+                Last night&rsquo;s JackHOF seat
+              </p>
+              <p className="mt-1 text-xl font-black tracking-tight text-white">{ln.winnerName}</p>
+              <p className="mt-1 text-[11px] text-white/45">
+                The other 4 took 2 spins each.
+              </p>
+            </div>
+          )}
+          <div className="text-[11px] font-bold tracking-[0.18em] uppercase mb-2 text-white/35">
+            Last night&rsquo;s final 5
+          </div>
+          <div className="space-y-1.5 mb-4">
+            {ln.finalists.map((f) => (
+              <div
+                key={f.userId}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                  f.userId === ln.winnerId
+                    ? 'bg-jackpot/10 border border-jackpot/40'
+                    : 'bg-white/[0.03]'
+                }`}
+              >
+                <span className="font-semibold text-white truncate">{f.name}</span>
+                {f.userId === ln.winnerId && (
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-jackpot">
+                    Seat
+                  </span>
+                )}
+                <span className="ml-auto tabular-nums text-white/50">{f.bananas} 🍌</span>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-banana/30 bg-banana/[0.06] px-4 py-3 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-banana">
+              Tonight&rsquo;s list is already running
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              Draft now — it counts toward the 9am list.
+            </p>
+            <p className="mt-0.5 text-[11px] text-white/45">
+              No need to wait for 9am. Every Banana you earn between now and then is
+              already banked, and burns start at 10am.
+            </p>
+          </div>
+
+          {/* The NEW list, live. Everyone starts at 0 — whoever drafts overnight
+              is simply already on it when the first burn comes round at 10am. */}
+          <div className="mt-4 text-[11px] font-bold tracking-[0.18em] uppercase mb-2 text-white/35">
+            Tonight&rsquo;s list
+            {state.all.length > 0 && (
+              <span className="ml-2 text-white/25">{state.all.length} on it</span>
+            )}
+          </div>
+          {state.all.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-white/10 px-4 py-4 text-center">
+              <p className="text-sm font-semibold text-white/70">Nobody on it yet.</p>
+              <p className="mt-0.5 text-[11px] text-white/40">
+                Enter a draft and you&rsquo;re first on the board.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {state.all.slice(0, 5).map((r, i) => (
+                <div
+                  key={r.userId}
+                  className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-sm"
+                >
+                  <span className="w-4 tabular-nums text-white/30">{i + 1}</span>
+                  <span className="font-semibold text-white truncate">{r.name}</span>
+                  <span className="ml-auto tabular-nums text-white/50">{r.bananas} 🍌</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Self-hide until somebody is actually on the list, so it never renders an
   // empty board — including before launch, while the cron is held.
   if (!state || (state.onListCount === 0 && state.status !== 'closed')) return null;
@@ -379,7 +483,24 @@ export function EliminatorBanner({
               {state.survivors.find((r) => r.userId === state.jackhofWinnerId)?.name ?? 'Winner'}
             </p>
             <p className="mt-1 text-[11px] text-white/45">
-              The other 4 take 2 spins each. Back at 9am.
+              The other 4 take 2 spins each.
+            </p>
+          </div>
+        )}
+        {/* The list is ALREADY open — Bananas earned after the 9pm close bank
+            straight onto tomorrow's list (dayIdFor rolls at 9pm). Without
+            saying so the closed board reads as "come back at 9am", and the
+            whole overnight window of drafting gets left on the table. */}
+        {closed && (
+          <div className="mb-4 rounded-xl border border-banana/30 bg-banana/[0.06] px-4 py-3 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-banana">
+              Tomorrow&rsquo;s list is already open
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              Draft now — it counts toward the 9am list.
+            </p>
+            <p className="mt-0.5 text-[11px] text-white/45">
+              No need to wait. Every Banana you earn tonight is already banked for tomorrow.
             </p>
           </div>
         )}
