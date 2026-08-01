@@ -20,7 +20,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getSealedDrawSeed, type SealedDrawSeed } from '@/lib/jackpotDrawProof';
 import {
-  bananasForSource, dayFor, dayFromId, dueBurns, pickSurvivors, pickJackhofWinner, survivalOdds,
+  bananasForSource, dayFor, dayFromId, prevDayId, dueBurns, pickSurvivors, pickJackhofWinner, survivalOdds,
   BANANAS_SURVIVE_HOUR, SURVIVORS_PER_BURN,
   type EliminatorSource, type EliminatorDay, type ListPlayer,
 } from '@/lib/eliminatorMath';
@@ -487,6 +487,29 @@ async function resolveNames(userIds: string[]): Promise<Record<string, string>> 
 }
 
 /**
+ * The day the BOARD shows — which is NOT always the day credits land in.
+ *
+ * dayIdFor rolls at 9pm sharp so a draft entered at 9:30pm banks toward
+ * tomorrow. Correct for crediting, wrong for display: it means the instant the
+ * seat is won the board flips to an empty list and the payoff — the final 5 and
+ * the winner — is never shown to anyone. Worse, EliminatorBanner bails on an
+ * empty non-closed day, so the promo just vanishes off the page all night.
+ *
+ * So during the gap between the close and the next open (9pm → 9am) we keep
+ * serving the finished day. The banner already renders that state fully. Once
+ * the new list opens at 9am, it takes over.
+ */
+async function displayDay(nowMs: number): Promise<EliminatorDay> {
+  const today = dayFor(nowMs);
+  if (nowMs >= today.opensAt || !isFirestoreConfigured()) return today;
+  const prev = dayFromId(prevDayId(today.dayId));
+  const snap = await getAdminFirestore().collection(DAYS).doc(prev.dayId).get();
+  // Only a genuinely finished day is worth holding up. An unclosed one would
+  // park the board on a stale in-progress list.
+  return (snap.data() as DayDoc | undefined)?.status === 'closed' ? prev : today;
+}
+
+/**
  * Everything the leaderboard needs in one read: the survivors, the two rows
  * below the cut (what makes a holder sweat and a challenger push), and the
  * viewer's own row with the exact gap to a seat.
@@ -519,7 +542,7 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
   jackhofWinnerId?: string | null;
   winners?: string[];
 }> {
-  const day = dayFor(nowMs);
+  const day = await displayDay(nowMs);
   const base = {
     dayId: day.dayId,
     opensAt: day.opensAt,
