@@ -396,6 +396,13 @@ export function EliminatorBanner({
 
   const urgent = state.nextBurnAt !== null && state.nextBurnAt - Date.now() < 60_000;
   const closed = state.status === 'closed';
+  // BEFORE THE FIRST BURN there is no cut and there are no survivors yet.
+  // Splitting the board at slot 5 here is wrong twice over: it reads as though
+  // a burn has already happened (Boris 2026-08-01, board showed 5 above a CUT
+  // LINE at 9am with burnIndex -1), and it tells the top 5 they're safe when
+  // survival is a WEIGHTED DRAW, not top-5-by-Bananas — the odds column is the
+  // honest version of that. One flat ranked list until burn 0 lands.
+  const preBurn = !closed && state.burnIndex < 0;
 
   return (
     <div
@@ -536,21 +543,32 @@ export function EliminatorBanner({
           <ul className="space-y-1.5 max-h-[26rem] overflow-y-auto pr-1">
             {state.all.map((r, i) => (
               <li key={r.userId}>
-                {i === state.survivorSlots && !closed && (
+                {i === state.survivorSlots && !closed && !preBurn && (
                   <div className="flex items-center gap-3 my-3">
                     <div className="h-px flex-1 bg-white/[0.08]" />
                     <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/25">
-                      {state.burnIndex >= 0 ? 'challengers' : 'cut line'}
+                      challengers
                     </span>
                     <div className="h-px flex-1 bg-white/[0.08]" />
                   </div>
                 )}
                 <LeaderRow
                   row={r}
-                  dim={i >= state.survivorSlots}
+                  dim={!preBurn && i >= state.survivorSlots}
                   isYou={!!myWallet && r.userId === myWallet.toLowerCase()}
                   isWinner={closed && r.userId === state.jackhofWinnerId}
                 />
+              </li>
+            ))}
+          </ul>
+        ) : preBurn ? (
+          /* No cut, no survivors, no dimming — just the list as it stands.
+             Same row count the split view showed (5 + 2) so the card doesn't
+             jump in height when the first burn draws the cut line. */
+          <ul className="space-y-1.5">
+            {state.all.slice(0, state.survivorSlots + 2).map((r) => (
+              <li key={r.userId}>
+                <LeaderRow row={r} isYou={!!myWallet && r.userId === myWallet.toLowerCase()} />
               </li>
             ))}
           </ul>
