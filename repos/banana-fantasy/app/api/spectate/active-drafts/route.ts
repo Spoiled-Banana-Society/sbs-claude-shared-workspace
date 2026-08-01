@@ -78,45 +78,38 @@ export async function GET(req: Request) {
     if (!isFirestoreConfigured()) throw new ApiError(503, 'Firestore not configured');
 
     const db = getAdminFirestore();
-    const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
-    const filled = Number(
-      (trackerSnap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0,
-    );
-    // NOTE: do NOT early-return when filled<=0. After a clean-slate reset the
-    // very first draft is slot 0 and can be FILLING before anything completes —
-    // that's exactly a case we must still surface.
-
-    // Draft doc IDs look like "{year}-{fast|slow}-draft-{N}". A naive lookup
-    // misses the filling draft for two reasons, so we mirror the proven
-    // proof-feed route here instead of guessing:
-    //   1. The year prefix can't be derived from the calendar OR from an
-    //      orderBy('__name__') query (that needs a descending index the DB
-    //      doesn't have, so it silently fails) — try the last few season years.
-    //   2. The `draft-N` is a PER-SPEED slot counter that drifts from the global
-    //      FilledLeaguesCount (fast/slow have separate counters; special drafts
-    //      push it ahead) — scan a buffer ABOVE and below `filled`, not `+1`.
-    const currentYear = new Date().getUTCFullYear();
-    const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
     const apiBase = getServerDraftsApiUrl();
 
-    const SLOT_AHEAD = 15;
-    const candidates: { id: string; speed: 'fast' | 'slow'; num: number }[] = [];
-    for (const speed of SPEEDS) {
-      // FAST drafts cluster around the high FilledLeaguesCount, so a window
-      // around `filled` catches the recent ones cheaply. SLOW (and wheel/special)
-      // drafts use their OWN low counters and live at small slot numbers (0,1,2,3…),
-      // so they must be probed from slot 0 — otherwise a growing FilledLeaguesCount
-      // pushes the floor (`filled - PROBE_DEPTH`) above them and they vanish from
-      // Spectate (exactly what happened: slow slots 0/1 dropped off once
-      // FilledLeaguesCount passed 30). Slow drafts are sparse, so probing from 0 is
-      // cheap. Admin-display only — no draft logic / user impact.
-      const floor = speed === 'slow' ? 0 : Math.max(0, filled - PROBE_DEPTH);
-      for (let num = filled + SLOT_AHEAD; num >= floor; num--) {
-        for (const year of yearPrefixes) {
-          candidates.push({ id: `${year}-${speed}-draft-${num}`, speed, num });
-        }
-      }
-    }
+    // ⚠️ ENUMERATE the real draft doc IDs. Do NOT reconstruct them.
+    //
+    // This route used to rebuild "{year}-{speed}-draft-{N}" and probe a window
+    // around draftTracker.FilledLeaguesCount. That window is a trap, and it
+    // sprang twice:
+    //   • the YEAR can't be derived from the calendar (season years lag, and an
+    //     orderBy('__name__') lookup needs a descending index the DB lacks, so
+    //     it silently threw and fell back to a hardcoded year);
+    //   • `draft-N` is a PER-SPEED slot counter while FilledLeaguesCount is
+    //     GLOBAL, so the two drift apart by however many slow + special drafts
+    //     have run. On 2026-08-01 global was 394 while the live fast draft sat
+    //     at slot 363 — a gap of 31 against a probe depth of 30. The running
+    //     draft fell one slot below the floor and Spectate showed nothing.
+    // Any fixed depth is just a countdown to the next time that drift wins.
+    //
+    // listDocuments() returns document NAMES only — no document reads — so
+    // enumerating the collection is cheap and, unlike the probe, cannot drift.
+    const refs = await db.collection('drafts').listDocuments();
+    const parsed = refs
+      .map((r) => /^(\d{4})-(fast|slow)-draft-(\d+)$/.exec(r.id))
+      .filter((mm): mm is RegExpExecArray => mm !== null)
+      .map((mm) => ({ id: mm[0], speed: mm[2] as 'fast' | 'slow', num: Number(mm[3]) }));
+
+    // Highest slot first, per speed — anything in progress is at the top. Slow
+    // and fast keep separate counters, so they're ranked separately rather than
+    // against each other.
+    const candidates = SPEEDS.flatMap((speed) => parsed
+      .filter((p) => p.speed === speed)
+      .sort((a, b) => b.num - a.num)
+      .slice(0, PROBE_DEPTH));
 
     // Step 1 — read every candidate doc (cheap, batched). The vast majority of
     // candidate IDs (wrong year / non-existent slot) simply don't exist; only
