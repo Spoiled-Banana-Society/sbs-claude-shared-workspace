@@ -108,6 +108,8 @@ export async function awardPacksForFill(opts: {
   draftId: string;
   passType: 'free' | 'paid';
   nowMs?: number;
+  /** Fire the "you earned N packs" bell. LIVE fills only — backfills must not. */
+  notify?: boolean;
 }): Promise<{ awarded: number; nightId: string }> {
   const userId = opts.userId.toLowerCase();
   const nowMs = opts.nowMs ?? Date.now();
@@ -166,7 +168,49 @@ export async function awardPacksForFill(opts: {
     logger.error('drop.award.failed', { userId, draftId: opts.draftId, err: msg });
     return { awarded: 0, nightId: night.nightId };
   }
+
+  // Ping the bell the moment the pack is earned (Richard, 2026-08-02). Only on
+  // the LIVE fill path — the backfill passes notify:false, because replaying a
+  // day of fills would fire one bell per historical draft.
+  //
+  // Deliberately OUTSIDE the transaction: a notification failure must never
+  // roll back an award. Never awaited by the caller's critical path either.
+  if (opts.notify) {
+    void writePackEarnedNoti(userId, night.nightId, count).catch((err) => {
+      logger.error('drop.noti.failed', { userId, err: (err as Error).message });
+    });
+  }
+
   return { awarded: count, nightId: night.nightId };
+}
+
+/**
+ * "You earned N packs" bell, written per fill.
+ *
+ * Doc id includes the draft count so each fill lights the bell again rather
+ * than silently editing one rolling row — the ping IS the point. The message
+ * carries the running total so a player never has to add them up.
+ */
+async function writePackEarnedNoti(userId: string, nightId: string, earned: number): Promise<void> {
+  const db = getAdminFirestore();
+  const total = (await db.collection(NIGHTS).doc(nightId).collection(PACKS)
+    .where('userId', '==', userId).count().get()).data().count;
+
+  const docId = `${userId}__drop-earned-${nightId}-${total}`
+    .replace(/[/\\\s]+/g, '_').slice(0, 1400);
+  await db.collection('marketplace_notifications').doc(docId).create({
+    wallet: userId,
+    type: 'promo',
+    icon: '🌙',
+    title: `🌙 +${earned} pack${earned === 1 ? '' : 's'} — draft filled`,
+    message: `Your draft filled and earned ${earned} sealed pack${earned === 1 ? '' : 's'}. You now hold ${total} for tonight's Drop. They open at 8:00 PM PT — 1 JackHOF seat, 1 HOF seat and 15 free spins go out every night. Tap to see your stack.`,
+    link: '/drop',
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  }).catch((err: { code?: number }) => {
+    if (err?.code === 6) return; // already exists — a retried webhook, not an error
+    throw err;
+  });
 }
 
 /**
