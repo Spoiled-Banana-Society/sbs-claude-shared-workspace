@@ -31,6 +31,9 @@ interface DropState {
   saltHash?: string;
   seedDigest?: string;
   you: { sealed: number; opened: number; packIds: string[] } | null;
+  /** Present only between 8pm and midnight — the night you're earning into
+   *  while the one above is still being opened. */
+  next: { nightId: string; locksAt: number; sealed: number } | null;
 }
 
 interface OpenResult {
@@ -160,7 +163,11 @@ export default function DropPage() {
           </>
         ) : (
           <p className="mt-3 text-white/50">
-            {sealed > 0 ? 'Your packs are ready.' : 'All opened. Back tomorrow.'}
+            {sealed > 0
+              ? 'Your packs are ready.'
+              : state?.next
+                ? 'All opened — keep filling drafts and your next stack rips tomorrow at 8:00 PM PT.'
+                : 'All opened. Back tomorrow.'}
           </p>
         )}
 
@@ -179,6 +186,19 @@ export default function DropPage() {
             </span>{' '}
             holds the JackHOF seat
           </p>
+        )}
+
+        {/* After 8pm the earning night has rolled forward — a draft that fills
+            now banks packs for TOMORROW. Show them, or they're invisible until
+            the next day (Richard 2026-08-02). */}
+        {state?.next && (
+          <div className="mt-6 inline-flex items-center gap-3 rounded-xl border border-banana/25 bg-banana/[0.06] px-5 py-3">
+            <span className="text-2xl font-black tabular-nums text-banana">{state.next.sealed}</span>
+            <span className="text-left text-[12px] leading-tight text-white/55">
+              {state.next.sealed === 1 ? 'pack' : 'packs'} banked for<br />
+              <span className="font-semibold text-white/75">tomorrow&rsquo;s drop</span>
+            </span>
+          </div>
         )}
       </div>
 

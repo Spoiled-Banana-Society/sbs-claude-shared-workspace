@@ -18,7 +18,8 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getSealedDrawSeed, type SealedDrawSeed } from '@/lib/jackpotDrawProof';
 import {
-  assignPrizes, nightFor, nightFromId, packsForFill, seatOddsPerPack,
+  assignPrizes, nightFor, nightFromId, nightIdFor, revealNightIdFor,
+  packsForFill, seatOddsPerPack,
   NIGHTLY_POOL, TOTAL_SPINS_PER_NIGHT,
   type Prize, type PackRef,
 } from '@/lib/dropMath';
@@ -367,8 +368,13 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
   periodNumber?: number;
   seedDigest?: string;
   you: { sealed: number; opened: number; packIds: string[] } | null;
+  /** Set only between 8pm and midnight: the night you're now EARNING into,
+   *  while the night above is the one you're still opening. */
+  next: { nightId: string; locksAt: number; sealed: number } | null;
 }> {
-  const night = nightFor(nowMs);
+  // The night being REVEALED, not the one being earned into. After 8pm those
+  // diverge, and using the earning night here would hide tonight's packs.
+  const night = nightFromId(revealNightIdFor(nowMs));
   const base = {
     nightId: night.nightId,
     locksAt: night.locksAt,
@@ -379,6 +385,7 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     totalSpins: TOTAL_SPINS_PER_NIGHT,
     poolSize: NIGHTLY_POOL.length,
     you: null,
+    next: null,
   };
   if (!isFirestoreConfigured()) return base;
 
@@ -403,6 +410,22 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     };
   }
 
+  // Between 8pm and midnight the earning night has already rolled forward, so
+  // a draft that fills at 8:30pm is banking packs for TOMORROW. Surface that
+  // count too, or those packs are invisible until the next day (Richard,
+  // 2026-08-02: "we need them to see there passes ... for tommorows drawing").
+  let next: { nightId: string; locksAt: number; sealed: number } | null = null;
+  const earningId = nightIdFor(nowMs);
+  if (earningId !== night.nightId) {
+    const nextNight = nightFromId(earningId);
+    let sealed = 0;
+    if (userId) {
+      sealed = (await db.collection(NIGHTS).doc(earningId).collection(PACKS)
+        .where('userId', '==', userId.toLowerCase()).count().get()).data().count;
+    }
+    next = { nightId: earningId, locksAt: nextNight.locksAt, sealed };
+  }
+
   return {
     ...base,
     status: doc?.status ?? 'earning',
@@ -412,6 +435,7 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     periodNumber: doc?.periodNumber,
     seedDigest: doc?.seedDigest,
     you,
+    next,
   };
 }
 

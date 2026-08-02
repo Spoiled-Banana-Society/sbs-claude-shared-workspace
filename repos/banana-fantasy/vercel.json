@@ -23,6 +23,18 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/crons/banana-draw",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/crons/eliminator",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/crons/drop",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/admin/daily-digest",
       "schedule": "0 13 * * *"
     },
@@ -57,6 +69,14 @@
     {
       "path": "/api/crons/link-wheel-teams",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/crons/deposit-credit-sweep",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/crons/reconcile-special-seats",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
