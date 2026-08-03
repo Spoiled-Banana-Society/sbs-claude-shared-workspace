@@ -24,6 +24,7 @@ import crypto from 'node:crypto';
 import {
   PACKS_PAID_FILL, PACKS_FREE_FILL, packsForFill,
   DROP_HOUR_PT, AUTO_OPEN_HOUR_PT, ptHourUtc,
+  msUntilOpen, formatOpenCountdown,
   nightIdFor, nightFromId, nightFor, revealNightIdFor, NIGHTLY_PRIZES,
   type DropNight,
 } from '@/lib/dropRates';
@@ -31,6 +32,7 @@ import {
 export {
   PACKS_PAID_FILL, PACKS_FREE_FILL, packsForFill,
   DROP_HOUR_PT, AUTO_OPEN_HOUR_PT, ptHourUtc,
+  msUntilOpen, formatOpenCountdown,
   nightIdFor, nightFromId, nightFor, revealNightIdFor,
 };
 export type { DropNight };

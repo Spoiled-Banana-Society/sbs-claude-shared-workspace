@@ -115,7 +115,31 @@ export function msUntilDrop(nowMs = Date.now()): number {
   return Math.max(0, nightFor(nowMs).locksAt - nowMs);
 }
 
+/**
+ * Milliseconds until the pack room OPENS — 0 from 8pm until midnight.
+ *
+ * ⚠️ Use this for anything a player LOOKS at, not msUntilDrop(). msUntilDrop is
+ * built on nightFor(), which rolls forward at 8pm — so at 8:00:00 it returns
+ * ~24h and a countdown built on it jumps from 0:00:01 straight to 23:59:59 at
+ * the exact moment the drop is supposed to be happening (Richard caught this
+ * 2026-08-02: "your gonna reset the clock at 8:00:00 starting to cowndown 24
+ * hours?"). Keyed to the REVEAL night instead, this correctly reads 0 through
+ * the whole open window and only starts counting again after midnight.
+ */
+export function msUntilOpen(nowMs = Date.now()): number {
+  return Math.max(0, nightFromId(revealNightIdFor(nowMs)).locksAt - nowMs);
+}
+
 /** "3:42:07" — the countdown as shown on the promo card. */
+export function formatOpenCountdown(nowMs = Date.now()): string {
+  const ms = msUntilOpen(nowMs);
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** Countdown to the next EARNING deadline. Rolls at 8pm — server-side use. */
 export function formatDropCountdown(nowMs = Date.now()): string {
   const ms = msUntilDrop(nowMs);
   const h = Math.floor(ms / 3_600_000);
