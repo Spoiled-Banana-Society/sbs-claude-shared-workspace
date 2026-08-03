@@ -21,6 +21,7 @@ import {
   assignPrizes, nightFor, nightFromId, nightIdFor, revealNightIdFor,
   packsForFill, seatOddsPerPack,
   NIGHTLY_POOL, TOTAL_SPINS_PER_NIGHT,
+  poolForNight, totalSpinsForNight,
   type Prize, type PackRef,
 } from '@/lib/dropMath';
 
@@ -60,6 +61,9 @@ export interface NightDoc {
   /** Who got the seat. Set at lock — the whole night is decided then. */
   jackhofPackId?: string | null;
   jackhofUserId?: string | null;
+  /** Set only on nights whose override pool includes a plain Jackpot seat. */
+  jackpotPackId?: string | null;
+  jackpotUserId?: string | null;
 }
 
 const strip0x = (h: string) => (h.startsWith('0x') ? h.slice(2) : h);
@@ -252,6 +256,7 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
 
   const assignments = assignPrizes(refs, seedHex, nightId);
   const jackhof = assignments.find((a) => a.prize.kind === 'jackhof') ?? null;
+  const jackpot = assignments.find((a) => a.prize.kind === 'jackpot') ?? null;
 
   // Claim the lock first, so two simultaneous callers can't both assign.
   try {
@@ -265,6 +270,8 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
         packCount: refs.length,
         jackhofPackId: jackhof?.packId ?? null,
         jackhofUserId: jackhof?.userId ?? null,
+        jackpotPackId: jackpot?.packId ?? null,
+        jackpotUserId: jackpot?.userId ?? null,
       }, { merge: true });
     });
   } catch (err) {
@@ -289,7 +296,9 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
 
   logger.info('drop.night.locked', {
     nightId, packCount: refs.length,
-    jackhofUserId: jackhof?.userId ?? null, spins: TOTAL_SPINS_PER_NIGHT,
+    jackhofUserId: jackhof?.userId ?? null,
+    jackpotUserId: jackpot?.userId ?? null,
+    spins: totalSpinsForNight(nightId),
   });
   return { ok: true, packCount: refs.length, jackhofUserId: jackhof?.userId ?? null };
 }
@@ -382,8 +391,8 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     status: 'earning' as const,
     packCount: 0,
     seatOdds: 0,
-    totalSpins: TOTAL_SPINS_PER_NIGHT,
-    poolSize: NIGHTLY_POOL.length,
+    totalSpins: totalSpinsForNight(night.nightId),
+    poolSize: poolForNight(night.nightId).length,
     you: null,
     next: null,
   };

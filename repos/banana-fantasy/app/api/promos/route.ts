@@ -85,6 +85,17 @@ export async function GET(req: Request) {
       }
     } catch { /* live stats are decoration — promos still return */ }
 
+    // THE DROP: rebuild the modal's prize copy from tonight's ACTUAL pool.
+    // Per-user promo docs are seeded snapshots, so a one-night pool boost
+    // (NIGHT_PRIZE_OVERRIDES) would otherwise show yesterday's list.
+    try {
+      const drop = promos.find((p) => p.type === 'drop');
+      if (drop) {
+        const { dropExplanationFor, revealNightIdFor } = await import('@/lib/dropRates');
+        drop.modalContent.explanation = dropExplanationFor(revealNightIdFor(Date.now()));
+      }
+    } catch { /* copy refresh is decoration — promos still return */ }
+
     // Jackpot promo: live cycle position + latest draw. Position comes from
     // getJackpotCycleState → computeJpCycle, the SAME math awardJackpotDraw
     // credits with. It used to do its own `(filled - 1) % 100`, which ignored

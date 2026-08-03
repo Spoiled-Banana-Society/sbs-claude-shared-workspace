@@ -28,7 +28,7 @@
  * count is a meaningful result, not a null one.
  */
 
-import { clientLog } from '@/lib/clientLog';
+import { clientLog, deviceTag } from '@/lib/clientLog';
 
 const SAMPLE_MS = 60_000;
 const LAST_KEY = 'sbs-mem-last';
@@ -47,6 +47,28 @@ interface MemSample {
   /** <audio>/<video> elements — each one pins a decoded buffer. */
   media: number;
   path: string;
+  /**
+   * How many sbsfantasy tabs are alive on this device right now (including
+   * this one). Same-origin tabs often SHARE one renderer process, and
+   * `performance.memory` reports the whole process — so a tab can boot
+   * "already at 1.2 GB" that other tabs allocated. Without this count a
+   * process-wide number is indistinguishable from a single-page leak; it was
+   * exactly that ambiguity that stalled the Aw-Snap hunt. Counted via a
+   * localStorage heartbeat (each tab stamps its id every sample tick; stamps
+   * older than 3 min are pruned, so discarded/frozen tabs — which have
+   * released their memory anyway — drop out).
+   */
+  tabs: number;
+  /** "desk" | "mob" | "desk-pwa" | "mob-pwa" — see clientLog.deviceTag(). */
+  dev: string;
+  /**
+   * Engine family. `heap: 0` means the browser doesn't expose
+   * `performance.memory`, which is TRUE OF EVERY iOS BROWSER — Chrome on iOS
+   * is WebKit underneath and still shows Chrome's "Aw, Snap!" page. Without
+   * this field a heap-0 sample is unattributable, and we can't tell a desktop
+   * Firefox user from an iPhone that iOS is evicting under memory pressure.
+   */
+  eng: string;
   /** Wall-clock ms, so a resumed sample can be aged. */
   at: number;
 }
@@ -58,6 +80,55 @@ interface PerfMemory {
 
 const mb = (n: number | undefined) => Math.round((n ?? 0) / 1048576);
 
+const CENSUS_KEY = 'sbs-tab-census';
+const CENSUS_STALE_MS = 3 * 60_000;
+// Random enough for a per-tab id; collisions across a handful of tabs are
+// vanishingly unlikely and would only undercount by one.
+const tabId = Math.random().toString(36).slice(2, 10);
+
+/**
+ * Stamp this tab's heartbeat into the shared per-origin census and return how
+ * many tabs are currently alive. Background tabs' 60s timers are throttled to
+ * ~1/min, well inside the 3-min staleness window, so they stay counted;
+ * tabs Chrome has discarded stop stamping and age out — correctly, since a
+ * discarded tab has given its memory back.
+ */
+function censusCount(): number {
+  try {
+    const now = Date.now();
+    const raw = window.localStorage.getItem(CENSUS_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    map[tabId] = now;
+    for (const [id, ts] of Object.entries(map)) {
+      if (typeof ts !== 'number' || now - ts > CENSUS_STALE_MS) delete map[id];
+    }
+    window.localStorage.setItem(CENSUS_KEY, JSON.stringify(map));
+    return Object.keys(map).length;
+  } catch {
+    return 0; // private mode / storage blocked — 0 = "unknown", never "one"
+  }
+}
+
+/**
+ * Coarse engine id. Order matters: every iOS browser is WebKit, so the iOS
+ * check has to come BEFORE the Chrome/Firefox brand checks or an iPhone
+ * running Chrome reports as Chrome and we misread its missing heap number as
+ * a desktop anomaly.
+ */
+function engine(): string {
+  if (typeof navigator === 'undefined') return 'ssr';
+  const ua = navigator.userAgent || '';
+  if (/iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+    return /CriOS/.test(ua) ? 'ios-chrome' : /FxiOS/.test(ua) ? 'ios-firefox' : 'ios-safari';
+  }
+  if (/Edg\//.test(ua)) return 'edge';
+  if (/OPR\//.test(ua)) return 'opera';
+  if (/Firefox\//.test(ua)) return 'firefox';
+  if (/Chrome\//.test(ua)) return /Android/.test(ua) ? 'android-chrome' : 'chrome';
+  if (/Safari\//.test(ua)) return 'safari';
+  return 'other';
+}
+
 function take(startedAt: number): MemSample {
   const perf = performance as Performance & { memory?: PerfMemory };
   return {
@@ -68,6 +139,9 @@ function take(startedAt: number): MemSample {
     imgs: document.images.length,
     media: document.querySelectorAll('audio,video').length,
     path: window.location.pathname,
+    tabs: censusCount(),
+    dev: deviceTag(),
+    eng: engine(),
     at: Date.now(),
   };
 }
@@ -105,6 +179,9 @@ export function startMemoryWatch(): void {
         lastImgs: prev.imgs,
         lastMedia: prev.media,
         lastPath: prev.path,
+        lastTabs: prev.tabs ?? -1,
+        lastDev: prev.dev ?? '?',
+        lastEng: prev.eng ?? '?',
         // Gap between its last heartbeat and this boot. A short gap after a
         // big heap = it died right there.
         gapSec: Math.round((Date.now() - prev.at) / 1000),

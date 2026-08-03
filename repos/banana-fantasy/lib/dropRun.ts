@@ -29,12 +29,13 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
  */
 export async function settlePrizes(
   userId: string, nightId: string, opened: OpenedPack[],
-): Promise<{ spins: number; seat: boolean; hofSeat: boolean }> {
+): Promise<{ spins: number; seat: boolean; hofSeat: boolean; jackpotSeat: boolean }> {
   const db = getAdminFirestore();
   const uid = userId.toLowerCase();
   const spins = opened.reduce((s, o) => s + (o.prize.kind === 'spins' ? (o.prize.spins ?? 0) : 0), 0);
   const seat = opened.some((o) => o.prize.kind === 'jackhof');
   const hofSeat = opened.some((o) => o.prize.kind === 'hof');
+  const jackpotSeat = opened.some((o) => o.prize.kind === 'jackpot');
 
   if (spins > 0) {
     // wheelSpins is the promo-spin counter the wheel already consumes — the
@@ -77,16 +78,29 @@ export async function settlePrizes(
     logger.info('drop.hof.awarded', { nightId, userId: uid });
   }
 
-  return { spins, seat, hofSeat };
+  if (jackpotSeat) {
+    await awardSpecialSeat(uid, nightId, 'jackpot');
+    await createNotification(uid, {
+      type: 'promo',
+      title: 'JACKPOT SEAT',
+      message: 'Your pack had a Jackpot seat in it. Tap to take your place.',
+      link: '/promos?promo=drop',
+      dedupeKey: `drop-jackpot-${nightId}`,
+      icon: 'award',
+    }).catch(() => { /* best-effort */ });
+    logger.info('drop.jackpot.awarded', { nightId, userId: uid });
+  }
+
+  return { spins, seat, hofSeat, jackpotSeat };
 }
 
 /** Open packs and pay them out in one call. Used by every open path. */
 export async function openAndSettle(opts: {
   userId: string; nightId: string; packIds?: string[]; auto?: boolean;
-}): Promise<{ ok: boolean; reason?: string; opened: OpenedPack[]; spins: number; seat: boolean; hofSeat: boolean }> {
+}): Promise<{ ok: boolean; reason?: string; opened: OpenedPack[]; spins: number; seat: boolean; hofSeat: boolean; jackpotSeat: boolean }> {
   const res = await openPacks(opts);
   if (!res.ok || res.opened.length === 0) {
-    return { ...res, spins: 0, seat: false, hofSeat: false };
+    return { ...res, spins: 0, seat: false, hofSeat: false, jackpotSeat: false };
   }
   const paid = await settlePrizes(opts.userId, opts.nightId, res.opened);
   return { ...res, ...paid };
@@ -223,7 +237,7 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
  * joinQueue for them.
  */
 async function awardSpecialSeat(
-  winnerId: string, nightId: string, type: 'jackhof' | 'hof',
+  winnerId: string, nightId: string, type: 'jackpot' | 'jackhof' | 'hof',
 ): Promise<void> {
   const db = getAdminFirestore();
   let seated = false;
@@ -246,7 +260,7 @@ async function awardSpecialSeat(
       await Promise.all(res.tokenIds.map((tid) => db
         .collection('owners').doc(winnerId.toLowerCase())
         .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: type === 'jackhof' ? 'JackHOF' : 'HOF' }, { merge: true })));
+        .set({ Level: type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'HOF' }, { merge: true })));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {
@@ -272,7 +286,10 @@ async function awardSpecialSeat(
   if (!seated) {
     try {
       await db.collection('v2_users').doc(winnerId)
-        .set({ [type === 'jackhof' ? 'jackhofEntries' : 'hofEntries']: FieldValue.increment(1) }, { merge: true });
+        .set({
+          [type === 'jackhof' ? 'jackhofEntries' : type === 'jackpot' ? 'jackpotEntries' : 'hofEntries']:
+            FieldValue.increment(1),
+        }, { merge: true });
       const { joinQueue } = await import('@/lib/db');
       const { joinedRoundIds } = await joinQueue(winnerId, type, 'promo');
       const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');

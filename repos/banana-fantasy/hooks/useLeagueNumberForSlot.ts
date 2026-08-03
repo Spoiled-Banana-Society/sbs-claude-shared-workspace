@@ -17,6 +17,28 @@ const listenersBySlot = new Map<string, Set<() => void>>();
 // component mounts for the same slot don't each spin up their own loop.
 const retryInFlight = new Set<string>();
 
+/**
+ * Give up after this many failed REST attempts. With the backoff below
+ * (500ms → 1s → 2s → 4s cap) that is ~20s of trying, which is far longer than
+ * the Firestore write race this fallback exists to cover.
+ *
+ * There used to be NO cap, and that was a genuine defect: a slot whose
+ * league-number 404s PERMANENTLY (old-season rows like `2025-slow-draft-7`
+ * still sitting in someone's localStorage) retried every 4s forever, for the
+ * whole life of the tab. Measured 2026-08-03: one client reached
+ * **attempt 10,183** — ~11 hours of continuous polling for a value that was
+ * never coming — and this single loop was **6.4% of ALL client logging on the
+ * site** across 11 dead slots. Same family as the render-loop self-DDoS in
+ * Rule #0: an unbounded retry against our own API.
+ */
+const MAX_REST_ATTEMPTS = 8;
+
+// Slots we've already given up on, so a remount doesn't restart the loop from
+// zero and re-create the exact problem. Module-level: survives unmount, dies
+// with the tab. A real league number can still arrive at any time via the RTDB
+// push path (setLeagueNumberInCache), which is the primary path anyway.
+const restExhausted = new Set<string>();
+
 function notify(slotId: string) {
   const set = listenersBySlot.get(slotId);
   if (set) for (const cb of set) cb();
@@ -122,6 +144,10 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
     // it populate the cache, our pub/sub from the OTHER useEffect above
     // will catch the update.
     if (retryInFlight.has(slotId)) return;
+    // We already exhausted REST for this slot in this tab. Don't restart the
+    // loop on every remount — that turns a bounded retry back into a forever
+    // one. The RTDB push path still covers us if the value ever appears.
+    if (restExhausted.has(slotId)) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -171,8 +197,18 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
 
       // Schedule next retry with exponential backoff, capped at 4s.
       if (cancelled) { retryInFlight.delete(slotId); return; }
+      // Compute the delay from the CURRENT attempt before incrementing, so the
+      // backoff sequence (500ms, 1s, 2s, 4s, 4s…) is unchanged from before.
       const delay = Math.min(4000, 500 * Math.pow(2, attempt));
       attempt += 1;
+      // Out of attempts — stop for good. A permanently-404ing slot must not
+      // poll our API for the lifetime of the tab (see MAX_REST_ATTEMPTS).
+      if (attempt >= MAX_REST_ATTEMPTS) {
+        restExhausted.add(slotId);
+        retryInFlight.delete(slotId);
+        clientLog('league#', 'rest.giveup', { slotId, attempts: attempt });
+        return;
+      }
       retryTimer = setTimeout(() => { void tryFetch(); }, delay);
     };
     void tryFetch();

@@ -24,6 +24,7 @@ import Image from 'next/image';
  */
 
 export type RevealPrize =
+  | { kind: 'jackpot' }
   | { kind: 'jackhof' }
   | { kind: 'hof' }
   | { kind: 'spins'; spins: number }
@@ -46,6 +47,7 @@ const TIER = {
   spins: { edge: '#22c55e', top: '#12351f' },
   hof: { edge: '#d4af37', top: '#3a2f10' },
   jackhof: { edge: '#ef6c37', top: '#3c1f0e' },
+  jackpot: { edge: '#ef4444', top: '#3c0e0e' },
 } as const;
 
 /**
@@ -137,7 +139,7 @@ export function DropPackReveal({
    */
   const stops = kind !== 'none';
   /** Gold and flame get the longer hold, the rays and the bigger sound. */
-  const big = kind === 'jackhof' || kind === 'hof';
+  const big = kind === 'jackhof' || kind === 'hof' || kind === 'jackpot';
 
   const clear = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
@@ -179,12 +181,14 @@ export function DropPackReveal({
 
   const torn = phase !== 'sealed';
   const label = kind === 'jackhof' ? 'JACKHOF SEAT'
-    : kind === 'hof' ? 'HOF SEAT'
-      : kind === 'spins' ? `${prize.spins} SPIN${prize.spins === 1 ? '' : 'S'}`
+    : kind === 'jackpot' ? 'JACKPOT SEAT'
+      : kind === 'hof' ? 'HOF SEAT'
+        : kind === 'spins' ? `${prize.spins} SPIN${prize.spins === 1 ? '' : 'S'}`
         : 'EMPTY';
   const meta = kind === 'jackhof' ? 'Seat in the JackHOF draft'
-    : kind === 'hof' ? 'Seat in the next HOF draft'
-      : kind === 'spins' ? 'Banana Wheel' : '';
+    : kind === 'jackpot' ? 'Seat in the next Jackpot draft'
+      : kind === 'hof' ? 'Seat in the next HOF draft'
+        : kind === 'spins' ? 'Banana Wheel' : '';
 
   return (
     <div

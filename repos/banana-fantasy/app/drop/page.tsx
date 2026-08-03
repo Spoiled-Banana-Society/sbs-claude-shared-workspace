@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { DropPackReveal, type RevealPrize } from '@/components/promos/DropPackReveal';
-import { NIGHTLY_PRIZES, WINNING_PACKS_PER_NIGHT, SPINS_PER_NIGHT } from '@/lib/dropRates';
+import { nightlyPrizesFor, winningPacksForNight, spinsForNight, revealNightIdFor } from '@/lib/dropRates';
 import { Modal } from '@/components/ui/Modal';
 
 /**
@@ -65,7 +65,7 @@ export default function DropPage() {
   const [opening, setOpening] = useState(false);
   const [queue, setQueue] = useState<OpenResult[]>([]);
   const [reveal, setReveal] = useState<OpenResult | null>(null);
-  const [haul, setHaul] = useState<{ spins: number; seat: boolean }>({ spins: 0, seat: false });
+  const [haul, setHaul] = useState<{ spins: number; seat: boolean; jackpotSeat: boolean }>({ spins: 0, seat: false, jackpotSeat: false });
   /** Open-all skips the hold-to-open — holding twenty times is a chore. */
   const [batch, setBatch] = useState(false);
   const [showHow, setShowHow] = useState(false);
@@ -102,9 +102,13 @@ export default function DropPage() {
       });
       if (!res.ok) return;
       const data = await res.json() as {
-        opened: OpenResult[]; spins: number; seat: boolean;
+        opened: OpenResult[]; spins: number; seat: boolean; jackpotSeat?: boolean;
       };
-      setHaul((h) => ({ spins: h.spins + data.spins, seat: h.seat || data.seat }));
+      setHaul((h) => ({
+        spins: h.spins + data.spins,
+        seat: h.seat || data.seat,
+        jackpotSeat: h.jackpotSeat || !!data.jackpotSeat,
+      }));
       setBatch(data.opened.length > 1);
       if (data.opened.length === 1) {
         setReveal(data.opened[0]);
@@ -243,13 +247,14 @@ export default function DropPage() {
         </div>
       )}
 
-      {(haul.spins > 0 || haul.seat) && (
+      {(haul.spins > 0 || haul.seat || haul.jackpotSeat) && (
         <div className="mt-10 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-center">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/40">
             Tonight&rsquo;s haul
           </p>
           <p className="mt-2 text-2xl font-black text-white">
             {haul.seat && <span className="text-jackpot">JACKHOF SEAT · </span>}
+            {haul.jackpotSeat && <span className="text-jackpot">JACKPOT SEAT · </span>}
             {haul.spins} spin{haul.spins === 1 ? '' : 's'}
           </p>
         </div>
@@ -273,10 +278,10 @@ export default function DropPage() {
         </div>
 
         <ul className="mt-4 space-y-2">
-          {NIGHTLY_PRIZES.map((p) => (
+          {nightlyPrizesFor(revealNightIdFor(Date.now())).map((p) => (
             <li key={p.label} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-4 py-2.5">
               <span className={`text-sm font-bold ${
-                p.kind === 'jackhof' ? 'text-jackpot'
+                p.kind === 'jackhof' || p.kind === 'jackpot' ? 'text-jackpot'
                   : p.kind === 'hof' ? 'text-hof' : 'text-white/85'}`}>
                 {p.label}
               </span>
@@ -288,7 +293,7 @@ export default function DropPage() {
         </ul>
 
         <p className="mt-3 text-center text-[12px] text-white/40">
-          {WINNING_PACKS_PER_NIGHT} packs win &middot; {SPINS_PER_NIGHT} spins total &middot; every other pack is empty
+          {winningPacksForNight(revealNightIdFor(Date.now()))} packs win &middot; {spinsForNight(revealNightIdFor(Date.now()))} spins total &middot; every other pack is empty
         </p>
 
       </div>
