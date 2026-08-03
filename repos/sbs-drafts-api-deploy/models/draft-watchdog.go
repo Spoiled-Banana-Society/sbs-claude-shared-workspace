@@ -65,6 +65,10 @@ type WatchdogDraftReport struct {
 	NextPick   int    `json:"nextPick,omitempty"`
 	NewDrafter string `json:"newDrafter,omitempty"`
 	DeadForSec int64  `json:"deadForSec,omitempty"`
+	// Healed marks a repair that had to resolve a summary/playerState SPLIT
+	// before it could advance. Surfaced so a self-heal is visible in the sweep
+	// report rather than looking like an ordinary repair.
+	Healed bool `json:"healed,omitempty"`
 }
 
 type WatchdogSweepReport struct {
@@ -272,10 +276,38 @@ func watchdogRepairDraft(draftId string, rt *RealTimeDraftInfo, deadFor int64, d
 	if picksMade > 0 {
 		last := summary.Summary[picksMade-1].PlayerInfo
 		if err := last.UpdatePlayerInDraft(draftId); err != nil {
-			row.Status = "error_reassert_playerstate"
-			row.Detail = err.Error()
-			logCriticalDraftError("watchdog_reassert_failed", draftId, picksMade, err)
-			return row
+			// A SPLIT pick, not a lost write: playerState names a different
+			// player for this slot than the summary does. Two auto-pick runs
+			// each won a different state doc (ProcessNewPick fans its three
+			// writes out concurrently), both aborted before advancing, and the
+			// re-assert above can never get past the slot guard — so without
+			// this the draft stays dead until somebody edits Firestore by hand
+			// (2026-08-01, 2026-fast-draft-364 pick 9, ~20 minutes down).
+			//
+			// Heal toward the SUMMARY: it is what every player already sees and
+			// what the rosters were built from. ForcePlayerStateToSummaryPick
+			// refuses if the impostor is on anyone's roster, so a genuine pick
+			// can never be released — in that case we fall through to the
+			// original error and stay loud.
+			if IsPlayerStateConflict(err) {
+				if healErr := ForcePlayerStateToSummaryPick(draftId, last); healErr == nil {
+					row.Healed = true
+					if err = last.UpdatePlayerInDraft(draftId); err != nil {
+						row.Status = "error_reassert_playerstate_after_heal"
+						row.Detail = err.Error()
+						logCriticalDraftError("watchdog_reassert_failed", draftId, picksMade, err)
+						return row
+					}
+				} else {
+					logCriticalDraftError("watchdog_playerstate_heal_refused", draftId, picksMade, healErr)
+				}
+			}
+			if err != nil {
+				row.Status = "error_reassert_playerstate"
+				row.Detail = err.Error()
+				logCriticalDraftError("watchdog_reassert_failed", draftId, picksMade, err)
+				return row
+			}
 		}
 		if err := UpdateRosterFromPick(draftId, last.OwnerAddress, last.Team, last.Position, last.PlayerId, last.DisplayName, last.Round); err != nil {
 			row.Status = "error_reassert_roster"
