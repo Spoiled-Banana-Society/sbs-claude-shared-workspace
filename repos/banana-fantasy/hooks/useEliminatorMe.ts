@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { eliminatorRetired } from '@/lib/promoWindow';
 
 /**
  * This wallet's live standing in THE ELIMINATOR, for surfaces that need the
@@ -42,7 +43,10 @@ export function useEliminatorMe(wallet: string | null | undefined): EliminatorMe
   const [me, setMe] = useState<EliminatorMe>(EMPTY);
 
   useEffect(() => {
-    if (!wallet) { setMe(EMPTY); return; }
+    // RETIRED (2026-08-01): stop the poll dead. This runs for every logged-in
+    // user on the home page on an interval, so leaving it up after the promo
+    // ends is a permanent Firestore read bill for a number nothing renders.
+    if (!wallet || eliminatorRetired()) { setMe(EMPTY); return; }
     let alive = true;
 
     const load = async () => {

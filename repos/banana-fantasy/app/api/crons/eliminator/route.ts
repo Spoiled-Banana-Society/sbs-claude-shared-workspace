@@ -7,6 +7,7 @@ import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { runDueBurns, runDueReveal } from '@/lib/eliminatorRun';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
+import { eliminatorRetired } from '@/lib/promoWindow';
 
 /**
  * GET /api/crons/eliminator — the hourly burn, BACKSTOP path.
@@ -34,8 +35,15 @@ export async function GET(req: Request) {
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('eliminator')) {
     return json({ ok: true, held: 'admin-preview', burns: 0 });
   }
+  const now = Date.now();
+  // RETIRED (2026-08-01): no further burns. The REVEAL still runs below — if the
+  // final five were locked but the seat hadn't been drawn yet when this shipped,
+  // retiring the promo must not be what strands their payout.
+  if (eliminatorRetired(now)) {
+    const reveal = await runDueReveal(now).catch(() => ({ revealed: false }));
+    return json({ ok: true, held: 'retired', burns: 0, reveal });
+  }
   try {
-    const now = Date.now();
     const burns = await runDueBurns(now);
     // Beat two rides the same tick — no separate schedule to drift.
     const reveal = await runDueReveal(now).catch(() => ({ revealed: false }));

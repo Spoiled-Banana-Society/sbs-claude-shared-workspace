@@ -22,18 +22,38 @@ async function resolveOwnerCached(tokenId: string): Promise<string | null> {
 }
 
 /**
- * The slot follows the NFT. A wheel-won JP/HOF pass queue member carries a
- * tokenId; whoever owns that token RIGHT NOW is the real member — not whatever
- * wallet was recorded at join/last-reassign. Overlay the current on-chain owner
- * so the drafting lobby shows the draft to the buyer and hides it from the seller
- * the instant a sale settles, with zero reliance on a client reassign call.
+ * The slot follows the NFT — but ONLY while the seat can still actually move.
+ *
+ * A wheel-won JP/HOF pass queue member carries a tokenId; whoever owns that
+ * token RIGHT NOW is the real member — not whatever wallet was recorded at
+ * join/last-reassign. Overlaying the current on-chain owner shows the draft to
+ * the buyer and hides it from the seller the instant a sale settles, with zero
+ * reliance on a client reassign call.
+ *
+ * ⚠️ The overlay MUST stop where the engine stops. Seats hard-lock at 10/10 (Go
+ * staging.go SwapSpecialDraftMember refuses a full league), so once a round has
+ * filled, the wallet in DraftOrder is final. Overlaying past that point doesn't
+ * hand the seat over — it just makes /api/queues disagree with the engine, and
+ * the disagreement is worse than either answer: the draft-room gate bounces the
+ * recorded drafter (not a "member" anymore) while the engine refuses the new
+ * owner's picks, so the seat auto-picks for nobody. That's exactly how HOF #27 /
+ * 2025-slow-draft-19 became unplayable on 2026-08-01.
+ *
+ * Post-fill drift is now caught before it can get here by the
+ * reconcile-special-seats cron; anything that still slips through is logged as
+ * special_seat.locked_with_drift for a human.
+ *
  * Best-effort: a failed chain read leaves the recorded wallet untouched.
  */
+const QUEUE_MAX = 10;
+const seatStillMovable = (r: { status?: string; members?: Array<unknown> }) =>
+  r.status === 'filling' && (r.members || []).length < QUEUE_MAX;
+
 async function overlayOnchainOwners(status: Record<string, { rounds?: Array<{ status?: string; members?: Array<{ wallet?: string; tokenId?: string }> }> }>): Promise<void> {
   const tokenIds = new Set<string>();
   for (const q of Object.values(status)) {
     for (const r of q.rounds || []) {
-      if (r.status === 'completed') continue;
+      if (!seatStillMovable(r)) continue;
       for (const m of r.members || []) if (m.tokenId) tokenIds.add(String(m.tokenId));
     }
   }
@@ -42,7 +62,7 @@ async function overlayOnchainOwners(status: Record<string, { rounds?: Array<{ st
   await Promise.all([...tokenIds].map(async (tid) => { owners.set(tid, await resolveOwnerCached(tid)); }));
   for (const q of Object.values(status)) {
     for (const r of q.rounds || []) {
-      if (r.status === 'completed') continue;
+      if (!seatStillMovable(r)) continue;
       for (const m of r.members || []) {
         if (!m.tokenId) continue;
         const owner = owners.get(String(m.tokenId));

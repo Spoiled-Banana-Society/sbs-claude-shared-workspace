@@ -34,7 +34,11 @@ export function setLeagueNumberInCache(slotId: string, leagueNumber: number) {
   }
   const prev = cache.get(slotId);
   if (prev === leagueNumber) {
-    clientLog('league#', 'cache.set.noop', { slotId, leagueNumber, prev });
+    // Deliberately silent. The lobby re-pushes every draft's league # on
+    // every poll, so for a user with N drafts this branch is hit N times
+    // per poll cycle forever — it was 86% of all client logging on the
+    // site and the top driver of the console-retention leak documented in
+    // lib/clientLog.ts. "Nothing changed" is not worth a log line.
     return;
   }
   cache.set(slotId, leagueNumber);

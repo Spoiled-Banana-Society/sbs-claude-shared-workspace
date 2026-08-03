@@ -10,8 +10,16 @@
  * Volume control: only call for meaningful state transitions, NOT
  * every React render. Hard cap of 50 events per flush.
  *
- * Also mirrors to console.info so devtools still works for live
- * debugging.
+ * ⚠️ The console mirror is OPT-IN — see `consoleMirrorOn()` below.
+ * It used to be unconditional, and that leaked the tab to death:
+ * `console.info(tag, event, payload)` makes the browser retain the
+ * message AND a live reference to `payload` for the lifetime of the
+ * tab, so none of it can ever be garbage collected. BUFFER is capped;
+ * the console is not. A lobby with 16 drafts logs ~46 payloads/min,
+ * which walked Chrome into an out-of-memory renderer kill ("Aw, Snap!",
+ * Error code 5) every ~10 minutes for our heaviest user (Banana69,
+ * 2026-08-01). Turn it on per-device when you actually need devtools:
+ *   localStorage.setItem('sbs-debug-console', '1')
  */
 
 interface LogEvent {
@@ -29,6 +37,23 @@ const MAX_BUFFER = 50;
 let sessionId = '';
 let wallet = '';
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Is the console mirror switched on for this device? Read once and
+ * cached — this is checked on every clientLog call, and a localStorage
+ * hit per call would be its own (smaller) performance problem.
+ */
+let consoleMirror: boolean | null = null;
+function consoleMirrorOn(): boolean {
+  if (consoleMirror !== null) return consoleMirror;
+  if (typeof window === 'undefined') return false;
+  try {
+    consoleMirror = window.localStorage.getItem('sbs-debug-console') === '1';
+  } catch {
+    consoleMirror = false; // private mode
+  }
+  return consoleMirror;
+}
 
 function getSessionId(): string {
   if (sessionId) return sessionId;
@@ -123,8 +148,9 @@ export function clientLog(tag: string, event: string, payload?: unknown) {
     path: window.location?.pathname,
   };
   BUFFER.push(entry);
-  // Mirror to console for live devtools debugging.
-  console.info(`[${tag}] ${event}`, payload ?? '');
+  // Mirror to console ONLY when explicitly enabled — the console holds
+  // `payload` alive forever, so this is a memory leak by default.
+  if (consoleMirrorOn()) console.info(`[${tag}] ${event}`, payload ?? '');
   // Trim oldest if buffer overflows between flushes.
   if (BUFFER.length > MAX_BUFFER) BUFFER.splice(0, BUFFER.length - MAX_BUFFER);
   scheduleFlush();

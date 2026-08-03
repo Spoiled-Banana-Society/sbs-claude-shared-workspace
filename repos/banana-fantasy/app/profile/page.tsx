@@ -24,9 +24,16 @@ import { useExportWallet } from '@privy-io/react-auth';
  *
  * 2026-07-03: Rockin_Korotkin sent 341 APE on ApeChain to his embedded
  * wallet; export lets him recover it from MetaMask himself.
+ *
+ * 2026-08-02: the_tikman sent 26.537714 USDC to his embedded wallet on
+ * ETHEREUM MAINNET instead of Base (tx 0x4d208760…b5f1, from his own
+ * EIP-7702 smart account). Funds are safe at the same address on mainnet
+ * but unreachable — the wallet holds 0 ETH there and our app is Base-only.
+ * Export lets him move it himself once he has gas.
  */
 const KEY_EXPORT_ALLOWLIST = new Set<string>([
   '0xfff36cb99d9d7432ba70d6a93c1a72d49a7fc98e',
+  '0x59e8ca8bbaf42037d8da75e8ca96732efd29092c',
 ]);
 
 function truncateAddress(addr: string): string {
@@ -174,6 +181,14 @@ export default function ProfilePage() {
               >
                 {copiedWallet ? '✅ Copied!' : truncateAddress(user.walletAddress)}
               </button>
+
+              {/* Network guard — this address exists on every EVM chain, but we
+                  only read Base. Users have pasted it into Coinbase/MetaMask and
+                  sent on Ethereum mainnet, stranding the funds (the_tikman,
+                  2026-08-02). Say the network wherever the address is copyable. */}
+              <p className="text-white/25 text-[11px] mt-1">
+                Base network only — funds sent on another network won&apos;t show up here
+              </p>
 
               <p className="text-white/20 text-[11px] mt-1">
                 Member since {memberSince(user.createdAt || new Date().toISOString())}

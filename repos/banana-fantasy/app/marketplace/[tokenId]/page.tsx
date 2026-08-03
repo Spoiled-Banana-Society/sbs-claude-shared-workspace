@@ -22,6 +22,7 @@ import { BBB4_CONTRACT, resolveLeagueNumber } from '@/lib/opensea';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
+import { clientLog } from '@/lib/clientLog';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { UserPopover } from '@/components/social/UserPopover';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
@@ -150,7 +151,7 @@ export default function NftDetailPage() {
   const reviewOffers = searchParams?.get('review') === 'offers';
   const offersSectionRef = React.useRef<HTMLDivElement>(null);
   const { isLoggedIn, walletAddress, user, setShowLoginModal, isEmbeddedWallet } = useAuth();
-  const { wallets, ready: _walletsReady } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
   const { sendTransaction } = useSendTransaction();
   const { fundWallet } = useFundWallet();
   const { addNotification } = useNotifications();
@@ -715,7 +716,21 @@ export default function NftDetailPage() {
   }, [nft, walletAddress, paymentMethod, executeBuy, fundWallet, fetchNft, fillingLevel, tokenId]);
 
   const handleMakeOffer = useCallback(async () => {
-    if (!walletAddress || !selectedWallet || !offerAmount) return;
+    if (!offerAmount) return;
+    // Never fail silently here. An external wallet (MetaMask/Coinbase) is only in
+    // Privy's `wallets` list while it's actually connected in THIS browser
+    // session, so a logged-in user can reach an enabled Submit Offer button with
+    // `selectedWallet === null` — the old bare `return` made the button look dead.
+    clientLog('marketplace#', 'offer_submit_clicked', {
+      tokenId, amount: offerAmount, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
+    });
+    if (!walletAddress) { setShowLoginModal(true); return; }
+    if (!selectedWallet) {
+      setOfferError(walletsReady
+        ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+        : 'Still connecting your wallet — give it a second and tap Submit Offer again.');
+      return;
+    }
     const amount = parseFloat(offerAmount);
     if (isNaN(amount) || amount <= 0) {
       setOfferError('Enter a valid offer amount');
@@ -838,10 +853,17 @@ export default function NftDetailPage() {
       setOfferError(friendlyTxError(err, 'Failed to create offer. Please try again.'));
       setOfferStep('input');
     }
-  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft]);
+  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft, walletsReady, wallets.length, setShowLoginModal]);
 
   const handleAcceptOffer = useCallback(async (offer: OfferData) => {
-    if (!walletAddress || !selectedWallet) return;
+    if (!walletAddress) { setShowLoginModal(true); return; }
+    // Same dead-button trap as Submit Offer — say so instead of no-oping.
+    if (!selectedWallet) {
+      setAcceptError(walletsReady
+        ? 'Your wallet isn’t connected to this session. Reconnect it, then accept again.'
+        : 'Still connecting your wallet — give it a second and try again.');
+      return;
+    }
     setAcceptingOfferHash(offer.orderHash);
     setAcceptError(null);
 
@@ -963,7 +985,7 @@ export default function NftDetailPage() {
     } finally {
       setAcceptingOfferHash(null);
     }
-  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft]);
+  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft, walletsReady, setShowLoginModal]);
 
   const handleCancelOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress) return;

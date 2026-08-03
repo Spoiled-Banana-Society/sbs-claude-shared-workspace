@@ -25,6 +25,7 @@ import {
   BANANAS_SURVIVE_HOUR, SURVIVORS_PER_BURN,
   type EliminatorSource, type EliminatorDay, type ListPlayer,
 } from '@/lib/eliminatorMath';
+import { eliminatorRetired } from '@/lib/promoWindow';
 
 const DAYS = 'eliminator_days';
 const PLAYERS = 'players';
@@ -85,6 +86,12 @@ export function daySeedDigest(seed: SealedDrawSeed, dayId: string): string {
 export async function ensureDay(nowMs = Date.now()): Promise<EliminatorDay> {
   const day = dayFor(nowMs);
   if (!isFirestoreConfigured()) return day;
+  // RETIRED (2026-08-01): never open another day. Without this the promo would
+  // be invisible on the site while a fresh list quietly opened at 9am and burned
+  // its way through players nobody could see. Existing day docs are untouched —
+  // reads of past days still work, so a pending reveal and the recon scripts
+  // keep functioning.
+  if (eliminatorRetired(nowMs)) return day;
   const ref = getAdminFirestore().collection(DAYS).doc(day.dayId);
   const snap = await ref.get();
   if (snap.exists) return day;
@@ -141,6 +148,14 @@ export async function creditBananas(opts: {
   const amount = bananasForSource(opts.source);
 
   if (!isFirestoreConfigured() || amount <= 0) {
+    return { credited: false, bananas: 0, dayId: day.dayId };
+  }
+
+  // RETIRED (2026-08-01): filled drafts stop earning Bananas. The fill hook in
+  // /api/notifications/draft-filled calls this for every wallet in every draft
+  // forever, so the gate belongs HERE rather than at the call site — one place
+  // that no future caller can route around.
+  if (eliminatorRetired(nowMs)) {
     return { credited: false, bananas: 0, dayId: day.dayId };
   }
 
@@ -335,7 +350,18 @@ export async function executeBurn(dayId: string, burnIndex: number, nowMs = Date
   // Survivors bank +10 and extend their streak. The ledger keeps this
   // idempotent per (day, user, burn) even if this half re-runs.
   await Promise.allSettled(result.survivors.map(async (uid) => {
-    await creditBananas({ userId: uid, source: 'survive', refId: `burn-${burnIndex}`, nowMs, dayId });
+    const credit = await creditBananas({ userId: uid, source: 'survive', refId: `burn-${burnIndex}`, nowMs, dayId });
+    // A survivor's award can only be deduped by a row that should not exist —
+    // this burn is claimed exactly once (lastBurnIndex, above). On 2026-08-01
+    // it was silently swallowed: 7/31's final burn ran 22 minutes late, past the
+    // 9pm day roll, so its credits were stamped with the NEXT dayId and sat on
+    // the very key today's same-index burn needed. Two survivors got no +10
+    // while the streak below — a separate write — still advanced, which is the
+    // only reason anyone noticed. Shout, so the next one is caught in the logs
+    // rather than by a user in Discord.
+    if (!credit.credited) {
+      logger.error('eliminator.burn.survivor_not_credited', { dayId, burnIndex, userId: uid });
+    }
     await playersCol.doc(uid).set({
       streak: FieldValue.increment(1),
       updatedAt: new Date(nowMs).toISOString(),
@@ -593,6 +619,25 @@ async function readLastNight(today: EliminatorDay, nowMs: number): Promise<LastN
 }
 
 /**
+ * The ONE ordering the whole board sorts by. Bananas descending, ties broken by
+ * userId so the result never depends on the input array.
+ *
+ * Ties are the normal case here, not an edge case — everyone who survives an
+ * hour earns the same +Bananas — and a bare `b.bananas - a.bananas` leaves tied
+ * players in whatever order they arrived in, because sort is stable. The board
+ * assembles its arrays from two different sources (Firestore doc order for the
+ * list, the burn record's order for survivors), so the same two tied players
+ * could come out in opposite orders in two arrays that are supposed to agree.
+ * Fantasy Couch sat in row 2 of the survivors and read "You · #3" at the same
+ * moment, tied at 58 with AeroSpace (Richard 2026-08-01).
+ */
+function byBananas(a: PlayerDoc, b: PlayerDoc): number {
+  const diff = (Number(b.bananas) || 0) - (Number(a.bananas) || 0);
+  if (diff !== 0) return diff;
+  return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+}
+
+/**
  * Everything the leaderboard needs in one read: the survivors, the two rows
  * below the cut (what makes a holder sweat and a challenger push), and the
  * viewer's own row with the exact gap to a seat.
@@ -656,10 +701,8 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
   const dayDoc = daySnap.data() as DayDoc | undefined;
 
   const all = playerSnap.docs.map((d) => d.data() as PlayerDoc);
-  const onList = all.filter((p) => p.onList === true)
-    .sort((a, b) => (Number(b.bananas) || 0) - (Number(a.bananas) || 0));
-  const off = all.filter((p) => p.onList !== true)
-    .sort((a, b) => (Number(b.bananas) || 0) - (Number(a.bananas) || 0));
+  const onList = all.filter((p) => p.onList === true).sort(byBananas);
+  const off = all.filter((p) => p.onList !== true).sort(byBananas);
 
   // Resolve enough names for the FULL expanded board, not just the visible
   // rows — "Show all" renders every player on the list. Capped so one
@@ -703,17 +746,26 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
   const survivorSet = new Set(survivorIds);
   const byId = new Map(all.map((p) => [p.userId, p]));
 
+  const survivorDocs = survivorIds
+    .map((uid) => byId.get(uid))
+    .filter((p): p is PlayerDoc => !!p)
+    .sort(byBananas);
+  const challengers = onList.filter((p) => !survivorSet.has(p.userId));
+
+  // ⚠️ ONE ordering, built once: survivors first, then challengers by Bananas.
+  // EVERY rank the board shows — the survivor rows, the contenders, "Show all",
+  // and the viewer's own "You · #N" — is an index into THIS array, so they
+  // physically cannot disagree. Ranking the viewer off a separately-sorted
+  // array is exactly what put someone in row 2 and called them #3.
+  const boardOrder = lastBurnIndex >= 0 ? [...survivorDocs, ...challengers] : onList;
+
   // Before the first burn nobody has survived anything, so the board falls back
   // to the list ranked by Bananas — the client labels that state differently.
-  const survivors = lastBurnIndex >= 0
-    ? survivorIds
-      .map((uid) => byId.get(uid))
-      .filter((p): p is PlayerDoc => !!p)
-      .sort((a, b) => (Number(b.bananas) || 0) - (Number(a.bananas) || 0))
-      .map((p, i) => row(p, i + 1))
-    : onList.slice(0, SURVIVORS_PER_BURN).map((p, i) => row(p, i + 1));
+  const survivors = (lastBurnIndex >= 0
+    ? survivorDocs
+    : onList.slice(0, SURVIVORS_PER_BURN)
+  ).map((p, i) => row(p, i + 1));
 
-  const challengers = onList.filter((p) => !survivorSet.has(p.userId));
   const contenders = (lastBurnIndex >= 0
     ? challengers.slice(0, 2)
     : onList.slice(SURVIVORS_PER_BURN, SURVIVORS_PER_BURN + 2)
@@ -734,8 +786,10 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
         ? Math.min(...survivors.map((r) => r.bananas))
         : 0;
       const mineBananas = Number(mine.bananas) || 0;
+      // Rank from the board's own ordering, never from a fresh sort of the list.
+      const idxBoard = boardOrder.findIndex((p) => p.userId === vid);
       you = {
-        ...row(mine, idxOn >= 0 ? idxOn + 1 : onList.length + 1),
+        ...row(mine, idxBoard >= 0 ? idxBoard + 1 : boardOrder.length + 1),
         bananasToSeat: holdsSeat ? 0 : Math.max(0, smallestSurvivor - mineBananas + 1),
       };
     }
@@ -757,16 +811,7 @@ export async function getLeaderboard(viewerId?: string, nowMs = Date.now()): Pro
     // it showed RisBrian (16, burned) above Wp34 (14, survived) inside the
     // expanded list while the collapsed one was already correct
     // (Richard 2026-07-31).
-    all: (lastBurnIndex >= 0
-      ? [
-        ...survivorIds
-          .map((uid) => byId.get(uid))
-          .filter((p): p is PlayerDoc => !!p)
-          .sort((a, b) => (Number(b.bananas) || 0) - (Number(a.bananas) || 0)),
-        ...challengers,
-      ]
-      : onList
-    ).slice(0, NAME_RESOLVE_CAP).map((p, i) => row(p, i + 1)),
+    all: boardOrder.slice(0, NAME_RESOLVE_CAP).map((p, i) => row(p, i + 1)),
     burnIndex: dayDoc?.lastBurnIndex ?? -1,
     revealAt: dayDoc?.revealAt ?? null,
     saltHash: dayDoc?.saltHash,

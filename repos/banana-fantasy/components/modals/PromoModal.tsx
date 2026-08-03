@@ -7,6 +7,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Promo } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
+import { useDropMe } from '@/hooks/useDropMe';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { UserPopover } from '@/components/social/UserPopover';
@@ -44,6 +45,7 @@ function fmtWhen(d: string | undefined): string {
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
+  const dropMe = useDropMe(user?.walletAddress);
   // ⛔ Client-side Pick-slot LADDER REMOVED 2026-07-26. It read the SSE's
   // legacy per-100 counters (jackpotRemaining/hofRemaining), which don't know
   // the rolling-lane era retired the ladder on 2026-07-20 — so a batch's 5th
@@ -777,6 +779,39 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
    * only route there is closing the modal and scrolling, which on the home
    * carousel means navigating to /promos by hand (Richard 2026-07-31).
    */
+  /**
+   * THE DROP — the modal explained the promo and then dead-ended on a disabled
+   * CLAIM button with no way to reach the opening room (Richard 2026-08-02).
+   * Now it shows the stack you're sitting on and takes you straight there.
+   */
+  const renderDropContent = () => (
+    <div className="bg-bg-tertiary rounded-xl p-5 text-center">
+      {dropMe.loaded && dropMe.sealed > 0 ? (
+        <>
+          <p className="text-4xl font-black text-text-primary tabular-nums">{dropMe.sealed}</p>
+          <p className="mt-1 text-sm text-text-secondary">
+            sealed pack{dropMe.sealed === 1 ? '' : 's'} waiting for tonight
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-text-secondary">
+          Fill a draft to earn your first packs — paid 2, free 1.
+        </p>
+      )}
+      <Button
+        className="mt-4 w-full"
+        onClick={() => { onClose(); window.location.href = '/drop'; }}
+      >
+        {dropMe.status === 'earning' ? 'See your packs' : 'Open your packs'}
+      </Button>
+      <p className="mt-2 text-[11px] text-text-tertiary">
+        {dropMe.status === 'earning'
+          ? 'Locked until 8:00 PM PT'
+          : 'Unlocked — open them now'}
+      </p>
+    </div>
+  );
+
   const renderEliminatorContent = () => (
     <div className="bg-bg-tertiary rounded-xl p-4 text-center">
       <p className="text-text-secondary text-sm mb-3">
@@ -1401,6 +1436,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderBananaDrawContent();
       case 'eliminator':
         return renderEliminatorContent();
+      case 'drop':
+        return renderDropContent();
       default:
         return null;
     }
@@ -1458,8 +1495,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {/* Dynamic Content Based on Promo Type */}
         {renderPromoContent()}
 
-        {/* Claim Button */}
-        <div className="pt-4 border-t border-bg-tertiary">
+        {/* Claim Button — hidden for THE DROP, which has nothing to claim here
+            and carries its own CTA into the opening room. Leaving the generic
+            one made the modal dead-end on a disabled button (Richard). */}
+        <div className={`pt-4 border-t border-bg-tertiary ${promo.type === 'drop' ? 'hidden' : ''}`}>
           <Button
             className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
             disabled={!canClaim}

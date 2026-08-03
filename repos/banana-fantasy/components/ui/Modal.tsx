@@ -51,10 +51,15 @@ export function Modal({ isOpen, onClose, children, title, size = 'md' }: ModalPr
         <div
           className={`
             bg-bg-secondary border border-bg-tertiary rounded-2xl
-            shadow-2xl w-full ${sizeStyles[size]} max-h-[85vh] overflow-auto scrollbar-hide
+            shadow-2xl w-full ${sizeStyles[size]}
+            max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain scrollbar-hide
             animate-fade-in
           `}
           onClick={(e) => e.stopPropagation()}
+          // 92dvh (not vh) so mobile browser chrome doesn't eat the bottom of
+          // the modal, and touch/momentum scrolling stays on — a long promo
+          // modal was unscrollable on phones (Richard 2026-08-02).
+          style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
         >
         {/* Header */}
         {title && (

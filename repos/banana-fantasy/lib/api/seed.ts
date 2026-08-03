@@ -480,6 +480,52 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // 🌙 THE DROP — packs earned from FILLED drafts, sealed until 8pm PT.
+    // Built 2026-08-02, NOT LAUNCHED: gated behind ADMIN_PREVIEW_PROMO_TYPES
+    // until Richard says otherwise.
+    id: 'drop',
+    type: 'drop',
+    title: 'THE DROP → JACKHOF SEAT',
+    description: 'Fill drafts, earn packs. Open them at 8PM.',
+    ctaText: 'Open Packs',
+    ctaLink: '/drop',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: '🌙 THE DROP',
+      explanation:
+        // Prizes FIRST — the old order buried them under the mechanic, and on
+        // a phone you had to scroll past everything to find out what you were
+        // even playing for (Richard 2026-08-02).
+        'TONIGHT\'S PRIZES — ALL GUARANTEED\n'
+        + '• 1 JACKHOF SEAT\n'
+        + '• 1 HOF SEAT\n'
+        + '• 1 pack with 5 SPINS\n'
+        + '• 2 packs with 2 SPINS each\n'
+        + '• 6 packs with 1 SPIN each\n'
+        + '\n'
+        + '11 packs win something. Every other pack is empty.\n'
+        + '\n'
+        + 'HOW IT WORKS\n'
+        + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
+        + '• Packs stay sealed all day. At 8:00 PM PT they unlock.\n'
+        + '• Open one at a time, or open the whole stack at once.\n'
+        + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
+        + '• Anything still sealed at midnight opens itself — you never lose what you earned.\n'
+        + '\n'
+        + 'YOUR ODDS\n'
+        + '• The seat lands in exactly one pack out of every pack earned that day.\n'
+        + '• So the more packs you hold, the bigger your share of it. Two people with one pack each are 50/50 for the seat; hold ten of the night\'s hundred and it is one in ten.\n'
+        + '\n'
+        + 'PROVABLY FAIR\n'
+        + '• Every prize is assigned at 8:00 PM from randomness committed BEFORE the night began.\n'
+        + '• Opening only reveals what was already decided — nobody, us included, can steer it.',
+      additionalRules: '',
+    },
+  },
+  {
     // 🔥 THE ELIMINATOR — the hourly burn-down that succeeds the Banana Draw.
     // Held behind ADMIN_PREVIEW_PROMO_TYPES until Richard's green light; the
     // /promos leaderboard (EliminatorBanner) is the real surface, this card is

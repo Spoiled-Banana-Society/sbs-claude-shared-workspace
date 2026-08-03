@@ -5,6 +5,7 @@ import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useEliminatorMe } from '@/hooks/useEliminatorMe';
+import { DropCountdown } from '@/components/promos/DropCountdown';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
@@ -401,6 +402,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         )}
                       </div>
                     )}
+                    {/* THE DROP's countdown lives in the FOOTER with the other
+                        promo timers — see the isDrop block below. */}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
@@ -461,6 +464,25 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
                             <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
                           </div>
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
+
+                      {/* THE DROP — same bottom layout as Match Your Pick so its
+                          countdown lands at the SAME vertical spot (Richard
+                          2026-08-02). It used to sit up under the title, which
+                          left dead space at the bottom and made the card look
+                          unlike every other promo in the row. */}
+                      {promo.type === 'drop' && (
+                        <div className="-mt-2">
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <DropCountdown className="text-xs" wallet={user?.walletAddress ?? null} />
+                          </div>
+                          {/* Invisible spacer = the 4-in-24h progress-bar height,
+                              so every timer in the row sits at the same height. */}
                           <div className="h-1.5" aria-hidden="true" />
                           <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                             Learn more

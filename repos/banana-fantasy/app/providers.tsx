@@ -23,6 +23,7 @@ import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { startMemoryWatch } from '@/lib/memWatch';
 import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
@@ -40,6 +41,14 @@ function AppContent({ children }: { children: React.ReactNode }) {
   // to the admin Logs tab. Idempotent — safe to call on every mount.
   useEffect(() => {
     installGlobalErrorHandlers();
+  }, []);
+
+  // A renderer OOM kill ("Aw, Snap!", Error code 5) can't report itself — the
+  // JS context dies first. Sample memory once a minute and mirror the last
+  // sample into sessionStorage (which survives the crash-reload) so a
+  // resurrected tab tells us how big it got and where. Idempotent.
+  useEffect(() => {
+    startMemoryWatch();
   }, []);
 
   // iOS installed PWAs suspend the realtime websocket when backgrounded and

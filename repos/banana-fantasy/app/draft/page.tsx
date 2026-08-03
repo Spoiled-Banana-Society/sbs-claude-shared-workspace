@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
 import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
+import NextLobbyLine from '@/components/drafting/NextLobbyLine';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
 import { PromosSidebar } from '@/components/drafting/PromosSidebar';
@@ -229,6 +230,10 @@ export default function DraftingPage() {
       {/* "Keep waiting" nudge — how many fast drafts are going + the furthest
           round. Renders nothing when the flag is off or nothing's live. */}
       <LiveDraftActivityLine className="-mt-4 mb-6" />
+
+      {/* How full the lobby you'd land in is, before you press Enter. Renders
+          nothing when neither lane has a partially-filled lobby. */}
+      <NextLobbyLine className="-mt-2 mb-6" />
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">

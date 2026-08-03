@@ -5,6 +5,8 @@ import { ENTRY_PRICE_USD } from '@/lib/deposits';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 import { firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
 import { useAuth } from '@/hooks/useAuth';
+import { useNextLobbyFill } from '@/hooks/useNextLobbyFill';
+import { LobbyFillBar } from '@/components/drafting/LobbyFillBar';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -64,6 +66,9 @@ export function EntryFlowModal({
   // is never baited. 'done' → firstPurchaseEntryLine returns null → no line.
   const { user } = useAuth();
   const fpOfferLine = firstPurchaseEntryLine(user?.firstPurchaseVariant ?? 'unknown');
+  // Only polls while the speed step is actually on screen — the pass-type step
+  // has nothing lane-specific to show, since paid and free share lobbies.
+  const nextLobby = useNextLobbyFill(isOpen && step === 'speed');
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
@@ -271,6 +276,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
+                    <LobbyFillBar fill={nextLobby.fast} className="mt-2" />
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>
@@ -287,6 +293,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                    <LobbyFillBar fill={nextLobby.slow} className="mt-2" />
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>

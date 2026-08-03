@@ -57,6 +57,38 @@ export const BANANA_DRAW_END_MS = Date.UTC(2026, 6, 31, 19, 0, 0); // Jul 31 202
  */
 export const ELIMINATOR_LAUNCH_MS = Date.UTC(2026, 6, 31, 23, 0, 0); // Jul 31 2026, 4:00 PM PT
 
+/**
+ * THE ELIMINATOR RETIRES with the 9pm PT final burn on Aug 1 2026 (Richard:
+ * "at 9pm after you show the winner of everything we're gonna remove the promo").
+ *
+ * ⚠️ THIS CUTOFF IS ALREADY IN THE PAST WHEN THE CODE SHIPS — that is deliberate.
+ * The retirement is DEPLOY-TRIGGERED, not clock-triggered, because the winner
+ * reveal is a SECOND beat REVEAL_DELAY_MS (5 min) after the final burn, and the
+ * reveal is normally fired by a tick from the board itself. A clock gate set to
+ * 9:00 sharp would hide the board out from under the reveal it still has to run —
+ * and 7/31's final burn already came in 22 minutes late once. So: confirm the
+ * JackHOF winner is on the board, THEN deploy. The constant records when the
+ * promo ended; the deploy is what enforces it.
+ *
+ * At this instant the promo is gone in every direction:
+ *   • the card leaves every surface (eliminatorLive below → promoFilter),
+ *   • no new day ever opens (ensureDay),
+ *   • filled drafts stop earning Bananas (creditBananas),
+ *   • no further burns fire (crons/eliminator + promos/eliminator/tick).
+ * A PENDING REVEAL IS DELIBERATELY EXEMPT — runDueReveal keeps running so a
+ * final five can never be stranded un-paid by the retirement itself.
+ *
+ * Day docs, player docs and every per-user Banana ledger row are KEPT FOREVER
+ * (same as the Banana Draw's) — the burn history stays auditable.
+ */
+export const ELIMINATOR_END_MS = Date.UTC(2026, 7, 2, 4, 0, 0); // Aug 1 2026, 9:00 PM PT
+
 export function eliminatorLive(now: number = Date.now()): boolean {
-  return now >= ELIMINATOR_LAUNCH_MS;
+  return now >= ELIMINATOR_LAUNCH_MS && now < ELIMINATOR_END_MS;
+}
+
+/** True once the promo has retired. Server paths gate on this so a retired
+ *  promo cannot quietly keep opening days and paying Bananas off-surface. */
+export function eliminatorRetired(now: number = Date.now()): boolean {
+  return now >= ELIMINATOR_END_MS;
 }

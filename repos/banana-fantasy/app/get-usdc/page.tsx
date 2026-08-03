@@ -307,6 +307,14 @@ export default function GetUsdcPage() {
                   <code className="text-text-primary text-sm break-all font-mono flex-1">{walletAddress}</code>
                   <CopyButton value={walletAddress} label="wallet address" />
                 </div>
+                {/* State the CONSEQUENCE, not just the instruction. The copy above
+                    explained that the network matters; users still sent on Ethereum
+                    mainnet and stranded their funds (the_tikman, 2026-08-02). */}
+                <p className="text-hof text-xs mt-2 leading-relaxed">
+                  Send on <span className="font-semibold">Base</span> only. USDC sent on Ethereum, Arbitrum or
+                  any other network reaches this address but won&apos;t show up in SBS — and it takes support to
+                  get it back.
+                </p>
               </>
             ) : (
               <p className="text-text-secondary text-sm leading-relaxed">

@@ -376,16 +376,29 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     if (!LEAGUE_ID_RE.test(doc.id)) continue;
     const d = doc.data() as Record<string, unknown>;
 
-    // Skip wheel-won Jackpot/HOF lobbies — those run in their OWN lane (the
-    // SpecialDraftCount sequence, named "HOF/Jackpot #N (from Wheel)" /
-    // "Hall of Fame Draft #N") and shouldn't be announced; the bot only pings
-    // for regular drafts (Boris 2026-06-30). A wheel special has its special
-    // Level set WHILE filling AND a non-"BBB #" name; regular batch JP/HOF keep
-    // the "BBB #N" name and only get their special Level after the slot reveal,
-    // so this excludes only the wheel specials.
+    // Skip SPECIAL-lane lobbies — wheel-won AND promo-granted Jackpot / HOF /
+    // JackHOF drafts. They run in their own SpecialDraftCount sequence with
+    // their own (tiny, invite-only) supply, so an @everyone "1 more to fill"
+    // sends the whole server at a seat nobody can buy. They must NEVER ping
+    // (Richard 2026-08-02); the bot announces regular drafts only.
+    //
+    // The old test matched `Level` against the two exact strings 'jackpot' /
+    // 'hall of fame', so the COMBINED level sailed straight through: promo
+    // draft `2025-slow-draft-22` carries Level "JackHOF" and pinged the server
+    // at 9/10 as "1 more to fill Draft Lobby (Slow)". Enumerating special
+    // levels is a losing game — match on what a REGULAR draft positively looks
+    // like instead. Every batch draft wears a "BBB #N" name from the moment its
+    // slot doc is created and keeps it through the slot reveal (verified across
+    // every live doc: batch JP/HOF are "BBB #186", "BBB #349", …). No special
+    // ever does — they're "Jackpot Draft #16", "JackHOF Draft #22",
+    // "HOF #15 (from Wheel)", "JackHOF #28 (from Promo)". So: not BBB → silent.
     const lvl = String(d.Level ?? '').toLowerCase().trim();
+    const src = String(d.Source ?? '').toLowerCase().trim();
     const nm = String(d.DisplayName ?? '').trim();
-    if ((lvl === 'jackpot' || lvl === 'hall of fame') && !/^bbb\b/i.test(nm)) continue;
+    // `Source` is stamped on newer specials only ('promo'/'wheel'); regular
+    // drafts carry '' or nothing. Cheap belt-and-braces on top of the name test.
+    if (src === 'promo' || src === 'wheel') continue;
+    if (nm ? !/^bbb\b/i.test(nm) : lvl !== '' && lvl !== 'pro') continue;
 
     const numPlayers = Number(d.NumPlayers ?? 0);
     // Skip empty slot docs that exist but nobody has joined — nothing to announce.

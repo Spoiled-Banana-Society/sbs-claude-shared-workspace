@@ -11,6 +11,9 @@ import {
   playBurnSound, playSurvivorChime, primeEliminatorAudio,
   isEliminatorMuted, setEliminatorMuted,
 } from '@/lib/eliminatorSound';
+// Safe in the browser bundle for the same reason eliminatorRates is: promoWindow
+// is bare constants with no imports of its own.
+import { eliminatorRetired } from '@/lib/promoWindow';
 
 /**
  * THE ELIMINATOR leaderboard, pinned to the top of /promos so everyone sees it
@@ -285,6 +288,14 @@ export function EliminatorBanner({
     const t = window.setTimeout(fire, ms);
     return () => window.clearTimeout(t);
   }, [state?.nextBurnAt, phase]);
+
+  // ── RETIRED (2026-08-01) ──────────────────────────────────────────────────
+  // The promo ended with its final burn. Every early return below is a
+  // has-the-day-started question, and none of them fire for a FINISHED day that
+  // still has 41 players on it — so without this the last night's closed board
+  // would sit pinned at the top of /promos forever. Placed after every hook so
+  // the retirement can't change hook order.
+  if (eliminatorRetired()) return null;
 
   // ── OVERNIGHT (9pm close → 9am open) ──────────────────────────────────────
   // Between the close and the next open we show last night's result plus the

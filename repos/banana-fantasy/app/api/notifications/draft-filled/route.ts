@@ -6,6 +6,7 @@ import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { creditBananas, creditReferralBananas } from '@/lib/bananaDraw';
 import { creditDraft as creditEliminatorDraft } from '@/lib/eliminator';
+import { awardPacksForFill } from '@/lib/drop';
 import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -170,6 +171,22 @@ export async function POST(req: NextRequest) {
           draftId,
           passType: passType === 'paid' ? 'paid' : 'free',
         }).catch((err) => logger.warn('eliminator.fill_credit_failed', { draftId, wallet, err: String(err) }));
+
+        // THE DROP: a filled draft earns sealed packs for tonight's 8pm drop.
+        // Paid 2, free 1. Awarded HERE and nowhere else — entering must never
+        // award, because leaving a filling lobby refunds the pass and that
+        // makes enter/earn/leave/repeat free and unbounded.
+        //
+        // Runs even while the promo is gated to admin preview: packs accrue
+        // quietly so the first live night opens full instead of empty. The
+        // cron holds the lock and the prizes, so nothing can be won until the
+        // promo is released.
+        await awardPacksForFill({
+          userId: wallet,
+          draftId,
+          passType: passType === 'paid' ? 'paid' : 'free',
+          notify: true,
+        }).catch((err) => logger.warn('drop.fill_award_failed', { draftId, wallet, err: String(err) }));
       }));
 
       // Per-wallet PAID-fill effects: the King-of-Drafts scoring record (King

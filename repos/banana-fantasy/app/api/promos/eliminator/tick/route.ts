@@ -8,6 +8,7 @@ import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { runDueBurns, runDueReveal } from '@/lib/eliminatorRun';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
+import { eliminatorRetired } from '@/lib/promoWindow';
 
 /**
  * POST /api/promos/eliminator/tick — let the board fire the burn on the dot.
@@ -36,8 +37,14 @@ export async function POST(req: Request) {
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('eliminator')) {
     return json({ ok: true, held: 'admin-preview', burns: 0 });
   }
+  const now = Date.now();
+  // RETIRED (2026-08-01) — same shape as the cron: burns stop, a pending reveal
+  // is still allowed to land.
+  if (eliminatorRetired(now)) {
+    const reveal = await runDueReveal(now).catch(() => ({ revealed: false }));
+    return json({ ok: true, held: 'retired', burns: 0, reveal });
+  }
   try {
-    const now = Date.now();
     const burns = await runDueBurns(now);
     // Beat two rides the same tick — no separate schedule to drift.
     const reveal = await runDueReveal(now).catch(() => ({ revealed: false }));

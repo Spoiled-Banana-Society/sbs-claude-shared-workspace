@@ -13,6 +13,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
+import { DropCountdown } from '@/components/promos/DropCountdown';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { deriveChaseState } from '@/lib/chasePromo';
 import type { Promo, PromoType } from '@/types';
@@ -45,6 +46,9 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   // Same JackHOF orange: the Eliminator gives out the same seat, so it reads as
   // the successor to the Banana Draw rather than an unrelated promo.
   'eliminator':         { accent: '#ef6c37', label: 'Eliminator' },
+  // Deep night-blue — THE DROP is the 8pm promo, and the colour keeps it
+  // visually distinct from the JackHOF-orange promos that came before it.
+  'drop':               { accent: '#6366f1', label: 'The Drop' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
@@ -428,6 +432,7 @@ export default function PromosPage() {
               hasVisibleClaim={hasVisibleClaim(promo)}
               onClick={() => setSelectedPromo(promo)}
               onClaim={() => void handleClaim(promo)}
+              wallet={user?.walletAddress ?? null}
             />
           ))}
         </div>
@@ -493,9 +498,11 @@ interface PromoCardProps {
   hasVisibleClaim: boolean;
   onClick: () => void;
   onClaim: () => void;
+  /** THE DROP card shows this wallet's pack count next to the countdown. */
+  wallet: string | null;
 }
 
-function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: PromoCardProps) {
+function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet }: PromoCardProps) {
   const style = TYPE_STYLES[promo.type];
   const progressMax = promo.progressMax || 0;
   // Stacking promos (Buy-10 spin, buy-bonus) repeat: after claiming, the bar
@@ -571,6 +578,12 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.title}
         </h3>
+        {/* THE DROP: how close 8pm is, on the card itself. */}
+        {promo.type === 'drop' && (
+          <div className="mb-2 text-sm">
+            <DropCountdown wallet={wallet} />
+          </div>
+        )}
         <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}

@@ -139,7 +139,13 @@ export async function ensureSpecialDraftSeat(
         // Pass roundId so the Go create is IDEMPOTENT per round — a repeated/
         // concurrent create for the same round resolves to the same draftId
         // instead of spawning a second league / duplicate seat tokens.
-        const res = await goPost('/staging/create-special-draft', { type, wallets, roundId });
+        //
+        // `source` rides along so the league records how its seats were won.
+        // The engine reads it back at fill for the "(from Wheel)"/"(from Promo)"
+        // suffix — a promo round used to announce itself as a wheel win. Same
+        // default as roundSource(): an untagged round is a wheel round.
+        const source = round?.source ?? 'wheel';
+        const res = await goPost('/staging/create-special-draft', { type, wallets, roundId, source });
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           throw new Error(`create-special-draft ${res.status}: ${text}`);
