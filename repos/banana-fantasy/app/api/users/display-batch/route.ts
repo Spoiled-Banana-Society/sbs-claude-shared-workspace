@@ -157,7 +157,10 @@ export async function POST(req: Request) {
         }
       }
       return [w, {
-        displayName: dn && dn.toLowerCase() !== w ? dn : null,
+        // Junk defaults null out too — null makes every consumer fall back to
+        // the Banana##### default, which is the identity these users should
+        // have (a claimed junk name in v2_users is healed separately).
+        displayName: dn && dn.toLowerCase() !== w && !isLegacyJunkName(dn) ? dn : null,
         imageUrl,
       }] as const;
     }));
