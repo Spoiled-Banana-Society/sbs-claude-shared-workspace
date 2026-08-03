@@ -53,19 +53,21 @@ export function DropCountdown({
   const packs = me.loaded ? me.upcomingSealed : 0;
   const showOpen = canOpen && me.loaded && me.sealed > 0;
 
+  // ⚠️ No colour of its own. Every other countdown in the row is a bare
+  // `font-semibold tabular-nums` span inheriting text-[#4a4a4a] from the footer
+  // container — hardcoding a colour here made THE DROP the one card that
+  // didn't match (Boris 2026-08-02). OPEN NOW keeps its green because it is a
+  // state, not a timer.
   return (
-    <span className={`font-bold tabular-nums ${className}`}>
+    <span className={`font-semibold tabular-nums ${className}`}>
       {showOpen && (
         <>
           <span className="text-[#22c55e]">OPEN NOW</span>
-          <span className="text-[#4a4a58]"> · </span>
+          <span> · </span>
         </>
       )}
-      <span className="text-[#6366f1]">{label}</span>
-      <span className="text-[#4a4a58]"> to 8PM</span>
-      {packs > 0 && (
-        <span className="text-[#4a4a58]"> · {packs} pack{packs === 1 ? '' : 's'}</span>
-      )}
+      <span>{label}</span>
+      {packs > 0 && <span> · {packs} pack{packs === 1 ? '' : 's'}</span>}
     </span>
   );
 }
