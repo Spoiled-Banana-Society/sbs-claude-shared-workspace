@@ -108,7 +108,14 @@ export async function POST(req: Request) {
     // 2. For wallets missing username OR pfp in v2_users, fall back to
     //    the Go API pfp record (legacy users who set their identity in
     //    the old draft frontend and haven't touched the new app yet).
-    const needsGoApi = realWallets.filter(w => !v2[w]?.username || !v2[w]?.profilePicture);
+    // ⚠️ `username` can be the INTERNAL placeholder `User-<first6>` (seeded by
+    // createUser), which is truthy — so a bare `!username` check would skip
+    // exactly the legacy users whose real name we're trying to recover.
+    const needsName = (w: string) => {
+      const u = v2[w]?.username;
+      return !u || u.startsWith('User-');
+    };
+    const needsGoApi = realWallets.filter(w => needsName(w) || !v2[w]?.profilePicture);
     const goApiResults = await Promise.all(needsGoApi.map(async w => {
       const pfp = await fetchGoApiPfp(w);
       const dn = pfp?.displayName?.trim();
@@ -121,6 +128,27 @@ export async function POST(req: Request) {
       // run on Vercel. try/catch so a heal failure never breaks the batch.
       if (imageUrl) {
         try { await healUserPfpFromLegacy(w, imageUrl); } catch { /* next load retries Go API */ }
+      }
+      // Heal the NAME the same way. A returning player who set their identity
+      // in the old draft frontend has their real handle ONLY in this Go pfp
+      // record — v2_users still holds the internal `User-0x…` placeholder. Any
+      // surface that doesn't call the Go API (promo boards, leaderboards) then
+      // shows them as "Banana#####" instead of their name: Apevine read as
+      // Banana10670 on the Drop winners list (Boris 2026-08-02).
+      //
+      // ⚠️ Through claimUsername, never a bare write — the handle needs its
+      // reservation doc or two legacy users could end up holding one name.
+      // A `taken`/`reserved` result is a no-op: they keep the placeholder and
+      // can rename themselves, which is exactly the manual path Boris wants
+      // preserved for returning players.
+      if (dn && needsName(w) && dn.toLowerCase() !== w) {
+        try {
+          const { claimUsername } = await import('@/lib/usernames');
+          const res = await claimUsername(dn, w);
+          if (!res.available) logger.info('users.display-batch.legacy-name-skipped', { wallet: w, reason: res.reason });
+        } catch (err) {
+          logger.warn('users.display-batch.legacy-name-heal-failed', { wallet: w, err: String(err) });
+        }
       }
       return [w, {
         displayName: dn && dn.toLowerCase() !== w ? dn : null,

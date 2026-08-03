@@ -92,9 +92,50 @@ export async function openAndSettle(opts: {
   return { ...res, ...paid };
 }
 
+/** How long after the 8pm lock the "go open them" nudge fires. 1h leaves a
+ *  clear 3-hour runway before the midnight auto-open. */
+const REMINDER_AFTER_LOCK_MS = 60 * 60 * 1000;
+
 /**
- * Lock the night at 8pm if it's due, and auto-open anything still sealed at
- * midnight. Safe to call on any tick — both steps no-op when not due.
+ * Ping everyone still holding a sealed pack for this night.
+ *
+ * Idempotent per (night, wallet): the dedupeKey is the night, and
+ * createNotification writes dedupe-keyed bells with `.create()` — so the cron
+ * re-running every minute for the rest of the night can only ever send once.
+ * Someone who opens after the nudge simply doesn't get a second one.
+ */
+async function remindSealedHolders(nightId: string): Promise<{ users: number }> {
+  const db = getAdminFirestore();
+  const sealed = await db.collection('drop_nights').doc(nightId)
+    .collection('packs').where('opened', '==', false).get();
+
+  const counts = new Map<string, number>();
+  for (const d of sealed.docs) {
+    const p = d.data() as { userId: string };
+    const uid = String(p.userId).toLowerCase();
+    counts.set(uid, (counts.get(uid) ?? 0) + 1);
+  }
+  if (counts.size === 0) return { users: 0 };
+
+  await Promise.allSettled([...counts].map(([uid, n]) => createNotification(uid, {
+    type: 'promo',
+    title: `Open your pack${n === 1 ? '' : 's'}`,
+    message: `You still have ${n} sealed pack${n === 1 ? '' : 's'} from tonight's Drop. `
+      + `Open ${n === 1 ? 'it' : 'them'} to see what's inside — at midnight PT `
+      + `${n === 1 ? 'it opens' : 'they open'} automatically.`,
+    link: '/promos?promo=drop',
+    dedupeKey: `drop-open-reminder-${nightId}`,
+    icon: 'ticket',
+  })));
+
+  logger.info('drop.reminder.sent', { nightId, users: counts.size, packs: sealed.size });
+  return { users: counts.size };
+}
+
+/**
+ * Lock the night at 8pm if it's due, nudge sealed holders an hour later, and
+ * auto-open anything still sealed at midnight. Safe to call on any tick —
+ * every step no-ops when not due.
  */
 export async function runDropSchedule(now = Date.now()): Promise<Record<string, unknown>> {
   if (!isFirestoreConfigured()) return { ok: false, reason: 'no-firestore' };
@@ -131,6 +172,17 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
 
     if (doc.status === 'earning' && now >= nightFromId(nightId).locksAt) {
       out[`lock:${nightId}`] = await lockNight(nightId, now);
+    }
+
+    // Nightly nudge — the packs are open, go look. Fires once per night, some
+    // hours before the midnight sweep, to EVERY holder still sealed.
+    //
+    // ⚠️ Everyone sealed, never just the winners: only-winners would make the
+    // bell itself the result, spoiling the reveal for the people it's meant to
+    // reward (Boris 2026-08-02). The copy stays neutral for the same reason.
+    const nudgeAt = nightFromId(nightId).locksAt + REMINDER_AFTER_LOCK_MS;
+    if (now >= nudgeAt && now < nightFromId(nightId).autoOpensAt) {
+      out[`remind:${nightId}`] = await remindSealedHolders(nightId);
     }
 
     // Midnight sweep — nobody loses what they earned for being asleep.
