@@ -141,7 +141,13 @@ export async function POST(req: Request) {
       // A `taken`/`reserved` result is a no-op: they keep the placeholder and
       // can rename themselves, which is exactly the manual path Boris wants
       // preserved for returning players.
-      if (dn && needsName(w) && dn.toLowerCase() !== w) {
+      // Skip the legacy system's OWN junk defaults ("User107744") — healing
+      // those just swaps one placeholder for an uglier one, and it sticks:
+      // the claim writes a real reservation, so the user then shows as
+      // "User…" instead of their Banana##### default everywhere
+      // (0x3def25…4614, Boris 2026-08-03). Real handles never match this.
+      const isLegacyJunkName = (name: string) => /^user[-_ ]?\d+$/i.test(name);
+      if (dn && needsName(w) && dn.toLowerCase() !== w && !isLegacyJunkName(dn)) {
         try {
           const { claimUsername } = await import('@/lib/usernames');
           const res = await claimUsername(dn, w);
