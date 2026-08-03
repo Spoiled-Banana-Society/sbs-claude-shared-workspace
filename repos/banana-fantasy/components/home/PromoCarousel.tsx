@@ -4,11 +4,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
+import { useEliminatorMe } from '@/hooks/useEliminatorMe';
+import { DropCountdown } from '@/components/promos/DropCountdown';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
-import { useBatchProgress } from '@/hooks/useBatchProgress';
+import { deriveChaseState } from '@/lib/chasePromo';
+import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 
 interface PromoCarouselProps {
   /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
@@ -39,9 +42,10 @@ function useVisibleCount() {
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode, heading = 'Promos' }: PromoCarouselProps) {
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
-  // Pick 10 expands to 6, 9 & 10 while the batch's specials are all hit.
-  const { data: batchData } = useBatchProgress();
-  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
+  // Live Eliminator standing for the card front — your Banana count and
+  // whether you're holding one of the 5 seats (Richard 2026-07-31).
+  const elimMe = useEliminatorMe(user?.walletAddress);
+  // Pick-slot ladder removed 2026-07-26 — see app/promos/page.tsx.
   const VISIBLE_COUNT = useVisibleCount();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -80,13 +84,26 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
     flagsKnown: isBalanceLoaded,
+    isLoggedIn,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
     isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
 
+  // First-purchase card body copy tracks the server-computed variant (new /
+  // returning). Logged-out or not-yet-loaded → new-player copy, explicitly
+  // labeled "NEW PLAYERS" so a returning player who logs in later and gets
+  // the classic rate never feels baited.
+  const fpVariant = user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new';
+  const fpShowNewPlayerTag = !isLoggedIn || user?.firstPurchaseVariant == null;
+
+  // When every card fits in the viewport (e.g. logged-out shows only the
+  // 2 conversion cards), there's nothing to scroll: skip the clones and
+  // arrows and let the viewport hug the cards so they sit centered.
+  const isStatic = sortedPromos.length <= VISIBLE_COUNT;
+
   // Create extended array with clones for infinite loop
-  const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
-  const startOffset = sortedPromos.length; // Start at the middle copy
+  const extendedPromos = isStatic ? sortedPromos : [...sortedPromos, ...sortedPromos, ...sortedPromos];
+  const startOffset = isStatic ? 0 : sortedPromos.length; // Start at the middle copy
 
   // Snap back to the first promo ONLY when the ORDER / claim state actually
   // changes — a new claim becomes available, a promo is added/removed, or the
@@ -141,6 +158,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
   // Handle infinite loop reset
   useEffect(() => {
+    if (isStatic) return; // no clones → nothing to jump between
     const handleTransitionEnd = () => {
       // If we've gone too far left, jump to middle copy
       if (currentIndex < VISIBLE_COUNT) {
@@ -159,7 +177,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       container.addEventListener('transitionend', handleTransitionEnd);
       return () => container.removeEventListener('transitionend', handleTransitionEnd);
     }
-  }, [currentIndex, sortedPromos.length]);
+  }, [currentIndex, sortedPromos.length, isStatic]);
 
   const handlePromoClick = (promo: Promo) => {
     setSelectedPromo(promo);
@@ -207,7 +225,11 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
   };
 
-  const translateX = -(currentIndex * (CARD_WIDTH + GAP));
+  const translateX = isStatic ? 0 : -(currentIndex * (CARD_WIDTH + GAP));
+  // Viewport hugs the actual card count when everything fits (static mode),
+  // so the outer justify-center centers 1–2 cards instead of leaving a
+  // 3-wide viewport with dead space on the right.
+  const viewportCards = Math.min(VISIBLE_COUNT, Math.max(sortedPromos.length, 1));
 
   return (
     <div className="space-y-4">
@@ -217,6 +239,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       {/* Carousel with arrows */}
       <div className="flex items-center justify-center gap-6">
         {/* Left Arrow */}
+        {!isStatic && (
         <button
           onClick={goBack}
           className="p-2.5 rounded-full transition-all duration-200 flex-shrink-0 border border-white/30 text-white/60 hover:border-banana hover:text-banana active:scale-95"
@@ -235,11 +258,12 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
+        )}
 
         {/* Promo Cards Container */}
         <div
           className="overflow-hidden py-4 -my-4"
-          style={{ width: `${VISIBLE_COUNT * CARD_WIDTH + (VISIBLE_COUNT - 1) * GAP + 16}px`, paddingLeft: '8px', paddingRight: '8px', marginLeft: '-8px', marginRight: '-8px' }}
+          style={{ width: `${viewportCards * CARD_WIDTH + (viewportCards - 1) * GAP + 16}px`, paddingLeft: '8px', paddingRight: '8px', marginLeft: '-8px', marginRight: '-8px' }}
         >
           <div
             ref={containerRef}
@@ -251,7 +275,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
-              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title;
+              const promoTitle = promo.title;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
@@ -264,9 +288,17 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               const progressPercent = isClaimed && !isStacking ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
-              // Featured (July 4th) card gets the patriotic treatment:
-              // flag stripe, chip, corner stars, red ribbon, red→blue bar.
-              const isJuly4 = !!promo.featured;
+              // ⚠️ `featured` means PINNED TO POSITION 1 — it does not mean
+              // July 4th. This used to read `!!promo.featured`, so the moment
+              // any other promo was featured it inherited the flag stripe,
+              // corner stars and a literal "🇺🇸 July 4th Weekend" chip. That
+              // shipped on 2026-07-31: THE ELIMINATOR went out featured and
+              // users screenshotted it asking why a July promo said July 4th.
+              // The patriotic treatment belongs to buy-bonus and nothing else.
+              const isJuly4 = !!promo.featured && promo.type === 'buy-bonus';
+              // Chase Your Pick live state — pick slot, next-hit spins, 24h clock.
+              const isChase = promo.type === 'pick-chase';
+              const chase = isChase ? deriveChaseState(promo) : null;
               return (
                 <div
                   key={`${promo.id}-${index}`}
@@ -335,15 +367,43 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* FIRST-PURCHASE ONLY (Boris 2026-07-13): full offer copy
                         on the box front as FIXED LINES — each line is one
                         complete idea and can never wrap mid-phrase ("40" on
-                        one line, "Drafts" on the next read broken). */}
+                        one line, "Drafts" on the next read broken). Lines are
+                        variant-aware (new vs returning classic rate) and the
+                        logged-out default carries a NEW PLAYERS label. */}
                     {promo.type === 'first-purchase' && (
                       <div className="mt-1.5 px-1 text-center text-[10px] leading-relaxed text-[#4a4a4a]">
-                        <span className="block whitespace-nowrap">Every Pass = 2 Free Spins</span>
-                        <span className="block whitespace-nowrap">Buy 1 → 2 Free Drafts GTD</span>
-                        <span className="block whitespace-nowrap">Win up to 40 Free Drafts</span>
-                        <span className="block whitespace-nowrap">($1,000 in Drafts)</span>
+                        {fpShowNewPlayerTag && (
+                          <span className="block whitespace-nowrap font-bold uppercase tracking-wider text-[9px] text-[#1d1d1f]">New players</span>
+                        )}
+                        {firstPurchaseCardLines(fpVariant, promo.description).map((line) => (
+                          <span key={line} className="block whitespace-nowrap">{line}</span>
+                        ))}
                       </div>
                     )}
+                    {/* ELIMINATOR ONLY — your live standing on the card front.
+                        The board lives on /promos, but the number people care
+                        about is their own, so it rides here too: Banana count
+                        plus whether they're currently holding a seat. */}
+                    {promo.type === 'eliminator' && elimMe.bananas !== null && (
+                      <div className="mt-1.5 flex flex-col items-center gap-1">
+                        <span className="text-sm font-bold text-[#1d1d1f] tabular-nums">
+                          🍌 {elimMe.bananas}
+                        </span>
+                        {elimMe.inTop5 ? (
+                          <span className="inline-flex items-center rounded-full bg-[#1d1d1f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white">
+                            Top 5 · surviving
+                          </span>
+                        ) : elimMe.onList ? (
+                          <span className="text-[10px] text-[#4a4a4a]">
+                            <span className="font-bold">{elimMe.bananasToSeat}</span> from a seat
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[#4a4a4a]">Not on the list</span>
+                        )}
+                      </div>
+                    )}
+                    {/* THE DROP's countdown lives in the FOOTER with the other
+                        promo timers — see the isDrop block below. */}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
@@ -379,6 +439,81 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               Learn more
                             </p>
                           )}
+                        </div>
+                      )}
+
+                      {/* Banana Draw — same bottom layout as Match Your Pick and
+                          4-in-24h so the countdown lands at the SAME vertical spot:
+                          optional stat row, timer row, then the invisible spacer
+                          that matches the other promos' progress-bar height.
+                          Was missing entirely, so the homepage card showed no clock
+                          at all (Boris 2026-07-26). */}
+                      {promo.type === 'banana-draw' && (
+                        <div className="-mt-2">
+                          {(promo.modalContent.bananaDraw?.bananas ?? 0) > 0 && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#ef6c37]">🍌 {promo.modalContent.bananaDraw?.bananas}</span>
+                              {(promo.modalContent.bananaDraw?.pending ?? 0) > 0 && (
+                                <>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold">{promo.modalContent.bananaDraw?.pending} filling</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
+                          </div>
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
+
+                      {/* THE DROP — same bottom layout as Match Your Pick so its
+                          countdown lands at the SAME vertical spot (Richard
+                          2026-08-02). It used to sit up under the title, which
+                          left dead space at the bottom and made the card look
+                          unlike every other promo in the row. */}
+                      {promo.type === 'drop' && (
+                        <div className="-mt-2">
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <DropCountdown className="text-xs" />
+                          </div>
+                          {/* Invisible spacer = the 4-in-24h progress-bar height,
+                              so every timer in the row sits at the same height. */}
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Match Your Pick — mirrors the 4-in-24h bottom layout so the
+                          countdown lands at the SAME vertical spot: timer row, then a
+                          spacer the height of that promo's progress bar. Once a draft
+                          locks a pick, the slot · attempt · next-hit Spins show above. */}
+                      {isChase && (
+                        <div className="-mt-2">
+                          {chase?.active && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#1d1d1f]">Pick {chase.slot}</span>
+                              <span className="text-[#c4c4c8]">·</span>
+                              <span className="font-semibold">Att {chase.attempt}</span>
+                              <span className="text-[#c4c4c8]">→</span>
+                              <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
+                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          </div>
+                          {/* Invisible spacer = the 4-in-24h progress-bar height (h-1.5),
+                              so both timers sit at the same height. */}
+                          <div className="h-1.5" aria-hidden="true" />
+                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            Learn more
+                          </p>
                         </div>
                       )}
 
@@ -421,8 +556,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
                           {progressMax > 1 && (
                             <>
@@ -467,6 +602,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
         </div>
 
         {/* Right Arrow */}
+        {!isStatic && (
         <button
           onClick={goForward}
           className="p-2.5 rounded-full transition-all duration-200 flex-shrink-0 border border-white/30 text-white/60 hover:border-banana hover:text-banana active:scale-95"
@@ -485,6 +621,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
+        )}
       </div>
 
       {/* Promo Modal */}

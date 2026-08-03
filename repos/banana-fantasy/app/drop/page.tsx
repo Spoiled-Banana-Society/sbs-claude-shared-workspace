@@ -81,7 +81,13 @@ export default function DropPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const countdown = useCountdown(state && state.status === 'earning' ? state.locksAt : null);
+  // Before 8pm this counts to tonight's unlock. AFTER the drop it counts to the
+  // NEXT one — the page went blank on time once everything was opened, which is
+  // the moment you most want people to know when to come back (Richard
+  // 2026-08-02: "wheres the cowntdown").
+  const countdown = useCountdown(
+    state ? (state.status === 'earning' ? state.locksAt : state.next?.locksAt ?? null) : null,
+  );
 
   /** Open one pack, or everything. `packId` omitted = open all. */
   const open = useCallback(async (packId?: string) => {
@@ -162,13 +168,27 @@ export default function DropPage() {
             </p>
           </>
         ) : (
-          <p className="mt-3 text-white/50">
-            {sealed > 0
-              ? 'Your packs are ready.'
-              : state?.next
-                ? 'All opened — keep filling drafts and your next stack rips tomorrow at 8:00 PM PT.'
-                : 'All opened. Back tomorrow.'}
-          </p>
+          <>
+            <p className="mt-3 text-white/50">
+              {sealed > 0
+                ? 'Your packs are ready.'
+                : state?.next
+                  ? 'All opened — keep filling drafts and your next stack rips at 8:00 PM PT.'
+                  : 'All opened. Back tomorrow.'}
+            </p>
+            {/* Same countdown treatment as the pre-drop state, now pointed at
+                the NEXT drop, so the page never goes blank on time. */}
+            {countdown && (
+              <>
+                <p className="mt-6 font-mono text-5xl font-black tabular-nums text-[#6366f1]">
+                  {countdown}
+                </p>
+                <p className="mt-3 text-sm text-white/40">
+                  until the next drop — every draft you fill adds to that stack.
+                </p>
+              </>
+            )}
+          </>
         )}
 
         <div className="mt-8 inline-flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-6 py-4">
