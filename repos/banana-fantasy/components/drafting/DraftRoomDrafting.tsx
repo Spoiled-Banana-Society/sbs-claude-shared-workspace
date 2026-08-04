@@ -441,24 +441,12 @@ export function DraftRoomDrafting({
 
             <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: draftStatusColor(visibleDraftType) }}>
               {spectator ? (
-                (() => {
-                  const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;
-                  const onClockName = onClockIdx !== undefined
-                    ? getTruncatedAccountName(
-                        engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '',
-                        engine.draftOrder[onClockIdx]?.name || '',
-                      )
-                    : '';
-                  const truncated = onClockName.length > 14
-                    ? `${onClockName.substring(0, 12)}…`
-                    : onClockName;
-                  return (
-                    <span className="text-white/80">
-                      On the clock: <span className="text-yellow-400">{truncated || '—'}</span>
-                      <span className="ml-3 text-white/40">Pick {engine.currentPickNumber} / 150</span>
-                    </span>
-                  );
-                })()
+                // Mirror the real room: participants never see an
+                // "On the clock: <name>" line, so spectators don't either
+                // (it also leaked the Banana-<hex> placeholder when the
+                // picker's name hadn't resolved — Boris 2026-08-03). The
+                // highlighted player card already shows whose turn it is.
+                <span className="text-white/40">Pick {engine.currentPickNumber} / 150</span>
               ) : engine.isUserTurn && engine.airplaneMode ? (
                 <span className="flex items-center justify-center gap-2 text-emerald-400">
                   Auto-drafting...
