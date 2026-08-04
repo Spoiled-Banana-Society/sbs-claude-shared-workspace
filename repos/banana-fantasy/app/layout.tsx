@@ -4,6 +4,7 @@ import { Providers } from './providers';
 import StyledComponentsRegistry from '@/lib/registry';
 import GoogleAnalytics from './components/GoogleAnalytics';
 import { Footer } from '@/components/layout/Footer';
+import { ServiceNoticeBanner } from '@/components/ServiceNoticeBanner';
 // import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
 const SITE_URL = 'https://sbsfantasy.com';
@@ -135,6 +136,7 @@ export default function RootLayout({
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(reg){reg.unregister()})});caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}`
           }}
         />
+        <ServiceNoticeBanner />
         <StyledComponentsRegistry>
           <Providers>
             <div className="flex flex-col min-h-screen">
