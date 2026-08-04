@@ -83,6 +83,10 @@ export async function GET(req: NextRequest) {
   let credited = 0;
   let earnedTotal = 0;
   const details: Array<Record<string, unknown>> = [];
+  const scanErrors: string[] = [];
+  const creditErrors: string[] = [];
+  let transfersSeen = 0;
+  let transfersMatched = 0;
 
   if (claimsByWallet.size > 0) {
     const latest = await client.getBlockNumber();
@@ -100,6 +104,7 @@ export async function GET(req: NextRequest) {
           toBlock: latest,
         });
       } catch (e) {
+        scanErrors.push(`${wallet.slice(0, 10)}: ${(e as Error).message.slice(0, 120)}`);
         logger.warn('cron.deposit_sweep.scan_failed', { wallet, err: (e as Error).message });
         continue;
       }
@@ -108,10 +113,12 @@ export async function GET(req: NextRequest) {
         if (from === wallet) continue;
         const valueUsd = Number(l.args.value ?? 0n) / 1e6;
         if (valueUsd < 5) continue;
+        transfersSeen++;
         const matchedClaim = claimedAmounts.find(
           (c) => Math.abs(valueUsd - c) <= Math.max(2, c * 0.1),
         );
         if (matchedClaim == null) continue;
+        transfersMatched++;
         const cand: DepositCandidate = {
           txHash: (l.transactionHash ?? '').toLowerCase(),
           logIndex: l.logIndex ?? 0,
@@ -133,12 +140,22 @@ export async function GET(req: NextRequest) {
             });
           }
         } catch (e) {
+          creditErrors.push(`${wallet.slice(0, 10)}: ${(e as Error).message.slice(0, 120)}`);
           logger.warn('cron.deposit_sweep.credit_failed', { wallet, txHash: cand.txHash, err: (e as Error).message });
         }
       }
     }
   }
 
-  await recordCronHeartbeat('deposit-credit-sweep');
+  await recordCronHeartbeat('deposit-credit-sweep', {
+    claimsWallets: claimsByWallet.size,
+    walletsScanned: scanned,
+    transfersSeen,
+    transfersMatched,
+    credited,
+    earnedTotal,
+    scanErrors: scanErrors.slice(0, 5),
+    creditErrors: creditErrors.slice(0, 5),
+  });
   return json({ walletsScanned: scanned, credited, earnedTotal, details });
 }

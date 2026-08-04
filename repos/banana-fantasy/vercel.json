@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/crons/deposit-credit-sweep",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/crons/reconcile-special-seats",
