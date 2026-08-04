@@ -3,42 +3,71 @@
 import React, { useEffect, useState } from 'react';
 // ⚠️ dropRates, NEVER dropMath — the latter pulls in `node:crypto`, which
 // webpack cannot bundle for the browser and which 500s the whole route.
-import { formatOpenCountdown, msUntilOpen } from '@/lib/dropRates';
+import { formatDropCountdown, msUntilOpen } from '@/lib/dropRates';
+import { useDropMe } from '@/hooks/useDropMe';
 
 /**
- * Countdown to tonight's 8pm unlock, for the promo card.
+ * Countdown to the next 8pm drop, for the promo card.
  *
- * The schedule is deterministic, so this needs no server round-trip — it just
- * ticks locally. Without it the card said "Open them at 8PM" with no sense of
- * how close that was, which is the whole tension of a promo you earn into all
- * day (Richard 2026-08-02).
+ * ⚠️ The clock NEVER stops. It counts to the next EARNING deadline
+ * (msUntilDrop), so at 8:00:00 it rolls to ~24h and keeps running through the
+ * night. That roll is deliberate: after 8pm a draft that fills is banking packs
+ * for TOMORROW, so the thing a player needs to see is how long they have to
+ * earn into the next drop — not a dead "OPEN NOW" that tells them nothing about
+ * what they're playing for (Boris 2026-08-02).
+ *
+ * OPEN NOW still shows, but ALONGSIDE the clock rather than replacing it, and
+ * only while they actually hold unopened packs from tonight — those auto-open
+ * at midnight, so the prompt is real information for exactly that window.
+ *
+ * The pack count is keyed to `upcomingSealed`, which follows the same night the
+ * clock does — so "2 packs" always means "2 packs for the drop this timer is
+ * counting to", never a stale count from a night that already opened.
  */
-export function DropCountdown({ className = '' }: { className?: string }) {
+export function DropCountdown({
+  className = '',
+  wallet = null,
+}: {
+  className?: string;
+  wallet?: string | null;
+}) {
   const [label, setLabel] = useState<string | null>(null);
+  const [canOpen, setCanOpen] = useState(false);
+  const me = useDropMe(wallet);
 
   useEffect(() => {
     // Render nothing on the server pass — a countdown computed at build time
     // hydrates wrong and flashes a stale number.
-    // msUntilOpen, NOT msUntilDrop — the latter rolls at 8pm and would show
-    // 23:59:59 at the moment the packs actually unlock. This reads 0 for the
-    // whole 8pm–midnight window, so the card says OPEN NOW when it's open.
-    const tick = () => setLabel(msUntilOpen() > 0 ? formatOpenCountdown() : null);
+    const tick = () => {
+      setLabel(formatDropCountdown());
+      // 0 from 8pm to midnight = tonight's packs are openable right now.
+      setCanOpen(msUntilOpen() <= 0);
+    };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
-  if (label === null) {
-    return (
-      <span className={`font-bold tabular-nums text-[#22c55e] ${className}`}>
-        OPEN NOW
-      </span>
-    );
-  }
+  if (label === null) return null;
+
+  const packs = me.loaded ? me.upcomingSealed : 0;
+  const showOpen = canOpen && me.loaded && me.sealed > 0;
+
+  // ⚠️ No colour of its own. Every other countdown in the row is a bare
+  // `font-semibold tabular-nums` span inheriting text-[#4a4a4a] from the footer
+  // container — hardcoding a colour here made THE DROP the one card that
+  // didn't match (Boris 2026-08-02). OPEN NOW keeps its green because it is a
+  // state, not a timer.
   return (
-    <span className={`font-bold tabular-nums ${className}`}>
-      <span className="text-[#6366f1]">{label}</span>
-      <span className="text-[#4a4a58]"> to 8PM</span>
+    <span className={`font-semibold tabular-nums ${className}`}>
+      {showOpen && (
+        <>
+          <span className="text-[#22c55e]">OPEN NOW</span>
+          <span> · </span>
+        </>
+      )}
+      <span>{label}</span>
+      {packs > 0 && <span> · {packs} pack{packs === 1 ? '' : 's'}</span>}
     </span>
   );
 }
