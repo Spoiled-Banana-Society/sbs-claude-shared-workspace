@@ -479,7 +479,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       {promo.type === 'drop' && (
                         <div className="-mt-2">
                           <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
-                            <DropCountdown className="text-xs" wallet={user?.walletAddress ?? null} />
+                            <DropCountdown className="text-xs" />
                           </div>
                           {/* Invisible spacer = the 4-in-24h progress-bar height,
                               so every timer in the row sits at the same height. */}

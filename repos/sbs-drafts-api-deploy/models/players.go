@@ -271,3 +271,100 @@ func (pick *PlayerStateInfo) UpdatePlayerInDraft(draftId string) error {
 	}
 	return nil
 }
+
+// IsPlayerStateConflict reports whether err came from the pick-slot guard in
+// UpdatePlayerInDraft (a DIFFERENT player already recorded at this PickNum),
+// as opposed to a transport/permission failure. Only the watchdog acts on it.
+func IsPlayerStateConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "playerState conflict: pick ")
+}
+
+// anyRosterHasPlayer reports whether playerId appears on ANY owner's roster in
+// this draft, across every position slot. Deliberately draft-wide rather than
+// per-owner: a released player must be free for everyone, so if anybody holds
+// it the release is unsafe no matter who.
+func anyRosterHasPlayer(state RosterState, playerId string) bool {
+	for _, r := range state.Rosters {
+		if r == nil {
+			continue
+		}
+		for _, list := range [][]RosterPlayer{r.QB, r.RB, r.WR, r.TE, r.DST} {
+			if rosterHasPlayer(list, playerId) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ForcePlayerStateToSummaryPick resolves a SPLIT pick — the summary and
+// playerState naming different players for the same slot — by making
+// playerState agree with the summary.
+//
+// ⚠️ WATCHDOG ONLY. Never call this from the live pick path. It exists because
+// two auto-pick runs for one slot can each win a DIFFERENT state doc (the three
+// writes in ProcessNewPick fan out concurrently), leaving summary+rosters on one
+// player and playerState on another. Both runs then abort before advancing, so
+// the draft is dead and the watchdog's own re-assert can never get past the
+// conflict guard — it hits the very rejection that describes the split. Seen
+// 2026-08-01 on 2026-fast-draft-364 pick 9: summary+roster NE-WR1, playerState
+// MIN-WR1; 20 minutes dead, repaired by hand.
+//
+// The summary is the authority: it is what every player already sees on the
+// board, and UpdateRosterFromPick derives from the same pick, so a healthy
+// record has summary and rosters agreeing. We therefore stamp the summary's
+// pick and release the impostor back into the pool.
+//
+// REFUSES rather than guesses when the evidence is not clean:
+//   - the impostor is on SOMEONE'S ROSTER → that is a deeper corruption than a
+//     lost race, and releasing a rostered player would take a real pick away.
+//   - no impostor is actually present → nothing to heal; let the caller's
+//     normal path run.
+func ForcePlayerStateToSummaryPick(draftId string, pick PlayerStateInfo) error {
+	if pick.PlayerId == "" || pick.PickNum <= 0 {
+		return fmt.Errorf("force playerState: refusing, incomplete pick %+v", pick)
+	}
+
+	// Roster check FIRST, outside the transaction: rosters live in a different
+	// document, and a player who legitimately sits on a roster must never be
+	// released. Read-only, so ordering here is safe.
+	rosters := RosterState{Rosters: make(map[string]*DraftStateRoster)}
+	if err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "rosters", &rosters); err != nil {
+		return fmt.Errorf("force playerState: cannot read rosters to verify: %w", err)
+	}
+
+	docRef := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/state", draftId)).Doc("playerState")
+	return utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var state map[string]PlayerStateInfo
+		if err := doc.DataTo(&state); err != nil {
+			return err
+		}
+
+		updates := []firestore.Update{}
+		for id, p := range state {
+			if id == pick.PlayerId || p.OwnerAddress == "" || p.PickNum != pick.PickNum {
+				continue
+			}
+			if anyRosterHasPlayer(rosters, id) {
+				return fmt.Errorf("force playerState: refusing, impostor %s at pick %d sits on a roster", id, pick.PickNum)
+			}
+			released := p
+			released.OwnerAddress = ""
+			released.PickNum = 0
+			released.Round = 0
+			updates = append(updates, firestore.Update{Path: id, Value: released})
+			fmt.Printf(`{"severity":"WARNING","draftId":"%s","event":"watchdog_playerstate_split_healed","pickNum":%d,"released":"%s","asserted":"%s","owner":"%s"}`+"\n",
+				draftId, pick.PickNum, id, pick.PlayerId, pick.OwnerAddress)
+		}
+		if len(updates) == 0 {
+			return fmt.Errorf("force playerState: no conflicting holder found at pick %d", pick.PickNum)
+		}
+
+		updates = append(updates, firestore.Update{Path: pick.PlayerId, Value: pick})
+		return tx.Update(docRef, updates)
+	})
+}

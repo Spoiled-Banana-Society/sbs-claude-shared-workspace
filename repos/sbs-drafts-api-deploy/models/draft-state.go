@@ -705,10 +705,20 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		if specialLevel == "Hall of Fame" {
 			tierName = "HOF"
 		} else if specialLevel == "JackHOF" {
-			// Wheel-won dual-type pass (0.1% segment) — both perks, one draft.
+			// Dual-type pass — both perks, one draft. Won on the wheel's 0.1%
+			// segment OR granted by a promo (the Banana Draw's 4 JackHOF seats).
 			tierName = "JackHOF"
 		}
-		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from Wheel)", tierName, counts.SpecialDraftCount)
+		// "(from Wheel)" was hard-coded back when the wheel was the only way to
+		// win a special. The Banana Draw then granted JackHOF passes outright,
+		// so a promo-seeded league would have announced itself as a wheel win.
+		// Origin comes off the league doc; the NUMBER is untouched — every
+		// special still draws from the one SpecialDraftCount sequence.
+		origin := "Wheel"
+		if strings.EqualFold(leagueInfo.Source, "promo") {
+			origin = "Promo"
+		}
+		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from %s)", tierName, counts.SpecialDraftCount, origin)
 		leagueInfo.Level = specialLevel
 		isJackpot = specialLevel == "Jackpot" || specialLevel == "JackHOF"
 		isHOF = specialLevel == "Hall of Fame" || specialLevel == "JackHOF"

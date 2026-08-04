@@ -49,6 +49,11 @@ type CreateSpecialDraftRequest struct {
 	// draftId, so a duplicate create can never spawn a second league or duplicate
 	// seat tokens. nil = legacy callers → fall back to the old counter path.
 	RoundId *int `json:"roundId,omitempty"`
+	// Source is how this round's seats were won — "wheel" (the JP/HOF/JackHOF
+	// wedge) or "promo" (passes granted by a giveaway). Stored on the league
+	// and read at fill for the "(from …)" suffix. Absent/unknown = "wheel",
+	// which every special before 2026-08-02 was.
+	Source string `json:"source,omitempty"`
 }
 
 // reserveSpecialDraftId atomically resolves the draftId for a special (wheel)
@@ -152,6 +157,14 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 		level = "JackHOF"
 	}
 
+	// How the seats were won. Only "promo" changes anything (the name suffix at
+	// fill); anything else — including a caller that predates this field — is a
+	// wheel win, which is what every special before 2026-08-02 was.
+	source := "wheel"
+	if strings.EqualFold(req.Source, "promo") {
+		source = "promo"
+	}
+
 	// Resolve the draftId IDEMPOTENTLY from the dedicated SpecialDraftCount
 	// sequence (NOT the per-100 slow-draft counter, which is for regular 2026-
 	// slow drafts). A marker keyed on (type, roundId) makes repeated/concurrent
@@ -170,6 +183,11 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	var existing models.League
 	if rerr := utils.Db.ReadDocument("drafts", draftId, &existing); rerr == nil && existing.LeagueId != "" {
 		league = &existing
+		// Idempotent re-create of a league made before this field existed: fill
+		// the origin in, but never overwrite one that is already recorded.
+		if league.Source == "" {
+			league.Source = source
+		}
 	} else {
 		league = &models.League{
 			LeagueId:     draftId,
@@ -181,6 +199,7 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 			Level:        level,
 			IsLocked:     false,
 			ADP:          models.SnapshotADPForLeague(draftId),
+			Source:       source,
 		}
 		if err := utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league); err != nil {
 			http.Error(w, fmt.Sprintf("Error creating league: %s", err.Error()), http.StatusInternalServerError)

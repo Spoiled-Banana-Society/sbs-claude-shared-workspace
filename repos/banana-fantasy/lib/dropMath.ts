@@ -26,7 +26,6 @@ import {
   DROP_HOUR_PT, AUTO_OPEN_HOUR_PT, ptHourUtc,
   msUntilOpen, formatOpenCountdown,
   nightIdFor, nightFromId, nightFor, revealNightIdFor, NIGHTLY_PRIZES,
-  nightlyPrizesFor,
   type DropNight,
 } from '@/lib/dropRates';
 
@@ -40,7 +39,7 @@ export type { DropNight };
 
 // ── The nightly pool ────────────────────────────────────────────────────────
 
-export type PrizeKind = 'jackpot' | 'jackhof' | 'hof' | 'spins' | 'none';
+export type PrizeKind = 'jackhof' | 'hof' | 'spins' | 'none';
 
 export interface Prize {
   kind: PrizeKind;
@@ -67,19 +66,6 @@ export const NIGHTLY_POOL: Prize[] = NIGHTLY_PRIZES.flatMap((p) =>
 );
 
 export const TOTAL_SPINS_PER_NIGHT = NIGHTLY_POOL.reduce((s, p) => s + (p.spins ?? 0), 0);
-
-/** The pool a specific night assigns — honors one-night overrides. */
-export function poolForNight(nightId: string): Prize[] {
-  return nightlyPrizesFor(nightId).flatMap((p) =>
-    Array.from({ length: p.count }, () => (
-      p.kind === 'spins' ? { kind: 'spins' as const, spins: p.spins } : { kind: p.kind }
-    )),
-  );
-}
-
-export function totalSpinsForNight(nightId: string): number {
-  return poolForNight(nightId).reduce((s, p) => s + (p.spins ?? 0), 0);
-}
 
 // ── Prize assignment ────────────────────────────────────────────────────────
 
@@ -121,11 +107,10 @@ export function assignPrizes(packs: PackRef[], seedHex: string, nightId: string)
     }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
-  const pool = poolForNight(nightId);
   return ordered.map((p, i) => ({
     packId: p.packId,
     userId: p.userId,
-    prize: pool[i] ?? { kind: 'none' as const },
+    prize: NIGHTLY_POOL[i] ?? { kind: 'none' as const },
   }));
 }
 

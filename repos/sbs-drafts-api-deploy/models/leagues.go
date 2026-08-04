@@ -183,6 +183,13 @@ type League struct {
 	Level        string            `json:"level"`
 	IsLocked     bool              `json:"isFilled"`
 	ADP          []PlayerDraftInfo `json:"ADPData"`
+	// Source is how a SPECIAL draft's seats were won: "wheel" (the JP/HOF/
+	// JackHOF wedge) or "promo" (a giveaway that granted the passes, e.g. the
+	// Banana Draw). It only decides the "(from …)" suffix on the display name
+	// at fill — the number still comes from the shared SpecialDraftCount.
+	// Empty on every league created before 2026-08-02 and on all regular
+	// drafts, and empty reads as "wheel", which is what those all were.
+	Source string `json:"source,omitempty"`
 }
 
 type PlayerDraftInfo struct {
