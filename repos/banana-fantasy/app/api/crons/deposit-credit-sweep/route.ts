@@ -87,10 +87,13 @@ export async function GET(req: NextRequest) {
   const creditErrors: string[] = [];
   let transfersSeen = 0;
   let transfersMatched = 0;
+  let latestBlockSeen = '';
+  const rawLogCounts: Record<string, number> = {};
 
   if (claimsByWallet.size > 0) {
     const latest = await client.getBlockNumber();
     const fromBlock = latest > SCAN_BLOCKS ? latest - SCAN_BLOCKS : 0n;
+    latestBlockSeen = latest.toString();
 
     for (const [wallet, claimedAmounts] of claimsByWallet) {
       scanned++;
@@ -108,6 +111,7 @@ export async function GET(req: NextRequest) {
         logger.warn('cron.deposit_sweep.scan_failed', { wallet, err: (e as Error).message });
         continue;
       }
+      rawLogCounts[wallet.slice(0, 10)] = logs.length;
       for (const l of logs) {
         const from = (l.args.from ?? '').toLowerCase();
         if (from === wallet) continue;
@@ -154,6 +158,8 @@ export async function GET(req: NextRequest) {
     transfersMatched,
     credited,
     earnedTotal,
+    latestBlockSeen,
+    rawLogCounts,
     scanErrors: scanErrors.slice(0, 5),
     creditErrors: creditErrors.slice(0, 5),
   });
