@@ -27,7 +27,11 @@ export function packsForFill(passType: 'free' | 'paid'): number {
 // peaks 5-8pm (332/378/292/367 events per hour over 14 days) and falls off a
 // cliff to 153 by 9pm, so a 9pm drop lands after the room has emptied.
 export const DROP_HOUR_PT = 20;
-/** Anything still sealed at midnight opens itself. */
+/** ⚠️ LEGACY (removed 2026-08-03): packs used to auto-open at midnight. They
+ *  now stay sealed until the owner opens them — there is NO backstop, by
+ *  Richard's call ("no backstop window at all"). The constant and the
+ *  autoOpensAt field survive only because existing night docs and clients
+ *  carry them; nothing acts on them anymore. */
 export const AUTO_OPEN_HOUR_PT = 24;
 
 /** UTC instant when LA wall-clock hits `hour` on the given y/m/d.
@@ -59,7 +63,7 @@ export interface DropNight {
   nightId: string;
   /** 8pm PT — the night locks and prizes are assigned. */
   locksAt: number;
-  /** Midnight PT — anything still sealed opens itself. */
+  /** Legacy — the old midnight auto-open instant. No longer acted on. */
   autoOpensAt: number;
 }
 
@@ -154,7 +158,14 @@ export function formatDropCountdown(nowMs = Date.now()): string {
 //
 // ⚠️ lib/dropMath builds NIGHTLY_POOL from this, so the two can never drift —
 // change a count here and the real assignment changes with it.
-export const NIGHTLY_PRIZES: Array<{ label: string; count: number; spins?: number; kind: 'jackhof' | 'hof' | 'spins' }> = [
+export interface NightlyPrizeRow {
+  label: string;
+  count: number;
+  spins?: number;
+  kind: 'jackpot' | 'jackhof' | 'hof' | 'spins';
+}
+
+export const NIGHTLY_PRIZES: NightlyPrizeRow[] = [
   { kind: 'jackhof', label: 'JACKHOF SEAT', count: 1 },
   { kind: 'hof', label: 'HOF SEAT', count: 1 },
   { kind: 'spins', label: '5 SPINS', count: 1, spins: 5 },
@@ -162,8 +173,82 @@ export const NIGHTLY_PRIZES: Array<{ label: string; count: number; spins?: numbe
   { kind: 'spins', label: '1 SPIN', count: 6, spins: 1 },
 ];
 
+// One-night boosts, keyed by nightId (PT date). The override IS the whole
+// pool for that night, not a delta — what's listed here is exactly what the
+// lock assigns and the page shows. Past-night entries are inert (their lock
+// already ran); prune whenever convenient.
+export const NIGHT_PRIZE_OVERRIDES: Record<string, NightlyPrizeRow[]> = {
+  // Boris 2026-08-03: ~20 drafts by 3pm → +1 Jackpot seat, 1-spins 6→16.
+  '2026-08-03': [
+    { kind: 'jackhof', label: 'JACKHOF SEAT', count: 1 },
+    { kind: 'jackpot', label: 'JACKPOT SEAT', count: 1 },
+    { kind: 'hof', label: 'HOF SEAT', count: 1 },
+    { kind: 'spins', label: '5 SPINS', count: 1, spins: 5 },
+    { kind: 'spins', label: '2 SPINS', count: 2, spins: 2 },
+    { kind: 'spins', label: '1 SPIN', count: 16, spins: 1 },
+  ],
+};
+
+/** The pool for a given night — override if one exists, default otherwise. */
+export function nightlyPrizesFor(nightId: string): NightlyPrizeRow[] {
+  return NIGHT_PRIZE_OVERRIDES[nightId] ?? NIGHTLY_PRIZES;
+}
+
 /** Total winning packs per night. */
 export const WINNING_PACKS_PER_NIGHT = NIGHTLY_PRIZES.reduce((s, p) => s + p.count, 0);
 /** Total spins handed out per night. */
 export const SPINS_PER_NIGHT = NIGHTLY_PRIZES
   .reduce((s, p) => s + p.count * (p.spins ?? 0), 0);
+
+export function winningPacksForNight(nightId: string): number {
+  return nightlyPrizesFor(nightId).reduce((s, p) => s + p.count, 0);
+}
+export function spinsForNight(nightId: string): number {
+  return nightlyPrizesFor(nightId).reduce((s, p) => s + p.count * (p.spins ?? 0), 0);
+}
+
+/**
+ * The promo modal's explanation text, built from the night's ACTUAL pool so
+ * the copy can never drift from what the lock assigns (per-user promo docs
+ * are seeded copies — the /api/promos route overwrites this field live).
+ */
+export function dropExplanationFor(nightId: string): string {
+  const lines = nightlyPrizesFor(nightId).map((p) => {
+    if (p.kind === 'spins') {
+      return `• ${p.count} pack${p.count === 1 ? '' : 's'} with ${p.spins} SPIN${(p.spins ?? 0) === 1 ? '' : 'S'}${p.count === 1 ? '' : ' each'}`;
+    }
+    return `• ${p.count} ${p.label}`;
+  });
+  return 'TONIGHT\'S PRIZES — ALL GUARANTEED\n'
+    + lines.join('\n')
+    + '\n\n'
+    + `${winningPacksForNight(nightId)} packs win something. Every other pack is empty.\n`
+    + '\n'
+    + 'HOW IT WORKS\n'
+    + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
+    + '• Packs stay sealed all day. At 8:00 PM PT they unlock.\n'
+    + '• Open one at a time, or open the whole stack at once.\n'
+    + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
+    + '• Anything you don\'t open simply waits for you — come back and rip it any night. You never lose what you earned.\n'
+    + '\n'
+    + 'YOUR ODDS\n'
+    + '• The seat lands in exactly one pack out of every pack earned that day.\n'
+    + '• So the more packs you hold, the bigger your share of it. Two people with one pack each are 50/50 for the seat; hold ten of the night\'s hundred and it is one in ten.\n'
+    + '\n'
+    + 'PROVABLY FAIR\n'
+    + '• Every prize is assigned at 8:00 PM from randomness committed BEFORE the night began.\n'
+    + '• Opening only reveals what was already decided — nobody, us included, can steer it.';
+}
+
+/**
+ * One-line prize rundown for notifications — "1 JACKHOF SEAT, 1 JACKPOT SEAT,
+ * 1 HOF SEAT + 25 free spins". Built from the night's ACTUAL pool so a one-night
+ * boost (NIGHT_PRIZE_OVERRIDES) reads correctly in every ping that names it.
+ */
+export function prizeSummaryLine(nightId: string): string {
+  const seats = nightlyPrizesFor(nightId)
+    .filter((p) => p.kind !== 'spins')
+    .map((p) => `${p.count} ${p.label}`);
+  const spins = spinsForNight(nightId);
+  return `${seats.join(', ')} + ${spins} free spins`;
+}

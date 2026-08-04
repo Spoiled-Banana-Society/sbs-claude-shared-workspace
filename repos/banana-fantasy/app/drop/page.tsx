@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { DropPackReveal, type RevealPrize } from '@/components/promos/DropPackReveal';
-import { NIGHTLY_PRIZES, WINNING_PACKS_PER_NIGHT, SPINS_PER_NIGHT } from '@/lib/dropRates';
+import { nightlyPrizesFor, winningPacksForNight, spinsForNight, revealNightIdFor } from '@/lib/dropRates';
 import { Modal } from '@/components/ui/Modal';
 import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 
@@ -35,11 +35,22 @@ interface DropState {
   /** Present only between 8pm and midnight — the night you're earning into
    *  while the one above is still being opened. */
   next: { nightId: string; locksAt: number; sealed: number } | null;
+  /** Sealed packs from before tonight — nothing auto-opens, so whatever you
+   *  didn't rip is still here. Newest first. */
+  previous: Array<{ nightId: string; sealed: number }>;
 }
 
 interface OpenResult {
   packId: string;
   prize: RevealPrize;
+}
+
+/** "Aug 2" from a nightId ("2026-08-02"). Nights are PT calendar dates. */
+function formatNight(nightId: string): string {
+  const [y, m, d] = nightId.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
 }
 
 function useCountdown(target: number | null): string {
@@ -66,7 +77,7 @@ export default function DropPage() {
   const [opening, setOpening] = useState(false);
   const [queue, setQueue] = useState<OpenResult[]>([]);
   const [reveal, setReveal] = useState<OpenResult | null>(null);
-  const [haul, setHaul] = useState<{ spins: number; seat: boolean }>({ spins: 0, seat: false });
+  const [haul, setHaul] = useState<{ spins: number; seat: boolean; jackpotSeat: boolean }>({ spins: 0, seat: false, jackpotSeat: false });
   /** Open-all skips the hold-to-open — holding twenty times is a chore. */
   const [batch, setBatch] = useState(false);
   const [showHow, setShowHow] = useState(false);
@@ -90,8 +101,9 @@ export default function DropPage() {
     state ? (state.status === 'earning' ? state.locksAt : state.next?.locksAt ?? null) : null,
   );
 
-  /** Open one pack, or everything. `packId` omitted = open all. */
-  const open = useCallback(async (packId?: string) => {
+  /** Open one pack, or everything. `packId` omitted = open all; `nightId`
+   *  targets a previous night's backlog instead of tonight. */
+  const open = useCallback(async (packId?: string, nightId?: string) => {
     if (!wallet || busyRef.current) return;
     busyRef.current = true;
     setOpening(true);
@@ -99,13 +111,21 @@ export default function DropPage() {
       const res = await fetch('/api/promos/drop/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: wallet, ...(packId ? { packId } : {}) }),
+        body: JSON.stringify({
+          userId: wallet,
+          ...(packId ? { packId } : {}),
+          ...(nightId ? { nightId } : {}),
+        }),
       });
       if (!res.ok) return;
       const data = await res.json() as {
-        opened: OpenResult[]; spins: number; seat: boolean;
+        opened: OpenResult[]; spins: number; seat: boolean; jackpotSeat?: boolean;
       };
-      setHaul((h) => ({ spins: h.spins + data.spins, seat: h.seat || data.seat }));
+      setHaul((h) => ({
+        spins: h.spins + data.spins,
+        seat: h.seat || data.seat,
+        jackpotSeat: h.jackpotSeat || !!data.jackpotSeat,
+      }));
       setBatch(data.opened.length > 1);
       if (data.opened.length === 1) {
         setReveal(data.opened[0]);
@@ -244,13 +264,44 @@ export default function DropPage() {
         </div>
       )}
 
-      {(haul.spins > 0 || haul.seat) && (
+      {/* ── Previous nights ──────────────────────────────────────────
+          Nothing auto-opens anymore (Richard 2026-08-03) — whatever a player
+          didn't rip is still sealed under its own night, openable any time,
+          even while tonight is still counting down. */}
+      {state && state.previous.length > 0 && (
+        <div className="mt-10 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">
+            Still sealed from previous nights
+          </p>
+          <ul className="mt-4 space-y-2">
+            {state.previous.map((p) => (
+              <li key={p.nightId} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-4 py-2.5">
+                <span className="text-sm text-white/70">
+                  <span className="font-bold text-white/85">{formatNight(p.nightId)}</span>
+                  {' '}&middot; {p.sealed} pack{p.sealed === 1 ? '' : 's'}
+                </span>
+                <button
+                  onClick={() => open(undefined, p.nightId)}
+                  disabled={opening}
+                  className="rounded-lg bg-banana px-4 py-1.5 text-[13px] font-black text-black transition-transform active:scale-[0.97] disabled:opacity-50"
+                >
+                  OPEN
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(haul.spins > 0 || haul.seat || haul.jackpotSeat) && (
         <div className="mt-10 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-center">
+          {/* "Your", not "Tonight's" — backlog opens land here too. */}
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/40">
-            Tonight&rsquo;s haul
+            Your haul
           </p>
           <p className="mt-2 text-2xl font-black text-white">
             {haul.seat && <span><JackHofWordmark size={24} /> SEAT · </span>}
+            {haul.jackpotSeat && <span className="text-jackpot">JACKPOT SEAT · </span>}
             {haul.spins} spin{haul.spins === 1 ? '' : 's'}
           </p>
         </div>
@@ -274,10 +325,11 @@ export default function DropPage() {
         </div>
 
         <ul className="mt-4 space-y-2">
-          {NIGHTLY_PRIZES.map((p) => (
+          {nightlyPrizesFor(revealNightIdFor(Date.now())).map((p) => (
             <li key={p.label} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-4 py-2.5">
               <span className={`text-sm font-bold ${
-                p.kind === 'hof' ? 'text-hof' : 'text-white/85'}`}>
+                p.kind === 'jackpot' ? 'text-jackpot'
+                  : p.kind === 'hof' ? 'text-hof' : 'text-white/85'}`}>
                 {p.kind === 'jackhof'
                   ? <><JackHofWordmark size={14} /> SEAT</>
                   : p.label}
@@ -290,7 +342,7 @@ export default function DropPage() {
         </ul>
 
         <p className="mt-3 text-center text-[12px] text-white/40">
-          {WINNING_PACKS_PER_NIGHT} packs win &middot; {SPINS_PER_NIGHT} spins total &middot; every other pack is empty
+          {winningPacksForNight(revealNightIdFor(Date.now()))} packs win &middot; {spinsForNight(revealNightIdFor(Date.now()))} spins total &middot; every other pack is empty
         </p>
 
       </div>
@@ -316,16 +368,29 @@ export default function DropPage() {
             Gold in the tear means you hit something — but not what. The card stops face-down and
             waits for <span className="font-semibold text-white/85">you</span> to flip it.
           </p>
+          {/* Built from tonight's ACTUAL pool so a one-night boost (extra
+              Jackpot seat, more spins) reads correctly here too. */}
           <p>
-            Every night <span className="font-semibold text-jackpot">1 JackHOF seat</span>,{' '}
-            <span className="font-semibold text-hof">1 HOF seat</span> and{' '}
-            <span className="font-semibold text-white/85">15 free spins</span> go out —
-            guaranteed, no matter how many packs are in play. The JackHOF seat lands in exactly one
-            pack out of every pack earned that day, so the more you hold at 8:00 PM, the bigger
-            your share of it.
+            Tonight{' '}
+            {nightlyPrizesFor(revealNightIdFor(Date.now()))
+              .filter((p) => p.kind !== 'spins')
+              .map((p, i) => (
+                <React.Fragment key={p.kind}>
+                  {i > 0 && ', '}
+                  {p.kind === 'jackhof'
+                    ? <span className="font-semibold">{p.count} <JackHofWordmark size={13} /> seat{p.count === 1 ? '' : 's'}</span>
+                    : <span className={`font-semibold ${p.kind === 'jackpot' ? 'text-jackpot' : 'text-hof'}`}>{p.count} {p.kind === 'jackpot' ? 'Jackpot' : 'HOF'} seat{p.count === 1 ? '' : 's'}</span>}
+                </React.Fragment>
+              ))}{' '}
+            and <span className="font-semibold text-white/85">
+              {spinsForNight(revealNightIdFor(Date.now()))} free spins
+            </span> go out — guaranteed, no matter how many packs are in play. The JackHOF seat
+            lands in exactly one pack out of every pack earned that day, so the more you hold at
+            8:00 PM, the bigger your share of it.
           </p>
           <p>
-            Anything still sealed at midnight opens itself — you never lose what you earned.
+            Anything you don&rsquo;t open just waits for you — sealed packs never expire and never
+            open themselves. Come back and rip them any night.
           </p>
         </div>
       </Modal>

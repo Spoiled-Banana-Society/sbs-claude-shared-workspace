@@ -4,8 +4,13 @@
  * ⚠️ SINGLE SOURCE OF TRUTH for what a pack actually pays. The Eliminator put
  * its prize logic in the cron route only, so when the client gained the ability
  * to trigger a burn it would have eliminated players with no notification and
- * never awarded the JackHOF seat. Every path here — a user opening one pack,
- * open-all, and the midnight auto-open — settles through `settlePrizes`.
+ * never awarded the JackHOF seat. Every path here — a user opening one pack or
+ * open-all, tonight's or a previous night's — settles through `settlePrizes`.
+ *
+ * ⚠️ There is NO auto-open. Packs stay sealed until the owner rips them —
+ * Richard removed the midnight sweep 2026-08-03 ("no backstop window at all").
+ * A prize is credited only when its pack opens; an absent owner's prize just
+ * waits, including a seat. That's accepted, not an oversight.
  */
 
 import { FieldValue } from 'firebase-admin/firestore';
@@ -15,6 +20,7 @@ import { createNotification } from '@/lib/queueNotifications';
 import { logger } from '@/lib/logger';
 import { ensureNight, lockNight, openPacks, type OpenedPack } from '@/lib/drop';
 import { nightFor, nightFromId, revealNightIdFor } from '@/lib/dropMath';
+import { prizeSummaryLine } from '@/lib/dropRates';
 import { unlockBadge } from '@/lib/db';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
@@ -29,12 +35,13 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
  */
 export async function settlePrizes(
   userId: string, nightId: string, opened: OpenedPack[],
-): Promise<{ spins: number; seat: boolean; hofSeat: boolean }> {
+): Promise<{ spins: number; seat: boolean; hofSeat: boolean; jackpotSeat: boolean }> {
   const db = getAdminFirestore();
   const uid = userId.toLowerCase();
   const spins = opened.reduce((s, o) => s + (o.prize.kind === 'spins' ? (o.prize.spins ?? 0) : 0), 0);
   const seat = opened.some((o) => o.prize.kind === 'jackhof');
   const hofSeat = opened.some((o) => o.prize.kind === 'hof');
+  const jackpotSeat = opened.some((o) => o.prize.kind === 'jackpot');
 
   if (spins > 0) {
     // wheelSpins is the promo-spin counter the wheel already consumes — the
@@ -77,24 +84,114 @@ export async function settlePrizes(
     logger.info('drop.hof.awarded', { nightId, userId: uid });
   }
 
-  return { spins, seat, hofSeat };
+  if (jackpotSeat) {
+    await awardSpecialSeat(uid, nightId, 'jackpot');
+    await createNotification(uid, {
+      type: 'promo',
+      title: 'JACKPOT SEAT',
+      message: 'Your pack had a Jackpot seat in it. Tap to take your place.',
+      link: '/promos?promo=drop',
+      dedupeKey: `drop-jackpot-${nightId}`,
+      icon: 'award',
+    }).catch(() => { /* best-effort */ });
+    logger.info('drop.jackpot.awarded', { nightId, userId: uid });
+  }
+
+  return { spins, seat, hofSeat, jackpotSeat };
 }
 
 /** Open packs and pay them out in one call. Used by every open path. */
 export async function openAndSettle(opts: {
   userId: string; nightId: string; packIds?: string[]; auto?: boolean;
-}): Promise<{ ok: boolean; reason?: string; opened: OpenedPack[]; spins: number; seat: boolean; hofSeat: boolean }> {
+}): Promise<{ ok: boolean; reason?: string; opened: OpenedPack[]; spins: number; seat: boolean; hofSeat: boolean; jackpotSeat: boolean }> {
   const res = await openPacks(opts);
   if (!res.ok || res.opened.length === 0) {
-    return { ...res, spins: 0, seat: false, hofSeat: false };
+    return { ...res, spins: 0, seat: false, hofSeat: false, jackpotSeat: false };
   }
   const paid = await settlePrizes(opts.userId, opts.nightId, res.opened);
   return { ...res, ...paid };
 }
 
+/** The 6pm PT heads-up — 2 hours before the night locks and opens. */
+const PRE_DROP_REMINDER_BEFORE_LOCK_MS = 2 * 60 * 60 * 1000;
+/** The "go open them" ping fires just after the 8pm lock — a few minutes so
+ *  the lock transaction and prize writes are done before anyone taps through. */
+const REMINDER_AFTER_LOCK_MS = 5 * 60 * 1000;
+/** How long past lock either ping may still send. Purely a send-window bound
+ *  (dedupe already makes each one once-ever) so a night that slipped through
+ *  never gets pinged days later. */
+const REMINDER_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/** Count each holder's sealed packs for a night. */
+async function sealedCountsByHolder(nightId: string): Promise<Map<string, number>> {
+  const db = getAdminFirestore();
+  const sealed = await db.collection('drop_nights').doc(nightId)
+    .collection('packs').where('opened', '==', false).get();
+  const counts = new Map<string, number>();
+  for (const d of sealed.docs) {
+    const p = d.data() as { userId: string };
+    const uid = String(p.userId).toLowerCase();
+    counts.set(uid, (counts.get(uid) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /**
- * Lock the night at 8pm if it's due, and auto-open anything still sealed at
- * midnight. Safe to call on any tick — both steps no-op when not due.
+ * 6pm PT ping — 2 hours out, to everyone already holding packs for tonight:
+ * what's in the pool (built from the night's ACTUAL prizes, so one-night
+ * boosts read correctly) and that there's still time to grow the stack.
+ *
+ * Idempotent per (night, wallet): the dedupeKey is the night, and
+ * createNotification writes dedupe-keyed bells with `.create()` — so the cron
+ * re-running every tick for the rest of the window can only ever send once.
+ */
+async function remindPreDrop(nightId: string): Promise<{ users: number }> {
+  const counts = await sealedCountsByHolder(nightId);
+  if (counts.size === 0) return { users: 0 };
+
+  await Promise.allSettled([...counts].map(([uid, n]) => createNotification(uid, {
+    type: 'promo',
+    title: '⏰ 2 hours until THE DROP',
+    message: `Tonight at 8:00 PM PT: ${prizeSummaryLine(nightId)} — all guaranteed. `
+      + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 8 adds more.`,
+    link: '/promos?promo=drop',
+    dedupeKey: `drop-2h-${nightId}`,
+    icon: 'ticket',
+  })));
+
+  logger.info('drop.prereminder.sent', { nightId, users: counts.size });
+  return { users: counts.size };
+}
+
+/**
+ * The 8pm ping — the drop is live, go rip your packs. Same idempotence as
+ * remindPreDrop. No deadline in the copy: packs never auto-open and never
+ * expire, they wait until the owner opens them.
+ */
+async function remindSealedHolders(nightId: string): Promise<{ users: number }> {
+  const counts = await sealedCountsByHolder(nightId);
+  if (counts.size === 0) return { users: 0 };
+
+  await Promise.allSettled([...counts].map(([uid, n]) => createNotification(uid, {
+    type: 'promo',
+    title: `Your pack${n === 1 ? ' is' : 's are'} ready — open ${n === 1 ? 'it' : 'them'}`,
+    message: `Tonight's Drop is live. You have ${n} sealed pack${n === 1 ? '' : 's'} waiting — `
+      + `open ${n === 1 ? 'it' : 'them'} to see what's inside. No rush: ${n === 1 ? 'it' : 'they'}'ll `
+      + `wait for you as long as it takes.`,
+    link: '/promos?promo=drop',
+    dedupeKey: `drop-open-reminder-${nightId}`,
+    icon: 'ticket',
+  })));
+
+  logger.info('drop.reminder.sent', { nightId, users: counts.size });
+  return { users: counts.size };
+}
+
+/**
+ * Ping pack holders at 6pm, lock the night at 8pm if it's due, and ping again
+ * right after the lock. Safe to call on any tick — every step no-ops when not
+ * due. Deliberately NO auto-open sweep (removed 2026-08-03): sealed packs stay
+ * sealed until their owner opens them, however long that takes.
  */
 export async function runDropSchedule(now = Date.now()): Promise<Record<string, unknown>> {
   if (!isFirestoreConfigured()) return { ok: false, reason: 'no-firestore' };
@@ -113,9 +210,9 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
   // silently did nothing; it had to be fired by hand on launch night
   // (2026-08-02, ~2 min late). An off-by-one that could only ever appear at
   // the one instant the whole promo depends on.
-  // Yesterday's night stays a candidate too: its midnight auto-open sweep is
-  // due at exactly the instant the reveal night rolls over, so keying only off
-  // "now" drops it one second before its sweep and strands every sealed pack.
+  // Yesterday's night stays a candidate as a straddle backstop: a lock that
+  // somehow missed its whole window still gets picked up on the next day's
+  // ticks rather than stranding the night in 'earning'.
   const today = nightFor(now);
   const candidates = [
     revealNightIdFor(now - 24 * 3600_000),
@@ -129,29 +226,27 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
     const doc = (await ref.get()).data() as { status?: string; autoOpensAt?: number } | undefined;
     if (!doc) continue;
 
-    if (doc.status === 'earning' && now >= nightFromId(nightId).locksAt) {
+    const { locksAt } = nightFromId(nightId);
+
+    // 6pm heads-up — two hours out, still earning. Window-bounded so a night
+    // processed late (straddle candidate) can't ping days after the fact.
+    if (doc.status === 'earning' && now >= locksAt - PRE_DROP_REMINDER_BEFORE_LOCK_MS && now < locksAt) {
+      out[`preRemind:${nightId}`] = await remindPreDrop(nightId);
+    }
+
+    if (doc.status === 'earning' && now >= locksAt) {
       out[`lock:${nightId}`] = await lockNight(nightId, now);
     }
 
-    // Midnight sweep — nobody loses what they earned for being asleep.
-    const fresh = (await ref.get()).data() as { status?: string } | undefined;
-    if (fresh?.status === 'locked' && now >= nightFromId(nightId).autoOpensAt) {
-      const sealed = await ref.collection('packs').where('opened', '==', false).get();
-      const byUser = new Map<string, string[]>();
-      for (const d of sealed.docs) {
-        const p = d.data() as { userId: string; packId: string };
-        byUser.set(p.userId, [...(byUser.get(p.userId) ?? []), p.packId]);
-      }
-      let users = 0;
-      for (const [uid, packIds] of byUser) {
-        await openAndSettle({ userId: uid, nightId, packIds, auto: true }).catch((e) => {
-          logger.warn('drop.autoopen.failed', { nightId, uid, err: String(e) });
-        });
-        users += 1;
-      }
-      await ref.set({ status: 'settled' }, { merge: true });
-      out[`autoOpen:${nightId}`] = { users, packs: sealed.size };
-      logger.info('drop.night.settled', { nightId, users, packs: sealed.size });
+    // The 8pm ping — the packs are open, go look. Fires once per night, a few
+    // minutes after the lock, to EVERY holder still sealed.
+    //
+    // ⚠️ Everyone sealed, never just the winners: only-winners would make the
+    // bell itself the result, spoiling the reveal for the people it's meant to
+    // reward (Boris 2026-08-02). The copy stays neutral for the same reason.
+    const nudgeAt = locksAt + REMINDER_AFTER_LOCK_MS;
+    if (now >= nudgeAt && now < locksAt + REMINDER_WINDOW_MS) {
+      out[`remind:${nightId}`] = await remindSealedHolders(nightId);
     }
   }
   return { ok: true, ...out };
@@ -171,7 +266,7 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
  * joinQueue for them.
  */
 async function awardSpecialSeat(
-  winnerId: string, nightId: string, type: 'jackhof' | 'hof',
+  winnerId: string, nightId: string, type: 'jackpot' | 'jackhof' | 'hof',
 ): Promise<void> {
   const db = getAdminFirestore();
   let seated = false;
@@ -194,7 +289,7 @@ async function awardSpecialSeat(
       await Promise.all(res.tokenIds.map((tid) => db
         .collection('owners').doc(winnerId.toLowerCase())
         .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: type === 'jackhof' ? 'JackHOF' : 'HOF' }, { merge: true })));
+        .set({ Level: type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'HOF' }, { merge: true })));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {
@@ -220,7 +315,10 @@ async function awardSpecialSeat(
   if (!seated) {
     try {
       await db.collection('v2_users').doc(winnerId)
-        .set({ [type === 'jackhof' ? 'jackhofEntries' : 'hofEntries']: FieldValue.increment(1) }, { merge: true });
+        .set({
+          [type === 'jackhof' ? 'jackhofEntries' : type === 'jackpot' ? 'jackpotEntries' : 'hofEntries']:
+            FieldValue.increment(1),
+        }, { merge: true });
       const { joinQueue } = await import('@/lib/db');
       const { joinedRoundIds } = await joinQueue(winnerId, type, 'promo');
       const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');

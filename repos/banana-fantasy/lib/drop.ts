@@ -21,8 +21,10 @@ import {
   assignPrizes, nightFor, nightFromId, nightIdFor, revealNightIdFor,
   packsForFill, seatOddsPerPack,
   NIGHTLY_POOL, TOTAL_SPINS_PER_NIGHT,
+  poolForNight, totalSpinsForNight,
   type Prize, type PackRef,
 } from '@/lib/dropMath';
+import { prizeSummaryLine } from '@/lib/dropRates';
 
 const NIGHTS = 'drop_nights';
 const PACKS = 'packs';
@@ -41,7 +43,8 @@ export interface PackDoc {
   prize?: Prize | null;
   opened: boolean;
   openedAt?: string;
-  /** True when midnight opened it rather than the user. */
+  /** Historical: true on packs the retired midnight sweep opened (through
+   *  2026-08-03). Nothing sets it anymore — packs wait for their owner. */
   autoOpened?: boolean;
 }
 
@@ -60,6 +63,9 @@ export interface NightDoc {
   /** Who got the seat. Set at lock — the whole night is decided then. */
   jackhofPackId?: string | null;
   jackhofUserId?: string | null;
+  /** Set only on nights whose override pool includes a plain Jackpot seat. */
+  jackpotPackId?: string | null;
+  jackpotUserId?: string | null;
 }
 
 const strip0x = (h: string) => (h.startsWith('0x') ? h.slice(2) : h);
@@ -204,7 +210,7 @@ async function writePackEarnedNoti(userId: string, nightId: string, earned: numb
     type: 'promo',
     icon: '🌙',
     title: `🌙 +${earned} pack${earned === 1 ? '' : 's'} — draft filled`,
-    message: `Your draft filled and earned ${earned} sealed pack${earned === 1 ? '' : 's'}. You now hold ${total} for tonight's Drop. They open at 8:00 PM PT — 1 JackHOF seat, 1 HOF seat and 15 free spins go out every night. Tap to see your stack.`,
+    message: `Your draft filled and earned ${earned} sealed pack${earned === 1 ? '' : 's'}. You now hold ${total} for tonight's Drop. They open at 8:00 PM PT — ${prizeSummaryLine(nightId)}, all guaranteed. Tap to see your stack.`,
     link: '/drop',
     read: false,
     createdAt: FieldValue.serverTimestamp(),
@@ -252,6 +258,7 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
 
   const assignments = assignPrizes(refs, seedHex, nightId);
   const jackhof = assignments.find((a) => a.prize.kind === 'jackhof') ?? null;
+  const jackpot = assignments.find((a) => a.prize.kind === 'jackpot') ?? null;
 
   // Claim the lock first, so two simultaneous callers can't both assign.
   try {
@@ -265,6 +272,8 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
         packCount: refs.length,
         jackhofPackId: jackhof?.packId ?? null,
         jackhofUserId: jackhof?.userId ?? null,
+        jackpotPackId: jackpot?.packId ?? null,
+        jackpotUserId: jackpot?.userId ?? null,
       }, { merge: true });
     });
   } catch (err) {
@@ -289,7 +298,9 @@ export async function lockNight(nightId: string, nowMs = Date.now()): Promise<{
 
   logger.info('drop.night.locked', {
     nightId, packCount: refs.length,
-    jackhofUserId: jackhof?.userId ?? null, spins: TOTAL_SPINS_PER_NIGHT,
+    jackhofUserId: jackhof?.userId ?? null,
+    jackpotUserId: jackpot?.userId ?? null,
+    spins: totalSpinsForNight(nightId),
   });
   return { ok: true, packCount: refs.length, jackhofUserId: jackhof?.userId ?? null };
 }
@@ -371,6 +382,9 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
   /** Set only between 8pm and midnight: the night you're now EARNING into,
    *  while the night above is the one you're still opening. */
   next: { nightId: string; locksAt: number; sealed: number } | null;
+  /** Sealed packs from BEFORE tonight — there's no auto-open, so anything a
+   *  player didn't rip is still waiting. Newest first. */
+  previous: Array<{ nightId: string; sealed: number }>;
 }> {
   // The night being REVEALED, not the one being earned into. After 8pm those
   // diverge, and using the earning night here would hide tonight's packs.
@@ -382,10 +396,11 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     status: 'earning' as const,
     packCount: 0,
     seatOdds: 0,
-    totalSpins: TOTAL_SPINS_PER_NIGHT,
-    poolSize: NIGHTLY_POOL.length,
+    totalSpins: totalSpinsForNight(night.nightId),
+    poolSize: poolForNight(night.nightId).length,
     you: null,
     next: null,
+    previous: [] as Array<{ nightId: string; sealed: number }>,
   };
   if (!isFirestoreConfigured()) return base;
 
@@ -426,6 +441,41 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     next = { nightId: earningId, locksAt: nextNight.locksAt, sealed };
   }
 
+  // Sealed packs from BEFORE tonight. No auto-open means these can exist for
+  // any night the player ever earned into, so the candidate nights come from
+  // their own dropLedger (permanent, per-user, one doc per fill) rather than
+  // scanning drop_nights — no collection-group index, cost bounded by the
+  // player's own history. Equality-only pack queries need no composite index.
+  let previous: Array<{ nightId: string; sealed: number }> = [];
+  if (userId) {
+    try {
+      const uid = userId.toLowerCase();
+      const ledger = await db.collection(USERS).doc(uid).collection(LEDGER)
+        .select('nightId').get();
+      const nightIds = [...new Set(
+        ledger.docs.map((d) => (d.data() as { nightId?: string }).nightId)
+          .filter((id): id is string => !!id && id < night.nightId),
+      )].sort().reverse();
+
+      const rows = await Promise.all(nightIds.map(async (id) => {
+        // Skip nights that never locked — their packs have no prizes yet and
+        // openPacks would refuse them anyway. The cron's straddle candidate
+        // locks stragglers on its own.
+        const [nightSnap, packSnap] = await Promise.all([
+          db.collection(NIGHTS).doc(id).get(),
+          db.collection(NIGHTS).doc(id).collection(PACKS).where('userId', '==', uid).get(),
+        ]);
+        if ((nightSnap.data() as NightDoc | undefined)?.status === 'earning') return null;
+        const sealed = packSnap.docs.filter((d) => !(d.data() as PackDoc).opened).length;
+        return sealed > 0 ? { nightId: id, sealed } : null;
+      }));
+      previous = rows.filter((r): r is { nightId: string; sealed: number } => r !== null);
+    } catch (err) {
+      // The backlog is additive UI — never let it take down tonight's state.
+      logger.warn('drop.previous_failed', { err: (err as Error).message });
+    }
+  }
+
   return {
     ...base,
     status: doc?.status ?? 'earning',
@@ -436,6 +486,7 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     seedDigest: doc?.seedDigest,
     you,
     next,
+    previous,
   };
 }
 
