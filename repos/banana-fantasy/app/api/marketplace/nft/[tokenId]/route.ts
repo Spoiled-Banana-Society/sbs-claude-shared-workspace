@@ -79,7 +79,7 @@ export async function GET(
     const v2 = ownerLc ? (displays as Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }>)[ownerLc] : null;
     // A Go name equal to the wallet's own hash default is the app's old
     // auto-sync echo, not a chosen name — treat like a placeholder.
-    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc && (!ownerLc || profile.pfp.displayName !== bananaDefaultName(ownerLc)) ? profile.pfp.displayName : null;
+    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc && (!ownerLc || profile.pfp.displayName !== bananaDefaultName(ownerLc)) && !/^user[-_ ]?\d+$/i.test(profile.pfp.displayName.trim()) ? profile.pfp.displayName : null;
     // SERVER-assigned unique handle (assigned on first sight by
     // getUserDisplayBatch above) — never the colliding wallet hash.
     const bananaName = ownerLc ? (v2?.bananaNumber != null ? `Banana${v2.bananaNumber}` : bananaPlaceholderName(ownerLc)) : null;

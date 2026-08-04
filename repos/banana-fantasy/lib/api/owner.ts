@@ -102,6 +102,7 @@ export function isPlaceholderName(name: string | undefined | null, walletAddress
   if (t === '') return true;
   if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
   if (/^user-0x[0-9a-fA-F]/i.test(t)) return true; // seeded `User-0x…` placeholder (createUser)
+  if (/^user[-_ ]?\d+$/i.test(t)) return true; // legacy junk default ("User107744") — same rule as display-batch/friends
   if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true; // raw / partially-truncated wallet
   if (/^0x[0-9a-fA-F]+\.[0-9a-fA-F]+$/.test(t)) return true; // truncated `0x709.a4e9` form
   if (t.toLowerCase() === normalizeWalletAddress(walletAddress).toLowerCase()) return true;
