@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { DropPackReveal, type RevealPrize } from '@/components/promos/DropPackReveal';
 import { NIGHTLY_PRIZES, WINNING_PACKS_PER_NIGHT, SPINS_PER_NIGHT } from '@/lib/dropRates';
 import { Modal } from '@/components/ui/Modal';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 
 /**
  * THE DROP — the opening room.
@@ -249,7 +250,7 @@ export default function DropPage() {
             Tonight&rsquo;s haul
           </p>
           <p className="mt-2 text-2xl font-black text-white">
-            {haul.seat && <span className="text-jackpot">JACKHOF SEAT · </span>}
+            {haul.seat && <span><JackHofWordmark size={24} /> SEAT · </span>}
             {haul.spins} spin{haul.spins === 1 ? '' : 's'}
           </p>
         </div>
@@ -276,9 +277,10 @@ export default function DropPage() {
           {NIGHTLY_PRIZES.map((p) => (
             <li key={p.label} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-4 py-2.5">
               <span className={`text-sm font-bold ${
-                p.kind === 'jackhof' ? 'text-jackpot'
-                  : p.kind === 'hof' ? 'text-hof' : 'text-white/85'}`}>
-                {p.label}
+                p.kind === 'hof' ? 'text-hof' : 'text-white/85'}`}>
+                {p.kind === 'jackhof'
+                  ? <><JackHofWordmark size={14} /> SEAT</>
+                  : p.label}
               </span>
               <span className="text-[13px] text-white/40">
                 {p.count} pack{p.count === 1 ? '' : 's'}
