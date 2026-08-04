@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 // Flip to false (and deploy) to remove the notice when the incident resolves.
-const SHOW_NOTICE = true;
+const SHOW_NOTICE = false;
 
 export function ServiceNoticeBanner() {
   const [dismissed, setDismissed] = useState(false);
