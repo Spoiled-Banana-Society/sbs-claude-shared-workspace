@@ -230,7 +230,12 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
 
     // 6pm heads-up — two hours out, still earning. Window-bounded so a night
     // processed late (straddle candidate) can't ping days after the fact.
-    if (doc.status === 'earning' && now >= locksAt - PRE_DROP_REMINDER_BEFORE_LOCK_MS && now < locksAt) {
+    // First automated night is 8/4: this shipped mid-window on 8/3, when the
+    // "2 hours" claim was already stale and Boris had hand-blasted the sprint
+    // push — firing would have double-pinged everyone. Guard is inert from 8/4
+    // on; delete whenever.
+    const preRemindLive = nightId > '2026-08-03';
+    if (preRemindLive && doc.status === 'earning' && now >= locksAt - PRE_DROP_REMINDER_BEFORE_LOCK_MS && now < locksAt) {
       out[`preRemind:${nightId}`] = await remindPreDrop(nightId);
     }
 
