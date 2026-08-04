@@ -27,7 +27,11 @@ export function packsForFill(passType: 'free' | 'paid'): number {
 // peaks 5-8pm (332/378/292/367 events per hour over 14 days) and falls off a
 // cliff to 153 by 9pm, so a 9pm drop lands after the room has emptied.
 export const DROP_HOUR_PT = 20;
-/** Anything still sealed at midnight opens itself. */
+/** ⚠️ LEGACY (removed 2026-08-03): packs used to auto-open at midnight. They
+ *  now stay sealed until the owner opens them — there is NO backstop, by
+ *  Richard's call ("no backstop window at all"). The constant and the
+ *  autoOpensAt field survive only because existing night docs and clients
+ *  carry them; nothing acts on them anymore. */
 export const AUTO_OPEN_HOUR_PT = 24;
 
 /** UTC instant when LA wall-clock hits `hour` on the given y/m/d.
@@ -59,7 +63,7 @@ export interface DropNight {
   nightId: string;
   /** 8pm PT — the night locks and prizes are assigned. */
   locksAt: number;
-  /** Midnight PT — anything still sealed opens itself. */
+  /** Legacy — the old midnight auto-open instant. No longer acted on. */
   autoOpensAt: number;
 }
 
@@ -225,7 +229,7 @@ export function dropExplanationFor(nightId: string): string {
     + '• Packs stay sealed all day. At 8:00 PM PT they unlock.\n'
     + '• Open one at a time, or open the whole stack at once.\n'
     + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
-    + '• Anything still sealed at midnight opens itself — you never lose what you earned.\n'
+    + '• Anything you don\'t open simply waits for you — come back and rip it any night. You never lose what you earned.\n'
     + '\n'
     + 'YOUR ODDS\n'
     + '• The seat lands in exactly one pack out of every pack earned that day.\n'
@@ -234,4 +238,17 @@ export function dropExplanationFor(nightId: string): string {
     + 'PROVABLY FAIR\n'
     + '• Every prize is assigned at 8:00 PM from randomness committed BEFORE the night began.\n'
     + '• Opening only reveals what was already decided — nobody, us included, can steer it.';
+}
+
+/**
+ * One-line prize rundown for notifications — "1 JACKHOF SEAT, 1 JACKPOT SEAT,
+ * 1 HOF SEAT + 25 free spins". Built from the night's ACTUAL pool so a one-night
+ * boost (NIGHT_PRIZE_OVERRIDES) reads correctly in every ping that names it.
+ */
+export function prizeSummaryLine(nightId: string): string {
+  const seats = nightlyPrizesFor(nightId)
+    .filter((p) => p.kind !== 'spins')
+    .map((p) => `${p.count} ${p.label}`);
+  const spins = spinsForNight(nightId);
+  return `${seats.join(', ')} + ${spins} free spins`;
 }

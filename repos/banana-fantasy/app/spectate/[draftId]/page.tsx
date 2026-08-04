@@ -21,13 +21,39 @@ export default function SpectatePage() {
 
   useEffect(() => {
     if (!draftId) return;
-    const search = new URLSearchParams({
-      id: draftId,
-      mode: 'live',
-      wallet: PLACEHOLDER_WALLET,
-      spectate: 'true',
-    });
-    router.replace(`/draft-room?${search.toString()}`);
+    let cancelled = false;
+
+    const go = (specialType: string | null) => {
+      if (cancelled) return;
+      const search = new URLSearchParams({
+        id: draftId,
+        mode: 'live',
+        wallet: PLACEHOLDER_WALLET,
+        spectate: 'true',
+      });
+      if (specialType) search.set('specialType', specialType);
+      router.replace(`/draft-room?${search.toString()}`);
+    };
+
+    // Special drafts (Jackpot / HOF / JackHOF queue rounds) only show their
+    // branding when the room URL carries specialType — participants get it
+    // from their queue links, but spectators came in bare, so a JackHOF
+    // draft looked like a plain Pro room (Boris 2026-08-03). Look the id up
+    // in the queues before redirecting; on any failure fall through plain.
+    (async () => {
+      try {
+        const res = await fetch('/api/queues', { cache: 'no-store' });
+        if (res.ok) {
+          const queues = await res.json() as Record<string, { rounds?: Array<{ draftId?: string }> }>;
+          for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
+            if (queues[type]?.rounds?.some((r) => r.draftId === draftId)) return go(type);
+          }
+        }
+      } catch { /* lookup is best-effort — plain spectate beats no spectate */ }
+      go(null);
+    })();
+
+    return () => { cancelled = true; };
   }, [draftId, router]);
 
   return (
