@@ -38,7 +38,16 @@ export const maxDuration = 120;
  */
 
 const TRANSFER_EVENT = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
-const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+// ⚠️ cache: 'no-store' is LOAD-BEARING. Next patches fetch in route handlers
+// and caches identical requests — viem's eth_blockNumber POST body never
+// changes, so without this the cron got a DAYS-old cached block height and
+// scanned a 3h window from last week: green runs, zero credits, forever
+// (caught 2026-08-04 via the heartbeat run-summary: latestBlockSeen was
+// ~257k blocks behind the real chain).
+const client = createPublicClient({
+  chain: BASE,
+  transport: http(BASE_RPC_URL, { fetchOptions: { cache: 'no-store' } }),
+});
 
 // Look back 3h of claims and blocks: MoonPay settlement can lag well past the
 // modal's patience, and the 10-min cron cadence overlaps generously (markers
