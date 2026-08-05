@@ -23,9 +23,12 @@ import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { bootStoragePrune } from '@/lib/safeStorage';
+import { startMemoryWatch } from '@/lib/memWatch';
 import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
+import { NyDepositAutoRecovery } from '@/components/NyDepositAutoRecovery';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -39,6 +42,22 @@ function AppContent({ children }: { children: React.ReactNode }) {
   // to the admin Logs tab. Idempotent — safe to call on every mount.
   useEffect(() => {
     installGlobalErrorHandlers();
+  }, []);
+
+  // iOS Safari caps localStorage ~5MB and a full store makes every unguarded
+  // write throw ("The quota has been exceeded.") — including across refreshes,
+  // since storage persists. Free refetchable caches BEFORE anything crashes,
+  // and report what's big so the hog shows up in the admin logs.
+  useEffect(() => {
+    bootStoragePrune();
+  }, []);
+
+  // A renderer OOM kill ("Aw, Snap!", Error code 5) can't report itself — the
+  // JS context dies first. Sample memory once a minute and mirror the last
+  // sample into sessionStorage (which survives the crash-reload) so a
+  // resurrected tab tells us how big it got and where. Idempotent.
+  useEffect(() => {
+    startMemoryWatch();
   }, []);
 
   // iOS installed PWAs suspend the realtime websocket when backgrounded and
@@ -119,6 +138,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
+        {/* Zero-tap NY deposit recovery — silently finishes any NY web2 deposit
+            whose sweep+bridge died mid-job (money sitting on the source chain).
+            Renders nothing; embedded-wallet NY users only. */}
+        <NyDepositAutoRecovery />
         {/* First-purchase popup — opens DURING the "Generating your Digital
             Team" screen (Boris 2026-07-13: users are guaranteed to be watching
             it). Mounted UNCONDITIONALLY: the live unlock event fires at

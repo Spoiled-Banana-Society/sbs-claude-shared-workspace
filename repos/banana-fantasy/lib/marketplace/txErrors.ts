@@ -6,8 +6,26 @@
  * — never show those to a user. The raw error is still logged separately for
  * debugging; this is purely for what the person sees.
  */
+
+/**
+ * Wrap a message that is ALREADY user-facing copy (our own API's 403 reasons,
+ * "OpenSea error: …" details) so friendlyTxError shows it verbatim instead of
+ * collapsing it into the generic fallback. Without this, every server-side
+ * rejection — wheel-pass lock, free-pass block, OpenSea refusal — read as
+ * "Couldn't create the listing. Please try again." and was undiagnosable from
+ * a user screenshot (AceJohn, ticket-2681).
+ */
+export function userFacingTxError(message: string): Error {
+  const err = new Error(message);
+  (err as Error & { userFacing?: boolean }).userFacing = true;
+  return err;
+}
+
 export function friendlyTxError(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
   const raw = error instanceof Error ? error.message : String(error ?? '');
+  if (error instanceof Error && (error as Error & { userFacing?: boolean }).userFacing && raw.trim()) {
+    return raw.slice(0, 240);
+  }
   const lower = raw.toLowerCase();
 
   // Specific signals FIRST — ethers wraps RPC errors in "could not coalesce

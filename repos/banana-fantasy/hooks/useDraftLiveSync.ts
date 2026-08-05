@@ -12,6 +12,7 @@ import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { safeSetItem } from '@/lib/safeStorage';
 import { logger } from '@/lib/logger';
 import { clientLog } from '@/lib/clientLog';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
@@ -28,6 +29,15 @@ type PendingWsMessage =
 
 function countSummaryPicks(summary: draftApi.DraftSummary): number {
   return summary.filter((item) => Boolean(item.playerInfo?.playerId)).length;
+}
+
+function maxSummaryPick(summary: draftApi.DraftSummary): number {
+  let max = 0;
+  for (const item of summary) {
+    const p = item.playerInfo;
+    if (p?.playerId && p.pickNum > max) max = p.pickNum;
+  }
+  return max;
 }
 
 interface UseDraftLiveSyncParams {
@@ -92,6 +102,16 @@ export function useDraftLiveSync({
   const pendingWsMessagesRef = useRef<PendingWsMessage[]>([]);
   const lastWsUpdateRef = useRef<number>(Date.now());
   const lastFirebaseUpdateRef = useRef<number>(Date.now());
+  // Applied-pick high-water mark for the board-gap invariant: if the draft is
+  // on pick N, the board must have absorbed every pick below N. RTDB delivers
+  // only the LATEST lastPick after a connection gap (backgrounded phone,
+  // flaky network), so intermediate picks can vanish with no other signal —
+  // the silence watchdog stays quiet (updates ARE flowing again) and the
+  // turn-start refresh only covers your own turn. Seeded from the initial
+  // summary; advanced by each detected pick. A detected pick that jumps more
+  // than one ahead is proof of a hole → one authoritative REST rebuild.
+  const lastAppliedPickRef = useRef<number>(0);
+  const gapResyncInFlightRef = useRef<boolean>(false);
   // Slow-draft "your pick is up" push fires exclusively server-side via the
   // Firebase Cloud Function listening on drafts/{id}/realTimeDraftInfo; a
   // previous client-side trigger here was removed because proving "some
@@ -107,11 +127,53 @@ export function useDraftLiveSync({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseActive, firebaseRtdb.data]);
 
+  // One authoritative board rebuild after a detected pick gap. Single-flight
+  // (RULE #0: can never storm — one fetch at a time, no effect-dep churn, no
+  // Privy-derived callbacks). Non-blocking: the UI stays interactive; the
+  // fetched summary goes through refreshSummaryPicks, which has its own
+  // stale-response guard, so an in-flight older response can't clobber
+  // newer live state.
+  const resyncBoardAfterGap = useCallback((fromPick: number, toPick: number) => {
+    if (gapResyncInFlightRef.current || !draftId) return;
+    gapResyncInFlightRef.current = true;
+    console.warn(`[GapResync] Missed picks ${fromPick + 1}–${toPick - 1} — rebuilding board from REST`);
+    draftApi.getDraftSummary(draftId).then(summary => {
+      if (summary.length > 0) {
+        engine.refreshSummaryPicks(summary);
+        logger.debug(`[GapResync] Applied ${countSummaryPicks(summary)} picks from REST`);
+      }
+    }).catch((err) => {
+      reportClientError({
+        source: LOG_SOURCES.draft.WATCHDOG_RESYNC_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, call: 'getDraftSummary', trigger: 'pickGap', fromPick, toPick },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    }).finally(() => {
+      // Clear even on failure so the next detected gap (or the same gap
+      // re-detected by a later pick) can retry.
+      gapResyncInFlightRef.current = false;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId, walletParam]);
+
   useEffect(() => {
     if (!firebaseActive || !firebaseRtdb.newPickDetected || !firebaseRtdb.detectedPick) return;
 
-    logger.debug('[Firebase] New pick detected:', firebaseRtdb.detectedPick.playerId, 'pick#', firebaseRtdb.detectedPick.pickNum);
-    engine.handleFirebaseNewPick(firebaseRtdb.detectedPick);
+    const pick = firebaseRtdb.detectedPick;
+    logger.debug('[Firebase] New pick detected:', pick.playerId, 'pick#', pick.pickNum);
+    // Board-gap invariant: this pick must be exactly one above the last
+    // applied pick. A bigger jump means RTDB coalesced/skipped snapshots and
+    // the skipped picks are still on the board as ghosts. The detected pick
+    // itself is applied immediately below either way — the rebuild only
+    // back-fills the hole.
+    if (pick.pickNum > lastAppliedPickRef.current + 1) {
+      resyncBoardAfterGap(lastAppliedPickRef.current, pick.pickNum);
+    }
+    if (pick.pickNum > lastAppliedPickRef.current) lastAppliedPickRef.current = pick.pickNum;
+    engine.handleFirebaseNewPick(pick);
     firebaseRtdb.clearNewPick();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseActive, firebaseRtdb.newPickDetected, firebaseRtdb.detectedPick]);
@@ -497,12 +559,15 @@ export function useDraftLiveSync({
     // timestamp. Ownership is handled by always overwriting — last writer
     // wins, and readers only care about recency, not identity.
     const key = `draft-room-ws:${draftId}`;
-    const writeHeartbeat = () => localStorage.setItem(key, String(Date.now()));
+    // safeSetItem: an unguarded write here fires every 3s in the draft room —
+    // with full storage (iOS ~5MB cap) it threw QuotaExceeded into the error
+    // boundary and took the whole room down mid-pick (ticket-2681, 8/4).
+    const writeHeartbeat = () => safeSetItem(key, String(Date.now()));
     writeHeartbeat();
     const interval = setInterval(writeHeartbeat, 3_000);
     return () => {
       clearInterval(interval);
-      localStorage.removeItem(key);
+      try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
     };
   }, [isLiveMode, draftId]);
 
@@ -598,6 +663,11 @@ export function useDraftLiveSync({
         if (queuePayload.length === 0 && localQueue.length > 0) {
           engine.reorderQueue(localQueue);
         }
+
+        // Seed the board-gap invariant's high-water mark from the picks we
+        // just loaded, so a mid-draft join can't read as a false gap and the
+        // first real detection compares against server truth.
+        lastAppliedPickRef.current = maxSummaryPick(summary);
 
         liveInitializedRef.current = true;
         setEngineReady(true);

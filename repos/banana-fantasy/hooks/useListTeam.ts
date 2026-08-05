@@ -4,7 +4,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useSendTransaction, useWallets } from '@privy-io/react-auth';
 
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
-import { friendlyTxError } from '@/lib/marketplace/txErrors';
+import { friendlyTxError, userFacingTxError } from '@/lib/marketplace/txErrors';
+import { clientLog } from '@/lib/clientLog';
 import { logger } from '@/lib/logger';
 
 // OpenSea Seaport conduit (operator we approve to transfer the NFT on sale).
@@ -27,7 +28,7 @@ export interface UseListTeamResult {
  * the NFT approval, createListing, and cancel.
  */
 export function useListTeam(walletAddress: string | null): UseListTeamResult {
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
   const { sendTransaction } = useSendTransaction();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,12 +71,23 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
   const listTeam = useCallback(async (tokenId: string, priceUsd: number, durationSeconds: number) => {
     setError(null);
     setBusy(true);
+    // Same dead-button trap as Make Offer (fixed 8/1): an external wallet is
+    // only in Privy's `wallets` list while connected in THIS browser session,
+    // so a logged-in user can reach List for Sale with selectedWallet === null.
+    // Say why instead of collapsing into the generic "Couldn't create" message.
+    clientLog('marketplace#', 'list_submit_clicked', {
+      tokenId, priceUsd, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
+    });
     try {
       const { createListing } = await import('@/lib/marketplace/sell');
       const { ethers } = await import('ethers');
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
-      if (!selectedWallet) throw new Error('No wallet connected');
+      if (!selectedWallet) {
+        throw userFacingTxError(walletsReady
+          ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+          : 'Still connecting your wallet — give it a second and tap List for Sale again.');
+      }
       const ethereum = await selectedWallet.getEthereumProvider();
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
@@ -120,12 +132,22 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
     } finally {
       setBusy(false);
     }
-  }, [selectedWallet, sendTx]);
+  }, [selectedWallet, sendTx, walletsReady, wallets.length]);
 
   const cancelTeam = useCallback(async (tokenId: string, orderHash: string) => {
     setError(null);
     setBusy(true);
+    clientLog('marketplace#', 'cancel_listing_clicked', {
+      tokenId, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
+    });
     try {
+      // Same wallet-not-in-session trap as listTeam — fail with the reason, not
+      // the generic message (sendTx would otherwise throw a bare error mid-flow).
+      if (!selectedWallet) {
+        throw userFacingTxError(walletsReady
+          ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+          : 'Still connecting your wallet — give it a second and try again.');
+      }
       const response = await fetch('/api/marketplace/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,7 +202,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
     } finally {
       setBusy(false);
     }
-  }, [sendTx, walletAddress, selectedWallet]);
+  }, [sendTx, walletAddress, selectedWallet, walletsReady, wallets.length]);
 
   return { listTeam, cancelTeam, busy, error, clearError: () => setError(null) };
 }

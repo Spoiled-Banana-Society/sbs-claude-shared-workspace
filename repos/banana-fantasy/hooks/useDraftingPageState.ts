@@ -10,6 +10,7 @@ import { isStagingMode, getDraftServerUrl } from '@/lib/staging';
 import { useActiveDrafts } from '@/hooks/useActiveDrafts';
 import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
+import { buildDraftRoomUrl as buildDraftRoomUrlForDraft } from '@/lib/draftRoomUrl';
 import type { ApiDraftToken } from '@/lib/api/owner';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
@@ -25,6 +26,7 @@ import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
+import { safeSetItem } from '@/lib/safeStorage';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
@@ -70,6 +72,39 @@ function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 
     if (getSnakeDrafterIndex(pickNumber + i) === userIndex) return i;
   }
   return 0;
+}
+
+/**
+ * Go clamps `pickNumber` at totalPicks, so "sitting on the unmade final pick"
+ * and "finished" are indistinguishable in /state/info. Treating both as
+ * completed removed the row from My Drafts for the one person on the clock for
+ * it — on a slow draft that's an 8-hour window (FC / BBB #183, 2026-07-31).
+ * The summary tells them apart: the last slot has no player name until the
+ * pick actually lands.
+ *
+ * Rule #0: this sits inside a 3s sync loop, so the verdict is cached per draft
+ * and only re-checked every FINAL_PICK_RECHECK_MS. Only drafts already at the
+ * final pick ever get here, so it's at most a couple of ids per user. On any
+ * error we return false = "not pending" = keep the old completion behavior,
+ * so a flaky Go call can never strand a finished draft in the list forever.
+ */
+const FINAL_PICK_RECHECK_MS = 30_000;
+const finalPickCache = new Map<string, { at: number; pending: boolean }>();
+
+async function finalPickStillPending(draftId: string, totalPicks: number): Promise<boolean> {
+  const hit = finalPickCache.get(draftId);
+  const now = Date.now();
+  if (hit && now - hit.at < FINAL_PICK_RECHECK_MS) return hit.pending;
+  let pending = false;
+  try {
+    const summary = await draftApi.getDraftSummary(draftId);
+    pending = summary.length >= totalPicks
+      && !(summary[totalPicks - 1]?.playerInfo?.displayName ?? '').trim();
+  } catch {
+    pending = false; // fail closed — behave exactly as before the check existed
+  }
+  finalPickCache.set(draftId, { at: now, pending });
+  return pending;
 }
 
 function computeTurnsFromServer(
@@ -167,6 +202,7 @@ export function useDraftingPageState() {
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
       flagsKnown: isBalanceLoaded,
+      isLoggedIn,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
@@ -174,7 +210,7 @@ export function useDraftingPageState() {
       },
       isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, user?.walletAddress]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, isLoggedIn, user?.walletAddress]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   // Manual-only browsing (auto-rotate removed 2026-06-09): promos never
@@ -370,24 +406,8 @@ export function useDraftingPageState() {
     setTimeout(() => setClaimSuccess({ show: false, count: 0 }), 2000);
   };
 
-  const buildDraftRoomUrl = (draft: Draft) => {
-    // Don't pass a numbered name for filling drafts — batch number only assigned after start
-    const isFilling = draft.status === 'filling' || (draft.players || 0) < 10;
-    const params = new URLSearchParams({
-      id: draft.queueDraftId || draft.id,
-      name: isFilling ? 'Draft Room' : draft.contestName,
-      speed: draft.draftSpeed,
-      players: String(draft.players),
-    });
-    if (isLive && user?.walletAddress) {
-      params.set('mode', 'live');
-      params.set('wallet', user.walletAddress);
-    }
-    if (draft.passType) params.set('passType', draft.passType);
-    const st = draft.specialType || ((draft.type === 'jackpot' || draft.type === 'hof') && draft.draftSpeed === 'slow' ? draft.type : undefined);
-    if (st) params.set('specialType', st);
-    return `/draft-room?${params.toString()}`;
-  };
+  const buildDraftRoomUrl = (draft: Draft) =>
+    buildDraftRoomUrlForDraft(draft, { live: isLive, wallet: user?.walletAddress });
 
   const handleDraftClick = async (draft: Draft) => {
     if (draft.specialType && draft.id.startsWith('queue-')) {
@@ -510,18 +530,46 @@ export function useDraftingPageState() {
 
         // Self-heal: drop any live (non-completed) draft id from the hidden
         // list. Without this, one auto-hide permanently hides a draft the
-        // user is actively in on that device. Exception: drafts the user
-        // explicitly nuked via "Clear All" are NEVER un-hidden here — an
-        // explicit Clear All overrides the active-draft protection.
+        // user is actively in on that device.
+        //
+        // 2026-07-23: the "explicit Clear All is NEVER un-hidden" exemption is
+        // GONE — it was the root cause of the "I entered and it doesn't show,
+        // no matter how many times" wave. Clear All backend-LEAVES every draft
+        // and blacklists their ids; when a user then re-entered, the router
+        // seated them right back into one of those same (now open again)
+        // lobby ids — a real, current seat that the exemption kept invisible
+        // forever. Server truth wins now: if the wallet currently holds a
+        // token for a league (it's in activeTokens), that seat ALWAYS shows.
+        // The blacklist still works for everything the server doesn't
+        // re-confirm — a cleared dead/stuck draft stays hidden because its
+        // token was refunded/consumed and never comes back in activeTokens.
+        // Never resurrect a draft the completion sweep hid — the token
+        // endpoint's roster can lag below 15 right after a draft finishes,
+        // so "the wallet still holds an active-looking token" is NOT proof
+        // the draft is live. Without this check the unhide fought the
+        // completed-hider in a 3s loop (7/23 flicker).
+        let completedLedger: Set<string>;
+        try {
+          const raw = localStorage.getItem('banana-completed-drafts');
+          completedLedger = new Set(raw ? (JSON.parse(raw) as string[]) : []);
+        } catch { completedLedger = new Set(); }
         const wronglyHidden = activeTokens
           .map((t) => t.leagueId)
-          .filter((id) => hiddenDraftIds.has(id) && !explicitlyClearedIds.has(id));
+          .filter((id) => hiddenDraftIds.has(id) && !completedLedger.has(id));
         if (wronglyHidden.length > 0) {
           clientLog('mydrafts', 'unhid.active.drafts', { ids: wronglyHidden });
           setHiddenDraftIds((prev) => {
             const next = new Set(prev);
             for (const id of wronglyHidden) next.delete(id);
-            try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            return next;
+          });
+          // Purge from the explicit-clear ledger too, or the next Clear All
+          // union re-blacklists and the tug-of-war resumes.
+          setExplicitlyClearedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of wronglyHidden) next.delete(id);
+            try { safeSetItem('banana-cleared-drafts', JSON.stringify([...next])); } catch { /* quota */ }
             return next;
           });
         }
@@ -984,13 +1032,30 @@ export function useDraftingPageState() {
         // active-token list — completed drafts stay completed.
         {
           const totalPicks = (info.draftOrder?.length || 10) * 15;
-          if ((info.pickNumber ?? 0) >= totalPicks) {
+          if ((info.pickNumber ?? 0) >= totalPicks && !(await finalPickStillPending(draft.id, totalPicks))) {
             draftStore.removeDraft(draft.id);
+            // Record WHY it's hidden: completed. Without this ledger the
+            // active-seat un-heal in loadLiveDrafts can't distinguish
+            // "hidden because finished" from "hidden wrongly" — and since the
+            // token endpoint's roster can lag below 15 picks right after
+            // completion, the un-heal saw an "active" token and un-hid the
+            // finished draft, which this block then re-hid on the next 3s
+            // pass. That hide/unhide loop re-rendered the whole list every
+            // 3s (the 7/23 evening "row appears for .2s then disappears"
+            // flicker, reported by FC post-v4). The ledger key is already in
+            // the logout/Clear All cleanup lifecycle.
+            try {
+              const raw = localStorage.getItem('banana-completed-drafts');
+              const ids: string[] = raw ? JSON.parse(raw) : [];
+              if (Array.isArray(ids) && !ids.includes(draft.id)) {
+                safeSetItem('banana-completed-drafts', JSON.stringify([...ids, draft.id]));
+              }
+            } catch { /* quota — worst case the unhide re-checks next pass */ }
             setHiddenDraftIds((prev) => {
               if (prev.has(draft.id)) return prev;
               const next = new Set(prev);
               next.add(draft.id);
-              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+              try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
               return next;
             });
             continue;
@@ -1022,7 +1087,7 @@ export function useDraftingPageState() {
           if (isFull && user?.id && draftOwnedByUser) {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
-              localStorage.setItem(trackedKey, '1');
+              safeSetItem(trackedKey, '1');
               fetch('/api/promos/draft-complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1037,7 +1102,7 @@ export function useDraftingPageState() {
               if (userIdx === 9) {
                 const pick10Key = `promo-pick10:${draft.id}`;
                 if (!localStorage.getItem(pick10Key)) {
-                  localStorage.setItem(pick10Key, '1');
+                  safeSetItem(pick10Key, '1');
                   fetch('/api/promos/pick10', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1699,7 +1764,7 @@ export function useDraftingPageState() {
     try {
       const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
       setHiddenDraftIds(newHidden);
-      localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+      safeSetItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
     } catch { /* ignore */ }
 
     try {
@@ -1773,12 +1838,12 @@ export function useDraftingPageState() {
 
     const combinedIds = [...new Set([...allIds, ...storeIds, ...liveTokenIds])];
     const newHidden = new Set([...Array.from(hiddenDraftIds), ...combinedIds]);
-    localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+    safeSetItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
     setHiddenDraftIds(newHidden);
     // Mark these as explicit clears so the self-heal poll can't resurrect
     // them — Clear All overrides the active-draft protection.
     const newCleared = new Set([...Array.from(explicitlyClearedIds), ...combinedIds]);
-    localStorage.setItem('banana-cleared-drafts', JSON.stringify(Array.from(newCleared)));
+    safeSetItem('banana-cleared-drafts', JSON.stringify(Array.from(newCleared)));
     setExplicitlyClearedIds(newCleared);
     setLiveDrafts([]);
     localStorage.removeItem('banana-active-drafts');
