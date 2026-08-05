@@ -30,7 +30,10 @@ const TRANSFER_EVENT = parseAbiItem('event Transfer(address indexed from, addres
 // wait-for-arrival window plus a retry after a flaky first call.
 const SCAN_BLOCKS = 1500n;
 
-const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+// no-store: Next's route-handler fetch cache serves stale responses for
+// byte-identical RPC bodies (eth_blockNumber) — same bug that blinded the
+// deposit-credit-sweep cron for days (2026-08-04). Never cache RPC reads here.
+const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL, { fetchOptions: { cache: 'no-store' } }) });
 
 export interface DepositCreditResult {
   credited: boolean;
