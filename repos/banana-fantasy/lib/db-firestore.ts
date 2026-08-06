@@ -1430,16 +1430,14 @@ async function _incrementMintPromosInTx(
     const buyBonusPromo = deepClone(buyBonusDoc.data() as Promo);
     const bbMax = buyBonusPromo.progressMax || 2;
     const bbCurrent = buyBonusPromo.progressCurrent || 0;
-    // Per-user cap (maxPassesCounted = 20 → 10 spins max): only the first 20
-    // purchased drafts ever count toward the promo. Lifetime counted passes
-    // live in modalContent.totalMinted (same bookkeeping slot the mint promo
-    // uses; claimCount can't serve — claiming zeroes it). Past the cap the
-    // promo silently stops advancing.
-    const bbCap = API_CONFIG.promos.buyBonus.maxPassesCounted;
+    // "Max 20 buys" is MARKETING, not a hard stop (Richard 8/6: "the cap was
+    // just to get people to buy 20") — a buyer who passes 20 keeps earning a
+    // spin per 2 for the whole window. maxPassesCounted only clamps the UI
+    // meter (pins at 20/20). Lifetime counted passes live in
+    // modalContent.totalMinted (claimCount can't serve — claiming zeroes it).
     const bbCounted = buyBonusPromo.modalContent?.totalMinted || 0;
-    const bbCountable = Math.max(0, Math.min(quantity, bbCap - bbCounted));
-    buyBonusPromo.modalContent.totalMinted = bbCounted + bbCountable;
-    const bbNewTotal = bbCurrent + bbCountable;
+    buyBonusPromo.modalContent.totalMinted = bbCounted + quantity;
+    const bbNewTotal = bbCurrent + quantity;
     // DELTA, not absolute — same fix as computeMintProgress. Subtracting
     // Math.floor(bbCurrent / bbMax) prevents a stored `bbMax` (the full-bar
     // value on an exact-multiple landing) from re-counting the already-awarded
