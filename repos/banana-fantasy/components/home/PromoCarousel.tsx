@@ -313,15 +313,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       : 'border border-[#d2d2d7] shadow-sm'}
                   `}
                 >
-                  {/* Kickoff featured treatment — turf stripe + faint corner footballs */}
+                  {/* Kickoff featured treatment — turf stripe only (corner footballs
+                      removed, Richard 2026-08-06: the chip's football is the only one). */}
                   {isKickoff && (
-                    <>
-                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#22c55e] via-[#fbbf24] to-[#22c55e]" />
-                      <span className="absolute left-3 top-9 z-[5] opacity-40 text-xs pointer-events-none">🏈</span>
-                      <span className="absolute right-8 top-14 z-[5] opacity-30 text-[10px] pointer-events-none">🏈</span>
-                      <span className="absolute left-5 bottom-9 z-[5] opacity-35 text-sm pointer-events-none">🏈</span>
-                      <span className="absolute right-4 bottom-14 z-[5] opacity-30 text-[10px] pointer-events-none">🏈</span>
-                    </>
+                    <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#22c55e] via-[#fbbf24] to-[#22c55e]" />
                   )}
 
                   {/* Hover overlay */}
@@ -405,6 +400,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* THE DROP's countdown lives in the FOOTER with the other
                         promo timers — see the isDrop block below. */}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    {/* Kickoff cap sits right under the guarantee line (Richard 2026-08-06). */}
+                    {isKickoff && (
+                      <span className="mt-0.5 block text-center text-[10px] font-bold text-[#16a34a]">Max {API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
+                    )}
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -565,8 +564,6 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           {isKickoff && (
                             <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
                               <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} drafts</span>
-                              <span className="text-[#c4c4c8]">·</span>
-                              <span className="font-semibold">Max {API_CONFIG.promos.buyBonus.maxPassesCounted}</span>
                               {promo.timerEndTime && (
                                 <>
                                   <span className="text-[#c4c4c8]">·</span>
