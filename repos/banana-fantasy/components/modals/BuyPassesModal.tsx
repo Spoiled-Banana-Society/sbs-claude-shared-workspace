@@ -19,6 +19,9 @@ import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
+import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
+import { isBuyBonusActive } from '@/lib/api/config';
 import {
   type FlowStep,
   type ModalPhase,
@@ -1266,6 +1269,26 @@ export function BuyPassesModal({
                     {paymentMethod === 'usdc' && usdcTotal && !isWeb2 ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
                   </span>
                 </div>
+                {/* First-purchase offer — quantity-reactive, math from the same
+                    promoMath helpers the server grants with (new: qty × 2 spins,
+                    each ≥1 Free Draft; returning: classic floor(qty/2), no
+                    deadline). Hidden once consumed (variant 'done'). */}
+                {(() => {
+                  const fpLine = firstPurchaseBuyLine(user?.firstPurchaseVariant ?? 'unknown', quantity);
+                  return fpLine ? (
+                    <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
+                  ) : null;
+                })()}
+                {/* Kickoff Weekend upsell — ONLY for buyers whose first-purchase
+                    promo is fully settled (the exact no-stack gate the server
+                    grants with, Richard 2026-08-06). New/returning players still
+                    on their conversion promo see the fpLine above instead and
+                    never this one. Quantity-reactive spin count. */}
+                {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
+                  <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
+                    🏈 Kickoff: every 2 drafts = 1 FREE spin{quantity >= 2 ? ` — this buy earns ${Math.floor(quantity / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+                  </p>
+                )}
               </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
                 <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
@@ -1312,6 +1335,34 @@ export function BuyPassesModal({
                   `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
                 )}
               </button>
+            )}
+
+            {/* Bonus spin. Two rules this markup exists to honour:
+                1. The entry is NEVER described as depending on the spin — the
+                   purchase is complete and confirmed before the spin is even
+                   mentioned, and the spin can only add.
+                2. Spinning is always optional and never auto-opens. The spin is
+                   banked server-side at purchase, so someone who just took the
+                   last seat in a draft goes straight to drafting instead of
+                   getting a wheel in front of a starting countdown. */}
+            {SPIN_ON_PURCHASE_UI_ENABLED && flowStep === 'idle' && quantity >= 1 && (
+              <p className="mt-2.5 text-center text-[11px] leading-relaxed text-text-secondary">
+                Includes {quantity === 1 ? 'a free bonus spin' : `${quantity} free bonus spins`} on the Banana Wheel.
+                Your {quantity === 1 ? 'entry is' : 'entries are'} confirmed at purchase — the spin only ever adds to it.
+              </p>
+            )}
+            {SPIN_ON_PURCHASE_UI_ENABLED && flowStep === 'success' && (
+              <div className="mt-3 flex flex-col items-center gap-1.5">
+                <Link
+                  href="/banana-wheel"
+                  className="text-sm font-semibold text-banana underline hover:brightness-110"
+                >
+                  Spin your bonus {(mintedCount || quantity) === 1 ? 'spin' : 'spins'} (free)
+                </Link>
+                <span className="text-[11px] text-text-secondary">
+                  Saved to your account — spin whenever you like.
+                </span>
+              </div>
             )}
 
             {/* Cancel — only while waiting on the card flow (pre-on-chain).

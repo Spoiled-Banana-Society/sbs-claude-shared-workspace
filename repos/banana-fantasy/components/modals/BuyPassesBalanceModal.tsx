@@ -2,6 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
+import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
+import { isBuyBonusActive } from '@/lib/api/config';
+import { useAuth } from '@/hooks/useAuth';
 
 interface BuyPassesBalanceModalProps {
   isOpen: boolean;
@@ -35,6 +38,11 @@ export function BuyPassesBalanceModal({
   onAddFunds,
 }: BuyPassesBalanceModalProps) {
   const [qty, setQty] = useState(1);
+  // First-purchase offer line — server-computed variant; math from the same
+  // promoMath helpers the purchase path grants with. Null once consumed;
+  // unknown (flags not yet loaded) → new-player math labeled "New players".
+  const { user } = useAuth();
+  const fpLine = firstPurchaseBuyLine(user?.firstPurchaseVariant ?? 'unknown', qty);
 
   useEffect(() => {
     if (!isOpen) setQty(1);
@@ -121,6 +129,16 @@ export function BuyPassesBalanceModal({
               ${affordable ? (balanceUsd - total).toFixed(2) : shortBy.toFixed(2)}
             </span>
           </div>
+          {fpLine && (
+            <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
+          )}
+          {/* Kickoff Weekend upsell — same settled-first-purchase gate as
+              BuyPassesModal (no-stack rule, Richard 2026-08-06). */}
+          {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
+            <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
+              🏈 Kickoff: every 2 drafts = 1 FREE spin{qty >= 2 ? ` — this buy earns ${Math.floor(qty / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+            </p>
+          )}
         </div>
 
         <button
