@@ -9,17 +9,28 @@ import { computeClassicPairGrant } from '@/lib/promoMath';
 describe('computeClassicPairGrant', () => {
   it('first purchase qty 1 counts the pass, pays nothing yet', () => {
     expect(computeClassicPairGrant(0, 0, 1))
-      .toEqual({ passesCounted: 1, spins: 0 });
+      .toEqual({ passesCounted: 1, spins: 0, exhausted: false });
   });
 
   it('second 1-pass buy completes the pair → 1 spin (the Banana10084 case)', () => {
     expect(computeClassicPairGrant(1, 0, 1))
-      .toEqual({ passesCounted: 2, spins: 1 });
+      .toEqual({ passesCounted: 2, spins: 1, exhausted: false });
   });
 
   it('one 2-pass cart pays 1 spin immediately — unchanged from the old rule', () => {
     expect(computeClassicPairGrant(0, 0, 2))
-      .toEqual({ passesCounted: 2, spins: 1 });
+      .toEqual({ passesCounted: 2, spins: 1, exhausted: false });
+  });
+
+  it('caps at 20 spins (Richard 2026-08-06): pass 40 pays the last spin and closes the offer', () => {
+    expect(computeClassicPairGrant(38, 19, 2))
+      .toEqual({ passesCounted: 40, spins: 1, exhausted: true });
+    // One giant cart clamps to the cap instead of floor(qty/2).
+    expect(computeClassicPairGrant(0, 0, 100))
+      .toEqual({ passesCounted: 100, spins: 20, exhausted: true });
+    // Past the cap nothing more accrues, ever.
+    expect(computeClassicPairGrant(40, 20, 6))
+      .toEqual({ passesCounted: 46, spins: 0, exhausted: true });
   });
 
   it('split 1-then-10 pays like an 11-cart: 5 spins total', () => {

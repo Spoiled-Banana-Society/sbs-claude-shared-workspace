@@ -101,19 +101,11 @@ export function DraftRow({
   }, [draft.id, live.displayPhase, live.playerCount, live.countdown, draft.type, draft.draftType, draft.specialType, draft.enginePickNumber]);
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
-  // Wheel-won drafts know their tier up front, so label them clearly instead of
-  // the generic "Draft Room" (filling) / "League #N" (filled). Regular drafts
-  // keep "Draft Room" while filling — their tier is hidden until the slot reveal.
-  // jackhof was missing here, so the Banana Draw league fell back to the
-  // generic "Draft Lobby" name (2026-07-27). JSX so the wordmark keeps its
-  // locked two-tone.
-  const wheelLabel: React.ReactNode = draft.specialType === 'jackpot'
-    ? 'Jackpot (from Wheel)'
-    : draft.specialType === 'hof'
-      ? 'HOF (from Wheel)'
-      : draft.specialType === 'jackhof'
-        ? <><JackHofWordmark size={12} /> Draft</>
-        : null;
+  // Wheel-won drafts get one neutral name — the type column already carries
+  // the tier (JACKPOT / HOF / JACKHOF wordmark + verified badge), and these
+  // rows only render under the "From the Wheel" section header, so repeating
+  // the tier here printed it twice on one row (ticket-2661, 2026-08-06).
+  const wheelLabel: React.ReactNode = isSpecial ? 'Wheel Draft' : null;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
     ? { ...live, displayPhase: 'draft-starting' as const, countdown: live.countdown != null ? live.countdown + 45 : null }
     : live;
@@ -125,7 +117,9 @@ export function DraftRow({
         isYourTurn ? 'border-banana bg-banana/10' : isCreating ? 'border-banana/50 bg-banana/5' : 'border-white/[0.08] bg-white/[0.02]'
       }`}
     >
-      <div className="flex items-center justify-between px-3 sm:px-5 py-3">
+      {/* gap keeps the unfixed-width mobile columns from colliding into one
+          unreadable run ("JACKHOF Draft8hJACKHOF…") on narrow viewports. */}
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-3 sm:px-5 py-3">
         <div className="sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>

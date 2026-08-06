@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
-import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
+import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
@@ -364,7 +364,7 @@ function calcSpinsForPurchase(quantity: number): number {
 }
 
 function calcBuyBonusFreeDrafts(quantity: number): number {
-  if (!API_CONFIG.promos.buyBonus.enabled) return 0;
+  if (!isBuyBonusActive()) return 0;
   // In 'spin' mode the reward is a wheel spin granted on CLAIM (claim path in
   // claimPromo) — this legacy auto-grant of free drafts must stay at 0 or the
   // verifyPurchase path would hand out drafts on top of the claimable spin.
@@ -643,6 +643,21 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     if (promo.type === 'new-user' && hasVerifiedTwitter && !newUserPromoAlreadyClaimed && !newUserBlocked) {
       promo.claimable = true;
       promo.claimCount = Math.max(promo.claimCount ?? 0, 1);
+    }
+    // Kickoff Buy 2 → FREE SPIN: stamp the live countdown to the Sunday-night
+    // cutoff on every read while the window is open — the /promos card and
+    // the modal render any timerEndTime they see, so this is the only wiring
+    // the clock needs. Cleared after the window so no stale 0:00:00 lingers.
+    if (promo.type === 'buy-bonus') {
+      promo.timerEndTime = isBuyBonusActive()
+        ? new Date(API_CONFIG.promos.buyBonus.endsAtMs).toISOString()
+        : undefined;
+      // Live copy overlay (Boris 2026-08-06): per-user docs were seeded with
+      // the old "Buy 2 → FREE SPIN" title — keep every surface on the current
+      // wording without a backfill.
+      promo.title = 'Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
+      promo.modalContent = promo.modalContent || {};
+      promo.modalContent.title = '🏈 Football is BACK: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
     }
     // Returning players keep the CLASSIC first-purchase promo copy (their
     // rate is unchanged) — overlay it AFTER the static seed overlay so the
@@ -1376,14 +1391,25 @@ async function _incrementMintPromosInTx(
   tx: FirebaseFirestore.Transaction,
   userRef: FirebaseFirestore.DocumentReference,
   quantity: number,
-  opts: { handleFirstPurchase?: boolean } = {},
+  opts: { handleFirstPurchase?: boolean; firstPurchaseSettled?: boolean } = {},
 ): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number; newTotalMinted: number }> {
   // READS FIRST — Firestore requires every read before any write in a tx.
   const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
   // Only the wrapper-driven paid paths (card-mint / staging-mint) handle the
   // first-purchase bonus; the legacy verifyPurchase path writes userRef itself
-  // and opts out to avoid a double-write to the user doc.
+  // and opts out to avoid a double-write to the user doc (it passes the
+  // already-read firstPurchaseBonusGranted via opts.firstPurchaseSettled).
   const userSnap = opts.handleFirstPurchase ? await tx.get(userRef) : null;
+  // Kickoff no-stack rule (Richard 2026-08-06): the Buy 2 → FREE SPIN promo
+  // only advances for buyers whose first-purchase promo was fully settled
+  // BEFORE this purchase — the same money must never feed both. New players'
+  // first buy goes to first-purchase (flag flips in this tx, using the
+  // pre-tx value here); returning players on the classic pair accumulator
+  // (flag never set) keep earning through THAT card instead — same 1-spin-
+  // per-2 reward, so they lose nothing, they just can't double-dip.
+  const fpSettledBefore = opts.handleFirstPurchase
+    ? (userSnap?.data() as { firstPurchaseBonusGranted?: boolean } | undefined)?.firstPurchaseBonusGranted === true
+    : opts.firstPurchaseSettled === true;
 
   let mintMilestonesEarned = 0;
   let newTotalMinted = 0;
@@ -1431,7 +1457,8 @@ async function _incrementMintPromosInTx(
 
   // First-purchase bonus, TWO rates since 2026-07-10 (Boris):
   //   - NEW players: every pass on the FIRST paid purchase = 2 spins
-  //     (FIRST_PURCHASE_SPINS_PER_PASS) — buy 1 → 2, buy 2 → 4, no cap.
+  //     (FIRST_PURCHASE_SPINS_PER_PASS) — buy 1 → 2, buy 2 → 4, capped at
+  //     FIRST_PURCHASE_MAX_SPINS (20) since 2026-08-06 (Richard).
   //   - RETURNING players (past-player snapshot / manual allowlist / web2
   //     identity match): the CLASSIC promo, unchanged — every 2 passes = 1
   //     spin (was every-4 until 07-06).
@@ -1489,6 +1516,9 @@ async function _incrementMintPromosInTx(
         tx.set(userRef, {
           firstPurchaseClassicPasses: g.passesCounted,
           ...(g.spins > 0 ? { firstPurchaseClassicSpins: awarded + g.spins } : {}),
+          // Spin cap reached (FIRST_PURCHASE_MAX_SPINS) → the offer is done;
+          // flipping the durable flag retires the card ('done' variant).
+          ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
         }, { merge: true });
         if (g.spins > 0) creditFpSpins(g.spins);
       }
@@ -1502,16 +1532,27 @@ async function _incrementMintPromosInTx(
   }
 
   let buyBonusMilestonesEarned = 0;
-  // Gated on config: when the promo is off (July 4th run ended 2026-07-06)
-  // purchases must not bank hidden progress/claims toward it.
-  const buyBonusDoc = API_CONFIG.promos.buyBonus.enabled
+  // Gated on isBuyBonusActive (enabled + before the Sunday-night endsAtMs
+  // cutoff) AND the no-stack rule above: outside the window purchases must
+  // not bank hidden progress or claims toward it — that's what stranded 173
+  // milestones before July 4th.
+  const buyBonusDoc = isBuyBonusActive() && fpSettledBefore
     ? promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus')
     : undefined;
   if (buyBonusDoc) {
     const buyBonusPromo = deepClone(buyBonusDoc.data() as Promo);
     const bbMax = buyBonusPromo.progressMax || 2;
     const bbCurrent = buyBonusPromo.progressCurrent || 0;
-    const bbNewTotal = bbCurrent + quantity;
+    // Per-user cap (maxPassesCounted = 20 → 10 spins max): only the first 20
+    // purchased drafts ever count toward the promo. Lifetime counted passes
+    // live in modalContent.totalMinted (same bookkeeping slot the mint promo
+    // uses; claimCount can't serve — claiming zeroes it). Past the cap the
+    // promo silently stops advancing.
+    const bbCap = API_CONFIG.promos.buyBonus.maxPassesCounted;
+    const bbCounted = buyBonusPromo.modalContent?.totalMinted || 0;
+    const bbCountable = Math.max(0, Math.min(quantity, bbCap - bbCounted));
+    buyBonusPromo.modalContent.totalMinted = bbCounted + bbCountable;
+    const bbNewTotal = bbCurrent + bbCountable;
     // DELTA, not absolute — same fix as computeMintProgress. Subtracting
     // Math.floor(bbCurrent / bbMax) prevents a stored `bbMax` (the full-bar
     // value on an exact-multiple landing) from re-counting the already-awarded
@@ -1873,7 +1914,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     let freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
-    const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
+    const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity, {
+      firstPurchaseSettled: user.firstPurchaseBonusGranted === true,
+    });
     if (buyBonusMilestonesEarned > 0 && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
     }

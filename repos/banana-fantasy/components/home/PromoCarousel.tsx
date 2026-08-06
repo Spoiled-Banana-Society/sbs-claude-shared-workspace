@@ -289,13 +289,13 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
               // ⚠️ `featured` means PINNED TO POSITION 1 — it does not mean
-              // July 4th. This used to read `!!promo.featured`, so the moment
-              // any other promo was featured it inherited the flag stripe,
-              // corner stars and a literal "🇺🇸 July 4th Weekend" chip. That
-              // shipped on 2026-07-31: THE ELIMINATOR went out featured and
-              // users screenshotted it asking why a July promo said July 4th.
-              // The patriotic treatment belongs to buy-bonus and nothing else.
-              const isJuly4 = !!promo.featured && promo.type === 'buy-bonus';
+              // Kickoff. This used to read `!!promo.featured`, so the moment
+              // any other promo was featured it inherited the themed stripe,
+              // corner marks and a literal event chip. That shipped on
+              // 2026-07-31: THE ELIMINATOR went out featured and users
+              // screenshotted it asking why a July promo said July 4th.
+              // The Kickoff treatment belongs to buy-bonus and nothing else.
+              const isKickoff = !!promo.featured && promo.type === 'buy-bonus';
               // Chase Your Pick live state — pick slot, next-hit spins, 24h clock.
               const isChase = promo.type === 'pick-chase';
               const chase = isChase ? deriveChaseState(promo) : null;
@@ -313,15 +313,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       : 'border border-[#d2d2d7] shadow-sm'}
                   `}
                 >
-                  {/* July 4th featured treatment — flag stripe + faint corner stars */}
-                  {isJuly4 && (
-                    <>
-                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#ef4444] via-[#f8fafc] to-[#3b82f6]" />
-                      <span className="absolute left-3 top-9 z-[5] text-[#ef4444]/50 text-xs pointer-events-none">✦</span>
-                      <span className="absolute right-8 top-14 z-[5] text-[#3b82f6]/45 text-[10px] pointer-events-none">✦</span>
-                      <span className="absolute left-5 bottom-9 z-[5] text-[#3b82f6]/50 text-sm pointer-events-none">✦</span>
-                      <span className="absolute right-4 bottom-14 z-[5] text-[#ef4444]/45 text-[10px] pointer-events-none">✦</span>
-                    </>
+                  {/* Kickoff featured treatment — turf stripe only (corner footballs
+                      removed, Richard 2026-08-06: the chip's football is the only one). */}
+                  {isKickoff && (
+                    <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#22c55e] via-[#fbbf24] to-[#22c55e]" />
                   )}
 
                   {/* Hover overlay */}
@@ -346,9 +341,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   )}
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
-                    {isJuly4 && (
-                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#ef4444]/10 via-transparent to-[#3b82f6]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
-                        🇺🇸 July 4th Weekend
+                    {isKickoff && (
+                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#22c55e]/10 via-transparent to-[#fbbf24]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
+                        🏈 Football is BACK
                       </span>
                     )}
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
@@ -404,7 +399,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     )}
                     {/* THE DROP's countdown lives in the FOOTER with the other
                         promo timers — see the isDrop block below. */}
-                    <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    <SpinExplainer promoTitle={promoTitle} promoType={promo.type} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -559,14 +554,33 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
                       {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
+                          {/* Kickoff: drafts counted toward the 20-draft cap + live
+                              countdown to the Sunday-night cutoff (timerEndTime is
+                              stamped server-side while the window is open). */}
+                          {isKickoff && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
+                              {promo.timerEndTime && (
+                                <>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
                           {progressMax > 1 && (
                             <>
-                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                              </div>
+                              {/* Kickoff hides this counter — its stat row above already
+                                  carries the numbers; two number lines overflowed the
+                                  fixed-height card (Richard 2026-08-06). */}
+                              {!isKickoff && (
+                                <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                  <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                                </div>
+                              )}
                               <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-500 ${isJuly4 ? 'bg-gradient-to-r from-[#ef4444] to-[#3b82f6]' : 'bg-[#1d1d1f]'}`}
+                                  className={`h-full rounded-full transition-all duration-500 ${isKickoff ? 'bg-gradient-to-r from-[#22c55e] to-[#fbbf24]' : 'bg-[#1d1d1f]'}`}
                                   style={{ width: `${progressPercent}%` }}
                                 />
                               </div>

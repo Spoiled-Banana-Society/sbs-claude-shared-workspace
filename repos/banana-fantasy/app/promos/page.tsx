@@ -35,7 +35,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'hof':                { accent: '#D4AF37', label: 'HOF' },
   'mint':               { accent: '#a855f7', label: 'Buy' },
   'new-user':           { accent: '#ec4899', label: 'New User' },
-  'buy-bonus':          { accent: '#ef4444', label: 'July 4th' },
+  'buy-bonus':          { accent: '#22c55e', label: 'Kickoff' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
@@ -584,7 +584,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
             <DropCountdown wallet={wallet} />
           </div>
         )}
-        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
+        <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}
         </p>
@@ -630,12 +630,16 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
           </div>
         )}
 
-        {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
+        {/* Progress — hairline, banana fill on claimable, neutral otherwise.
+            Kickoff buy-bonus also prints lifetime drafts counted toward its
+            20-draft cap (modalContent.totalMinted) next to the pair meter. */}
         {showProgress && (
           <div className="mt-auto mb-4">
             <div className="flex justify-between items-baseline mb-1.5">
               <span className="text-white/55 text-xs tabular-nums">
-                {progressCurrent} / {progressMax}
+                {promo.type === 'buy-bonus'
+                  ? `${progressCurrent} / ${progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts · Max ${API_CONFIG.promos.buyBonus.maxPassesCounted}`
+                  : `${progressCurrent} / ${progressMax}`}
               </span>
               {timeRemaining && (
                 <span className="text-white/30 text-[11px] tabular-nums">{timeRemaining}</span>

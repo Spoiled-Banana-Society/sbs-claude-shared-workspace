@@ -9,6 +9,7 @@ import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { FIRST_PURCHASE_MAX_SPINS, FIRST_PURCHASE_SPINS_PER_PASS } from '@/lib/promoMath';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -214,13 +215,18 @@ export async function creditDepositCandidates(
       const usedBudget = Math.max(0, (udata.firstDepositPassesUsed as number | undefined) ?? 0);
       let budgetUpdate: Record<string, number> = {};
       let spinsPending = 0;
+      // Budget (and therefore the bell's spin promise) is capped so the promo
+      // never pays more than FIRST_PURCHASE_MAX_SPINS (Richard 2026-08-06);
+      // pre-cap users with a bigger stored budget promise-and-pay only to the cap.
+      const maxBudgetPasses = FIRST_PURCHASE_MAX_SPINS / FIRST_PURCHASE_SPINS_PER_PASS;
       if (isNewPlayer) {
         if (existingBudget === 0) {
-          const budget = Math.max(1, Math.floor(cand.valueUsd / 25));
+          const budget = Math.min(Math.max(1, Math.floor(cand.valueUsd / 25)), maxBudgetPasses);
           budgetUpdate = { firstDepositPassBudget: budget };
-          spinsPending = budget * 2;
+          spinsPending = budget * FIRST_PURCHASE_SPINS_PER_PASS;
         } else {
-          spinsPending = Math.max(0, existingBudget - usedBudget) * 2;
+          spinsPending = Math.max(0, Math.min(existingBudget, maxBudgetPasses) - usedBudget)
+            * FIRST_PURCHASE_SPINS_PER_PASS;
         }
       }
       tx.set(userRef, { cardFeeCreditCents: rollover, cardFeeFrontGranted: true, ...budgetUpdate }, { merge: true });

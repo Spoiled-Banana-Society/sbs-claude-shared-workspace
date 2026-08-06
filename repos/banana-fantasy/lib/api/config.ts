@@ -40,10 +40,18 @@ export const API_CONFIG = {
     },
 
     buyBonus: {
-      // July 4th weekend promo — ended 2026-07-06. Disabled stops purchases
-      // from advancing the (now hidden) promo; flip back on to re-run it.
-      enabled: false,
+      // Kickoff Weekend promo (football is back) — runs through Sunday
+      // night 2026-08-09. Disabled stops purchases from advancing the
+      // promo; endsAtMs auto-cuts increments + hides the card without a
+      // manual teardown deploy (the July 4th run needed one).
+      enabled: true,
+      // Midnight Pacific, end of Sunday 2026-08-09 (= 2026-08-10T07:00:00Z).
+      endsAtMs: 1786345200000,
       buy: 2,
+      // Per-user cap (Richard 2026-08-06 "max the promo to 20"): at most 20
+      // purchased drafts count toward the promo per wallet = 10 spins max
+      // for the weekend. Purchases past the cap simply stop advancing it.
+      maxPassesCounted: 20,
       // What a milestone pays out on claim. 'spin' = 1 Banana Wheel spin
       // (Richard's July 4th 2026 call); 'draft' = the original flat
       // free-draft reward — that machinery (on-chain mint, Go API
@@ -58,6 +66,17 @@ export const API_CONFIG = {
     },
   },
 } as const;
+
+/**
+ * True while the Buy 2 → FREE SPIN promo is live: enabled AND before the
+ * Sunday-night cutoff. Every purchase-path increment and every visibility
+ * surface must key off THIS, not `enabled` alone — that's what auto-ends
+ * the promo at midnight without a deploy. Claims of already-earned spins
+ * are NOT gated here (earned rewards stay claimable after the window).
+ */
+export function isBuyBonusActive(now: number = Date.now()): boolean {
+  return API_CONFIG.promos.buyBonus.enabled && now < API_CONFIG.promos.buyBonus.endsAtMs;
+}
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 

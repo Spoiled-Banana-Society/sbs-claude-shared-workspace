@@ -3,25 +3,23 @@
 import React from 'react';
 import { promoAwardsSpin } from '@/lib/promoMath';
 
-// Short "what's a spin?" explainer shown on spin-awarding promo cards.
+// Short "what's a spin?" explainer shown on the NEW-USER promo card only.
 //
-// Boris 2026-06-24: this copy now stays on EVERY spin-awarding promo box,
-// ALWAYS, for ALL users — new AND returning, even after they've taken their
-// first spin. (Previously it self-gated off for BB3 returning players and for
-// anyone who'd already spun, which made it vanish from every box once a user
-// completed the new-user promo.) The new-user promo BOX itself still leaves
-// after claim via the separate promo filter — that's unchanged; this only
-// governs the tagline inside the spin promos that remain.
-//
-// Pass the promo title so it only renders on spin promos, and a className so
-// each surface can colour it for its card (light vs dark).
+// Boris 2026-08-06: this line now renders ONLY on the new-user promo —
+// every other promo card drops it (supersedes the 2026-06-24 rule that kept
+// it on every spin-awarding box; the cards got too text-heavy once several
+// spin promos ran at once). Callers pass promoType; anything except
+// 'new-user' renders nothing.
 export function SpinExplainer({
   promoTitle,
+  promoType,
   className = '',
 }: {
   promoTitle?: string;
+  promoType?: string;
   className?: string;
 }) {
+  if (promoType !== 'new-user') return null;
   if (!promoAwardsSpin(promoTitle)) return null;
 
   // Per-promo reward framing. Each Banana Wheel spin wins up to 20 Free Drafts

@@ -1245,18 +1245,30 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
-  const renderBuyBonusContent = () => (
-    <div className="bg-bg-tertiary rounded-xl p-4 text-center">
-      <div className="text-4xl mb-3">🎁</div>
-      <p className="font-semibold mb-2 text-text-primary">July 4th Weekend Only!</p>
-      <p className="text-text-secondary text-sm">
-        Head to the Buy Drafts page to take advantage of this promotion.
-      </p>
-      <Button className="mt-4" onClick={() => window.location.href = '/buy-drafts'}>
-        Buy Drafts
-      </Button>
-    </div>
-  );
+  const renderBuyBonusContent = () => {
+    const kickoffCap = API_CONFIG.promos.buyBonus.maxPassesCounted;
+    const kickoffCounted = Math.min(promo?.modalContent?.totalMinted || 0, kickoffCap);
+    return (
+      <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+        <div className="text-4xl mb-3">🏈</div>
+        <p className="font-semibold mb-2 text-text-primary">Football is BACK — Kickoff Weekend Only!</p>
+        {/* Live countdown to the Sunday-night cutoff (timerEndTime is stamped
+            server-side on every read while the window is open). */}
+        {promo?.timerEndTime && (
+          <p className="text-xl font-bold text-banana tabular-nums mb-1">{formatTimeRemaining(promo.timerEndTime)}</p>
+        )}
+        <p className="text-text-secondary text-xs mb-2">
+          {kickoffCounted}/{kickoffCap} drafts counted toward your weekend spins
+        </p>
+        <p className="text-text-secondary text-sm">
+          Head to the Buy Drafts page to take advantage of this promotion.
+        </p>
+        <Button className="mt-4" onClick={() => window.location.href = '/buy-drafts'}>
+          Buy Drafts
+        </Button>
+      </div>
+    );
+  };
 
   const renderTweetEngagementContent = () => {
     if (!isLoggedIn) {

@@ -21,6 +21,7 @@ import { clientLog } from '@/lib/clientLog';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
+import { isBuyBonusActive } from '@/lib/api/config';
 import {
   type FlowStep,
   type ModalPhase,
@@ -1278,6 +1279,16 @@ export function BuyPassesModal({
                     <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
                   ) : null;
                 })()}
+                {/* Kickoff Weekend upsell — ONLY for buyers whose first-purchase
+                    promo is fully settled (the exact no-stack gate the server
+                    grants with, Richard 2026-08-06). New/returning players still
+                    on their conversion promo see the fpLine above instead and
+                    never this one. Quantity-reactive spin count. */}
+                {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
+                  <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
+                    🏈 Kickoff: every 2 drafts = 1 FREE spin{quantity >= 2 ? ` — this buy earns ${Math.floor(quantity / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+                  </p>
+                )}
               </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
                 <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">

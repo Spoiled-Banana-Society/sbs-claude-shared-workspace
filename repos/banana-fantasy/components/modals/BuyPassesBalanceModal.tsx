@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
 import { firstPurchaseBuyLine } from '@/lib/firstPurchaseCopy';
+import { isBuyBonusActive } from '@/lib/api/config';
 import { useAuth } from '@/hooks/useAuth';
 
 interface BuyPassesBalanceModalProps {
@@ -130,6 +131,13 @@ export function BuyPassesBalanceModal({
           </div>
           {fpLine && (
             <p className="text-banana/80 text-xs text-center pt-1">{fpLine}</p>
+          )}
+          {/* Kickoff Weekend upsell — same settled-first-purchase gate as
+              BuyPassesModal (no-stack rule, Richard 2026-08-06). */}
+          {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
+            <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
+              🏈 Kickoff: every 2 drafts = 1 FREE spin{qty >= 2 ? ` — this buy earns ${Math.floor(qty / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+            </p>
           )}
         </div>
 

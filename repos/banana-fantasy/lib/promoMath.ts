@@ -10,24 +10,36 @@ export const FIRST_PURCHASE_SPINS_PER_PASS = 2;
 /** Classic first-purchase rate, kept for RETURNING players: passes per spin. */
 export const FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN = 2;
 
+/** Hard ceiling on spins EITHER first-purchase promo can pay per user
+ *  (Richard 2026-08-06 — both promos were uncapped before this). */
+export const FIRST_PURCHASE_MAX_SPINS = 20;
+
 /**
  * NEW-player wheel spins earned from a first paid purchase of `quantity`
- * passes. 1 → 2, 2 → 4, 4 → 8 … NO cap (new players upgraded from the
- * classic rate on 2026-07-10). Non-positive / invalid → 0.
+ * passes. 1 → 2, 2 → 4, 4 → 8 … capped at FIRST_PURCHASE_MAX_SPINS, so
+ * passes past 10 earn nothing (Richard 2026-08-06; new players upgraded from
+ * the classic rate on 2026-07-10). Non-positive / invalid → 0.
  */
 export function firstPurchaseSpins(quantity: number): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
-  return Math.floor(quantity) * FIRST_PURCHASE_SPINS_PER_PASS;
+  return Math.min(
+    Math.floor(quantity) * FIRST_PURCHASE_SPINS_PER_PASS,
+    FIRST_PURCHASE_MAX_SPINS,
+  );
 }
 
 /**
  * RETURNING-player (classic) first-purchase spins: every 2 passes = 1 spin,
- * floored — 2 → 1, 4 → 2, 6 → 3 … NO cap. Unchanged from the pre-2026-07-10
- * promo (Boris: keep it as it was for returning players).
+ * floored — 2 → 1, 4 → 2, 6 → 3 … capped at FIRST_PURCHASE_MAX_SPINS
+ * (Richard 2026-08-06; uncapped before). Rate unchanged from the
+ * pre-2026-07-10 promo (Boris: keep it as it was for returning players).
  */
 export function classicFirstPurchaseSpins(quantity: number): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
-  return Math.floor(quantity / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN);
+  return Math.min(
+    Math.floor(quantity / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN),
+    FIRST_PURCHASE_MAX_SPINS,
+  );
 }
 
 export interface DepositBudgetGrant {
@@ -46,6 +58,9 @@ export interface DepositBudgetGrant {
  * is used up — so the deposit-time bell ("your $50 → 4 Free Spins") is always
  * exactly honored even when they enter drafts one at a time (each entry is its
  * own purchase; the classic one-transaction rule would pay only the first).
+ * The budget is capped so total spins never exceed FIRST_PURCHASE_MAX_SPINS —
+ * pre-cap users with a bigger stored budget exhaust (and close the bonus) at
+ * the cap.
  */
 export function computeDepositBudgetGrant(
   budget: number,
@@ -53,7 +68,8 @@ export function computeDepositBudgetGrant(
   quantity: number,
 ): DepositBudgetGrant {
   if (!Number.isFinite(budget) || budget <= 0) return { spins: 0, passesUsed: 0, exhausted: false };
-  const remaining = Math.max(0, Math.floor(budget) - Math.max(0, Math.floor(used)));
+  const maxPasses = FIRST_PURCHASE_MAX_SPINS / FIRST_PURCHASE_SPINS_PER_PASS;
+  const remaining = Math.max(0, Math.min(Math.floor(budget), maxPasses) - Math.max(0, Math.floor(used)));
   const credit = Math.min(Math.max(0, Math.floor(quantity)), remaining);
   return {
     spins: credit * FIRST_PURCHASE_SPINS_PER_PASS,
@@ -113,14 +129,17 @@ export function firstPurchaseVariant(
 /** Classic pair accumulator (returning players): every pass ever bought
  *  counts, and each completed PAIR pays one spin the moment it lands. There is
  *  NO deadline — the 24h window this used to enforce was removed on Richard's
- *  call (2026-08-05); the offer just runs until the passes pair up.
+ *  call (2026-08-05); the offer runs until the passes pair up OR the spin cap
+ *  (FIRST_PURCHASE_MAX_SPINS, Richard 2026-08-06) is reached, whichever first.
  *  Kills the split-buy trap: deposit → instant-seat 1-at-a-time (or MetaMask
  *  1-then-1) pays exactly what a single 2-pass cart always paid. */
 export interface ClassicPairGrant {
   /** Passes counted after this purchase. */
   passesCounted: number;
-  /** Spins to credit NOW (new completed pairs only). */
+  /** Spins to credit NOW (new completed pairs only, capped). */
   spins: number;
+  /** True when the spin cap is reached → mark the bonus granted (offer done). */
+  exhausted: boolean;
 }
 
 export function computeClassicPairGrant(
@@ -129,30 +148,34 @@ export function computeClassicPairGrant(
   quantity: number,
 ): ClassicPairGrant {
   const passesCounted = passesSoFar + Math.max(0, quantity);
-  const spins = Math.max(0, Math.floor(passesCounted / 2) - spinsAwardedSoFar);
-  return { passesCounted, spins };
+  const totalSpins = Math.min(Math.floor(passesCounted / 2), FIRST_PURCHASE_MAX_SPINS);
+  const spins = Math.max(0, totalSpins - spinsAwardedSoFar);
+  return { passesCounted, spins, exhausted: totalSpins >= FIRST_PURCHASE_MAX_SPINS };
 }
 
 export interface FirstPurchaseUpsell {
-  /** Spins this quantity earns right now (qty × 2). */
+  /** Spins this quantity earns right now (qty × 2, capped at the promo max). */
   spinsThisPurchase: number;
-  /** How many MORE passes to reach the next spins (always 1 — every pass pays). */
+  /** How many MORE passes to reach the next spins (1 below the cap, 0 at it). */
   passesToNextSpin: number;
-  /** Total quantity at which the next spins land (qty + 1). */
+  /** Total quantity at which the next spins land (qty + 1; qty at the cap). */
   nextSpinTotal: number;
 }
 
 /**
  * Drives the first-purchase mint-time nudge ("1 more pass = 2 more spins").
- * Pure so the message math is unit-tested. Every pass pays, so the next
- * spins are always exactly one pass away.
+ * Pure so the message math is unit-tested. Every pass pays until the spin cap
+ * (FIRST_PURCHASE_MAX_SPINS); at the cap there is no next spin to pitch, so
+ * passesToNextSpin drops to 0 — surfaces must not nudge past a capped grant.
  */
 export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
   const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
+  const spinsThisPurchase = Math.min(q * FIRST_PURCHASE_SPINS_PER_PASS, FIRST_PURCHASE_MAX_SPINS);
+  const atCap = spinsThisPurchase >= FIRST_PURCHASE_MAX_SPINS;
   return {
-    spinsThisPurchase: q * FIRST_PURCHASE_SPINS_PER_PASS,
-    passesToNextSpin: 1,
-    nextSpinTotal: q + 1,
+    spinsThisPurchase,
+    passesToNextSpin: atCap ? 0 : 1,
+    nextSpinTotal: atCap ? q : q + 1,
   };
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FIRST_PURCHASE_SPINS_PER_PASS,
   FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN,
+  FIRST_PURCHASE_MAX_SPINS,
   firstPurchaseSpins,
   classicFirstPurchaseSpins,
   computeFirstPurchaseGrant,
@@ -27,9 +28,16 @@ describe('First-purchase bonus math', () => {
     expect(firstPurchaseSpins(6)).toBe(12);
   });
 
-  it('has NO cap — buy 40 first txn → 80 spins', () => {
-    expect(firstPurchaseSpins(40)).toBe(80);
-    expect(firstPurchaseSpins(100)).toBe(200);
+  it('caps at 20 spins (Richard 2026-08-06) — passes past 10 earn nothing', () => {
+    expect(FIRST_PURCHASE_MAX_SPINS).toBe(20);
+    expect(firstPurchaseSpins(10)).toBe(20);
+    expect(firstPurchaseSpins(11)).toBe(20);
+    expect(firstPurchaseSpins(40)).toBe(20);
+    expect(firstPurchaseSpins(100)).toBe(20);
+    // Returning (classic) rate hits the same cap at 40 passes.
+    expect(classicFirstPurchaseSpins(40)).toBe(20);
+    expect(classicFirstPurchaseSpins(41)).toBe(20);
+    expect(classicFirstPurchaseSpins(100)).toBe(20);
   });
 
   it('returns 0 for non-positive / invalid quantities', () => {
@@ -41,6 +49,11 @@ describe('First-purchase bonus math', () => {
   describe('computeFirstPurchaseGrant (first-paid-purchase, new players only)', () => {
     it('first purchase consumes the bonus and grants qty × 2', () => {
       expect(computeFirstPurchaseGrant(false, 8)).toEqual({ consume: true, spins: 16 });
+    });
+
+    it('a giant first buy still pays only the 20-spin cap', () => {
+      expect(computeFirstPurchaseGrant(false, 40)).toEqual({ consume: true, spins: 20 });
+      expect(computeFirstPurchaseGrant(false, 40, true)).toEqual({ consume: true, spins: 20 });
     });
 
     it('even a 1-pass first buy earns (2 spins) — no zero-spin consume anymore', () => {
@@ -117,11 +130,19 @@ describe('First-purchase bonus math', () => {
       });
     });
 
-    it('buying 10 → 20 spins now', () => {
+    it('buying 10 hits the 20-spin cap — no next spin to pitch', () => {
       expect(firstPurchaseUpsell(10)).toEqual({
         spinsThisPurchase: 20,
-        passesToNextSpin: 1,
-        nextSpinTotal: 11,
+        passesToNextSpin: 0,
+        nextSpinTotal: 10,
+      });
+    });
+
+    it('past the cap the grant stays 20 and the nudge stays off', () => {
+      expect(firstPurchaseUpsell(15)).toEqual({
+        spinsThisPurchase: 20,
+        passesToNextSpin: 0,
+        nextSpinTotal: 15,
       });
     });
 

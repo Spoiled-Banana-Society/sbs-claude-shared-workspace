@@ -131,7 +131,7 @@ export function PromosSidebar({
                   ))}
                 </div>
               )}
-              <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
+              <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               <div className="mt-auto">
                 {/* Chase Your Pick — bottom row: live countdown, plus (once a draft
                     locks a pick) the slot, attempts, and next-hit Spins. */}
