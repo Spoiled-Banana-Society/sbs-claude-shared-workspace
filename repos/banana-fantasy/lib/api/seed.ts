@@ -490,7 +490,7 @@ const seedPromos: Promo[] = [
     ctaText: 'Open your packs',
     ctaLink: '/drop',
     backgroundColor: '#2a2a35',
-    isNew: true,
+    isNew: false,
     progressCurrent: 0,
     progressMax: 0,
     modalContent: {

@@ -97,6 +97,7 @@ export async function GET(req: Request) {
         // live-synced with the current schedule/wording (9PM, 2026-08-05).
         drop.ctaText = 'Open your packs';
         drop.description = 'Fill drafts, earn packs. Open them at 9PM.';
+        drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
       }
     } catch { /* copy refresh is decoration — promos still return */ }
 
