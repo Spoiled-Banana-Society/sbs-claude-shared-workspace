@@ -373,7 +373,7 @@ export default function DraftingPage() {
                         <div className="flex items-center gap-2 mb-1.5">
                           <h4 className="text-[14px] font-semibold tracking-tight"><span className="text-jackpot">Jack</span><span className="text-hof">HOF</span></h4>
                           <span className="text-white/15">&middot;</span>
-                          <span className="text-[15px] font-bold tracking-tight text-white/70">1/800</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">0.125%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Jackpot + HOF on one draft. Both perks.</p>
                       </button>
