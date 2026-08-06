@@ -564,7 +564,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               stamped server-side while the window is open). */}
                           {isKickoff && (
                             <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
-                              <span className="font-bold text-[#16a34a]">🏈 {Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} drafts</span>
+                              <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} drafts</span>
+                              <span className="text-[#c4c4c8]">·</span>
+                              <span className="font-semibold">Max {API_CONFIG.promos.buyBonus.maxPassesCounted}</span>
                               {promo.timerEndTime && (
                                 <>
                                   <span className="text-[#c4c4c8]">·</span>

@@ -171,7 +171,7 @@ export const mockPromos: Promo[] = [
     progressMax: 2,
     modalContent: {
       title: '🏈 Football is BACK: Buy 2 → FREE SPIN',
-      explanation: 'Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin! Every spin wins up to 20 Free Drafts — at least 1 guaranteed. Max 10 spins.',
+      explanation: 'Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin! Every spin wins up to 20 Free Drafts — at least 1 guaranteed. Max 20 buys.',
     },
   },
   {

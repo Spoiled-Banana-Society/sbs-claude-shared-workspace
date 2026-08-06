@@ -524,7 +524,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
             <div className="flex justify-between items-baseline mb-1.5">
               <span className="text-white/55 text-xs tabular-nums">
                 {promo.type === 'buy-bonus'
-                  ? `${progressCurrent} / ${progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts`
+                  ? `${progressCurrent} / ${progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts · Max ${API_CONFIG.promos.buyBonus.maxPassesCounted}`
                   : `${progressCurrent} / ${progressMax}`}
               </span>
               {timeRemaining && (
