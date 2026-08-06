@@ -23,6 +23,7 @@ import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { bootStoragePrune } from '@/lib/safeStorage';
 import { startMemoryWatch } from '@/lib/memWatch';
 import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
@@ -41,6 +42,14 @@ function AppContent({ children }: { children: React.ReactNode }) {
   // to the admin Logs tab. Idempotent — safe to call on every mount.
   useEffect(() => {
     installGlobalErrorHandlers();
+  }, []);
+
+  // iOS Safari caps localStorage ~5MB and a full store makes every unguarded
+  // write throw ("The quota has been exceeded.") — including across refreshes,
+  // since storage persists. Free refetchable caches BEFORE anything crashes,
+  // and report what's big so the hog shows up in the admin logs.
+  useEffect(() => {
+    bootStoragePrune();
   }, []);
 
   // A renderer OOM kill ("Aw, Snap!", Error code 5) can't report itself — the

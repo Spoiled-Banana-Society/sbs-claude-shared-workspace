@@ -2,6 +2,7 @@
  * Centralized read/write for `banana-active-drafts` localStorage key
  * with pub/sub notifications so React hooks can stay in sync.
  */
+import { safeSetItem } from '@/lib/safeStorage';
 
 const STORAGE_KEY = 'banana-active-drafts';
 
@@ -132,7 +133,7 @@ function readAll(): DraftState[] {
 
 function writeAll(drafts: DraftState[]) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+  safeSetItem(STORAGE_KEY, JSON.stringify(drafts));
   notify();
 }
 
@@ -222,7 +223,7 @@ export async function hydrateActiveDrafts(): Promise<void> {
         if (!Array.isArray(ids)) continue;
         const next = ids.filter((id) => !serverIds.includes(id));
         if (next.length !== ids.length) {
-          localStorage.setItem(key, JSON.stringify(next));
+          safeSetItem(key, JSON.stringify(next));
         }
       }
     } catch { /* non-fatal */ }

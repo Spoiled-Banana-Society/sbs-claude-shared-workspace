@@ -12,6 +12,7 @@ import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { safeSetItem } from '@/lib/safeStorage';
 import { logger } from '@/lib/logger';
 import { clientLog } from '@/lib/clientLog';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
@@ -558,12 +559,15 @@ export function useDraftLiveSync({
     // timestamp. Ownership is handled by always overwriting — last writer
     // wins, and readers only care about recency, not identity.
     const key = `draft-room-ws:${draftId}`;
-    const writeHeartbeat = () => localStorage.setItem(key, String(Date.now()));
+    // safeSetItem: an unguarded write here fires every 3s in the draft room —
+    // with full storage (iOS ~5MB cap) it threw QuotaExceeded into the error
+    // boundary and took the whole room down mid-pick (ticket-2681, 8/4).
+    const writeHeartbeat = () => safeSetItem(key, String(Date.now()));
     writeHeartbeat();
     const interval = setInterval(writeHeartbeat, 3_000);
     return () => {
       clearInterval(interval);
-      localStorage.removeItem(key);
+      try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
     };
   }, [isLiveMode, draftId]);
 

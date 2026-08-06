@@ -239,7 +239,7 @@ export function AddToHomeScreenCard() {
 
   // Only the X dismisses the banner — permanently, so it doesn't nag again.
   const dismiss = useCallback(() => {
-    localStorage.setItem(ENGAGED_KEY, '1');
+    try { localStorage.setItem(ENGAGED_KEY, '1'); } catch { /* storage full — still dismiss */ }
     setShow(false);
   }, []);
 

@@ -34,6 +34,7 @@ import {
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { draftWordColor, draftWordShadow, founderWordColor } from '@/lib/draftBandStyle';
 import * as draftStore from '@/lib/draftStore';
+import { safeSetItem } from '@/lib/safeStorage';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
@@ -1073,7 +1074,7 @@ function DraftRoomContent() {
     const id = getPersistId();
     if (!id) return;
     const newValue = !engine.airplaneMode;
-    localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
+    safeSetItem(`airplane:${id}`, newValue ? '1' : '0');
     draftStore.updateDraft(id, { airplaneMode: newValue });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.airplaneMode, engine.toggleAirplaneMode, draftId, urlDraftId]);
@@ -1082,7 +1083,7 @@ function DraftRoomContent() {
     const newValue = !isMuted;
     setIsMuted(newValue);
     const id = getPersistId();
-    if (id) localStorage.setItem(`mute:${id}`, newValue ? '1' : '0');
+    if (id) safeSetItem(`mute:${id}`, newValue ? '1' : '0');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMuted, draftId, urlDraftId]);
 
@@ -1090,7 +1091,7 @@ function DraftRoomContent() {
     const id = getPersistId();
     if (!id) return;
     if (engine.queuedPlayers.length > 0) {
-      localStorage.setItem(`queue:${id}`, JSON.stringify(engine.queuedPlayers));
+      safeSetItem(`queue:${id}`, JSON.stringify(engine.queuedPlayers));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.queuedPlayers, draftId]);
@@ -1104,7 +1105,7 @@ function DraftRoomContent() {
     // forever, so the drafting page showed a permanent ✈️ after a real
     // airplane trip while the room itself was correct (mobile, 2026-07-04).
     // Mounting with the engine off now also heals any stale stored flag.
-    localStorage.setItem(`airplane:${id}`, engine.airplaneMode ? '1' : '0');
+    safeSetItem(`airplane:${id}`, engine.airplaneMode ? '1' : '0');
     draftStore.updateDraft(id, { airplaneMode: engine.airplaneMode });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.airplaneMode, draftId]);
@@ -1143,7 +1144,7 @@ function DraftRoomContent() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: promoUserId, draftId: id }),
     })
-      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .then((res) => { if (res.ok) { try { safeSetItem(firedKey, '1'); } catch { /* ignore */ } } })
       .catch(() => { /* best-effort — roster page retries */ });
   }, [firebaseRtdb.data?.isDraftClosed, engine.draftStatus, draftId, urlDraftId, user?.id, walletParam]);
 
@@ -1369,7 +1370,7 @@ function DraftRoomContent() {
           setAutoDraft(desiredAirplane);
           engine.setAirplaneMode(desiredAirplane);
           const id = getPersistId();
-          if (id) localStorage.setItem(`airplane:${id}`, desiredAirplane ? '1' : '0');
+          if (id) safeSetItem(`airplane:${id}`, desiredAirplane ? '1' : '0');
         } else if (engine.airplaneMode !== desiredAirplane) {
           // Page state already correct but engine drifted — pull engine in.
           logger.info('[Airplane] setAirplaneMode — source=post-pick-engine-realign', {
@@ -1471,7 +1472,7 @@ function DraftRoomContent() {
     // to be explicit.
     if (!newValue) engine.resetAirplaneTimeoutCounter();
     const id = getPersistId();
-    if (id) localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
+    if (id) safeSetItem(`airplane:${id}`, newValue ? '1' : '0');
 
     setAutoDraftLoading(true);
     try {
@@ -1501,7 +1502,7 @@ function DraftRoomContent() {
         }, { skipThrottle: true });
         setAutoDraft(prefs.autoDraft);
         engine.setAirplaneMode(prefs.autoDraft);
-        if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
+        if (id) safeSetItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
       }
     } catch (e) {
       console.error('[AutoDraft] Toggle failed:', e);
@@ -1516,7 +1517,7 @@ function DraftRoomContent() {
       // Revert optimistic flip on failure.
       setAutoDraft(!newValue);
       engine.setAirplaneMode(!newValue);
-      if (id) localStorage.setItem(`airplane:${id}`, !newValue ? '1' : '0');
+      if (id) safeSetItem(`airplane:${id}`, !newValue ? '1' : '0');
     } finally {
       setAutoDraftLoading(false);
     }
@@ -1528,7 +1529,7 @@ function DraftRoomContent() {
     engine.setAutoPickSortPreference(sort);
     // Remember per-draft so re-entering keeps "whatever you left it on" even if
     // the server round-trip lags (read/write hit different endpoints).
-    if (draftId) { try { localStorage.setItem(`draftSort:${draftId}`, sort); } catch { /* ignore */ } }
+    if (draftId) { try { safeSetItem(`draftSort:${draftId}`, sort); } catch { /* ignore */ } }
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
         .catch(e => {
@@ -1732,7 +1733,7 @@ function DraftRoomContent() {
     try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
     // Set the guard optimistically so a flaky network can't hammer OpenSea with
     // duplicate refreshes; the team is sellable regardless and OpenSea self-heals.
-    try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ }
+    try { safeSetItem(firedKey, '1'); } catch { /* ignore */ }
     void fetch(`/api/marketplace/refresh-draft/${id}`, { method: 'POST' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => { if (data) console.log('[OpenSea] draft metadata refresh queued', data); })
@@ -2033,7 +2034,7 @@ function DraftRoomContent() {
     if (id && promoUserId) {
       const trackedKey = `promo-tracked:${id}`;
       if (!localStorage.getItem(trackedKey)) {
-        localStorage.setItem(trackedKey, '1');
+        safeSetItem(trackedKey, '1');
         fetch('/api/promos/draft-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2063,7 +2064,7 @@ function DraftRoomContent() {
     if (id && promoUserId && isPaidDraft && userPos === 9) {
       const pick10Key = `promo-pick10:${id}`;
       if (!localStorage.getItem(pick10Key)) {
-        localStorage.setItem(pick10Key, '1');
+        safeSetItem(pick10Key, '1');
         fetch('/api/promos/pick10', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2242,10 +2243,10 @@ function DraftRoomContent() {
           body: JSON.stringify({ draftId: id }),
         });
         if (res.ok) {
-          localStorage.setItem(founderKey, '1');
+          safeSetItem(founderKey, '1');
         } else if (res.status === 400) {
           // Server says draft is genuinely not a Founder Draft — mark done.
-          localStorage.setItem(founderKey, '1');
+          safeSetItem(founderKey, '1');
         } else {
           // 401 (token rejected), 403 (caller not in draft yet — race with
           // Go's draftOrder population), 5xx, network — leave flag unset and
@@ -2410,7 +2411,7 @@ function DraftRoomContent() {
       if (id) {
         const revealKey = `reveal-reported:${id}`;
         if (!localStorage.getItem(revealKey)) {
-          localStorage.setItem(revealKey, '1');
+          safeSetItem(revealKey, '1');
           fetch(`/api/drafts/${encodeURIComponent(id)}/reveal-complete`, { method: 'POST' }).catch(() => {});
         }
       }
@@ -2978,7 +2979,7 @@ function DraftRoomContent() {
                 engine.resetAirplaneTimeoutCounter();
                 if (isLiveMode && draftId && walletParam) {
                   const id = getPersistId();
-                  if (id) localStorage.setItem(`airplane:${id}`, '0');
+                  if (id) safeSetItem(`airplane:${id}`, '0');
                   // Gate the post-pick sync effect while this PATCH is in
                   // flight, so it can't fetch stale server state (still
                   // autoDraft=true) and revert our optimistic flip.

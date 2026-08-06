@@ -26,6 +26,7 @@ import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
+import { safeSetItem } from '@/lib/safeStorage';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
@@ -560,7 +561,7 @@ export function useDraftingPageState() {
           setHiddenDraftIds((prev) => {
             const next = new Set(prev);
             for (const id of wronglyHidden) next.delete(id);
-            try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
             return next;
           });
           // Purge from the explicit-clear ledger too, or the next Clear All
@@ -568,7 +569,7 @@ export function useDraftingPageState() {
           setExplicitlyClearedIds((prev) => {
             const next = new Set(prev);
             for (const id of wronglyHidden) next.delete(id);
-            try { localStorage.setItem('banana-cleared-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            try { safeSetItem('banana-cleared-drafts', JSON.stringify([...next])); } catch { /* quota */ }
             return next;
           });
         }
@@ -1047,14 +1048,14 @@ export function useDraftingPageState() {
               const raw = localStorage.getItem('banana-completed-drafts');
               const ids: string[] = raw ? JSON.parse(raw) : [];
               if (Array.isArray(ids) && !ids.includes(draft.id)) {
-                localStorage.setItem('banana-completed-drafts', JSON.stringify([...ids, draft.id]));
+                safeSetItem('banana-completed-drafts', JSON.stringify([...ids, draft.id]));
               }
             } catch { /* quota — worst case the unhide re-checks next pass */ }
             setHiddenDraftIds((prev) => {
               if (prev.has(draft.id)) return prev;
               const next = new Set(prev);
               next.add(draft.id);
-              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+              try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
               return next;
             });
             continue;
@@ -1086,7 +1087,7 @@ export function useDraftingPageState() {
           if (isFull && user?.id && draftOwnedByUser) {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
-              localStorage.setItem(trackedKey, '1');
+              safeSetItem(trackedKey, '1');
               fetch('/api/promos/draft-complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1101,7 +1102,7 @@ export function useDraftingPageState() {
               if (userIdx === 9) {
                 const pick10Key = `promo-pick10:${draft.id}`;
                 if (!localStorage.getItem(pick10Key)) {
-                  localStorage.setItem(pick10Key, '1');
+                  safeSetItem(pick10Key, '1');
                   fetch('/api/promos/pick10', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1763,7 +1764,7 @@ export function useDraftingPageState() {
     try {
       const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
       setHiddenDraftIds(newHidden);
-      localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+      safeSetItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
     } catch { /* ignore */ }
 
     try {
@@ -1837,12 +1838,12 @@ export function useDraftingPageState() {
 
     const combinedIds = [...new Set([...allIds, ...storeIds, ...liveTokenIds])];
     const newHidden = new Set([...Array.from(hiddenDraftIds), ...combinedIds]);
-    localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+    safeSetItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
     setHiddenDraftIds(newHidden);
     // Mark these as explicit clears so the self-heal poll can't resurrect
     // them — Clear All overrides the active-draft protection.
     const newCleared = new Set([...Array.from(explicitlyClearedIds), ...combinedIds]);
-    localStorage.setItem('banana-cleared-drafts', JSON.stringify(Array.from(newCleared)));
+    safeSetItem('banana-cleared-drafts', JSON.stringify(Array.from(newCleared)));
     setExplicitlyClearedIds(newCleared);
     setLiveDrafts([]);
     localStorage.removeItem('banana-active-drafts');

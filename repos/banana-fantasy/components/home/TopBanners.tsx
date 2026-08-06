@@ -130,7 +130,7 @@ function useAppInstallBanner() {
 
   const dismiss = useCallback(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(A2HS_ENGAGED_KEY, '1');
+      try { localStorage.setItem(A2HS_ENGAGED_KEY, '1'); } catch { /* storage full — still dismiss */ }
       // End any forced-QA session so it doesn't reappear on the next home visit.
       try { sessionStorage.removeItem('sbs-force-install-banner'); } catch {}
     }

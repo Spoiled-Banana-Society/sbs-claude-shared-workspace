@@ -106,7 +106,14 @@ export async function createListing(
       const errJson = JSON.parse(text);
       detail = errJson.error || errJson.message || text;
     } catch { detail = text; }
-    throw new Error(detail || 'Failed to publish listing');
+    // Our route's rejections are already user-facing copy (wheel-pass lock,
+    // free-pass block, "OpenSea error: …") — mark them so friendlyTxError
+    // shows the real reason instead of the generic "Couldn't create" fallback.
+    if (detail) {
+      const { userFacingTxError } = await import('@/lib/marketplace/txErrors');
+      throw userFacingTxError(detail);
+    }
+    throw new Error('Failed to publish listing');
   }
 
   const result = await postRes.json();
