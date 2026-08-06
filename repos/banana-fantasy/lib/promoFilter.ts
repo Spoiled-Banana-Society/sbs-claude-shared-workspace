@@ -14,6 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
+import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, eliminatorLive, eliminatorRetired } from '@/lib/promoWindow';
 import { isBuyBonusActive } from '@/lib/api/config';
 
 /**
@@ -30,16 +31,30 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
-  'buy-bonus',      // Kickoff Weekend "Buy 2 → FREE SPIN" — time-gated below;
-                    // auto-hides after endsAtMs (except for unclaimed spins)
+  'buy-bonus',      // 🏈 Kickoff Weekend "Buy 2 → FREE SPIN" — time-gated
+                    // below; auto-hides after endsAtMs (unclaimed spins keep it)
+  'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
+  'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
+  'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
+  'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
-  'pick-10',        // "Pick 6 & 10 → FREE SPINS" — engagement reward
+  'pick-10',        // "Pick 10 → FREE SPIN" — engagement reward
   'referral',       // "Refer a friend" — top-of-funnel growth
   'jackpot',        // excitement, least direct on revenue
 ];
 
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
+
+/**
+ * The only promo types a LOGGED-OUT visitor sees (Richard 2026-07-29).
+ * A visitor can't have progress on Buy 10 / Match Your Pick / etc., so
+ * those cards are noise before login — the logged-out carousel is purely
+ * a conversion pitch: welcome free spin + the first-purchase offer
+ * (rendered with new-player copy + "NEW PLAYERS" tag, since we can't
+ * know new vs returning until they log in).
+ */
+export const LOGGED_OUT_PROMO_TYPES = new Set<PromoType>(['new-user', 'first-purchase']);
 
 /**
  * Promo types visible ONLY to admin-allowlisted wallets (isWalletAdmin) —
@@ -49,32 +64,57 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  * 'buy-bonus' = "Buy 2 → 1 Free" (July 4th weekend candidate). Inserted
  * right before 'mint' so it sits next to the Buy 10 card.
  */
+// "Match Your Pick" (pick-chase) LAUNCHED 2026-07-23 — now in
+// VISIBLE_PROMO_TYPES_ORDER above (right after first-purchase).
+//
+// 🍌 'banana-draw' LAUNCHED 2026-07-26 — now in VISIBLE_PROMO_TYPES_ORDER
+// above, at index 2. Its final cycle closed noon PT 2026-07-31.
+//
+// 🔥 'eliminator' LAUNCHED 2026-07-31 4pm PT — now in VISIBLE_PROMO_TYPES_ORDER
+// above at index 2, and FEATURED so it pins to position 1 on every surface.
+// Emptying this array also RELEASES the hourly burn cron, which holds itself
+// while a promo is in admin preview (app/api/crons/eliminator).
+// Nothing staged for admin-only preview right now.
+// 🌙 'drop' — THE DROP, built 2026-08-02, NOT LAUNCHED.
+//
+// ⚠️ DO NOT REMOVE FROM THIS ARRAY WITHOUT RICHARD SAYING SO. While it sits
+// here: only admin wallets see the card, the 8pm lock/prize cron holds
+// completely, and no seat or spin can be awarded. Packs still accrue quietly
+// from filled drafts, so the first post-launch night starts full instead of
+// empty.
 export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
  * (above claimable bubbling) and given the big NEW badge treatment.
- * Set to null when no promo is being featured. 'buy-bonus' is featured
- * for Kickoff Weekend (2026-08) — activeFeaturedType() drops the pin
- * automatically once the promo window closes, no teardown deploy needed.
+ * Set to null when no promo is being featured. 'buy-bonus' takes the pin
+ * for Kickoff Weekend (through Sun night 2026-08-09); THE DROP gets it
+ * back automatically when the window closes — see activeFeaturedType().
  */
 export const FEATURED_PROMO_TYPE: PromoType | null = 'buy-bonus';
 
 /**
- * FEATURED_PROMO_TYPE, but null once a time-boxed featured promo's window
- * has closed — so the pin, big NEW badge, and carousel featured treatment
- * all unwind at the cutoff without a deploy.
+ * FEATURED_PROMO_TYPE resolved against time windows: while the Kickoff
+ * Buy 2 → FREE SPIN window is open it holds the pin; the moment it closes
+ * the pin reverts to THE DROP (the standing featured promo it borrowed it
+ * from) with no teardown deploy. If DROP itself stops being the fallback,
+ * update it here.
  */
 function activeFeaturedType(): PromoType | null {
-  if (FEATURED_PROMO_TYPE === 'buy-bonus' && !isBuyBonusActive()) return null;
+  if (FEATURED_PROMO_TYPE === 'buy-bonus' && !isBuyBonusActive()) return 'drop';
   return FEATURED_PROMO_TYPE;
 }
 
-/** Display order with the admin-preview types spliced in (before 'mint'). */
+/**
+ * Display order with the admin-preview types spliced in before 'pick-chase' —
+ * i.e. near the front, behind only new-user and first-purchase. Previewing a
+ * promo in the slot it will actually launch into means the admin preview shows
+ * the real ordering, not a different one.
+ */
 function adminPreviewOrder(): PromoType[] {
   const order = [...VISIBLE_PROMO_TYPES_ORDER];
-  const mintIdx = order.indexOf('mint');
-  order.splice(mintIdx === -1 ? order.length : mintIdx, 0, ...ADMIN_PREVIEW_PROMO_TYPES);
+  const anchor = order.indexOf('pick-chase');
+  order.splice(anchor === -1 ? order.length : anchor, 0, ...ADMIN_PREVIEW_PROMO_TYPES);
   return order;
 }
 
@@ -84,7 +124,8 @@ function adminPreviewOrder(): PromoType[] {
  * the novelty fades.
  */
 export const NEW_PROMO_TYPES = new Set<PromoType>([
-  // Empty for now — populate when a fresh promo is unhidden.
+  // 'eliminator' removed 2026-08-01 — the promo retired with its final burn.
+  'banana-draw', // launches 2026-07-26 — drop this once the novelty fades
 ]);
 
 export function isNewPromo(promo: Promo): boolean {
@@ -123,6 +164,17 @@ interface FilterOpts {
    */
   flagsKnown?: boolean;
   /**
+   * Explicit login state. Pass `false` for a LOGGED-OUT visitor: the
+   * first-purchase card then renders (with the default new-player copy the
+   * logged-out /api/promos payload carries) instead of being hidden by the
+   * flagsKnown guard — a logged-out visitor has no balance stream, so their
+   * flags are never "known" and the conversion card would otherwise never
+   * show. Logged-in users (or unknown) keep the flagsKnown guard, so a
+   * purchased user still never sees a flash of the card before their flags
+   * load.
+   */
+  isLoggedIn?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -146,6 +198,28 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   const visibleTypes = opts.isAdminPreview ? new Set<PromoType>(typeOrder) : VISIBLE_PROMO_TYPES;
   const filtered = promos.filter((p) => {
     if (!visibleTypes.has(p.type)) return false;
+    // Banana Draw ends with its 5th seat at noon PT Jul 31 (Boris 2026-07-30).
+    if (p.type === 'banana-draw' && Date.now() >= BANANA_DRAW_END_MS) return false;
+    // THE ELIMINATOR reveals itself on the clock at 4pm PT (Richard 2026-07-31)
+    // and RETIRES at ELIMINATOR_END_MS — eliminatorLive is a window now, so this
+    // one line both revealed the card on launch night and removes it for good
+    // after the final burn (2026-08-01).
+    if (p.type === 'eliminator' && !eliminatorLive()) return false;
+    // THE ELIMINATOR is retired (2026-08-01) — THE DROP replaces it.
+    if (p.type === 'eliminator' && eliminatorRetired()) return false;
+    // Logged-out visitors get ONLY the two conversion cards — everything
+    // else requires an account to even have progress, so it's noise.
+    if (opts.isLoggedIn === false && !LOGGED_OUT_PROMO_TYPES.has(p.type)) return false;
+    // Buy 10 → FREE SPIN retirement — FINAL-LAP model (Boris 2026-07-27):
+    // from the cutoff, the card survives ONLY for users mid-bar (≥1/10) or
+    // holding an unclaimed spin. They finish their current 10, claim, and
+    // the bar wraps to 0/10 with nothing claimable — which makes this same
+    // check hide it forever. Fresh users (0/10) lose it at the cutoff.
+    if (p.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
+      const midLap = (p.progressCurrent || 0) >= 1;
+      const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+      if (!midLap && !owed) return false;
+    }
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
     if (p.type === 'new-user') {
@@ -170,17 +244,23 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // the start. The unlock flag still times the BELL + post-draft POPUP.
     if (p.type === 'first-purchase') {
       // Don't render until the gating flags are known — avoids flashing the card
-      // for a purchased user during the brief pre-balance window.
-      if (opts.flagsKnown === false) return false;
+      // for a purchased user during the brief pre-balance window. EXCEPT for
+      // explicitly LOGGED-OUT visitors (isLoggedIn === false): they have no
+      // balance stream so flags can never load, and they should see the
+      // new-player offer (the logged-out promos payload carries it).
+      if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
     }
     // Kickoff Weekend Buy 2 → FREE SPIN is time-boxed: after the Sunday-night
-    // cutoff the card disappears on its own — EXCEPT for users still holding
-    // an unclaimed earned spin, who keep the card until they claim (don't
-    // strand earned rewards behind a hidden card like the July 4th teardown
-    // did). Admin preview keeps it visible for post-window inspection.
-    if (p.type === 'buy-bonus' && !opts.isAdminPreview) {
-      if (!isBuyBonusActive() && !p.claimable) return false;
+    // cutoff (isBuyBonusActive) the card hides on its own — EXCEPT for users
+    // still owed an earned spin, who keep it until they claim (don't strand
+    // earned rewards behind a hidden card like the July 4th teardown did).
+    // Same survive-if-owed shape as the mint retirement above. Admin preview
+    // keeps it visible for post-window inspection. (The no-stack gate vs the
+    // conversion cards is a cross-promo rule — applied after this pass.)
+    if (p.type === 'buy-bonus' && !opts.isAdminPreview && !isBuyBonusActive()) {
+      const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+      if (!owed) return false;
     }
     return true;
   });
@@ -190,7 +270,9 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // first-purchase) is still showing for this user — those offers come first,
   // and the same purchase never feeds both (the increment side enforces the
   // same rule in _incrementMintPromosInTx). Also hidden until balance flags
-  // load. Survives if owed; admin preview exempt.
+  // load, so it can't flash for a user whose first-purchase card is about to
+  // render. Survives if owed (claimable spins are always reachable); admin
+  // preview exempt so we can inspect the card regardless.
   const conversionCardShowing = filtered.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
   const gated = filtered.filter((p) => {
     if (p.type !== 'buy-bonus' || opts.isAdminPreview) return true;
@@ -239,19 +321,24 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // (getPromos: base = no NEW, jp/all = NEW), so it's NOT forced here anymore —
   // the server value flows through. First-purchase KEEPS its NEW badge (it
   // upgraded to every-2-passes) — forced on here so every surface (home
-  // carousel, drafting sidebar, /promos) stays in sync. Featured promo still
-  // carries the big NEW badge while its window is open.
+  // carousel, drafting sidebar, /promos) stays in sync.
   return sorted.map((p) => {
     if (p.type === 'first-purchase') return { ...p, isNew: true };
     // New-user welcome card carries the NEW ribbon too (Boris 2026-07-12) —
     // forced here so already-seeded accounts match fresh seeds.
     if (p.type === 'new-user') return { ...p, isNew: true };
-    // Featured promo always carries the (big) NEW badge on every surface —
-    // via activeFeaturedType() so a time-boxed feature sheds the badge and
-    // pin the moment its window closes.
+    // Match Your Pick is PERMANENT now, not a launch (Boris 2026-07-25) — drop
+    // the NEW badge. Force-cleared rather than seed-only because every doc
+    // seeded during launch stored isNew:true, and the getPromos overlay does
+    // not copy isNew; without this those users keep the badge forever.
+    if (p.type === 'pick-chase') return { ...p, isNew: false };
+    // Featured promo pins to position 1 but no longer forces the NEW ribbon —
+    // THE DROP is established now (Boris 2026-08-05); the server's isNew flows
+    // through instead of being clobbered here. Resolved via activeFeaturedType
+    // so a time-boxed feature (Kickoff buy-bonus) sheds the pin at its cutoff.
     const feat = activeFeaturedType();
     if (feat && p.type === feat) {
-      return { ...p, isNew: true, featured: true };
+      return { ...p, featured: true };
     }
     return p;
   });
