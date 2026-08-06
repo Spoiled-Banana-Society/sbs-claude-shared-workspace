@@ -620,6 +620,13 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     // Returning players keep the CLASSIC first-purchase promo copy (their
     // rate is unchanged) — overlay it AFTER the static seed overlay so the
     // new-player $1K copy never reaches them.
+    // Kickoff Buy 2 → FREE SPIN: stamp the live countdown to the Sunday-night
+    // cutoff on every read while the window is open; cleared after.
+    if (promo.type === 'buy-bonus') {
+      promo.timerEndTime = isBuyBonusActive()
+        ? new Date(API_CONFIG.promos.buyBonus.endsAtMs).toISOString()
+        : undefined;
+    }
     if (promo.type === 'first-purchase' && isReturningUser) {
       promo.title = CLASSIC_FIRST_PURCHASE_COPY.title;
       promo.description = CLASSIC_FIRST_PURCHASE_COPY.description;

@@ -559,6 +559,20 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
                       {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
+                          {/* Kickoff: drafts counted toward the 20-draft cap + live
+                              countdown to the Sunday-night cutoff (timerEndTime is
+                              stamped server-side while the window is open). */}
+                          {isKickoff && (
+                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
+                              <span className="font-bold text-[#16a34a]">🏈 {Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} drafts</span>
+                              {promo.timerEndTime && (
+                                <>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
                           {progressMax > 1 && (
                             <>
                               <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">

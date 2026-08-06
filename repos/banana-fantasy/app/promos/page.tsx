@@ -523,7 +523,9 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
           <div className="mt-auto mb-4">
             <div className="flex justify-between items-baseline mb-1.5">
               <span className="text-white/55 text-xs tabular-nums">
-                {progressCurrent} / {progressMax}
+                {promo.type === 'buy-bonus'
+                  ? `${progressCurrent} / ${progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts`
+                  : `${progressCurrent} / ${progressMax}`}
               </span>
               {timeRemaining && (
                 <span className="text-white/30 text-[11px] tabular-nums">{timeRemaining}</span>
