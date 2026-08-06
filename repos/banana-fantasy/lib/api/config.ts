@@ -48,6 +48,10 @@ export const API_CONFIG = {
       // Midnight Pacific, end of Sunday 2026-08-09 (= 2026-08-10T07:00:00Z).
       endsAtMs: 1786345200000,
       buy: 2,
+      // Per-user cap (Richard 2026-08-06 "max the promo to 20"): at most 20
+      // purchased drafts count toward the promo per wallet = 10 spins max
+      // for the weekend. Purchases past the cap simply stop advancing it.
+      maxPassesCounted: 20,
       // What a milestone pays out on claim. 'spin' = 1 Banana Wheel spin
       // (Richard's July 4th 2026 call); 'draft' = the original flat
       // free-draft reward — that machinery (on-chain mint, Go API

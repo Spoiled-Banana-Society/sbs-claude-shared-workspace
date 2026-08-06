@@ -471,7 +471,13 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     if (buyBonusPromo) {
       const max = buyBonusPromo.progressMax || 2;
       const current = buyBonusPromo.progressCurrent || 0;
-      const newTotal = current + purchase.quantity;
+      // Per-user cap: only the first maxPassesCounted drafts ever count
+      // (mirrors db-firestore; lifetime counter in modalContent.totalMinted).
+      const cap = API_CONFIG.promos.buyBonus.maxPassesCounted;
+      const counted = buyBonusPromo.modalContent?.totalMinted || 0;
+      const countable = Math.max(0, Math.min(purchase.quantity, cap - counted));
+      buyBonusPromo.modalContent.totalMinted = counted + countable;
+      const newTotal = current + countable;
       buyBonusPromo.progressCurrent = newTotal % max;
       const newlyEarned = Math.floor(newTotal / max);
       if (newlyEarned > 0) {
