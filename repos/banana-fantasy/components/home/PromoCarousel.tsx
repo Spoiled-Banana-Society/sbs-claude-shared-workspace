@@ -400,10 +400,6 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* THE DROP's countdown lives in the FOOTER with the other
                         promo timers — see the isDrop block below. */}
                     <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
-                    {/* Kickoff cap sits right under the guarantee line (Richard 2026-08-06). */}
-                    {isKickoff && (
-                      <span className="mt-0.5 block text-center text-[10px] font-bold text-[#16a34a]">Max {API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
-                    )}
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -563,7 +559,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               stamped server-side while the window is open). */}
                           {isKickoff && (
                             <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
-                              <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} drafts</span>
+                              <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
                               {promo.timerEndTime && (
                                 <>
                                   <span className="text-[#c4c4c8]">·</span>
@@ -574,9 +570,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           )}
                           {progressMax > 1 && (
                             <>
-                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                              </div>
+                              {/* Kickoff hides this counter — its stat row above already
+                                  carries the numbers; two number lines overflowed the
+                                  fixed-height card (Richard 2026-08-06). */}
+                              {!isKickoff && (
+                                <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                  <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                                </div>
+                              )}
                               <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-500 ${isKickoff ? 'bg-gradient-to-r from-[#22c55e] to-[#fbbf24]' : 'bg-[#1d1d1f]'}`}

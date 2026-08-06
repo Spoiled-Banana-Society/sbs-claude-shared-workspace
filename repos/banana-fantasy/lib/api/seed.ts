@@ -397,7 +397,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: '🏈 Football is BACK: Buy 2 → FREE SPIN',
       explanation:
-        '• Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• Buy 4 drafts, earn 2 spins — max 20 buys.\n• Ends Sunday at midnight PT!',
+        '• Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• Buy 4 drafts, earn 2 spins — max 20 buys.\n• PLUS every draft you buy still earns its regular Bonus Spin — Kickoff spins come on top.\n• Ends Sunday at midnight PT!',
     },
   },
   {
