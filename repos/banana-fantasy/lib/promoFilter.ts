@@ -290,9 +290,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // seeded during launch stored isNew:true, and the getPromos overlay does
     // not copy isNew; without this those users keep the badge forever.
     if (p.type === 'pick-chase') return { ...p, isNew: false };
-    // Featured promo always carries the (big) NEW badge on every surface.
+    // Featured promo pins to position 1 but no longer forces the NEW ribbon —
+    // THE DROP is established now (Boris 2026-08-05); the server's isNew flows
+    // through instead of being clobbered here.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
-      return { ...p, isNew: true, featured: true };
+      return { ...p, featured: true };
     }
     return p;
   });
