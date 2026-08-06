@@ -185,7 +185,23 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     return true;
   });
 
-  const sorted = filtered.sort((a, b) => {
+  // Kickoff no-stack rule (Richard 2026-08-06): the Buy 2 → FREE SPIN card
+  // stays hidden while EITHER conversion card (new-user welcome or
+  // first-purchase) is still showing for this user — those offers come first,
+  // and the same purchase never feeds both (the increment side enforces the
+  // same rule in _incrementMintPromosInTx). Also hidden until balance flags
+  // load. Survives if owed; admin preview exempt.
+  const conversionCardShowing = filtered.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
+  const gated = filtered.filter((p) => {
+    if (p.type !== 'buy-bonus' || opts.isAdminPreview) return true;
+    const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+    if (owed) return true;
+    if (conversionCardShowing) return false;
+    if (opts.flagsKnown === false) return false;
+    return true;
+  });
+
+  const sorted = gated.sort((a, b) => {
     // -1. The new-user welcome promo (only rendered for actual new users)
     //     outranks everything, including the featured pin — a first-timer's
     //     very first card is their free-spin welcome (Boris 2026-07-03).

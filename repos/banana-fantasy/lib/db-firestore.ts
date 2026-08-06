@@ -1342,14 +1342,21 @@ async function _incrementMintPromosInTx(
   tx: FirebaseFirestore.Transaction,
   userRef: FirebaseFirestore.DocumentReference,
   quantity: number,
-  opts: { handleFirstPurchase?: boolean } = {},
+  opts: { handleFirstPurchase?: boolean; firstPurchaseSettled?: boolean } = {},
 ): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number; newTotalMinted: number }> {
   // READS FIRST — Firestore requires every read before any write in a tx.
   const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
   // Only the wrapper-driven paid paths (card-mint / staging-mint) handle the
   // first-purchase bonus; the legacy verifyPurchase path writes userRef itself
-  // and opts out to avoid a double-write to the user doc.
+  // and opts out to avoid a double-write to the user doc (it passes the
+  // already-read firstPurchaseBonusGranted via opts.firstPurchaseSettled).
   const userSnap = opts.handleFirstPurchase ? await tx.get(userRef) : null;
+  // Kickoff no-stack rule (Richard 2026-08-06): the Buy 2 → FREE SPIN promo
+  // only advances for buyers whose first-purchase promo was fully settled
+  // BEFORE this purchase — the same money must never feed both.
+  const fpSettledBefore = opts.handleFirstPurchase
+    ? (userSnap?.data() as { firstPurchaseBonusGranted?: boolean } | undefined)?.firstPurchaseBonusGranted === true
+    : opts.firstPurchaseSettled === true;
 
   let mintMilestonesEarned = 0;
   let newTotalMinted = 0;
@@ -1409,7 +1416,7 @@ async function _incrementMintPromosInTx(
   // Gated on isBuyBonusActive (enabled + before the Sunday-night endsAtMs
   // cutoff): outside the window purchases must not bank hidden progress or
   // claims toward it — that's what stranded 173 milestones before July 4th.
-  const buyBonusDoc = isBuyBonusActive()
+  const buyBonusDoc = isBuyBonusActive() && fpSettledBefore
     ? promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus')
     : undefined;
   if (buyBonusDoc) {
@@ -1772,7 +1779,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     let freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
-    const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
+    const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity, {
+      firstPurchaseSettled: user.firstPurchaseBonusGranted === true,
+    });
     if (buyBonusMilestonesEarned > 0 && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
     }

@@ -462,8 +462,10 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     }
 
     // Update promo progress for buy-bonus promo (skipped outside the
-    // enabled + endsAtMs window — no hidden banked progress).
-    const buyBonusPromo = isBuyBonusActive()
+    // enabled + endsAtMs window — no hidden banked progress). Kickoff
+    // no-stack rule: only advances once the buyer's first-purchase promo
+    // settled BEFORE this purchase (mirrors _incrementMintPromosInTx).
+    const buyBonusPromo = isBuyBonusActive() && (user as { firstPurchaseBonusGranted?: boolean }).firstPurchaseBonusGranted === true
       ? promos.find((p) => p.type === 'buy-bonus')
       : undefined;
     if (buyBonusPromo) {
