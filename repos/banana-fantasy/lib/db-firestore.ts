@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
-import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
+import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
@@ -359,7 +359,7 @@ function calcSpinsForPurchase(quantity: number): number {
 }
 
 function calcBuyBonusFreeDrafts(quantity: number): number {
-  if (!API_CONFIG.promos.buyBonus.enabled) return 0;
+  if (!isBuyBonusActive()) return 0;
   // In 'spin' mode the reward is a wheel spin granted on CLAIM (claim path in
   // claimPromo) — this legacy auto-grant of free drafts must stay at 0 or the
   // verifyPurchase path would hand out drafts on top of the claimable spin.
@@ -1406,9 +1406,10 @@ async function _incrementMintPromosInTx(
   }
 
   let buyBonusMilestonesEarned = 0;
-  // Gated on config: when the promo is off (July 4th run ended 2026-07-06)
-  // purchases must not bank hidden progress/claims toward it.
-  const buyBonusDoc = API_CONFIG.promos.buyBonus.enabled
+  // Gated on isBuyBonusActive (enabled + before the Sunday-night endsAtMs
+  // cutoff): outside the window purchases must not bank hidden progress or
+  // claims toward it — that's what stranded 173 milestones before July 4th.
+  const buyBonusDoc = isBuyBonusActive()
     ? promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus')
     : undefined;
   if (buyBonusDoc) {

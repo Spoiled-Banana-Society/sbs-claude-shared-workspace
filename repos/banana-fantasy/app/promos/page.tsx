@@ -33,7 +33,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'hof':                { accent: '#D4AF37', label: 'HOF' },
   'mint':               { accent: '#a855f7', label: 'Buy' },
   'new-user':           { accent: '#ec4899', label: 'New User' },
-  'buy-bonus':          { accent: '#ef4444', label: 'July 4th' },
+  'buy-bonus':          { accent: '#22c55e', label: 'Kickoff' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },

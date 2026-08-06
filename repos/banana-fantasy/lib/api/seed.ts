@@ -381,7 +381,7 @@ const seedPromos: Promo[] = [
     id: '7',
     type: 'buy-bonus',
     title: 'Buy 2 → FREE SPIN',
-    description: 'July 4th Weekend only!',
+    description: 'Football is BACK! Ends Sunday night',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -395,9 +395,9 @@ const seedPromos: Promo[] = [
     progressCurrent: 0,
     progressMax: 2,
     modalContent: {
-      title: '🇺🇸 July 4th: Buy 2 → FREE SPIN',
+      title: '🏈 Football is BACK: Buy 2 → FREE SPIN',
       explanation:
-        '• July 4th Weekend special: every 2 draft passes purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• No limit — buy 4 passes, earn 2 spins.\n• This weekend only!',
+        '• Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• No limit — buy 4 drafts, earn 2 spins.\n• Ends Sunday at midnight PT!',
     },
   },
   {

@@ -289,13 +289,13 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
               // ⚠️ `featured` means PINNED TO POSITION 1 — it does not mean
-              // July 4th. This used to read `!!promo.featured`, so the moment
-              // any other promo was featured it inherited the flag stripe,
-              // corner stars and a literal "🇺🇸 July 4th Weekend" chip. That
-              // shipped on 2026-07-31: THE ELIMINATOR went out featured and
-              // users screenshotted it asking why a July promo said July 4th.
-              // The patriotic treatment belongs to buy-bonus and nothing else.
-              const isJuly4 = !!promo.featured && promo.type === 'buy-bonus';
+              // Kickoff. This used to read `!!promo.featured`, so the moment
+              // any other promo was featured it inherited the themed stripe,
+              // corner marks and a literal event chip. That shipped on
+              // 2026-07-31: THE ELIMINATOR went out featured and users
+              // screenshotted it asking why a July promo said July 4th.
+              // The Kickoff treatment belongs to buy-bonus and nothing else.
+              const isKickoff = !!promo.featured && promo.type === 'buy-bonus';
               // Chase Your Pick live state — pick slot, next-hit spins, 24h clock.
               const isChase = promo.type === 'pick-chase';
               const chase = isChase ? deriveChaseState(promo) : null;
@@ -313,14 +313,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       : 'border border-[#d2d2d7] shadow-sm'}
                   `}
                 >
-                  {/* July 4th featured treatment — flag stripe + faint corner stars */}
-                  {isJuly4 && (
+                  {/* Kickoff featured treatment — turf stripe + faint corner footballs */}
+                  {isKickoff && (
                     <>
-                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#ef4444] via-[#f8fafc] to-[#3b82f6]" />
-                      <span className="absolute left-3 top-9 z-[5] text-[#ef4444]/50 text-xs pointer-events-none">✦</span>
-                      <span className="absolute right-8 top-14 z-[5] text-[#3b82f6]/45 text-[10px] pointer-events-none">✦</span>
-                      <span className="absolute left-5 bottom-9 z-[5] text-[#3b82f6]/50 text-sm pointer-events-none">✦</span>
-                      <span className="absolute right-4 bottom-14 z-[5] text-[#ef4444]/45 text-[10px] pointer-events-none">✦</span>
+                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#22c55e] via-[#fbbf24] to-[#22c55e]" />
+                      <span className="absolute left-3 top-9 z-[5] opacity-40 text-xs pointer-events-none">🏈</span>
+                      <span className="absolute right-8 top-14 z-[5] opacity-30 text-[10px] pointer-events-none">🏈</span>
+                      <span className="absolute left-5 bottom-9 z-[5] opacity-35 text-sm pointer-events-none">🏈</span>
+                      <span className="absolute right-4 bottom-14 z-[5] opacity-30 text-[10px] pointer-events-none">🏈</span>
                     </>
                   )}
 
@@ -346,9 +346,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   )}
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
-                    {isJuly4 && (
-                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#ef4444]/10 via-transparent to-[#3b82f6]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
-                        🇺🇸 July 4th Weekend
+                    {isKickoff && (
+                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#22c55e]/10 via-transparent to-[#fbbf24]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
+                        🏈 Football is BACK
                       </span>
                     )}
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
@@ -566,7 +566,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               </div>
                               <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-500 ${isJuly4 ? 'bg-gradient-to-r from-[#ef4444] to-[#3b82f6]' : 'bg-[#1d1d1f]'}`}
+                                  className={`h-full rounded-full transition-all duration-500 ${isKickoff ? 'bg-gradient-to-r from-[#22c55e] to-[#fbbf24]' : 'bg-[#1d1d1f]'}`}
                                   style={{ width: `${progressPercent}%` }}
                                 />
                               </div>

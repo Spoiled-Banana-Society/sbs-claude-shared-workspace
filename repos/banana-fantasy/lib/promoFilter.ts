@@ -14,6 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
+import { isBuyBonusActive } from '@/lib/api/config';
 
 /**
  * Promo types visible to users right now, in display order (after
@@ -29,6 +30,8 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
+  'buy-bonus',      // Kickoff Weekend "Buy 2 → FREE SPIN" — time-gated below;
+                    // auto-hides after endsAtMs (except for unclaimed spins)
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
   'pick-10',        // "Pick 6 & 10 → FREE SPINS" — engagement reward
@@ -51,10 +54,21 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
  * (above claimable bubbling) and given the big NEW badge treatment.
- * Set to null when no promo is being featured — 'buy-bonus' was removed
- * here when the July 4th promo ended (2026-07-06).
+ * Set to null when no promo is being featured. 'buy-bonus' is featured
+ * for Kickoff Weekend (2026-08) — activeFeaturedType() drops the pin
+ * automatically once the promo window closes, no teardown deploy needed.
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = null;
+export const FEATURED_PROMO_TYPE: PromoType | null = 'buy-bonus';
+
+/**
+ * FEATURED_PROMO_TYPE, but null once a time-boxed featured promo's window
+ * has closed — so the pin, big NEW badge, and carousel featured treatment
+ * all unwind at the cutoff without a deploy.
+ */
+function activeFeaturedType(): PromoType | null {
+  if (FEATURED_PROMO_TYPE === 'buy-bonus' && !isBuyBonusActive()) return null;
+  return FEATURED_PROMO_TYPE;
+}
 
 /** Display order with the admin-preview types spliced in (before 'mint'). */
 function adminPreviewOrder(): PromoType[] {
@@ -160,6 +174,14 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       if (opts.flagsKnown === false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
     }
+    // Kickoff Weekend Buy 2 → FREE SPIN is time-boxed: after the Sunday-night
+    // cutoff the card disappears on its own — EXCEPT for users still holding
+    // an unclaimed earned spin, who keep the card until they claim (don't
+    // strand earned rewards behind a hidden card like the July 4th teardown
+    // did). Admin preview keeps it visible for post-window inspection.
+    if (p.type === 'buy-bonus' && !opts.isAdminPreview) {
+      if (!isBuyBonusActive() && !p.claimable) return false;
+    }
     return true;
   });
 
@@ -172,9 +194,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     if (aNU !== bNU) return bNU - aNU;
     // 0. Featured promo is pinned next, above everything else —
     //    it's the limited-time card we're actively pushing.
-    if (FEATURED_PROMO_TYPE) {
-      const aFeat = a.type === FEATURED_PROMO_TYPE ? 1 : 0;
-      const bFeat = b.type === FEATURED_PROMO_TYPE ? 1 : 0;
+    const featuredType = activeFeaturedType();
+    if (featuredType) {
+      const aFeat = a.type === featuredType ? 1 : 0;
+      const bFeat = b.type === featuredType ? 1 : 0;
       if (aFeat !== bFeat) return bFeat - aFeat;
     }
     // 1. Claimable / actionable promos first — user can hit the button now.
@@ -201,15 +224,17 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // the server value flows through. First-purchase KEEPS its NEW badge (it
   // upgraded to every-2-passes) — forced on here so every surface (home
   // carousel, drafting sidebar, /promos) stays in sync. Featured promo still
-  // carries the big NEW badge when one is active (FEATURED is null now that
-  // July 4th ended).
+  // carries the big NEW badge while its window is open.
   return sorted.map((p) => {
     if (p.type === 'first-purchase') return { ...p, isNew: true };
     // New-user welcome card carries the NEW ribbon too (Boris 2026-07-12) —
     // forced here so already-seeded accounts match fresh seeds.
     if (p.type === 'new-user') return { ...p, isNew: true };
-    // Featured promo always carries the (big) NEW badge on every surface.
-    if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
+    // Featured promo always carries the (big) NEW badge on every surface —
+    // via activeFeaturedType() so a time-boxed feature sheds the badge and
+    // pin the moment its window closes.
+    const feat = activeFeaturedType();
+    if (feat && p.type === feat) {
       return { ...p, isNew: true, featured: true };
     }
     return p;

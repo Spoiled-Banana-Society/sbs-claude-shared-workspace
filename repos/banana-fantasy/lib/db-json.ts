@@ -19,7 +19,7 @@ import type {
   WheelPrize,
   WheelSpin,
 } from '@/types';
-import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
+import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import type { DbSchema } from '@/lib/api/dbTypes';
 import { seedDb } from '@/lib/api/seed';
@@ -380,7 +380,7 @@ function calcSpinsForPurchase(quantity: number): number {
 }
 
 function _calcBuyBonusFreeDrafts(quantity: number): number {
-  if (!API_CONFIG.promos.buyBonus.enabled) return 0;
+  if (!isBuyBonusActive()) return 0;
   return Math.floor(quantity / API_CONFIG.promos.buyBonus.buy) * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
 }
 
@@ -461,9 +461,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       }
     }
 
-    // Update promo progress for buy-bonus promo (skipped while the promo is
-    // disabled — July 4th run ended 2026-07-06).
-    const buyBonusPromo = API_CONFIG.promos.buyBonus.enabled
+    // Update promo progress for buy-bonus promo (skipped outside the
+    // enabled + endsAtMs window — no hidden banked progress).
+    const buyBonusPromo = isBuyBonusActive()
       ? promos.find((p) => p.type === 'buy-bonus')
       : undefined;
     if (buyBonusPromo) {
