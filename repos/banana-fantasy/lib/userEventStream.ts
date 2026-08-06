@@ -88,8 +88,8 @@ export interface StreamEventPayload {
   txHash?: string;
   /**
    * first-purchase-unlocked only: the user is a RETURNING player, so the
-   * unlock bell must pitch the classic offer (buy 2 → 1 draft free in the
-   * 24h window), never the new-player buy-1-get-2 math.
+   * unlock bell must pitch the classic offer (buy 2 → 1 draft free), never
+   * the new-player buy-1-get-2 math.
    */
   isReturning?: boolean;
   /**

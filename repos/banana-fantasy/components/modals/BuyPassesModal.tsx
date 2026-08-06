@@ -1270,8 +1270,8 @@ export function BuyPassesModal({
                 </div>
                 {/* First-purchase offer — quantity-reactive, math from the same
                     promoMath helpers the server grants with (new: qty × 2 spins,
-                    each ≥1 Free Draft; returning: classic floor(qty/2) inside
-                    the 24h window). Hidden once consumed (variant 'done'). */}
+                    each ≥1 Free Draft; returning: classic floor(qty/2), no
+                    deadline). Hidden once consumed (variant 'done'). */}
                 {(() => {
                   const fpLine = firstPurchaseBuyLine(user?.firstPurchaseVariant ?? 'unknown', quantity);
                   return fpLine ? (

@@ -152,7 +152,7 @@ async function remindPreDrop(nightId: string): Promise<{ users: number }> {
   await Promise.allSettled([...counts].map(([uid, n]) => createNotification(uid, {
     type: 'promo',
     title: '⏰ 2 hours until THE DROP',
-    message: `Tonight at 8:00 PM PT: ${prizeSummaryLine(nightId)} — all guaranteed. `
+    message: `Tonight at 9:00 PM PT: ${prizeSummaryLine(nightId)} — all guaranteed. `
       + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 8 adds more.`,
     link: '/promos?promo=drop',
     dedupeKey: `drop-2h-${nightId}`,

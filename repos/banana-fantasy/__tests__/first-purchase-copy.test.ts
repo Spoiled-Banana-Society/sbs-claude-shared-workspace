@@ -79,11 +79,10 @@ describe('new-player first-purchase copy math', () => {
     expect(sentence).toContain('$1,500');
   });
 
-  it('returning players keep the classic card copy untouched', () => {
+  it('returning players keep the classic card copy — no deadline line', () => {
     expect(firstPurchaseCardLines('returning')).toEqual([
       'Every 2 Passes = 1 Free Spin',
       'Each Spin wins 1+ Free Drafts',
-      'In your first 24 hours',
     ]);
   });
 });

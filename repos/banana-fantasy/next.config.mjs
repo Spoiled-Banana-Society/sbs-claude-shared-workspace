@@ -82,6 +82,19 @@ const nextConfig = {
             key: 'Cross-Origin-Opener-Policy',
             value: 'same-origin-allow-popups',
           },
+          {
+            // Chrome's Reporting API: after a RENDERER CRASH ("Aw, Snap!"),
+            // the browser itself POSTs a crash report here — including
+            // body.reason, which says "oom" outright when it was memory.
+            // This is the ONLY way to learn the crash reason: the page's JS
+            // is dead by then, so no in-page telemetry can ever capture it.
+            // Two days of memWatch shows FC's heap at 98-140 MB right up to
+            // his crashes, so the reason field is now the whole question.
+            // Delivery is best-effort and can lag minutes; endpoint is
+            // app/api/debug/crash/route.ts → v2_debug_events tag "crash".
+            key: 'Reporting-Endpoints',
+            value: 'default="https://sbsfantasy.com/api/debug/crash"',
+          },
         ],
       },
     ];

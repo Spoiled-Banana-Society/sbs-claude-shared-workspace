@@ -335,9 +335,9 @@ export default function DraftingPage() {
                         style={{ background: 'linear-gradient(160deg, rgba(168,85,247,0.06) 0%, transparent 60%)' }}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
-                          <h4 className="text-white text-[14px] font-semibold tracking-tight">Pro</h4>
+                          <h4 className="text-pro text-[14px] font-semibold tracking-tight">Pro</h4>
                           <span className="text-white/15">&middot;</span>
-                          <span className="text-[15px] font-bold tracking-tight text-pro">94%</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">94%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100K GTD Prize Pool.</p>
                       </button>
@@ -347,9 +347,9 @@ export default function DraftingPage() {
                         style={{ background: 'linear-gradient(160deg, rgba(212,175,55,0.06) 0%, transparent 60%)' }}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
-                          <h4 className="text-white text-[14px] font-semibold tracking-tight">Hall of Fame</h4>
+                          <h4 className="text-hof text-[14px] font-semibold tracking-tight">Hall of Fame</h4>
                           <span className="text-white/15">&middot;</span>
-                          <span className="text-[15px] font-bold tracking-tight text-hof">5%</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">5%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Bonus prize pool on top of standard rewards.</p>
                       </button>
@@ -359,9 +359,9 @@ export default function DraftingPage() {
                         style={{ background: 'linear-gradient(160deg, rgba(239,68,68,0.06) 0%, transparent 60%)' }}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
-                          <h4 className="text-white text-[14px] font-semibold tracking-tight">Jackpot</h4>
+                          <h4 className="text-jackpot text-[14px] font-semibold tracking-tight">Jackpot</h4>
                           <span className="text-white/15">&middot;</span>
-                          <span className="text-[15px] font-bold tracking-tight text-jackpot">1%</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">1%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals.</p>
                       </button>

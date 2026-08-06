@@ -126,14 +126,10 @@ export async function awardPacksForFill(opts: {
 
   const db = getAdminFirestore();
 
-  // ⚠️ HOUSE BOTS EARN NOTHING. The Go engine sends every seat in the filled
-  // league to /api/notifications/draft-filled, bots included — so without this
-  // a house bot joins the pack pool and can be dealt the JACKHOF seat, which is
-  // unclaimable (bots have no private key, by design) and would silently eat
-  // the night's headline prize. `botWallets` is the only record of who's ours.
-  if ((await db.collection('botWallets').doc(userId).get()).exists) {
-    return { awarded: 0, nightId: night.nightId };
-  }
+  // House bots earn packs exactly like users (Richard, 2026-08-04): a filled
+  // draft whose bot seats visibly earn nothing fingerprints those wallets as
+  // ours. Accepted trade-off: bots never open packs, so any prize dealt to a
+  // bot pack — including a guaranteed JackHOF/Jackpot seat — stays unclaimed.
   const dedupeId = `${night.nightId}__${userId}__${opts.draftId}`
     .replace(/[/\\\s]+/g, '_').slice(0, 1400);
   const ledgerRef = db.collection(USERS).doc(userId).collection(LEDGER).doc(dedupeId);
@@ -210,7 +206,7 @@ async function writePackEarnedNoti(userId: string, nightId: string, earned: numb
     type: 'promo',
     icon: '🌙',
     title: `🌙 +${earned} pack${earned === 1 ? '' : 's'} — draft filled`,
-    message: `Your draft filled and earned ${earned} sealed pack${earned === 1 ? '' : 's'}. You now hold ${total} for tonight's Drop. They open at 8:00 PM PT — ${prizeSummaryLine(nightId)}, all guaranteed. Tap to see your stack.`,
+    message: `Your draft filled and earned ${earned} sealed pack${earned === 1 ? '' : 's'}. You now hold ${total} for tonight's Drop. They open at 9:00 PM PT — ${prizeSummaryLine(nightId)}, all guaranteed. Tap to see your stack.`,
     link: '/drop',
     read: false,
     createdAt: FieldValue.serverTimestamp(),

@@ -56,18 +56,27 @@ export function DropCountdown({
   // ⚠️ No colour of its own. Every other countdown in the row is a bare
   // `font-semibold tabular-nums` span inheriting text-[#4a4a4a] from the footer
   // container — hardcoding a colour here made THE DROP the one card that
-  // didn't match (Boris 2026-08-02). OPEN NOW keeps its green because it is a
-  // state, not a timer.
+  // didn't match (Boris 2026-08-02). The open-packs action keeps its green
+  // because it is a state, not a timer.
   return (
     <span className={`font-semibold tabular-nums ${className}`}>
-      {showOpen && (
-        <>
-          <span className="text-[#22c55e]">OPEN NOW</span>
-          <span> · </span>
-        </>
-      )}
       <span>{label}</span>
       {packs > 0 && <span> · {packs} pack{packs === 1 ? '' : 's'}</span>}
+      {showOpen && (
+        // "Open your packs" — straight to the pack room, no modal detour
+        // (Boris 2026-08-05: same spot the claim-spin action sits, right
+        // under the countdown; replaces the old passive OPEN NOW label).
+        // stopPropagation so the card's own click (promo modal) doesn't fire.
+        <span
+          role="link"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.assign('/drop'); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); window.location.assign('/drop'); } }}
+          className="block mt-1 text-[#22c55e] font-bold cursor-pointer hover:underline"
+        >
+          Open your packs →
+        </span>
+      )}
     </span>
   );
 }

@@ -23,10 +23,10 @@ export function packsForFill(passType: 'free' | 'paid'): number {
 }
 
 // ── Schedule ────────────────────────────────────────────────────────────────
-// Packs unlock at 8pm PT. 9pm was the first plan and it was wrong: activity
-// peaks 5-8pm (332/378/292/367 events per hour over 14 days) and falls off a
-// cliff to 153 by 9pm, so a 9pm drop lands after the room has emptied.
-export const DROP_HOUR_PT = 20;
+// Packs unlock at 9pm PT (Boris 2026-08-05: moved from 8pm so the earning
+// window covers the whole 5-8pm activity peak plus the 8-9 hour; the countdown
+// rolls to a clean 24h at each 9pm open).
+export const DROP_HOUR_PT = 21;
 /** ⚠️ LEGACY (removed 2026-08-03): packs used to auto-open at midnight. They
  *  now stay sealed until the owner opens them — there is NO backstop, by
  *  Richard's call ("no backstop window at all"). The constant and the
@@ -226,7 +226,7 @@ export function dropExplanationFor(nightId: string): string {
     + '\n'
     + 'HOW IT WORKS\n'
     + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
-    + '• Packs stay sealed all day. At 8:00 PM PT they unlock.\n'
+    + '• Packs stay sealed all day. At 9:00 PM PT they unlock.\n'
     + '• Open one at a time, or open the whole stack at once.\n'
     + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
     + '• Anything you don\'t open simply waits for you — come back and rip it any night. You never lose what you earned.\n'
@@ -236,7 +236,7 @@ export function dropExplanationFor(nightId: string): string {
     + '• So the more packs you hold, the bigger your share of it. Two people with one pack each are 50/50 for the seat; hold ten of the night\'s hundred and it is one in ten.\n'
     + '\n'
     + 'PROVABLY FAIR\n'
-    + '• Every prize is assigned at 8:00 PM from randomness committed BEFORE the night began.\n'
+    + '• Every prize is assigned at 9:00 PM from randomness committed BEFORE the night began.\n'
     + '• Opening only reveals what was already decided — nobody, us included, can steer it.';
 }
 

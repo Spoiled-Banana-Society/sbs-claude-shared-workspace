@@ -179,7 +179,7 @@ export default function DropPage() {
             {/* The page is reachable all day on purpose — people want to see
                 the stack they're building. It just can't be opened yet. */}
             <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/[0.10] bg-white/[0.03] px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">
-              🔒 Locked until 8:00 PM PT
+              🔒 Locked until 9:00 PM PT
             </p>
             <p className="mt-6 font-mono text-5xl font-black tabular-nums text-[#6366f1]">
               {countdown}
@@ -194,7 +194,7 @@ export default function DropPage() {
               {sealed > 0
                 ? 'Your packs are ready.'
                 : state?.next
-                  ? 'All opened — keep filling drafts and your next stack rips at 8:00 PM PT.'
+                  ? 'All opened — keep filling drafts and your next stack rips at 9:00 PM PT.'
                   : 'All opened. Back tomorrow.'}
             </p>
             {/* Same countdown treatment as the pre-drop state, now pointed at
@@ -361,7 +361,7 @@ export default function DropPage() {
           </p>
           <p>
             They stay sealed all day and unlock at{' '}
-            <span className="font-semibold text-white/85">8:00 PM PT</span>. Rip them one at a time
+            <span className="font-semibold text-white/85">9:00 PM PT</span>. Rip them one at a time
             or open the whole stack at once.
           </p>
           <p>
@@ -386,7 +386,7 @@ export default function DropPage() {
               {spinsForNight(revealNightIdFor(Date.now()))} free spins
             </span> go out — guaranteed, no matter how many packs are in play. The JackHOF seat
             lands in exactly one pack out of every pack earned that day, so the more you hold at
-            8:00 PM, the bigger your share of it.
+            9:00 PM, the bigger your share of it.
           </p>
           <p>
             Anything you don&rsquo;t open just waits for you — sealed packs never expire and never
@@ -404,7 +404,7 @@ export default function DropPage() {
             🔒 Provably fair
           </p>
           <p className="mt-1 text-[11px] leading-relaxed text-white/35">
-            Every prize was assigned at 8:00 PM from randomness committed{' '}
+            Every prize was assigned at 9:00 PM from randomness committed{' '}
             <span className="text-white/55">before the night began</span>. Opening only
             reveals what was already decided.
           </p>

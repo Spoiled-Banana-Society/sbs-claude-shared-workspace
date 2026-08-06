@@ -6,9 +6,9 @@
 //   - NEW players: every pass = 2 promo spins (firstPurchaseSpins), and every
 //     spin wins at least 1 Free Draft (minimum wheel wedge = 1) → buy 1, get
 //     at least 2 drafts free; max wedge 20 → up to 40 Free Drafts.
-//   - RETURNING players: classic rate — every 2 passes bought inside the 24h
-//     window from their first purchase = 1 promo spin (classicFirstPurchaseSpins
-//     / computeClassicWindowGrant) → buy 2, get at least 1 draft free.
+//   - RETURNING players: classic rate — every 2 passes bought, whenever, = 1
+//     promo spin (classicFirstPurchaseSpins / computeClassicPairGrant, no
+//     deadline) → buy 2, get at least 1 draft free.
 // Bonus Spins (Spin-on-Purchase) pay wedge-minus-one and are NEVER counted in
 // any guarantee here — they're mentioned only by surfaces already gated on
 // that feature flag.
@@ -158,8 +158,8 @@ export function firstPurchaseBuyLine(variant: FirstPurchasePitch, quantity: numb
   }
   if (variant === 'returning') {
     const drafts = classicFirstPurchaseSpins(qty);
-    if (drafts <= 0) return 'First purchase: buy 2, get 1 draft free (first 24h)';
-    return `First purchase: buy ${qty} → get ${drafts} draft${drafts === 1 ? '' : 's'} free (first 24h)`;
+    if (drafts <= 0) return 'First purchase: buy 2, get 1 draft free';
+    return `First purchase: buy ${qty} → get ${drafts} draft${drafts === 1 ? '' : 's'} free`;
   }
   return null;
 }
@@ -184,7 +184,6 @@ export function firstPurchaseCardLines(
     return [
       'Every 2 Passes = 1 Free Spin',
       'Each Spin wins 1+ Free Drafts',
-      'In your first 24 hours',
     ];
   }
   // Server description is one ' · '-separated line per card row, optionally

@@ -486,8 +486,8 @@ const seedPromos: Promo[] = [
     id: 'drop',
     type: 'drop',
     title: 'THE DROP → JACKHOF SEAT',
-    description: 'Fill drafts, earn packs. Open them at 8PM.',
-    ctaText: 'Open Packs',
+    description: 'Fill drafts, earn packs. Open them at 9PM.',
+    ctaText: 'Open your packs',
     ctaLink: '/drop',
     backgroundColor: '#2a2a35',
     isNew: true,
@@ -510,7 +510,7 @@ const seedPromos: Promo[] = [
         + '\n'
         + 'HOW IT WORKS\n'
         + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
-        + '• Packs stay sealed all day. At 8:00 PM PT they unlock.\n'
+        + '• Packs stay sealed all day. At 9:00 PM PT they unlock.\n'
         + '• Open one at a time, or open the whole stack at once.\n'
         + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
         + '• Anything still sealed at midnight opens itself — you never lose what you earned.\n'
@@ -520,7 +520,7 @@ const seedPromos: Promo[] = [
         + '• So the more packs you hold, the bigger your share of it. Two people with one pack each are 50/50 for the seat; hold ten of the night\'s hundred and it is one in ten.\n'
         + '\n'
         + 'PROVABLY FAIR\n'
-        + '• Every prize is assigned at 8:00 PM from randomness committed BEFORE the night began.\n'
+        + '• Every prize is assigned at 9:00 PM from randomness committed BEFORE the night began.\n'
         + '• Opening only reveals what was already decided — nobody, us included, can steer it.',
       additionalRules: '',
     },

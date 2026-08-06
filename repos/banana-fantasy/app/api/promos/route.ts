@@ -93,6 +93,10 @@ export async function GET(req: Request) {
       if (drop) {
         const { dropExplanationFor, revealNightIdFor } = await import('@/lib/dropRates');
         drop.modalContent.explanation = dropExplanationFor(revealNightIdFor(Date.now()));
+        // Seeded per-user docs carry the old CTA + 8PM description — keep both
+        // live-synced with the current schedule/wording (9PM, 2026-08-05).
+        drop.ctaText = 'Open your packs';
+        drop.description = 'Fill drafts, earn packs. Open them at 9PM.';
       }
     } catch { /* copy refresh is decoration — promos still return */ }
 

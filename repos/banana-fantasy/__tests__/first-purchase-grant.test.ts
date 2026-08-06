@@ -150,10 +150,10 @@ describe('First-purchase bonus math', () => {
       expect(firstPurchaseBuyLine('new', 5)).toBe('First purchase: buy 5 → get 10 drafts free');
     });
 
-    it('returning buy line = floor(qty/2) (the classic window grant), with a pair fallback at qty 1', () => {
-      expect(firstPurchaseBuyLine('returning', 1)).toBe('First purchase: buy 2, get 1 draft free (first 24h)');
-      expect(firstPurchaseBuyLine('returning', 2)).toBe('First purchase: buy 2 → get 1 draft free (first 24h)');
-      expect(firstPurchaseBuyLine('returning', 5)).toBe('First purchase: buy 5 → get 2 drafts free (first 24h)');
+    it('returning buy line = floor(qty/2) (the classic pair grant), with a pair fallback at qty 1', () => {
+      expect(firstPurchaseBuyLine('returning', 1)).toBe('First purchase: buy 2, get 1 draft free');
+      expect(firstPurchaseBuyLine('returning', 2)).toBe('First purchase: buy 2 → get 1 draft free');
+      expect(firstPurchaseBuyLine('returning', 5)).toBe('First purchase: buy 5 → get 2 drafts free');
     });
 
     it('variant done → no lines anywhere', () => {
