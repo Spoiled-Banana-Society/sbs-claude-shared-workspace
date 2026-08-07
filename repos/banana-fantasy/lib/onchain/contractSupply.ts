@@ -36,6 +36,9 @@ async function readTotalSupply(rpc: string): Promise<number> {
       params: [{ to: BBB4_CONTRACT_ADDRESS, data: '0x18160ddd' }, 'latest'], // totalSupply()
     }),
     signal: AbortSignal.timeout(3000),
+    // no-store: identical POST body every call — Next's route-handler fetch
+    // cache would freeze totalSupply at its first-ever answer.
+    cache: 'no-store',
   });
   const j = await res.json();
   return j?.result && j.result !== '0x' ? Number(BigInt(j.result)) : 0;
