@@ -15,6 +15,7 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
+import { useDropMe } from '@/hooks/useDropMe';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
 const HEADER_SPOKES: [number, number][] = [
@@ -43,19 +44,25 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
     </span>
   );
 }
-// THE DROP pack: the sealed pack from the reveal (foil crimp across the top,
-// diagonal band) reduced to the same bare monochrome lines as the wheel.
+// THE DROP pack: the sealed pack from the reveal, in header-glyph language —
+// serrated foil crimp across the top, gold band on the diagonal (the one gold
+// accent, matching the ticket count). Flat strokes only, no glow.
+const PACK_OUTLINE =
+  'M4 8 V30 a3 3 0 0 0 3 3 h16 a3 3 0 0 0 3 -3 V8 l-2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 Z';
 function HeaderPack({ size = 28 }: { size?: number }) {
   return (
     <svg viewBox="0 0 30 36" width={Math.round(size * (30 / 36))} height={size} fill="none" className="transition-transform group-hover:scale-110">
-      <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
-      <line x1="4" y1="10.5" x2="26" y2="10.5" stroke="rgba(255,255,255,0.55)" strokeWidth="1.8" />
-      <g stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round">
-        <line x1="9.5" y1="5.8" x2="9.5" y2="8.2" />
-        <line x1="15" y1="5.8" x2="15" y2="8.2" />
-        <line x1="20.5" y1="5.8" x2="20.5" y2="8.2" />
-      </g>
-      <line x1="7" y1="27" x2="23" y2="19" stroke="rgba(255,255,255,0.45)" strokeWidth="1.8" strokeLinecap="round" />
+      <defs>
+        <clipPath id="hdr-pack-clip">
+          <path d={PACK_OUTLINE} />
+        </clipPath>
+      </defs>
+      {/* the gold BANANA PACK band, wrapping edge to edge (clipped to the body) */}
+      <line x1="1" y1="27" x2="29" y2="16" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
+      {/* seam where the foil crimp meets the pack */}
+      <line x1="4" y1="12" x2="26" y2="12" stroke="rgba(255,255,255,0.35)" strokeWidth="1.6" clipPath="url(#hdr-pack-clip)" />
+      {/* body with the torn-foil zigzag as its own top edge */}
+      <path d={PACK_OUTLINE} stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -70,6 +77,9 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   const pathname = usePathname();
   const router = useRouter();
   const isAdminWallet = isWalletAdmin(walletAddress);
+  // Sealed-pack badge for the DROP icon. useDropMe polls slowly (60s) with
+  // stable-scalar deps — the approved pattern, NOT a new header fetch loop.
+  const dropMe = useDropMe(walletAddress);
 
   // Anti-stuck safety net for the header controls. The right side shows a
   // loading skeleton while auth/balance resolve. On mobile Safari, Privy's
@@ -326,22 +336,33 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   </Tooltip>
 
                   {/* THE DROP — pack opening room, right of the wheel (Richard
-                      2026-08-07). No count badge: sealed-pack counts aren't on
-                      the useAuth user and the header adds no fetches (Rule #0). */}
+                      2026-08-07). Badge = every unopened pack across nights,
+                      via useDropMe (the Rule-#0-safe slow poll). */}
                   <Tooltip
                     content={
                       <div className="text-center">
                         <p className="font-semibold">The Drop</p>
-                        <p className="text-text-secondary text-xs mt-1">Open packs earned from your drafts</p>
+                        {isLoggedIn && dropMe.totalSealed > 0 ? (
+                          <p className="text-text-secondary text-xs mt-1">
+                            {dropMe.totalSealed} sealed pack{dropMe.totalSealed !== 1 ? 's' : ''} waiting
+                          </p>
+                        ) : (
+                          <p className="text-text-muted text-xs mt-1">Open packs earned from your drafts</p>
+                        )}
                       </div>
                     }
                   >
                     <Link
                       href="/drop"
-                      aria-label="The Drop — open your packs"
-                      className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                      aria-label={`The Drop${isLoggedIn && dropMe.totalSealed > 0 ? `: ${dropMe.totalSealed} sealed packs` : ' — open your packs'}`}
+                      className="relative flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
                       <HeaderPack size={26} />
+                      {isLoggedIn && dropMe.totalSealed > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                          {dropMe.totalSealed}
+                        </span>
+                      )}
                     </Link>
                   </Tooltip>
 
