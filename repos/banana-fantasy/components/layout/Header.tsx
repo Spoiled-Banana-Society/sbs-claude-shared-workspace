@@ -43,6 +43,22 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
     </span>
   );
 }
+// THE DROP pack: the sealed pack from the reveal (foil crimp across the top,
+// diagonal band) reduced to the same bare monochrome lines as the wheel.
+function HeaderPack({ size = 28 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 30 36" width={Math.round(size * (30 / 36))} height={size} fill="none" className="transition-transform group-hover:scale-110">
+      <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
+      <line x1="4" y1="10.5" x2="26" y2="10.5" stroke="rgba(255,255,255,0.55)" strokeWidth="1.8" />
+      <g stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round">
+        <line x1="9.5" y1="5.8" x2="9.5" y2="8.2" />
+        <line x1="15" y1="5.8" x2="15" y2="8.2" />
+        <line x1="20.5" y1="5.8" x2="20.5" y2="8.2" />
+      </g>
+      <line x1="7" y1="27" x2="23" y2="19" stroke="rgba(255,255,255,0.45)" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 interface HeaderProps {
   onEditProfile: () => void;
@@ -306,6 +322,26 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                           {user.wheelSpins}
                         </span>
                       )}
+                    </Link>
+                  </Tooltip>
+
+                  {/* THE DROP — pack opening room, right of the wheel (Richard
+                      2026-08-07). No count badge: sealed-pack counts aren't on
+                      the useAuth user and the header adds no fetches (Rule #0). */}
+                  <Tooltip
+                    content={
+                      <div className="text-center">
+                        <p className="font-semibold">The Drop</p>
+                        <p className="text-text-secondary text-xs mt-1">Open packs earned from your drafts</p>
+                      </div>
+                    }
+                  >
+                    <Link
+                      href="/drop"
+                      aria-label="The Drop — open your packs"
+                      className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                    >
+                      <HeaderPack size={26} />
                     </Link>
                   </Tooltip>
 
