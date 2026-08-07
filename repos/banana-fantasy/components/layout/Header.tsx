@@ -44,25 +44,20 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
     </span>
   );
 }
-// THE DROP pack: the sealed pack from the reveal, in header-glyph language —
-// serrated foil crimp across the top, gold band on the diagonal (the one gold
-// accent, matching the ticket count). Flat strokes only, no glow.
-const PACK_OUTLINE =
-  'M4 8 V30 a3 3 0 0 0 3 3 h16 a3 3 0 0 0 3 -3 V8 l-2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 -2.2 -3.2 -2.2 3.2 Z';
+// THE DROP pack: clean rounded pack with the gold band on the diagonal — the
+// one gold accent, matching the ticket count. Richard 2026-08-07: no zigzag
+// crimp edge, just the rectangle + band. Flat strokes only, no glow.
 function HeaderPack({ size = 28 }: { size?: number }) {
   return (
     <svg viewBox="0 0 30 36" width={Math.round(size * (30 / 36))} height={size} fill="none" className="transition-transform group-hover:scale-110">
       <defs>
         <clipPath id="hdr-pack-clip">
-          <path d={PACK_OUTLINE} />
+          <rect x="4" y="3" width="22" height="30" rx="3" />
         </clipPath>
       </defs>
       {/* the gold BANANA PACK band, wrapping edge to edge (clipped to the body) */}
-      <line x1="1" y1="27" x2="29" y2="16" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
-      {/* seam where the foil crimp meets the pack */}
-      <line x1="4" y1="12" x2="26" y2="12" stroke="rgba(255,255,255,0.35)" strokeWidth="1.6" clipPath="url(#hdr-pack-clip)" />
-      {/* body with the torn-foil zigzag as its own top edge */}
-      <path d={PACK_OUTLINE} stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" strokeLinejoin="round" />
+      <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
+      <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
     </svg>
   );
 }
