@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * This wallet's sealed pack count for tonight, for surfaces that need the
@@ -39,8 +39,11 @@ const EMPTY: DropMe = {
   sealed: 0, opened: 0, packCount: 0, status: 'earning', loaded: false, upcomingSealed: 0, totalSealed: 0,
 };
 
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
+
 export function useDropMe(wallet: string | null | undefined): DropMe {
   const [me, setMe] = useState<DropMe>(EMPTY);
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -74,7 +77,12 @@ export function useDropMe(wallet: string | null | undefined): DropMe {
     load();
     // Slow poll — a pack only arrives when a draft fills.
     const id = setInterval(load, 60_000);
+    loadRef.current = load;
     return () => { alive = false; clearInterval(id); };
   }, [wallet]); // stable scalar only
+  // Real-time: a filled draft pushes a user-event (the per-fill pack bell), so
+  // refetch on stream pings — the tab-bar/header badge updates the moment the
+  // pack lands instead of waiting out the 60s poll (Boris 2026-08-07).
+  useStreamRefetch(wallet ?? null, () => { void loadRef.current?.(); });
   return me;
 }

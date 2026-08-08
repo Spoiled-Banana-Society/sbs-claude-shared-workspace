@@ -104,7 +104,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
     },
     {
       href: '/banana-wheel',
-      label: 'Spin',
+      label: 'Spins',
       matchPaths: ['/banana-wheel'],
       badge: wheelSpins,
       exactBadge: true, // wheel spins always show the real count, never "9+"
