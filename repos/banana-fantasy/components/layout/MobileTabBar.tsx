@@ -66,11 +66,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       matchPaths: ['/draft', '/draft-room', '/buy-drafts'],
       badge: 0,
       icon: (active: boolean) => (
-        // 26px box (others are 24): the football is a diagonal glyph with
-        // empty corners, so at equal size it reads smaller and the Draft→Teams
-        // gap looked widest on the bar (Boris 2026-08-07). +2px evens the
-        // optical mass without touching the even flex slots.
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20 4 Q4 4 4 20 Q20 20 20 4 Z" />
           <path d="M8 16 L16 8" />
           <path d="M9.5 13.5 L11 15 M11.5 11.5 L13 13 M13.5 9.5 L15 11" />
