@@ -147,20 +147,57 @@ async function sealedCountsByHolder(nightId: string): Promise<Map<string, number
  */
 async function remindPreDrop(nightId: string): Promise<{ users: number }> {
   const counts = await sealedCountsByHolder(nightId);
-  if (counts.size === 0) return { users: 0 };
 
-  await Promise.allSettled([...counts].map(([uid, n]) => createNotification(uid, {
-    type: 'promo',
-    title: '⏰ 2 hours until THE DROP',
-    message: `Tonight at 9:00 PM PT: ${prizeSummaryLine(nightId)} — all guaranteed. `
-      + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 9 adds more.`,
-    link: '/promos?promo=drop',
-    dedupeKey: `drop-2h-${nightId}`,
-    icon: 'ticket',
-  })));
+  // ALL real users get the 2-hour ping (Boris 2026-08-07 — the holders-only
+  // version skipped exactly the people who still need to earn packs, so a
+  // manual all-users bell was being sent by hand every night). Holders get
+  // their personal count; everyone else gets the earn motivator. House bots
+  // (botWallets registry) are excluded — they hold packs for fingerprint
+  // resistance but nobody reads their bells.
+  const db = getAdminFirestore();
+  const [usersSnap, botsSnap] = await Promise.all([
+    db.collection('v2_users').select().get(),
+    db.collection('botWallets').select().get(),
+  ]);
+  const bots = new Set(botsSnap.docs.map((d) => d.id.toLowerCase()));
+  const prizes = prizeSummaryLine(nightId);
 
-  logger.info('drop.prereminder.sent', { nightId, users: counts.size });
-  return { users: counts.size };
+  const holderMsgs: Array<Promise<void>> = [];
+  const earnWallets: string[] = [];
+  for (const doc of usersSnap.docs) {
+    const uid = doc.id.toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(uid) || bots.has(uid)) continue;
+    const n = counts.get(uid) ?? 0;
+    if (n > 0) {
+      holderMsgs.push(createNotification(uid, {
+        type: 'promo',
+        title: '⏰ 2 hours until THE DROP',
+        message: `Tonight at 9:00 PM PT: ${prizes} — all guaranteed. `
+          + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 9 adds more.`,
+        link: '/promos?promo=drop',
+        dedupeKey: `drop-2h-${nightId}`,
+        icon: 'ticket',
+      }));
+    } else {
+      earnWallets.push(uid);
+    }
+  }
+  await Promise.allSettled(holderMsgs);
+  if (earnWallets.length > 0) {
+    const { createNotificationForWallets } = await import('@/lib/queueNotifications');
+    await createNotificationForWallets(earnWallets, {
+      type: 'promo',
+      title: '⏰ 2 hours to earn your packs',
+      message: `2 hours left to earn packs for tonight's Drop — win prizes including ${prizes}, all guaranteed. Do drafts. Earn packs. Win prizes.`,
+      link: '/drop',
+      dedupeKey: `drop-2h-${nightId}`,
+      icon: 'ticket',
+    });
+  }
+
+  const total = counts.size + earnWallets.length;
+  logger.info('drop.prereminder.sent', { nightId, holders: counts.size, earners: earnWallets.length });
+  return { users: total };
 }
 
 /**
