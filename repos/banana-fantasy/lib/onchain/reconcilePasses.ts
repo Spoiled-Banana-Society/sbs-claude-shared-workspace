@@ -58,8 +58,13 @@ async function fetchOwnedBbb4TokenIds(wallet: string): Promise<string[]> {
     params.append('contractAddresses[]', BBB4_CONTRACT_ADDRESS);
     if (pageKey) params.set('pageKey', pageKey);
 
+    // ⚠️ cache: 'no-store' is LOAD-BEARING everywhere in this file: reconcile
+    // runs inside GET route handlers (cron + webhook), where Next's patched
+    // fetch caches responses — stale ownership here re-creates the exact
+    // drift this module exists to heal.
     const res = await fetch(`${base}/getNFTsForOwner?${params}`, {
       headers: { accept: 'application/json' },
+      cache: 'no-store',
     });
     if (!res.ok) {
       throw new Error(`Alchemy NFT API ${res.status}: ${await res.text().catch(() => '')}`);
@@ -110,7 +115,7 @@ export async function fetchGoApiTokenLists(
 ): Promise<{ available: GoTokenRef[]; active: GoTokenRef[] }> {
   const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return { available: [], active: [] };
-  const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
+  const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`, { cache: 'no-store' });
   if (!res.ok) {
     logger.warn('reconcile.go_api_fetch_failed', { wallet, status: res.status });
     return { available: [], active: [] };
@@ -155,7 +160,7 @@ export async function fetchGoApiAvailableCount(wallet: string): Promise<number |
   const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return null;
   try {
-    const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
+    const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`, { cache: 'no-store' });
     if (!res.ok) {
       logger.warn('balance.go_api_count_fetch_failed', { wallet, status: res.status });
       return null;
@@ -200,6 +205,7 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passT
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minId, maxId, passType }),
+        cache: 'no-store',
       });
       if (res.ok) {
         registered += maxId - minId + 1;

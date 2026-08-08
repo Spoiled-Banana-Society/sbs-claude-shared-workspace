@@ -42,10 +42,14 @@ const INITIAL_LOOKBACK_BLOCKS = 1800;
 interface RpcLog { topics: string[]; blockNumber: string; transactionHash: string }
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+  // ⚠️ cache: 'no-store' is LOAD-BEARING (same trap as deposit-credit-sweep):
+  // Next's route-handler fetch cache keys POSTs by URL+body, so without it
+  // eth_blockNumber returns the deploy-day head forever and the scan freezes.
   const res = await fetch(BASE_RPC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    cache: 'no-store',
   });
   if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
   const body = (await res.json()) as { result?: T; error?: { message?: string } };

@@ -15,6 +15,7 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
+import { useDropMe } from '@/hooks/useDropMe';
 import { totalSpins } from '@/lib/spinTypes';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
@@ -44,6 +45,23 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
     </span>
   );
 }
+// THE DROP pack: clean rounded pack with the gold band on the diagonal — the
+// one gold accent, matching the ticket count. Richard 2026-08-07: no zigzag
+// crimp edge, just the rectangle + band. Flat strokes only, no glow.
+function HeaderPack({ size = 28 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 30 36" width={Math.round(size * (30 / 36))} height={size} fill="none" className="transition-transform group-hover:scale-110">
+      <defs>
+        <clipPath id="hdr-pack-clip">
+          <rect x="4" y="3" width="22" height="30" rx="3" />
+        </clipPath>
+      </defs>
+      {/* the gold BANANA PACK band, wrapping edge to edge (clipped to the body) */}
+      <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
+      <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
+    </svg>
+  );
+}
 
 interface HeaderProps {
   onEditProfile: () => void;
@@ -55,6 +73,9 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   const pathname = usePathname();
   const router = useRouter();
   const isAdminWallet = isWalletAdmin(walletAddress);
+  // Sealed-pack badge for the DROP icon. useDropMe polls slowly (60s) with
+  // stable-scalar deps — the approved pattern, NOT a new header fetch loop.
+  const dropMe = useDropMe(walletAddress);
 
   // Anti-stuck safety net for the header controls. The right side shows a
   // loading skeleton while auth/balance resolve. On mobile Safari, Privy's
@@ -294,6 +315,37 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       {isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
                           {totalSpins(user.wheelSpins, user.purchaseSpins)}
+                        </span>
+                      )}
+                    </Link>
+                  </Tooltip>
+
+                  {/* THE DROP — pack opening room, right of the wheel (Richard
+                      2026-08-07). Badge = every unopened pack across nights,
+                      via useDropMe (the Rule-#0-safe slow poll). */}
+                  <Tooltip
+                    content={
+                      <div className="text-center">
+                        <p className="font-semibold">The Drop</p>
+                        {isLoggedIn && dropMe.totalSealed > 0 ? (
+                          <p className="text-text-secondary text-xs mt-1">
+                            {dropMe.totalSealed} sealed pack{dropMe.totalSealed !== 1 ? 's' : ''} waiting
+                          </p>
+                        ) : (
+                          <p className="text-text-muted text-xs mt-1">Open packs earned from your drafts</p>
+                        )}
+                      </div>
+                    }
+                  >
+                    <Link
+                      href="/drop"
+                      aria-label={`The Drop${isLoggedIn && dropMe.totalSealed > 0 ? `: ${dropMe.totalSealed} sealed packs` : ' — open your packs'}`}
+                      className="relative flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                    >
+                      <HeaderPack size={26} />
+                      {isLoggedIn && dropMe.totalSealed > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                          {dropMe.totalSealed}
                         </span>
                       )}
                     </Link>

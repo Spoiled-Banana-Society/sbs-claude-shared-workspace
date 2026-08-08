@@ -5,11 +5,15 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/components/NotificationCenter';
 import { totalSpins } from '@/lib/spinTypes';
+import { useDropMe } from '@/hooks/useDropMe';
 
 export function MobileTabBar() {
   const pathname = usePathname();
-  const { user, isLoggedIn } = useAuth();
+  const { user, walletAddress, isLoggedIn } = useAuth();
   const { unreadCount } = useNotifications();
+  // Sealed-pack badge for the Packs tab — same slow-poll source as the
+  // header's pack icon, so the two counts can never disagree.
+  const dropMe = useDropMe(isLoggedIn ? walletAddress : null);
 
   // Don't show in draft room — it has its own UI
   if (pathname?.startsWith('/draft-room')) return null;
@@ -20,17 +24,19 @@ export function MobileTabBar() {
   // Scalars only — the memoized inner bar re-renders ONLY when something
   // visible changed. The auth user object churns identity every few seconds;
   // re-rendering the nav mid-touch is what ate first taps (Boris 2026-06-11).
-  return <MobileTabBarInner pathname={pathname ?? ''} wheelSpins={wheelSpins} unreadCount={unreadCount} />;
+  return <MobileTabBarInner pathname={pathname ?? ''} wheelSpins={wheelSpins} unreadCount={unreadCount} sealedPacks={dropMe.totalSealed} />;
 }
 
 const MobileTabBarInner = React.memo(function MobileTabBarInner({
   pathname,
   wheelSpins,
   unreadCount,
+  sealedPacks,
 }: {
   pathname: string;
   wheelSpins: number;
   unreadCount: number;
+  sealedPacks: number;
 }) {
   const router = useRouter();
   // Navigate on pointerdown — the moment the finger lands — instead of
@@ -47,7 +53,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   };
   useEffect(() => {
     // Keep targets warm so the page swap is instant.
-    ['/draft', '/teams', '/promos', '/banana-wheel', '/notifications'].forEach((h) => {
+    ['/draft', '/teams', '/promos', '/banana-wheel', '/drop', '/notifications'].forEach((h) => {
       try { router.prefetch(h); } catch { /* best-effort */ }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,6 +121,28 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
           <path d="M16.24 16.24l2.83 2.83" />
           <path d="M4.93 19.07l2.83-2.83" />
           <path d="M16.24 7.76l2.83-2.83" />
+        </svg>
+      ),
+    },
+    {
+      href: '/drop',
+      label: 'Packs',
+      matchPaths: ['/drop'],
+      badge: sealedPacks,
+      exactBadge: true, // sealed packs show the real count
+      badgeYellow: true, // packs = a reward you hold, not a red alert
+      icon: (active: boolean) => (
+        // Same geometry as the header's HeaderPack (gold BANANA PACK band,
+        // clipped to the body) so the two surfaces read as one icon —
+        // Boris picked the with-band variant for the tab bar too (2026-08-07).
+        <svg viewBox="0 0 30 36" width="20" height="24" fill="none">
+          <defs>
+            <clipPath id="tab-pack-clip">
+              <rect x="4" y="3" width="22" height="30" rx="3" />
+            </clipPath>
+          </defs>
+          <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#tab-pack-clip)" />
+          <rect x="4" y="3" width="22" height="30" rx="3" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="2.2" />
         </svg>
       ),
     },

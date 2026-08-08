@@ -26,10 +26,17 @@ export interface DropMe {
    * always matches the countdown.
    */
   upcomingSealed: number;
+  /**
+   * Every unopened pack this wallet holds, across ALL nights — tonight's,
+   * the post-8pm earning night, and held-back stacks from earlier nights
+   * (nothing auto-opens, so those linger). The header badge number: "you
+   * have packs waiting", regardless of which night they belong to.
+   */
+  totalSealed: number;
 }
 
 const EMPTY: DropMe = {
-  sealed: 0, opened: 0, packCount: 0, status: 'earning', loaded: false, upcomingSealed: 0,
+  sealed: 0, opened: 0, packCount: 0, status: 'earning', loaded: false, upcomingSealed: 0, totalSealed: 0,
 };
 
 export function useDropMe(wallet: string | null | undefined): DropMe {
@@ -46,6 +53,7 @@ export function useDropMe(wallet: string | null | undefined): DropMe {
           status: DropMe['status']; packCount: number;
           you: { sealed: number; opened: number } | null;
           next: { nightId: string; locksAt: number; sealed: number } | null;
+          previous?: Array<{ nightId: string; sealed: number }>;
         };
         if (!alive) return;
         setMe({
@@ -58,6 +66,8 @@ export function useDropMe(wallet: string | null | undefined): DropMe {
           // night the countdown targets in that window. Outside it, the reveal
           // night and the earning night are the same, so `sealed` is correct.
           upcomingSealed: d.next ? d.next.sealed : (d.you?.sealed ?? 0),
+          totalSealed: (d.you?.sealed ?? 0) + (d.next?.sealed ?? 0)
+            + (d.previous ?? []).reduce((n, p) => n + p.sealed, 0),
         });
       } catch { /* transient */ }
     };
