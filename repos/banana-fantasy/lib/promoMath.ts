@@ -11,8 +11,9 @@ export const FIRST_PURCHASE_SPINS_PER_PASS = 2;
 export const FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN = 2;
 
 /** Hard ceiling on spins EITHER first-purchase promo can pay per user
- *  (Richard 2026-08-06 — both promos were uncapped before this). */
-export const FIRST_PURCHASE_MAX_SPINS = 20;
+ *  (Richard 2026-08-06 set 20; Boris 2026-08-07 raised to 40 so a NEW
+ *  player's full 20-pass buy counts — 20 passes x 2 spins/pass). */
+export const FIRST_PURCHASE_MAX_SPINS = 40;
 
 /**
  * NEW-player wheel spins earned from a first paid purchase of `quantity`

@@ -22,6 +22,7 @@ import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { FirstPurchaseClaimModal } from '@/components/modals/FirstPurchaseClaimModal';
 import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 
 function StagingMintButton({
@@ -88,6 +89,7 @@ export default function HomePage() {
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const [showAddFunds, setShowAddFunds] = React.useState(false);
+  const [showFpClaim, setShowFpClaim] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
   // Client self-ping for new promos REMOVED 2026-07-03 (it double-belled on
@@ -251,8 +253,22 @@ export default function HomePage() {
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}
       {showAddFunds && (
-        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+        <AddFundsModal
+          isOpen={true}
+          onClose={() => setShowAddFunds(false)}
+          onFunded={() => {
+            if (user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true) {
+              setShowAddFunds(false);
+              setShowFpClaim(true);
+            }
+          }}
+        />
       )}
+      <FirstPurchaseClaimModal
+        isOpen={showFpClaim}
+        onClose={() => setShowFpClaim(false)}
+        isReturning={user?.firstPurchaseVariant === 'returning'}
+      />
 
       {/* Buy Passes Modal — only mount when open to prevent useFundWallet crash */}
       {modals.isOpen('buy-passes') && (

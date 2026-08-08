@@ -659,6 +659,18 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.modalContent = promo.modalContent || {};
       promo.modalContent.title = '🏈 Football is BACK: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
     }
+    // First-purchase 24h window (Boris 2026-08-07): once the clock is running
+    // the card carries a live countdown; past the deadline it reads done (the
+    // purchase path retires the durable flag on their next buy — the display
+    // doesn't wait for that write).
+    if (promo.type === 'first-purchase') {
+      const ws = (userData as { firstPurchaseWindowStart?: string } | undefined)?.firstPurchaseWindowStart;
+      if (ws) {
+        const endMs = new Date(ws).getTime() + 24 * 60 * 60 * 1000;
+        if (Date.now() < endMs) promo.timerEndTime = new Date(endMs).toISOString();
+        else promo.claimable = false;
+      }
+    }
     // Returning players keep the CLASSIC first-purchase promo copy (their
     // rate is unchanged) — overlay it AFTER the static seed overlay so the
     // new-player $1K copy never reaches them.
@@ -1407,8 +1419,16 @@ async function _incrementMintPromosInTx(
   // pre-tx value here); returning players on the classic pair accumulator
   // (flag never set) keep earning through THAT card instead — same 1-spin-
   // per-2 reward, so they lose nothing, they just can't double-dip.
+  const fpUserData = userSnap?.data() as { firstPurchaseBonusGranted?: boolean; firstPurchaseWindowStart?: string } | undefined;
+  // 24-HOUR WINDOW (Boris 2026-08-07, restoring his 07-28 design over the
+  // 08-05 removal): the first-purchase promo runs for 24h from the FIRST
+  // qualifying purchase. Past the deadline it's settled — the card retires
+  // and this very purchase is free to feed Kickoff-style promos instead.
+  const fpWindowStart = fpUserData?.firstPurchaseWindowStart;
+  const fpWindowExpired = !!fpWindowStart
+    && Date.now() > new Date(fpWindowStart).getTime() + 24 * 60 * 60 * 1000;
   const fpSettledBefore = opts.handleFirstPurchase
-    ? (userSnap?.data() as { firstPurchaseBonusGranted?: boolean } | undefined)?.firstPurchaseBonusGranted === true
+    ? fpUserData?.firstPurchaseBonusGranted === true || fpWindowExpired
     : opts.firstPurchaseSettled === true;
 
   let mintMilestonesEarned = 0;
@@ -1483,8 +1503,21 @@ async function _incrementMintPromosInTx(
       tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
       firstPurchaseSpinsEarned = spins;
     };
+    // 24h window enforcement: past the deadline, retire the promo durably and
+    // skip every grant path below (the purchase feeds Kickoff instead — the
+    // fpSettledBefore computed above already reflects the expiry).
+    if (fpWindowExpired && !userData?.firstPurchaseBonusGranted) {
+      tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+    }
+    // First FP-feeding purchase stamps the window start; the card's countdown
+    // and the expiry all key off this one field.
+    const stampWindow = !fpWindowStart && !userData?.firstPurchaseBonusGranted && !fpWindowExpired
+      ? { firstPurchaseWindowStart: new Date().toISOString() }
+      : {};
     const depositBudget = userData?.firstDepositPassBudget ?? 0;
-    if (!userData?.firstPurchaseBonusGranted && !isReturning && depositBudget > 0) {
+    if (fpWindowExpired) {
+      // handled above — no first-purchase grants past the deadline
+    } else if (!userData?.firstPurchaseBonusGranted && !isReturning && depositBudget > 0) {
       // Deposit-first NEW player: the first deposit set a pass budget, and
       // every pass bought earns 2 spins until it's used up — this keeps the
       // deposit-time bell promise exact even across one-at-a-time draft
@@ -1495,6 +1528,7 @@ async function _incrementMintPromosInTx(
       if (g.passesUsed > 0) {
         tx.set(userRef, {
           firstDepositPassesUsed: used + g.passesUsed,
+          ...stampWindow,
           ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
         }, { merge: true });
         if (g.spins > 0) creditFpSpins(g.spins);
@@ -1515,6 +1549,7 @@ async function _incrementMintPromosInTx(
         const g = computeClassicPairGrant(counted, awarded, quantity);
         tx.set(userRef, {
           firstPurchaseClassicPasses: g.passesCounted,
+          ...stampWindow,
           ...(g.spins > 0 ? { firstPurchaseClassicSpins: awarded + g.spins } : {}),
           // Spin cap reached (FIRST_PURCHASE_MAX_SPINS) → the offer is done;
           // flipping the durable flag retires the card ('done' variant).
@@ -1525,7 +1560,7 @@ async function _incrementMintPromosInTx(
     } else {
       const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
       if (grant.consume) {
-        tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+        tx.set(userRef, { ...stampWindow, firstPurchaseBonusGranted: true }, { merge: true });
         if (grant.spins > 0) creditFpSpins(grant.spins);
       }
     }
@@ -1913,7 +1948,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
     const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity, {
-      firstPurchaseSettled: user.firstPurchaseBonusGranted === true,
+      firstPurchaseSettled: user.firstPurchaseBonusGranted === true
+        || (!!(user as { firstPurchaseWindowStart?: string }).firstPurchaseWindowStart
+          && Date.now() > new Date((user as { firstPurchaseWindowStart?: string }).firstPurchaseWindowStart as string).getTime() + 24 * 60 * 60 * 1000),
     });
     if (buyBonusMilestonesEarned > 0 && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;

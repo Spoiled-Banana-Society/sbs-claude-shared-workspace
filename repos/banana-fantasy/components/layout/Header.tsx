@@ -15,6 +15,7 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
+import { FirstPurchaseClaimModal } from '../modals/FirstPurchaseClaimModal';
 import { useDropMe } from '@/hooks/useDropMe';
 import { totalSpins } from '@/lib/spinTypes';
 
@@ -90,6 +91,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // Deposit bankroll balance chip (flag-gated). Pure read of the
   // useAuth-polled wallet USDC — NO fetching of its own (Rule #0).
   const [showAddFunds, setShowAddFunds] = useState(false);
+  const [showFpClaim, setShowFpClaim] = useState(false);
   useEffect(() => {
     if (!stillResolving) { setResolveTimedOut(false); return; }
     const t = setTimeout(() => setResolveTimedOut(true), 8000);
@@ -370,8 +372,24 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
       {/* Mount only while open — useFundWallet crashes when mounted at page
           level (see CLAUDE.md troubleshooting / BuyPassesModal precedent). */}
       {showAddFunds && (
-        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+        <AddFundsModal
+          isOpen={true}
+          onClose={() => setShowAddFunds(false)}
+          onFunded={() => {
+            // Deposit landed: if their first-purchase bonus is still on the
+            // table, pitch it while the balance is hot (Boris 2026-08-07).
+            if (user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true) {
+              setShowAddFunds(false);
+              setShowFpClaim(true);
+            }
+          }}
+        />
       )}
+      <FirstPurchaseClaimModal
+        isOpen={showFpClaim}
+        onClose={() => setShowFpClaim(false)}
+        isReturning={user?.firstPurchaseVariant === 'returning'}
+      />
     </header>
   );
 }
