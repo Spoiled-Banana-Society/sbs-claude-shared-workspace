@@ -46,7 +46,7 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
   );
 }
 // THE DROP pack: clean rounded pack with the gold band on the diagonal — the
-// one gold accent, matching the ticket count. Richard 2026-08-07: no zigzag
+// neutral grey band (Boris 2026-08-07: gold stood out as the only color in the icon row). Richard 2026-08-07: no zigzag
 // crimp edge, just the rectangle + band. Flat strokes only, no glow.
 function HeaderPack({ size = 28 }: { size?: number }) {
   return (
@@ -57,7 +57,7 @@ function HeaderPack({ size = 28 }: { size?: number }) {
         </clipPath>
       </defs>
       {/* the gold BANANA PACK band, wrapping edge to edge (clipped to the body) */}
-      <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
+      <line x1="1" y1="24" x2="29" y2="13" stroke="rgba(255,255,255,0.32)" strokeWidth="5" clipPath="url(#hdr-pack-clip)" />
       <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
     </svg>
   );

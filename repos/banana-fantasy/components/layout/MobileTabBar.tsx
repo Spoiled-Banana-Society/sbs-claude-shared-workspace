@@ -141,7 +141,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
               <rect x="4" y="3" width="22" height="30" rx="3" />
             </clipPath>
           </defs>
-          <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#tab-pack-clip)" />
+          <line x1="1" y1="24" x2="29" y2="13" stroke={active ? '#fbbf24' : 'rgba(255,255,255,0.32)'} strokeWidth="5" clipPath="url(#tab-pack-clip)" />
           <rect x="4" y="3" width="22" height="30" rx="3" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="2.2" />
         </svg>
       ),
