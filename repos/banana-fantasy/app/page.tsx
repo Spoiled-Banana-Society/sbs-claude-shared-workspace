@@ -23,6 +23,7 @@ import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
 import { FirstPurchaseClaimModal } from '@/components/modals/FirstPurchaseClaimModal';
+import { API_CONFIG } from '@/lib/api/config';
 import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 
 function StagingMintButton({
@@ -89,7 +90,7 @@ export default function HomePage() {
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const [showAddFunds, setShowAddFunds] = React.useState(false);
-  const [showFpClaim, setShowFpClaim] = React.useState(false);
+  const [fpClaim, setFpClaim] = React.useState<{ variant: 'new' | 'returning' | 'kickoff'; depositUsd?: number } | null>(null);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
   // Client self-ping for new promos REMOVED 2026-07-03 (it double-belled on
@@ -256,19 +257,27 @@ export default function HomePage() {
         <AddFundsModal
           isOpen={true}
           onClose={() => setShowAddFunds(false)}
-          onFunded={() => {
-            if (user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true) {
+          onFunded={(amountUsd) => {
+            const fpOpen = user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true;
+            const kickoffOpen = API_CONFIG.promos.buyBonus.enabled && Date.now() < API_CONFIG.promos.buyBonus.endsAtMs;
+            if (fpOpen || kickoffOpen) {
               setShowAddFunds(false);
-              setShowFpClaim(true);
+              setFpClaim({
+                variant: fpOpen ? (user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new') : 'kickoff',
+                depositUsd: amountUsd,
+              });
             }
           }}
         />
       )}
-      <FirstPurchaseClaimModal
-        isOpen={showFpClaim}
-        onClose={() => setShowFpClaim(false)}
-        isReturning={user?.firstPurchaseVariant === 'returning'}
-      />
+      {fpClaim && (
+        <FirstPurchaseClaimModal
+          isOpen={true}
+          onClose={() => setFpClaim(null)}
+          variant={fpClaim.variant}
+          depositUsd={fpClaim.depositUsd}
+        />
+      )}
 
       {/* Buy Passes Modal — only mount when open to prevent useFundWallet crash */}
       {modals.isOpen('buy-passes') && (

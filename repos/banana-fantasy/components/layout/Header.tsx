@@ -16,6 +16,7 @@ import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
 import { FirstPurchaseClaimModal } from '../modals/FirstPurchaseClaimModal';
+import { API_CONFIG } from '@/lib/api/config';
 import { useDropMe } from '@/hooks/useDropMe';
 import { totalSpins } from '@/lib/spinTypes';
 
@@ -91,7 +92,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // Deposit bankroll balance chip (flag-gated). Pure read of the
   // useAuth-polled wallet USDC — NO fetching of its own (Rule #0).
   const [showAddFunds, setShowAddFunds] = useState(false);
-  const [showFpClaim, setShowFpClaim] = useState(false);
+  const [fpClaim, setFpClaim] = useState<{ variant: 'new' | 'returning' | 'kickoff'; depositUsd?: number } | null>(null);
   useEffect(() => {
     if (!stillResolving) { setResolveTimedOut(false); return; }
     const t = setTimeout(() => setResolveTimedOut(true), 8000);
@@ -375,21 +376,31 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         <AddFundsModal
           isOpen={true}
           onClose={() => setShowAddFunds(false)}
-          onFunded={() => {
-            // Deposit landed: if their first-purchase bonus is still on the
-            // table, pitch it while the balance is hot (Boris 2026-08-07).
-            if (user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true) {
+          onFunded={(amountUsd) => {
+            // Deposit landed: pitch the best promo they can act on while the
+            // balance is hot — first-purchase if unclaimed, else the live
+            // Kickoff buy-bonus. Default qty = what they just deposited
+            // (Boris 2026-08-07: "$100 in → prompt them to buy 4").
+            const fpOpen = user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true;
+            const kickoffOpen = API_CONFIG.promos.buyBonus.enabled && Date.now() < API_CONFIG.promos.buyBonus.endsAtMs;
+            if (fpOpen || kickoffOpen) {
               setShowAddFunds(false);
-              setShowFpClaim(true);
+              setFpClaim({
+                variant: fpOpen ? (user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new') : 'kickoff',
+                depositUsd: amountUsd,
+              });
             }
           }}
         />
       )}
-      <FirstPurchaseClaimModal
-        isOpen={showFpClaim}
-        onClose={() => setShowFpClaim(false)}
-        isReturning={user?.firstPurchaseVariant === 'returning'}
-      />
+      {fpClaim && (
+        <FirstPurchaseClaimModal
+          isOpen={true}
+          onClose={() => setFpClaim(null)}
+          variant={fpClaim.variant}
+          depositUsd={fpClaim.depositUsd}
+        />
+      )}
     </header>
   );
 }

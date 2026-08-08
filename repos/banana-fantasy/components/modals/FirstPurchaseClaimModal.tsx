@@ -1,43 +1,65 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { setPurchaseFlow } from '@/lib/purchaseFlow';
 import { FIRST_PURCHASE_SPINS_PER_PASS, FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN } from '@/lib/promoMath';
 
 /**
- * Post-deposit claim prompt (Boris 2026-08-07): the moment a new or returning
- * player's Add Funds deposit lands, pitch their first-purchase bonus while the
- * money is hot — "buy 20 drafts", steppable down, one tap into the buy flow
- * with the quantity preloaded.
- *
- * Only rendered for users whose first-purchase promo is still unclaimed (the
- * caller gates on that), and the 24-hour bonus window starts at their FIRST
- * BUY — not at deposit — so this modal makes no countdown promise beyond
- * naming the rule.
+ * Post-deposit claim prompt (Boris 2026-08-07): the moment a deposit lands,
+ * pitch the best promo the user can act on while the money is hot —
+ * first-purchase bonus if it\'s still unclaimed, otherwise the live Kickoff
+ * buy-bonus. Quantity DEFAULTS TO WHAT THEY JUST DEPOSITED (Boris: "$100 in →
+ * prompt them to buy 4"), steppable down (or up to 20), one tap into the buy
+ * flow with the quantity preloaded.
  */
-const DEFAULT_QTY = 20;
+const MAX_QTY = 20;
+const PASS_USD = 25;
+
+export type ClaimVariant = 'new' | 'returning' | 'kickoff';
 
 export function FirstPurchaseClaimModal({
   isOpen,
   onClose,
-  isReturning,
+  variant,
+  depositUsd,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  isReturning: boolean;
+  variant: ClaimVariant;
+  depositUsd?: number;
 }) {
   const router = useRouter();
-  const [qty, setQty] = useState(DEFAULT_QTY);
+  const defaultQty = depositUsd && depositUsd >= PASS_USD
+    ? Math.min(MAX_QTY, Math.floor(depositUsd / PASS_USD))
+    : MAX_QTY;
+  const [qty, setQty] = useState(defaultQty);
+  // Re-derive whenever the modal (re)opens with a fresh deposit amount.
+  useEffect(() => { if (isOpen) setQty(defaultQty); }, [isOpen, defaultQty]);
   if (!isOpen) return null;
 
-  const spins = isReturning
-    ? Math.floor(qty / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN)
-    : qty * FIRST_PURCHASE_SPINS_PER_PASS;
+  const title = variant === 'kickoff'
+    ? 'Football is BACK 🏈'
+    : variant === 'returning'
+      ? 'Claim your Returning Player Bonus'
+      : 'Claim your New User Bonus';
+  const sub = variant === 'kickoff'
+    ? 'Every 2 buys = 1 Promo Spin + 2 Bonus Spins. Your money just landed — put it to work before Sunday night.'
+    : variant === 'returning'
+      ? 'Every 2 passes on your first purchase = 1 Free Banana Spin. Your money just landed — put it to work.'
+      : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins. Your money just landed — put it to work.`;
+  const rewardLine = (() => {
+    if (variant === 'kickoff') {
+      const promo = Math.floor(qty / 2);
+      return `${promo} Promo Spin${promo === 1 ? '' : 's'} + ${qty} Bonus Spin${qty === 1 ? '' : 's'}`;
+    }
+    const spins = variant === 'returning'
+      ? Math.floor(qty / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN)
+      : qty * FIRST_PURCHASE_SPINS_PER_PASS;
+    return `${spins} Free Spin${spins === 1 ? '' : 's'}`;
+  })();
 
   const goBuy = () => {
-    // Preload the buy flow with the chosen quantity — /buy-drafts's modal
-    // reads the same store, so the user lands with 20 (or their pick) set.
     setPurchaseFlow({ quantity: qty });
     onClose();
     router.push('/buy-drafts');
@@ -50,17 +72,9 @@ export function FirstPurchaseClaimModal({
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-3xl mb-2">🍌</p>
-        <h2 className="text-white text-xl font-bold tracking-tight mb-1">
-          {isReturning ? 'Claim your Returning Player Bonus' : 'Claim your New User Bonus'}
-        </h2>
-        <p className="text-white/55 text-sm leading-relaxed mb-5">
-          {isReturning
-            ? 'Every 2 passes on your first purchase = 1 Free Banana Spin.'
-            : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins.`}
-          {' '}Your money just landed — put it to work.
-        </p>
+        <h2 className="text-white text-xl font-bold tracking-tight mb-1">{title}</h2>
+        <p className="text-white/55 text-sm leading-relaxed mb-5">{sub}</p>
 
-        {/* Quantity stepper — defaults to 20, steppable down */}
         <div className="flex items-center justify-center gap-4 mb-2">
           <button
             type="button"
@@ -77,15 +91,15 @@ export function FirstPurchaseClaimModal({
           <button
             type="button"
             aria-label="More drafts"
-            onClick={() => setQty((q) => Math.min(DEFAULT_QTY, q + 1))}
+            onClick={() => setQty((q) => Math.min(MAX_QTY, q + 1))}
             className="w-10 h-10 rounded-full border border-white/15 text-white/70 text-xl font-bold hover:border-banana/60 hover:text-banana transition-colors"
           >
             +
           </button>
         </div>
         <p className="text-white/70 text-sm mb-6">
-          = <span className="text-banana font-bold">{spins} Free Spin{spins === 1 ? '' : 's'}</span>
-          <span className="text-white/40"> · ${qty * 25} total</span>
+          = <span className="text-banana font-bold">{rewardLine}</span>
+          <span className="text-white/40"> · ${qty * PASS_USD} total</span>
         </p>
 
         <button
@@ -102,9 +116,11 @@ export function FirstPurchaseClaimModal({
         >
           Not now
         </button>
-        <p className="mt-4 text-[11px] leading-relaxed text-white/35">
-          Bonus window runs for 24 hours from your first purchase.
-        </p>
+        {variant !== 'kickoff' && (
+          <p className="mt-4 text-[11px] leading-relaxed text-white/35">
+            Bonus window runs for 24 hours from your first purchase.
+          </p>
+        )}
       </div>
     </div>
   );
