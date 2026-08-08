@@ -78,12 +78,12 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
     ? {
         title: '🔴 Jackpot Watch: 10 Free Spins',
         message: `If a Jackpot hits in the next ${left} drafts, someone in it wins `
-          + `10 Free Spins. Part of the Jackpot Hit promo — tap it for more info.`,
+          + `10 Free Spins. Paid drafts only. Part of the Jackpot Hit promo — tap it for more info.`,
       }
     : {
         title: '🔴 Jackpot Watch: 5 Free Spins',
         message: `If a Jackpot hits in the next ${left} drafts, someone in it wins `
-          + `5 Free Spins. Part of the Jackpot Hit promo — tap it for more info.`,
+          + `5 Free Spins. Paid drafts only. Part of the Jackpot Hit promo — tap it for more info.`,
       };
 
   const { createNotificationForWallets } = await import('@/lib/queueNotifications');
