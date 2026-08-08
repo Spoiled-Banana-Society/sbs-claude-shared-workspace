@@ -16,7 +16,6 @@ import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
 import { useDropMe } from '@/hooks/useDropMe';
-import { totalSpins } from '@/lib/spinTypes';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
 const HEADER_SPOKES: [number, number][] = [
@@ -111,14 +110,29 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // (user.createdAt is stamped at load time, not at signup). If storage is
   // unavailable (private mode) we just show it — erring toward helping a new
   // user beats hiding it.
+  const [showFaqNav, setShowFaqNav] = useState(false);
+  useEffect(() => {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    try {
+      const KEY = 'sbs-faq-nav-first-seen';
+      let firstSeen = Number(localStorage.getItem(KEY));
+      if (!firstSeen || Number.isNaN(firstSeen)) {
+        firstSeen = Date.now();
+        localStorage.setItem(KEY, String(firstSeen));
+      }
+      setShowFaqNav(Date.now() - firstSeen < WEEK_MS);
+    } catch {
+      setShowFaqNav(true);
+    }
+  }, []);
+
   // Nav items — desktop only
   const navItems = [
     { href: '/draft', label: 'Draft', tooltip: 'View active drafts', auth: false },
     { href: '/teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
-    // FAQ shown for ALL users on desktop (Boris 2026-07-23), right after Promos
-    // — links to the same /faq page as the profile-dropdown FAQ.
-    { href: '/faq', label: 'FAQ', tooltip: 'How SBS works', auth: false },
+    // FAQ rides along for a visitor's first week only (see showFaqNav above).
+    ...(showFaqNav ? [{ href: '/faq', label: 'FAQ', tooltip: 'New here? How SBS works', auth: false }] : []),
     // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
     // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in
     // the profile menu — so they no longer clutter the top nav.
@@ -140,11 +154,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         <div className="flex items-center justify-between h-14 md:h-16">
           {/* Left side: Logo + Desktop Navigation */}
           <div className="flex items-center gap-2">
-            {/* shrink-0 so the header pills can never squeeze the logo smaller
-                on mobile (Boris 2026-07-23). */}
-            <span className="shrink-0">
-              <Logo size="lg" compactMobile />
-            </span>
+            <Logo size="lg" compactMobile />
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
@@ -298,7 +308,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         <p className="font-semibold">Banana Wheel</p>
                         {isLoggedIn && user ? (
                           <p className="text-text-secondary text-xs mt-1">
-                            {totalSpins(user.wheelSpins, user.purchaseSpins)} spin{totalSpins(user.wheelSpins, user.purchaseSpins) !== 1 ? 's' : ''} available
+                            {user.wheelSpins} spin{user.wheelSpins !== 1 ? 's' : ''} available
                           </p>
                         ) : (
                           <p className="text-text-muted text-xs mt-1">Win drafts, Jackpots, HOF entries</p>
@@ -308,13 +318,13 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   >
                     <Link
                       href="/banana-wheel"
-                      aria-label={`Banana Wheel${isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 ? `: ${totalSpins(user.wheelSpins, user.purchaseSpins)} spins available` : ''}`}
+                      aria-label={`Banana Wheel${isLoggedIn && user && user.wheelSpins > 0 ? `: ${user.wheelSpins} spins available` : ''}`}
                       className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
                       <HeaderWheel size={28} />
-                      {isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 && (
+                      {isLoggedIn && user && user.wheelSpins > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                          {totalSpins(user.wheelSpins, user.purchaseSpins)}
+                          {user.wheelSpins}
                         </span>
                       )}
                     </Link>
