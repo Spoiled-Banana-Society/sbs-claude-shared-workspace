@@ -6,6 +6,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { runDropSchedule } from '@/lib/dropRun';
+import { runJpWindowBells } from '@/lib/jpWindowBells';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
 
 /**
@@ -25,11 +26,18 @@ function authed(req: Request): boolean {
 export async function GET(req: Request) {
   if (!authed(req)) return jsonError('Unauthorized', 401);
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
+  // Jackpot-window bells ride this every-minute cron; independent of the drop
+  // green-light switch and never allowed to break the drop schedule (or vice
+  // versa — each is best-effort against the other).
+  const jpBells = await runJpWindowBells().catch((err) => {
+    logger.error('jp_window_bells.cron_failed', { err: (err as Error).message });
+    return { ok: false };
+  });
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('drop')) {
-    return json({ ok: true, held: 'admin-preview' });
+    return json({ ok: true, held: 'admin-preview', jpBells });
   }
   try {
-    return json(await runDropSchedule(Date.now()));
+    return json({ ...(await runDropSchedule(Date.now())), jpBells });
   } catch (err) {
     logger.error('drop.cron_failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);
