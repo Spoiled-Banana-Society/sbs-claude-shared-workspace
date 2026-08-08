@@ -153,7 +153,7 @@ async function remindPreDrop(nightId: string): Promise<{ users: number }> {
     type: 'promo',
     title: '⏰ 2 hours until THE DROP',
     message: `Tonight at 9:00 PM PT: ${prizeSummaryLine(nightId)} — all guaranteed. `
-      + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 8 adds more.`,
+      + `You hold ${n} sealed pack${n === 1 ? '' : 's'}. Every draft you fill before 9 adds more.`,
     link: '/promos?promo=drop',
     dedupeKey: `drop-2h-${nightId}`,
     icon: 'ticket',
