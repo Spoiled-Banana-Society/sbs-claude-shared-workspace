@@ -77,15 +77,13 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   const bell = tier === 10
     ? {
         title: '🔴 Jackpot Watch: 10 Free Spins',
-        message: `A Jackpot just hit at BBB #${windowStart - 1}! Fresh window: if the next `
-          + `Jackpot lands within the next ${left} drafts, one paid drafter in it wins `
-          + `10 Free Spins. Part of the Jackpot Hit promo — tap for details.`,
+        message: `If a Jackpot hits in the next ${left} drafts, someone in it wins `
+          + `10 Free Spins. Part of the Jackpot Hit promo — tap it for more info.`,
       }
     : {
         title: '🔴 Jackpot Watch: 5 Free Spins',
-        message: `Still no Jackpot this window — it's getting closer. If it lands within the `
-          + `next ${left} drafts, one paid drafter in it wins 5 Free Spins. Part of the `
-          + `Jackpot Hit promo — tap for details.`,
+        message: `If a Jackpot hits in the next ${left} drafts, someone in it wins `
+          + `5 Free Spins. Part of the Jackpot Hit promo — tap it for more info.`,
       };
 
   const { createNotificationForWallets } = await import('@/lib/queueNotifications');
