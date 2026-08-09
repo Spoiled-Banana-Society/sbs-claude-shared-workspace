@@ -306,7 +306,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   className={`
-                    relative overflow-hidden rounded-[20px] p-5 w-52 min-h-[14rem] flex-shrink-0 transition-all duration-200 cursor-pointer
+                    relative overflow-hidden rounded-[20px] p-5 w-52 h-60 flex-shrink-0 transition-all duration-200 cursor-pointer
                     bg-[#fbfbfd]
                     ${isHovered
                       ? 'border-2 border-banana shadow-[0_0_15px_rgba(251,191,36,0.3)]'
@@ -341,11 +341,6 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   )}
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
-                    {isKickoff && (
-                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#22c55e]/10 via-transparent to-[#fbbf24]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
-                        🏈 Football is BACK
-                      </span>
-                    )}
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
                       {promoTitle.includes('→') ? (
                         <>
@@ -404,7 +399,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         carries the same description the /promos page card shows.
                         First-purchase keeps its bespoke fixed lines above. */}
                     {promo.type !== 'first-purchase' && promo.description && (
-                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] line-clamp-2">
+                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] line-clamp-1">
                         {promo.description}
                       </p>
                     )}

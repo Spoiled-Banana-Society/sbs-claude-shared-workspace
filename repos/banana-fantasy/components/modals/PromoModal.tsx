@@ -1251,7 +1251,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     return (
       <div className="bg-bg-tertiary rounded-xl p-4 text-center">
         <div className="text-4xl mb-3">🏈</div>
-        <p className="font-semibold mb-2 text-text-primary">Football is BACK — Kickoff Weekend Only!</p>
+        <p className="font-semibold mb-2 text-text-primary">Kickoff Weekend Only!</p>
         {/* Live countdown to the Sunday-night cutoff (timerEndTime is stamped
             server-side on every read while the window is open). */}
         {promo?.timerEndTime && (

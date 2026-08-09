@@ -136,7 +136,7 @@ export function BuyPassesBalanceModal({
               BuyPassesModal (no-stack rule, Richard 2026-08-06). */}
           {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
             <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
-              🏈 Kickoff: every 2 drafts = 1 FREE spin{qty >= 2 ? ` — this buy earns ${Math.floor(qty / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+              🏈 Kickoff: every 2 drafts = 1 FREE spin{qty >= 2 ? ` — this buy earns ${Math.floor(qty / 2)}` : ''} · Max 20 buys · Ends tonight at midnight PT
             </p>
           )}
         </div>

@@ -1286,7 +1286,7 @@ export function BuyPassesModal({
                     never this one. Quantity-reactive spin count. */}
                 {isBuyBonusActive() && user?.firstPurchaseBonusGranted === true && (
                   <p className="text-[#22c55e] text-xs text-center pt-1 font-semibold">
-                    🏈 Kickoff: every 2 drafts = 1 FREE spin{quantity >= 2 ? ` — this buy earns ${Math.floor(quantity / 2)}` : ''} · Max 20 buys · Ends Sunday midnight PT
+                    🏈 Kickoff: every 2 drafts = 1 FREE spin{quantity >= 2 ? ` — this buy earns ${Math.floor(quantity / 2)}` : ''} · Max 20 buys · Ends tonight at midnight PT
                   </p>
                 )}
               </div>

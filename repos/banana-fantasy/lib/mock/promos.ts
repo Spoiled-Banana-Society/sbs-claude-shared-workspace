@@ -162,7 +162,7 @@ export const mockPromos: Promo[] = [
     id: '7',
     type: 'buy-bonus',
     title: 'Buy 2 → FREE SPIN',
-    description: 'Football is BACK! Ends Sunday night',
+    description: 'Ends tonight at midnight PT.',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',

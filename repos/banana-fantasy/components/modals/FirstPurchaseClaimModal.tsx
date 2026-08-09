@@ -39,12 +39,12 @@ export function FirstPurchaseClaimModal({
   if (!isOpen) return null;
 
   const title = variant === 'kickoff'
-    ? 'Football is BACK 🏈'
+    ? 'Kickoff Weekend Bonus 🏈'
     : variant === 'returning'
       ? 'Claim your Returning Player Bonus'
       : 'Claim your New User Bonus';
   const sub = variant === 'kickoff'
-    ? 'Every 2 buys = 1 Promo Spin + 2 Bonus Spins. Your money just landed — put it to work before Sunday night.'
+    ? 'Every 2 buys = 1 Promo Spin + 2 Bonus Spins. Your money just landed — put it to work. Ends tonight.'
     : variant === 'returning'
       ? 'Every 2 passes on your first purchase = 1 Free Banana Spin. Your money just landed — put it to work.'
       : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins. Your money just landed — put it to work.`;

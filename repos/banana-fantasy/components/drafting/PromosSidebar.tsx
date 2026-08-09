@@ -98,7 +98,7 @@ export function PromosSidebar({
               // extra offer line + a tall countdown + CLAIM, which overran a rigid
               // 176px box and jammed the clock onto "guaranteed at least 1". Letting
               // it grow keeps the mt-auto bottom-pin intact for the shorter promos.
-              className="relative rounded-[20px] p-5 min-h-[11rem] bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
+              className="relative rounded-[20px] p-5 h-[15.5rem] bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
             >
               {promo.isNew && (
                 <span className="absolute top-2 right-2 px-2 py-0.5 bg-banana text-[#1d1d1f] text-[10px] font-bold rounded-full tracking-wide">
@@ -137,7 +137,7 @@ export function PromosSidebar({
                   carries the SAME description the /promos page card shows — not
                   title-only. First-purchase keeps its bespoke fixed lines above. */}
               {promo.type !== 'first-purchase' && promo.description && (
-                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-2">
+                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-1">
                   {promo.description}
                 </p>
               )}

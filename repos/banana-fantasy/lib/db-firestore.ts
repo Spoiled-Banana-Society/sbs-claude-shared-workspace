@@ -656,8 +656,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       // the old "Buy 2 → FREE SPIN" title — keep every surface on the current
       // wording without a backfill.
       promo.title = 'Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
+      promo.description = 'Ends tonight at midnight PT.';
       promo.modalContent = promo.modalContent || {};
-      promo.modalContent.title = '🏈 Football is BACK: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
+      promo.modalContent.title = 'Kickoff: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
     }
     // First-purchase 24h window (Boris 2026-08-07): once the clock is running
     // the card carries a live countdown; past the deadline it reads done (the
