@@ -22,6 +22,6 @@ export const LIVE_ACTIVITY_STALE_CHECK_MS = 5_000;
 
 /** The one canonical string, shared by every surface so they read identically. */
 export function formatLiveActivity(count: number, round: number): string {
-  const noun = count === 1 ? 'draft' : 'drafts';
-  return `${count} ${noun} going · a draft is on Round ${round}`;
+  const noun = count === 1 ? 'fast draft' : 'fast drafts';
+  return `${count} ${noun} going · a fast draft is on Round ${round}`;
 }

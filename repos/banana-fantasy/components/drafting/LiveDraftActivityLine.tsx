@@ -3,7 +3,7 @@
 import { useLiveDraftActivity } from '@/hooks/useLiveDraftActivity';
 
 /**
- * The "keep waiting" nudge: "5 drafts going · a draft is on Round 14".
+ * The "keep waiting" nudge: "5 fast drafts going · a fast draft is on Round 14".
  *
  * Renders nothing (returns null) whenever there's nothing to show — feature flag
  * off, zero in-progress fast drafts, or a stale/dead aggregator. The wording is
@@ -17,7 +17,7 @@ export default function LiveDraftActivityLine({ className = '' }: { className?: 
   if (!activity) return null;
 
   const { count, round } = activity;
-  const noun = count === 1 ? 'draft' : 'drafts';
+  const noun = count === 1 ? 'fast draft' : 'fast drafts';
 
   return (
     <div
@@ -31,7 +31,7 @@ export default function LiveDraftActivityLine({ className = '' }: { className?: 
         className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 motion-safe:animate-pulse"
       />
       <span className="tabular-nums">
-        {count} {noun} going <span className="text-white/30">·</span> a draft is on{' '}
+        {count} {noun} going <span className="text-white/30">·</span> a fast draft is on{' '}
         <span className="font-semibold text-banana">Round {round}</span>
       </span>
     </div>
