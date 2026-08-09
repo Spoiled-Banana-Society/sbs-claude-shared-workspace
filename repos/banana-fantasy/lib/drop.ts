@@ -48,11 +48,31 @@ export interface PackDoc {
   autoOpened?: boolean;
 }
 
+/**
+ * One row of the live pulls feed — a WIN someone just ripped. Wins only, never
+ * empties: watching seats get pulled while your packs sit sealed is the point;
+ * a feed of "Banana123 · EMPTY" would be the opposite of hype.
+ *
+ * Denormalized onto the night doc at OPEN time (name included) so getDropState
+ * — which the header badge polls every 60s per user — serves the feed from the
+ * night doc it already reads, with zero extra Firestore reads.
+ */
+export interface PullEntry {
+  userId: string;
+  /** Display handle resolved when the pack was opened. */
+  name: string;
+  kind: 'jackpot' | 'jackhof' | 'hof' | 'spins';
+  spins?: number;
+  at: string;
+}
+
 export interface NightDoc {
   nightId: string;
   locksAt: number;
   autoOpensAt: number;
   status: 'earning' | 'locked' | 'settled';
+  /** Newest-first, capped — the live pulls feed + the morning-after recap. */
+  recentPulls?: PullEntry[];
   /** Public commitment stamped when the night OPENS — before any pack exists. */
   saltHash?: string;
   periodNumber?: number;
@@ -307,6 +327,27 @@ export interface OpenedPack {
 }
 
 /**
+ * Wallet → the handle people actually display as, for the pulls feed.
+ *
+ * ⚠️ Same rules as lib/bananaDraw.ts resolveNames: read the STORED username /
+ * bananaNumber — never derive a name from the wallet hash (display-forbidden;
+ * it has mis-identified users twice).
+ */
+async function pullDisplayName(db: FirebaseFirestore.Firestore, userId: string): Promise<string> {
+  const short = `${userId.slice(0, 6)}…${userId.slice(-4)}`;
+  try {
+    const d = (await db.collection(USERS).doc(userId).get()).data() ?? {};
+    const raw = String((d as { username?: unknown }).username ?? '').trim();
+    const real = raw && !/^user-0x/i.test(raw) && !/^0x[0-9a-f]{6,}/i.test(raw) ? raw : null;
+    if (real) return real;
+    const num = (d as { bananaNumber?: unknown }).bananaNumber;
+    return typeof num === 'number' ? `Banana${num}` : short;
+  } catch {
+    return short;
+  }
+}
+
+/**
  * Open one or more of a user's packs and hand over the contents.
  *
  * Idempotent per pack: `opened` flips inside a transaction, so a double-tap or
@@ -356,6 +397,32 @@ export async function openPacks(opts: {
       // Already open — skip it. Never surfaces as an error to the user.
     }
   }
+
+  // Feed the live pulls ticker. Only packs that actually flipped `opened` in
+  // the transaction above land here, so a retried request can't post a win
+  // twice. One transaction for the whole call (an open-all with three wins is
+  // one append), and a failure only costs feed rows — never the prizes.
+  const wins = opened.filter((o) => o.prize.kind !== 'none');
+  if (wins.length > 0) {
+    try {
+      const name = await pullDisplayName(db, userId);
+      const entries: PullEntry[] = wins.map((w) => ({
+        userId,
+        name,
+        kind: w.prize.kind as PullEntry['kind'],
+        ...(w.prize.kind === 'spins' ? { spins: w.prize.spins } : {}),
+        at: new Date(nowMs).toISOString(),
+      }));
+      await db.runTransaction(async (tx) => {
+        const fresh = (await tx.get(nightRef)).data() as NightDoc | undefined;
+        const existing = fresh?.recentPulls ?? [];
+        tx.set(nightRef, { recentPulls: [...entries, ...existing].slice(0, 12) }, { merge: true });
+      });
+    } catch (err) {
+      logger.warn('drop.pulls_feed_failed', { err: (err as Error).message });
+    }
+  }
+
   return { ok: true, opened };
 }
 
@@ -381,6 +448,9 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
   /** Sealed packs from BEFORE tonight — there's no auto-open, so anything a
    *  player didn't rip is still waiting. Newest first. */
   previous: Array<{ nightId: string; sealed: number }>;
+  /** Tonight's WINS as they're ripped, newest first. Populated once the night
+   *  locks; the client decides how long past 9pm to keep showing it. */
+  pulls: Array<{ name: string; kind: PullEntry['kind']; spins?: number; at: string }>;
 }> {
   // The night being REVEALED, not the one being earned into. After 8pm those
   // diverge, and using the earning night here would hide tonight's packs.
@@ -397,6 +467,7 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     you: null,
     next: null,
     previous: [] as Array<{ nightId: string; sealed: number }>,
+    pulls: [] as Array<{ name: string; kind: PullEntry['kind']; spins?: number; at: string }>,
   };
   if (!isFirestoreConfigured()) return base;
 
@@ -483,6 +554,9 @@ export async function getDropState(userId?: string, nowMs = Date.now()): Promise
     you,
     next,
     previous,
+    pulls: (doc?.recentPulls ?? []).map((e) => ({
+      name: e.name, kind: e.kind, ...(e.spins != null ? { spins: e.spins } : {}), at: e.at,
+    })),
   };
 }
 

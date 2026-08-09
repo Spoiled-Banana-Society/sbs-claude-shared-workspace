@@ -1,6 +1,6 @@
 // Live draft-activity line — a "keep waiting" nudge showing how many FAST drafts
-// are in progress and the furthest-along round ("5 drafts going · a draft is on
-// Round 14"). The whole feature is DARK unless the Vercel env var
+// are in progress and the furthest-along round ("5 fast drafts going · a fast
+// draft is on Round 14"). The whole feature is DARK unless the Vercel env var
 // NEXT_PUBLIC_LIVE_ACTIVITY_ENABLED is exactly 'true'. Flipping it off removes the
 // line from every surface (lobby, draft room, fill-alert feed) instantly, no
 // redeploy — same kill-switch shape as DEPOSITS_ENABLED.
@@ -28,6 +28,6 @@ export const LIVE_ACTIVITY_ZERO_LINGER_MS = 25_000;
 
 /** The one canonical string, shared by every surface so they read identically. */
 export function formatLiveActivity(count: number, round: number): string {
-  const noun = count === 1 ? 'draft' : 'drafts';
-  return `${count} ${noun} going · a draft is on Round ${round}`;
+  const noun = count === 1 ? 'fast draft' : 'fast drafts';
+  return `${count} ${noun} going · a fast draft is on Round ${round}`;
 }
