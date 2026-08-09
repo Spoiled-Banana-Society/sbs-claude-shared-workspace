@@ -6,6 +6,8 @@ import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 import { useAuth } from '@/hooks/useAuth';
+import { API_CONFIG } from '@/lib/api/config';
+import { DropCountdown } from '@/components/promos/DropCountdown';
 
 // Chase Your Pick clock — dormant reads a full 24:00:00 that hasn't started.
 function formatChaseTime(endTime?: string): string {
@@ -131,6 +133,14 @@ export function PromosSidebar({
                   ))}
                 </div>
               )}
+              {/* Full front info everywhere (Boris 2026-08-09): the sidebar card
+                  carries the SAME description the /promos page card shows — not
+                  title-only. First-purchase keeps its bespoke fixed lines above. */}
+              {promo.type !== 'first-purchase' && promo.description && (
+                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-2">
+                  {promo.description}
+                </p>
+              )}
               <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               <div className="mt-auto">
                 {/* Chase Your Pick — bottom row: live countdown, plus (once a draft
@@ -169,10 +179,32 @@ export function PromosSidebar({
                     <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime) || '24:00:00'}</span>
                   </div>
                 )}
+                {/* Standard countdown — every timed promo shows the clock at the
+                    ONE standard size (15px bold, Boris 2026-08-09: countdowns
+                    same size + clearly visible on every surface). Chase/Banana
+                    Draw render theirs above with the same style. */}
+                {!isChase && promo.type !== 'banana-draw' && promo.timerEndTime && (
+                  <div className="mt-3 mb-2 flex justify-center">
+                    <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime)}</span>
+                  </div>
+                )}
+                {/* THE DROP has no timerEndTime — its clock is the shared
+                    DropCountdown, same standard size as every other timer. */}
+                {promo.type === 'drop' && (
+                  <div className="mt-3 mb-2 flex justify-center text-[15px] font-bold text-[#1d1d1f]">
+                    <DropCountdown wallet={user?.walletAddress ?? null} />
+                  </div>
+                )}
                 {!isChase && hasProgress && (
                   <div className="mb-2">
                     <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                      <span className="font-semibold">{promo.progressCurrent}/{promo.progressMax}</span>
+                      {/* Kickoff buy-bonus: same detail line the /promos card
+                          shows — pair meter · drafts counted · cap. */}
+                      <span className="font-semibold">
+                        {promo.type === 'buy-bonus'
+                          ? `${promo.progressCurrent}/${promo.progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts · Max ${API_CONFIG.promos.buyBonus.maxPassesCounted}`
+                          : `${promo.progressCurrent}/${promo.progressMax}`}
+                      </span>
                     </div>
                     <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                       <div
@@ -181,6 +213,12 @@ export function PromosSidebar({
                       />
                     </div>
                   </div>
+                )}
+                {/* Status line — same one the /promos card carries. */}
+                {!(promo.claimable && !claimedPromos.has(promo.id)) && (
+                  <p className="mb-1 text-center text-[10px] text-[#7a7a7e]">
+                    {claimedPromos.has(promo.id) ? 'Claimed' : hasProgress ? 'In progress' : 'Tap for details'}
+                  </p>
                 )}
                 {promo.claimable && !claimedPromos.has(promo.id) && (
                   <button

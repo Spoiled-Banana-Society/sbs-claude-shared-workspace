@@ -306,7 +306,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   className={`
-                    relative overflow-hidden rounded-[20px] p-5 w-52 h-56 flex-shrink-0 transition-all duration-200 cursor-pointer
+                    relative overflow-hidden rounded-[20px] p-5 w-52 min-h-[14rem] flex-shrink-0 transition-all duration-200 cursor-pointer
                     bg-[#fbfbfd]
                     ${isHovered
                       ? 'border-2 border-banana shadow-[0_0_15px_rgba(251,191,36,0.3)]'
@@ -400,6 +400,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* THE DROP's countdown lives in the FOOTER with the other
                         promo timers — see the isDrop block below. */}
                     <SpinExplainer promoTitle={promoTitle} promoType={promo.type} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    {/* Full front info everywhere (Boris 2026-08-09): every card
+                        carries the same description the /promos page card shows.
+                        First-purchase keeps its bespoke fixed lines above. */}
+                    {promo.type !== 'first-purchase' && promo.description && (
+                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] line-clamp-2">
+                        {promo.description}
+                      </p>
+                    )}
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -408,7 +416,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1">
                             <span className="font-semibold">{progressCurrent}/{progressMax}</span>
                             <span className="text-[#9a9a9a]">•</span>
-                            <span className="font-semibold">{formatTimeRemaining(promo.timerEndTime)}</span>
+                            <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
                           </div>
                           <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                             <div
@@ -456,8 +464,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               )}
                             </div>
                           )}
-                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
+                          <div className="flex justify-center items-center mb-1">
+                            <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime) || '24:00:00'}</span>
                           </div>
                           <div className="h-1.5" aria-hidden="true" />
                           <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
@@ -473,8 +481,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           unlike every other promo in the row. */}
                       {promo.type === 'drop' && (
                         <div className="-mt-2">
-                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
-                            <DropCountdown className="text-xs" wallet={user?.walletAddress ?? null} />
+                          <div className="flex justify-center items-center mb-1 text-[#1d1d1f]">
+                            <DropCountdown className="text-[15px] font-bold" wallet={user?.walletAddress ?? null} />
                           </div>
                           {/* Invisible spacer = the 4-in-24h progress-bar height,
                               so every timer in the row sits at the same height. */}
@@ -500,8 +508,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                             </div>
                           )}
-                          <div className="flex justify-center items-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+                          <div className="flex justify-center items-center mb-1">
+                            <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
                           </div>
                           {/* Invisible spacer = the 4-in-24h progress-bar height (h-1.5),
                               so both timers sit at the same height. */}
@@ -558,13 +566,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               countdown to the Sunday-night cutoff (timerEndTime is
                               stamped server-side while the window is open). */}
                           {isKickoff && (
-                            <div className="flex items-center justify-center gap-1 text-[9.5px] text-[#4a4a4a] mb-0.5 whitespace-nowrap">
-                              <span className="font-bold text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
+                            <div className="mb-0.5 flex flex-col items-center gap-0.5">
+                              <span className="text-[9.5px] font-bold whitespace-nowrap text-[#16a34a]">{Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/{API_CONFIG.promos.buyBonus.maxPassesCounted} buys</span>
                               {promo.timerEndTime && (
-                                <>
-                                  <span className="text-[#c4c4c8]">·</span>
-                                  <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-                                </>
+                                <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
                               )}
                             </div>
                           )}

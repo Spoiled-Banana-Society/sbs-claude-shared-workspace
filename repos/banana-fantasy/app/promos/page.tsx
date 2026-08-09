@@ -580,7 +580,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
         </h3>
         {/* THE DROP: how close 8pm is, on the card itself. */}
         {promo.type === 'drop' && (
-          <div className="mb-2 text-sm">
+          <div className="mb-2 text-[15px] font-bold text-white/85">
             <DropCountdown wallet={wallet} />
           </div>
         )}
@@ -601,12 +601,12 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
                   <span className="text-white/25"> → </span>
                   <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
                 </span>
-                <span className="shrink-0 text-sm tabular-nums text-white/70">{timeRemaining}</span>
+                <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[13px] text-white/45">Draft to lock your pick</span>
-                <span className="text-sm tabular-nums text-white/70">{timeRemaining}</span>
+                <span className="text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
               </div>
             )}
           </div>
@@ -625,7 +625,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
               ) : (
                 <span className="text-[13px] text-white/45">Fill a draft to earn Bananas</span>
               )}
-              <span className="shrink-0 text-sm tabular-nums text-white/70">{timeRemaining || '24:00:00'}</span>
+              <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining || '24:00:00'}</span>
             </div>
           </div>
         )}
@@ -642,7 +642,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
                   : `${progressCurrent} / ${progressMax}`}
               </span>
               {timeRemaining && (
-                <span className="text-white/30 text-[11px] tabular-nums">{timeRemaining}</span>
+                <span className="text-white/85 text-[15px] font-bold tabular-nums">{timeRemaining}</span>
               )}
             </div>
             <div className="h-[3px] rounded-full bg-white/[0.06] overflow-hidden">
