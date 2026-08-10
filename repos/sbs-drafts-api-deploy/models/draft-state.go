@@ -563,6 +563,13 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" || leagueInfo.Level == "JackHOF"
 	specialLevel := leagueInfo.Level
 
+	// Password-gated private-league drafts (private_leagues/{id} — see
+	// models/private-league.go) also run OUTSIDE the public per-100 batch:
+	// they count on their own per-league sequence, draw JP/HOF from their own
+	// commit-reveal batch (no VRF), and never touch FilledLeaguesCount,
+	// the VRF position lists, or RecentFills.
+	isPrivateDraft := !isSpecialDraft && leagueInfo.PrivateLeagueId != ""
+
 	// PHASE 1: atomic increment of the global tracker.
 	//
 	// FilledLeaguesCount + CurrentLive/SlowDraftCount must update in a
@@ -587,6 +594,13 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		}
 		if isSpecialDraft {
 			counts.SpecialDraftCount++ // own lane — NOT the per-100 batch
+		} else if isPrivateDraft {
+			// Own per-league sequence — the count IS the draft's number inside
+			// its private batch ("KFFL #7" = batch position 7).
+			if counts.PrivateDraftCounts == nil {
+				counts.PrivateDraftCounts = make(map[string]int)
+			}
+			counts.PrivateDraftCounts[leagueInfo.PrivateLeagueId]++
 		} else {
 			counts.FilledLeaguesCount++
 			// Provisional reveal-anchor, recorded ATOMICALLY with the count so the
@@ -636,7 +650,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		!batchproof.LanesDisabled()
 
 	var batchJpGlobals, batchHofGlobals []int
-	if mgr := batchproof.Default(); mgr != nil && !isSpecialDraft {
+	if mgr := batchproof.Default(); mgr != nil && !isSpecialDraft && !isPrivateDraft {
 		if disabled, msg := mgr.Disabled(); disabled {
 			fmt.Printf("[batchproof] disabled, skipping batch %d derivation: %s\n", batchNumber, msg)
 		} else if rollingActive {
@@ -722,6 +736,44 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		leagueInfo.Level = specialLevel
 		isJackpot = specialLevel == "Jackpot" || specialLevel == "JackHOF"
 		isHOF = specialLevel == "Hall of Fame" || specialLevel == "JackHOF"
+	} else if isPrivateDraft {
+		// Private lane: name from the league's own sequence, JP/HOF from its
+		// own commit-reveal batch. A derivation failure fails SAFE to Pro (and
+		// logs loudly) rather than blocking the fill — same philosophy as the
+		// public path's VRF fallback. The derivation is deterministic, so a
+		// missed special can be reconciled by hand from the same salt.
+		privId := leagueInfo.PrivateLeagueId
+		privCount := counts.PrivateDraftCounts[privId]
+		privName := privId
+		if cfg, cfgErr := GetPrivateLeagueConfig(privId); cfgErr == nil && cfg.Name != "" {
+			privName = cfg.Name
+		} else if cfgErr != nil {
+			fmt.Printf("[private-league] config read failed for %s at fill (using id as name): %v\n", privId, cfgErr)
+		}
+		leagueInfo.DisplayName = fmt.Sprintf("%s #%d", privName, privCount)
+		jp, hof, privBatch, derr := PrivateSlotFor(privId, privCount)
+		if derr != nil {
+			fmt.Printf("[private-league] SLOT DERIVATION FAILED league=%s count=%d: %v — filling as Pro\n", privId, privCount, derr)
+		} else {
+			isJackpot = jp
+			isHOF = hof
+			if isJackpot {
+				leagueInfo.Level = "Jackpot"
+			} else if isHOF {
+				leagueInfo.Level = "Hall of Fame"
+			}
+			// Batch complete → reveal the salt on the league page (async,
+			// never blocks the fill).
+			if privCount%batchproof.BatchSize == 0 {
+				go func(id string, b int) {
+					if rerr := RevealPrivateBatch(id, b); rerr != nil {
+						fmt.Printf("[private-league] reveal batch %d for %s failed (re-runnable by hand): %v\n", b, id, rerr)
+					} else {
+						fmt.Printf("[private-league] revealed batch %d for %s\n", b, id)
+					}
+				}(privId, privBatch)
+			}
+		}
 	} else {
 		leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
 		// Slot reveal — the guaranteed specials ride these committed positions.
@@ -809,7 +861,9 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// can take up to 90s and we don't want to block the fill path. If
 	// the reveal fails, the next batch start will see chain.Revealed
 	// false and a manual ops command can retry — see batchproof.Default().RevealBatch.
-	if positionInBatch == batchproof.BatchSize-1 {
+	// Private drafts never advance FilledLeaguesCount, so positionInBatch is
+	// stale for them — they must not trigger the PUBLIC batch's close/reveal.
+	if positionInBatch == batchproof.BatchSize-1 && !isPrivateDraft {
 		if mgr := batchproof.Default(); mgr != nil {
 			if disabled, _ := mgr.Disabled(); !disabled {
 				// Single goroutine that runs PRE-REQUEST FIRST, then REVEAL.
@@ -942,7 +996,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// is best-effort/cosmetic — a failure just leaves the entry held (revealed
 	// late once it rolls out of the window), never early, and never affects the
 	// fill, picks, or VRF distribution. Only batch drafts have a provisional entry.
-	if !isSpecialDraft {
+	if !isSpecialDraft && !isPrivateDraft {
 		fillId := counts.FilledLeaguesCount
 		startTime := info.DraftStartTime
 		if rfErr := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
