@@ -34,7 +34,8 @@ func privateLeagueErrorStatus(err error) int {
 		return http.StatusConflict
 	case strings.Contains(msg, "code = NotFound"):
 		return http.StatusNotFound
-	case strings.Contains(msg, "does not have enough"), strings.Contains(msg, "no valid"):
+	case strings.Contains(msg, "not enough"), strings.Contains(msg, "does not have enough"), strings.Contains(msg, "no valid"):
+		// Live-verified message: "not enough paid draft passes: have 0, need 1"
 		return http.StatusPaymentRequired // 402 — not enough passes of that type
 	default:
 		return http.StatusInternalServerError

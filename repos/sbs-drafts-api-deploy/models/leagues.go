@@ -483,9 +483,18 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 					return -1, err
 				}
 				l = *league
-				err = utils.Db.CreateOrUpdateDocument("drafts", l.LeagueId, &league)
-				if err != nil {
-					return -1, err
+				// Precondition CREATE, never a blind Set: between our NotFound
+				// read and this write, the number can be claimed by a private
+				// league allocation (ensureOpenPrivateLeague creates ahead of
+				// the frontier) or a concurrent public create. A blind Set here
+				// would ERASE that doc — including already-consumed seats. On
+				// AlreadyExists just re-read the same number and proceed
+				// normally (seat into it, or skip it via the sentinels).
+				if _, cerr := utils.Db.Client.Collection("drafts").Doc(l.LeagueId).Create(context.Background(), league); cerr != nil {
+					if strings.Contains(cerr.Error(), "AlreadyExists") {
+						continue
+					}
+					return -1, cerr
 				}
 			} else {
 				return -1, err

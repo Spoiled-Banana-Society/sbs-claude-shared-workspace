@@ -560,15 +560,21 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// they were won with. This keeps the guaranteed 1 JP + 5 HOF per 100 a pure
 	// paid-draft pool, which is the only way to honor it under VRF (batch
 	// positions are committed before fills, so a special can't be slotted as Pro).
-	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" || leagueInfo.Level == "JackHOF"
-	specialLevel := leagueInfo.Level
-
 	// Password-gated private-league drafts (private_leagues/{id} — see
-	// models/private-league.go) also run OUTSIDE the public per-100 batch:
-	// they count on their own per-league sequence, draw JP/HOF from their own
+	// models/private-league.go) run OUTSIDE the public per-100 batch: they
+	// count on their own per-league sequence, draw JP/HOF from their own
 	// commit-reveal batch (no VRF), and never touch FilledLeaguesCount,
-	// the VRF position lists, or RecentFills.
-	isPrivateDraft := !isSpecialDraft && leagueInfo.PrivateLeagueId != ""
+	// the VRF position lists, RecentFills, or the walk-forward counters.
+	//
+	// PrivateLeagueId is checked FIRST and wins over the Level test: after a
+	// private draft's first fill sets Level=Jackpot/HOF on its doc, a re-run
+	// of this function (wedge repair, manual incident recovery) must land back
+	// in the private branch — never the wheel-special branch, which would
+	// corrupt SpecialDraftCount and rename the draft "(from Wheel)".
+	isPrivateDraft := leagueInfo.PrivateLeagueId != ""
+	isSpecialDraft := !isPrivateDraft &&
+		(leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" || leagueInfo.Level == "JackHOF")
+	specialLevel := leagueInfo.Level
 
 	// PHASE 1: atomic increment of the global tracker.
 	//
@@ -580,6 +586,11 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	var counts DraftLeagueTracker
 	trackerRef := utils.Db.Client.Collection("drafts").Doc("draftTracker")
 	err = utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		// Zero the shared struct FIRST: DataTo doesn't clear fields that are
+		// absent from the doc, so on a transaction RETRY any field mutated by
+		// the aborted attempt but not yet present in Firestore (e.g. the very
+		// first PrivateDraftCounts entry) would survive and double-increment.
+		counts = DraftLeagueTracker{}
 		doc, err := tx.Get(trackerRef)
 		if err != nil {
 			return err
@@ -587,10 +598,19 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		if err := doc.DataTo(&counts); err != nil {
 			return err
 		}
-		if strings.ToLower(draftType) == "fast" {
-			counts.CurrentLiveDraftCount++
-		} else {
-			counts.CurrentSlowDraftCount++
+		// Private drafts do NOT advance the walk-forward counters: they occupy
+		// numbers AHEAD of the public frontier, so advancing the counter on
+		// their fills would drift it past public reality — enough sustained
+		// private volume could push a partially-filled public lobby beyond
+		// scanForPartialLeague's 30-number lookback and strand its players.
+		// The walk-forward tolerates a counter that lags (it hops filled and
+		// private docs); it does not tolerate stranded paid seats.
+		if !isPrivateDraft {
+			if strings.ToLower(draftType) == "fast" {
+				counts.CurrentLiveDraftCount++
+			} else {
+				counts.CurrentSlowDraftCount++
+			}
 		}
 		if isSpecialDraft {
 			counts.SpecialDraftCount++ // own lane — NOT the per-100 batch

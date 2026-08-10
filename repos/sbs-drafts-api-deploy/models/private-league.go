@@ -28,6 +28,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -398,9 +399,15 @@ func JoinPrivateLeague(privateId string, ownerId string, password string, passTy
 	}
 	token := selected[0]
 
-	draftType := strings.ToLower(cfg.DraftType)
-	if draftType != "slow" {
-		draftType = "fast"
+	// Same on-chain ownership guard as the public join: in prod, a pass whose
+	// NFT was transferred away must not be spendable off a stale
+	// validDraftTokens doc.
+	if Environment == "prod" {
+		cardNum, _ := strconv.ParseInt(token.CardId, 10, 64)
+		contractOwner, _ := utils.Contract.GetOwnerOfToken(int(cardNum))
+		if !strings.EqualFold(contractOwner, token.OwnerId) {
+			return nil, fmt.Errorf("trying to add a card to a league that this owner does not have")
+		}
 	}
 
 	// Resolve-and-seat with a small retry: if the current draft fills between
@@ -410,6 +417,14 @@ func JoinPrivateLeague(privateId string, ownerId string, password string, passTy
 		leagueId, lerr := ensureOpenPrivateLeague(privateId, cfg)
 		if lerr != nil {
 			return nil, lerr
+		}
+		// Draft speed comes from the LEAGUE ID, never the config doc: the
+		// admin script can legitimately flip cfg.DraftType between drafts, and
+		// a filling "-fast-" league must never get a slow clock (the same
+		// reason AddCardToSpecificLeague derives speed from the league).
+		draftType := "fast"
+		if strings.Contains(leagueId, "-slow-") {
+			draftType = "slow"
 		}
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
 		validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", ownerId)).Doc(token.CardId)
@@ -478,6 +493,16 @@ func GetPrivateLeagueInfo(privateId string, password string) (*PrivateLeagueInfo
 	var tracker DraftLeagueTracker
 	if err := utils.Db.ReadDocument("drafts", "draftTracker", &tracker); err == nil {
 		info.DraftsFilled = tracker.PrivateDraftCounts[privateId]
+	}
+
+	// Publish the CURRENT batch's commitment on page view, not at first fill.
+	// The provably-fair claim is that the hash is public BEFORE the batch's
+	// first draft fills — and a member must load this page to join, so seeding
+	// here guarantees the commitment provably predates every outcome (for
+	// batch 1 and every later batch). Idempotent + cheap after creation; a
+	// failure only delays publication (the fill path seeds as a fallback).
+	if _, err := ensurePrivateBatchSeed(privateId, info.DraftsFilled/batchproof.BatchSize+1); err != nil {
+		fmt.Printf("[private-league] page-view batch seed failed for %s: %v\n", privateId, err)
 	}
 
 	docs, err := utils.Db.Client.Collection("drafts").
