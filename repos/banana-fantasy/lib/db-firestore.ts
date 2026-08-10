@@ -6,7 +6,8 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/li
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { promoWeekendActive } from '@/lib/promoWindow';
+import { MINT_PROMO_END_MS, promoWeekendActive } from '@/lib/promoWindow';
+import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
@@ -21,6 +22,7 @@ import type {
   DraftQueue,
   LeaderboardEntry,
   QueueRound,
+  QueueRoundSource,
   Promo,
   PrizeWithdrawal,
   Purchase,
@@ -40,8 +42,11 @@ import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
-import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { applyCompletionGate, computeClassicPairGrant, computeDepositBudgetGrant, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/rollingLanes';
+import { creditReferralBananas } from '@/lib/bananaDraw';
 import { isReturningWalletSync } from '@/lib/returningUsers';
+import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
 import { runInBackground } from '@/lib/serverBackground';
 
 const USERS_COLLECTION = 'v2_users';
@@ -491,24 +496,25 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     : '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
       + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
       + '• Paid Drafts Only.';
-  const PICK_LADDER_EXPLANATION =
-    '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
-    + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
-    + '• When every special is gone (Jackpot + all 5 HOF), Pick 9 unlocks too — Pick 6, 9 & 10 each win a Free Spin.\n'
-    + '• The reward escalates as the batch’s chase prizes run out, then resets when the next 100-draft batch begins.\n'
-    + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
-    + '• Paid Drafts Only.';
+  // The 6/9/10 LADDER copy is gone (Boris 2026-07-26: "it should never do
+  // that, it should always be on pick 10 only"). Both the credit path and the
+  // display tier are hard-pinned to base, so any ladder wording here could
+  // only ever promise a slot that won't pay.
+  const PICK_LADDER_EXPLANATION = PICK_BASE_EXPLANATION;
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = promoWeekendActive()
     ? {
       // Weekend window copy — same slots, but free & paid drafts both count.
-      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: true },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Picks 6 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Picks 6, 9 & 10 each win a Free Spin. Free & paid count thru Sun 12pm PT!', isNew: true },
+      // NEW tag removed (Boris 2026-07-23): Pick 10 is not a new promo.
+      base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
+      // jp/all are unreachable (tier is pinned to 'base') and deliberately
+      // carry the SAME slot-10 copy, so no code path can advertise 6 or 9.
+      jp: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
+      all: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in ANY draft — free & paid count thru Sun 12pm PT!', isNew: false },
     }
     : {
       base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
-      jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
-      all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
+      jp: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
+      all: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
     };
 
   // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed
@@ -516,11 +522,22 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // players keep the CLASSIC promo unchanged — these strings overlay theirs.
   // The grant math matches per-audience in _incrementMintPromosInTx.
   const CLASSIC_FIRST_PURCHASE_COPY = {
-    title: 'First Purchase → FREE SPINS',
-    description: 'Every 2 passes on your first buy = 1 spin',
-    modalTitle: 'First Purchase → FREE SPINS',
+    // Headline = the guaranteed outcome (Richard 2026-07-28): 2 passes
+    // → 1 promo spin → at least 1 Free Draft (minimum wedge).
+    title: 'First Purchase → BUY 2, GET 1 DRAFT FREE',
+    description: 'Every 2 passes = 1 Free Spin',
+    modalTitle: 'Buy 2, Get 1 Draft Free — every 2 passes = 1 Free Spin',
+    // No deadline (Richard 2026-08-05 removed the 24h window). Passes still
+    // ACCUMULATE across purchases — the old "buy them all in one transaction"
+    // trap that burned Banana10084 stays dead: every pass ever bought counts
+    // toward the next pair, so buying or entering drafts both work, in any
+    // number of checkouts.
+    // Bonus Spin bullet is FLAG-GATED (Spin-on-Purchase) so the card never
+    // promises a spin the purchase path won't grant.
     explanation:
-      '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+      '• Every 2 passes you pick up = 1 Free Banana Spin.\n• Every Spin wins at least 1 Free Draft — up to 20.\n• Buy passes or jump straight into paid drafts, both count.\n• Buy 4 for 2 Spins, 6 for 3, and so on — no limit.'
+      + (isSpinOnPurchaseEnabled() ? '\n• PLUS every purchase always comes with a Bonus Spin — automatic, on top of these.' : '')
+      + '\n• Spins land automatically the moment each pair completes — claim them right here.',
   };
   const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
     || isReturningWalletSync(userId);
@@ -558,7 +575,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     }
     // Weekend window (auto-reverts Sun 12pm PT): free drafts count too — strip
     // the paid-only language from the draft-based promos' copy and say so.
-    if (promoWeekendActive() && (promo.type === 'daily-drafts' || promo.type === 'jackpot')) {
+    if (promoWeekendActive() && (promo.type === 'daily-drafts' || promo.type === 'jackpot' || promo.type === 'pick-chase')) {
       const dePaid = (t: string | undefined): string | undefined =>
         t === undefined ? undefined : t.replace(/\bpaid draft/gi, 'draft').replace(/\bPaid Drafts Only\.?/gi, '').trim();
       promo.title = dePaid(promo.title) ?? promo.title;
@@ -598,6 +615,16 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         promo.progressCurrent = (promo.progressCurrent || 0) % stackMax;
       }
     }
+    // Buy 10 → FREE SPIN final lap: the box must SAY it's the last time
+    // (Boris 2026-07-27). Stamped at read time so every surviving card —
+    // card face and modal — carries the retirement message with no per-user
+    // writes. Only mid-lap / owed users still see this card at all.
+    if (promo.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
+      promo.description = 'FINAL ROUND — last chance to use this promo';
+      promo.modalContent.explanation =
+        '⏳ LAST TIME: this promo is retiring. Finish your current 10 and claim your Free Spin — once claimed, the promo is gone for good.\n'
+        + 'For every 10 drafts purchased, you get a Free Banana Spin. Passes beyond your final 10th don\u2019t start a new round.';
+    }
     // Inject real twitterConnected status for promos that depend on it
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
@@ -617,22 +644,45 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.claimable = true;
       promo.claimCount = Math.max(promo.claimCount ?? 0, 1);
     }
-    // Returning players keep the CLASSIC first-purchase promo copy (their
-    // rate is unchanged) — overlay it AFTER the static seed overlay so the
-    // new-player $1K copy never reaches them.
     // Kickoff Buy 2 → FREE SPIN: stamp the live countdown to the Sunday-night
-    // cutoff on every read while the window is open; cleared after.
+    // cutoff on every read while the window is open — the /promos card and
+    // the modal render any timerEndTime they see, so this is the only wiring
+    // the clock needs. Cleared after the window so no stale 0:00:00 lingers.
     if (promo.type === 'buy-bonus') {
       promo.timerEndTime = isBuyBonusActive()
         ? new Date(API_CONFIG.promos.buyBonus.endsAtMs).toISOString()
         : undefined;
+      // Live copy overlay (Boris 2026-08-06): per-user docs were seeded with
+      // the old "Buy 2 → FREE SPIN" title — keep every surface on the current
+      // wording without a backfill.
+      promo.title = 'Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
+      promo.description = 'Ends tonight at midnight PT.';
+      promo.modalContent = promo.modalContent || {};
+      promo.modalContent.title = 'Kickoff: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
     }
+    // First-purchase 24h window (Boris 2026-08-07): once the clock is running
+    // the card carries a live countdown; past the deadline it reads done (the
+    // purchase path retires the durable flag on their next buy — the display
+    // doesn't wait for that write).
+    if (promo.type === 'first-purchase') {
+      const ws = (userData as { firstPurchaseWindowStart?: string } | undefined)?.firstPurchaseWindowStart;
+      if (ws) {
+        const endMs = new Date(ws).getTime() + 24 * 60 * 60 * 1000;
+        if (Date.now() < endMs) promo.timerEndTime = new Date(endMs).toISOString();
+        else promo.claimable = false;
+      }
+    }
+    // Returning players keep the CLASSIC first-purchase promo copy (their
+    // rate is unchanged) — overlay it AFTER the static seed overlay so the
+    // new-player $1K copy never reaches them.
     if (promo.type === 'first-purchase' && isReturningUser) {
       promo.title = CLASSIC_FIRST_PURCHASE_COPY.title;
       promo.description = CLASSIC_FIRST_PURCHASE_COPY.description;
       promo.modalContent = promo.modalContent || {};
       promo.modalContent.title = CLASSIC_FIRST_PURCHASE_COPY.modalTitle;
       promo.modalContent.explanation = CLASSIC_FIRST_PURCHASE_COPY.explanation;
+      // No lazy expiry-close here anymore: the 24h window was removed
+      // (Richard 2026-08-05) — the bonus stays open until the passes pair up.
     }
     // Pick-slot promo: overlay the LIVE tier copy (title + NEW badge + full
     // ladder explanation) AFTER the static seed overlay above, so the card
@@ -1271,6 +1321,11 @@ export async function getWheelHistory(userId: string): Promise<WheelSpin[]> {
       prize: data.prize as WheelPrize,
       claimed: Boolean(data.claimed),
       result: (data.result as string) || '',
+      // Which stack paid the spin and what was actually CREDITED (wedge minus
+      // one on Bonus Spins). Absent on legacy rows — callers must fall back to
+      // the wedge. Same passthrough bug class as the balance routes (7/27).
+      spinSource: (data.spinSource as string) || undefined,
+      bonusDrafts: typeof data.bonusDrafts === 'number' ? (data.bonusDrafts as number) : undefined,
     } as WheelSpin & { spinId: string; result: string };
   });
 }
@@ -1360,38 +1415,71 @@ async function _incrementMintPromosInTx(
   const userSnap = opts.handleFirstPurchase ? await tx.get(userRef) : null;
   // Kickoff no-stack rule (Richard 2026-08-06): the Buy 2 → FREE SPIN promo
   // only advances for buyers whose first-purchase promo was fully settled
-  // BEFORE this purchase — the same money must never feed both.
+  // BEFORE this purchase — the same money must never feed both. New players'
+  // first buy goes to first-purchase (flag flips in this tx, using the
+  // pre-tx value here); returning players on the classic pair accumulator
+  // (flag never set) keep earning through THAT card instead — same 1-spin-
+  // per-2 reward, so they lose nothing, they just can't double-dip.
+  const fpUserData = userSnap?.data() as { firstPurchaseBonusGranted?: boolean; firstPurchaseWindowStart?: string } | undefined;
+  // 24-HOUR WINDOW (Boris 2026-08-07, restoring his 07-28 design over the
+  // 08-05 removal): the first-purchase promo runs for 24h from the FIRST
+  // qualifying purchase. Past the deadline it's settled — the card retires
+  // and this very purchase is free to feed Kickoff-style promos instead.
+  const fpWindowStart = fpUserData?.firstPurchaseWindowStart;
+  const fpWindowExpired = !!fpWindowStart
+    && Date.now() > new Date(fpWindowStart).getTime() + 24 * 60 * 60 * 1000;
   const fpSettledBefore = opts.handleFirstPurchase
-    ? (userSnap?.data() as { firstPurchaseBonusGranted?: boolean } | undefined)?.firstPurchaseBonusGranted === true
+    ? fpUserData?.firstPurchaseBonusGranted === true || fpWindowExpired
     : opts.firstPurchaseSettled === true;
 
   let mintMilestonesEarned = 0;
   let newTotalMinted = 0;
   const mintPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'mint');
+  // Buy 10 → FREE SPIN retirement, FINAL-LAP rules (Boris 2026-07-27):
+  // after the cutoff, ONLY users already mid-bar (≥1/10) keep earning, and
+  // only to the end of their CURRENT lap — the 10th pass awards exactly ONE
+  // final milestone, the bar wraps to 0, and overshoot passes past the 10th
+  // deliberately do NOT carry into a fresh lap (there is no next lap). Users
+  // at 0/10 stop advancing entirely at the cutoff. Before the cutoff,
+  // everything works exactly as it always has.
+  const mintRetired = Date.now() >= MINT_PROMO_END_MS;
   if (mintPromoDoc) {
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
-    mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
-    newTotalMinted = mintPromo.modalContent.totalMinted;
-    // Purchase history for the modal ("big picture") — newest first, capped
-    // so the promo doc can't grow unbounded.
-    mintPromo.modalContent.mintHistory = [
-      { date: new Date().toISOString(), quantity, status: 'claimed' as const },
-      ...(mintPromo.modalContent.mintHistory || []),
-    ].slice(0, 50);
-    const max = mintPromo.progressMax || 10;
-    const { progressCurrent, milestonesEarned } = computeMintProgress(mintPromo.progressCurrent || 0, max, quantity);
-    mintPromo.progressCurrent = progressCurrent;
-    if (milestonesEarned > 0) {
-      mintPromo.claimCount = (mintPromo.claimCount || 0) + milestonesEarned;
-      recalcPromoClaimable(mintPromo);
-      mintMilestonesEarned = milestonesEarned;
+    const priorProgress = mintPromo.progressCurrent || 0;
+    const eligible = !mintRetired || priorProgress >= 1;
+    if (eligible) {
+      mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
+      newTotalMinted = mintPromo.modalContent.totalMinted;
+      // Purchase history for the modal ("big picture") — newest first, capped
+      // so the promo doc can't grow unbounded.
+      mintPromo.modalContent.mintHistory = [
+        { date: new Date().toISOString(), quantity, status: 'claimed' as const },
+        ...(mintPromo.modalContent.mintHistory || []),
+      ].slice(0, 50);
+      const max = mintPromo.progressMax || 10;
+      const { progressCurrent, milestonesEarned } = computeMintProgress(priorProgress, max, quantity);
+      if (mintRetired && milestonesEarned > 0) {
+        // Final lap complete: one spin, bar dead at 0, overshoot discarded.
+        mintPromo.progressCurrent = 0;
+        mintPromo.claimCount = (mintPromo.claimCount || 0) + 1;
+        recalcPromoClaimable(mintPromo);
+        mintMilestonesEarned = 1;
+      } else {
+        mintPromo.progressCurrent = progressCurrent;
+        if (milestonesEarned > 0) {
+          mintPromo.claimCount = (mintPromo.claimCount || 0) + milestonesEarned;
+          recalcPromoClaimable(mintPromo);
+          mintMilestonesEarned = milestonesEarned;
+        }
+      }
+      tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
     }
-    tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
   }
 
   // First-purchase bonus, TWO rates since 2026-07-10 (Boris):
   //   - NEW players: every pass on the FIRST paid purchase = 2 spins
-  //     (FIRST_PURCHASE_SPINS_PER_PASS) — buy 1 → 2, buy 2 → 4, no cap.
+  //     (FIRST_PURCHASE_SPINS_PER_PASS) — buy 1 → 2, buy 2 → 4, capped at
+  //     FIRST_PURCHASE_MAX_SPINS (20) since 2026-08-06 (Richard).
   //   - RETURNING players (past-player snapshot / manual allowlist / web2
   //     identity match): the CLASSIC promo, unchanged — every 2 passes = 1
   //     spin (was every-4 until 07-06).
@@ -1401,28 +1489,89 @@ async function _incrementMintPromosInTx(
   // (interconnection).
   let firstPurchaseSpinsEarned = 0;
   if (opts.handleFirstPurchase && userSnap) {
-    const userData = userSnap.data() as (User & { isReturningPlayer?: boolean }) | undefined;
+    const userData = userSnap.data() as (User & {
+      isReturningPlayer?: boolean;
+      firstDepositPassBudget?: number;
+      firstDepositPassesUsed?: number;
+    }) | undefined;
     const isReturning = userData?.isReturningPlayer === true || isReturningWalletSync(userRef.id);
-    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
-    if (grant.consume) {
+    const creditFpSpins = (spins: number) => {
+      const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
+      if (!fpDoc) return;
+      const fpPromo = deepClone(fpDoc.data() as Promo);
+      fpPromo.claimCount = (fpPromo.claimCount || 0) + spins;
+      recalcPromoClaimable(fpPromo);
+      tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
+      firstPurchaseSpinsEarned = spins;
+    };
+    // 24h window enforcement: past the deadline, retire the promo durably and
+    // skip every grant path below (the purchase feeds Kickoff instead — the
+    // fpSettledBefore computed above already reflects the expiry).
+    if (fpWindowExpired && !userData?.firstPurchaseBonusGranted) {
       tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
-      if (grant.spins > 0) {
-        const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
-        if (fpDoc) {
-          const fpPromo = deepClone(fpDoc.data() as Promo);
-          fpPromo.claimCount = (fpPromo.claimCount || 0) + grant.spins;
-          recalcPromoClaimable(fpPromo);
-          tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
-          firstPurchaseSpinsEarned = grant.spins;
-        }
+    }
+    // First FP-feeding purchase stamps the window start; the card's countdown
+    // and the expiry all key off this one field.
+    const stampWindow = !fpWindowStart && !userData?.firstPurchaseBonusGranted && !fpWindowExpired
+      ? { firstPurchaseWindowStart: new Date().toISOString() }
+      : {};
+    const depositBudget = userData?.firstDepositPassBudget ?? 0;
+    if (fpWindowExpired) {
+      // handled above — no first-purchase grants past the deadline
+    } else if (!userData?.firstPurchaseBonusGranted && !isReturning && depositBudget > 0) {
+      // Deposit-first NEW player: the first deposit set a pass budget, and
+      // every pass bought earns 2 spins until it's used up — this keeps the
+      // deposit-time bell promise exact even across one-at-a-time draft
+      // entries (each entry is its own purchase; the one-transaction rule
+      // below would pay only the first). See computeDepositBudgetGrant.
+      const used = userData?.firstDepositPassesUsed ?? 0;
+      const g = computeDepositBudgetGrant(depositBudget, used, quantity);
+      if (g.passesUsed > 0) {
+        tx.set(userRef, {
+          firstDepositPassesUsed: used + g.passesUsed,
+          ...stampWindow,
+          ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
+        }, { merge: true });
+        if (g.spins > 0) creditFpSpins(g.spins);
+      }
+    } else if (isReturning) {
+      // RETURNING players, CLASSIC PAIR ACCUMULATOR. The old one-shot judged
+      // ONLY receipt #1: a returning player whose first buy was qty 1
+      // (instant-seat forces exactly that; MetaMask users often buy 1-at-a-time
+      // too) got floor(1/2)=0 spins and the once-ever flag burned — the
+      // Banana10084 trap. Boris's 2026-07-28 fix accumulated passes across
+      // purchases inside a 24h window; Richard removed the deadline 2026-08-05,
+      // so now every pass ever bought counts and each completed pair pays
+      // 1 spin immediately. Same money = same spins, regardless of how the
+      // checkout was shaped, whenever it happens.
+      if (!userData?.firstPurchaseBonusGranted && quantity > 0) {
+        const counted = (userData as Record<string, unknown> | undefined)?.firstPurchaseClassicPasses as number | undefined ?? 0;
+        const awarded = (userData as Record<string, unknown> | undefined)?.firstPurchaseClassicSpins as number | undefined ?? 0;
+        const g = computeClassicPairGrant(counted, awarded, quantity);
+        tx.set(userRef, {
+          firstPurchaseClassicPasses: g.passesCounted,
+          ...stampWindow,
+          ...(g.spins > 0 ? { firstPurchaseClassicSpins: awarded + g.spins } : {}),
+          // Spin cap reached (FIRST_PURCHASE_MAX_SPINS) → the offer is done;
+          // flipping the durable flag retires the card ('done' variant).
+          ...(g.exhausted ? { firstPurchaseBonusGranted: true } : {}),
+        }, { merge: true });
+        if (g.spins > 0) creditFpSpins(g.spins);
+      }
+    } else {
+      const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
+      if (grant.consume) {
+        tx.set(userRef, { ...stampWindow, firstPurchaseBonusGranted: true }, { merge: true });
+        if (grant.spins > 0) creditFpSpins(grant.spins);
       }
     }
   }
 
   let buyBonusMilestonesEarned = 0;
   // Gated on isBuyBonusActive (enabled + before the Sunday-night endsAtMs
-  // cutoff): outside the window purchases must not bank hidden progress or
-  // claims toward it — that's what stranded 173 milestones before July 4th.
+  // cutoff) AND the no-stack rule above: outside the window purchases must
+  // not bank hidden progress or claims toward it — that's what stranded 173
+  // milestones before July 4th.
   const buyBonusDoc = isBuyBonusActive() && fpSettledBefore
     ? promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus')
     : undefined;
@@ -1622,6 +1771,12 @@ export async function incrementReferralPromos(
     return _incrementReferralPromosInTx(tx, buyerUser, buyerUserId, quantity);
   });
   await notifyReferrerOfMilestones(result, quantity);
+  // Banana Draw: the referrer earns 5 Bananas the FIRST time their friend
+  // buys. Independent of the 1/4/10 milestone ladder — a purchase that fires
+  // no milestone still pays this — and idempotent per friend, so it lands
+  // once ever no matter how many times a purchase path re-runs.
+  await creditReferralBananas({ friendUserId: buyerUserId, kind: 'purchase' })
+    .catch((err) => logger.warn('banana.referral_purchase_credit_failed', { buyerUserId, err: String(err) }));
   return { referralMilestonesEarned: result.referralMilestonesEarned };
 }
 
@@ -1794,7 +1949,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
     const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity, {
-      firstPurchaseSettled: user.firstPurchaseBonusGranted === true,
+      firstPurchaseSettled: user.firstPurchaseBonusGranted === true
+        || (!!(user as { firstPurchaseWindowStart?: string }).firstPurchaseWindowStart
+          && Date.now() > new Date((user as { firstPurchaseWindowStart?: string }).firstPurchaseWindowStart as string).getTime() + 24 * 60 * 60 * 1000),
     });
     if (buyBonusMilestonesEarned > 0 && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
@@ -2283,8 +2440,30 @@ function emptyQueueDoc(type: 'jackpot' | 'hof' | 'jackhof'): DraftQueue {
   return { type, rounds: [], nextRoundId: 1 };
 }
 
-function newRound(roundId: number): QueueRound {
-  return { roundId, members: [], status: 'filling', draftId: null };
+function newRound(roundId: number, source: QueueRoundSource): QueueRound {
+  return { roundId, members: [], status: 'filling', draftId: null, source };
+}
+
+/** A round only accepts passes of its own origin. Legacy rounds carry no
+ *  `source` and read as 'wheel' — every round that predates the split is a
+ *  wheel win, except jackhof round 1 (the Banana Draw promo draft), which the
+ *  migration stamps 'promo' explicitly. */
+function roundSource(r: QueueRound): QueueRoundSource {
+  return r.source ?? 'wheel';
+}
+
+function findOpenRound(
+  queue: DraftQueue,
+  source: QueueRoundSource,
+  userId: string,
+): QueueRound | undefined {
+  return queue.rounds.find(
+    r =>
+      r.status === 'filling' &&
+      roundSource(r) === source &&
+      r.members.length < QUEUE_MAX &&
+      !r.members.some(m => m.wallet === userId),
+  );
 }
 
 export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
@@ -2313,6 +2492,7 @@ export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
 export async function joinQueue(
   userId: string,
   type: 'jackpot' | 'hof' | 'jackhof',
+  source: QueueRoundSource = 'wheel',
 ): Promise<{ queue: DraftQueue; joinedRoundIds: number[] }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
@@ -2335,11 +2515,9 @@ export async function joinQueue(
     // Add new entries to next available rounds (don't touch existing rounds)
     const joinedRoundIds: number[] = [];
     for (let i = 0; i < entries; i++) {
-      let round = queue.rounds.find(
-        r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
-      );
+      let round = findOpenRound(queue, source, userId);
       if (!round) {
-        round = newRound(queue.nextRoundId++);
+        round = newRound(queue.nextRoundId++, source);
         queue.rounds.push(round);
       }
       round.members.push({ wallet: userId, joinedAt: Date.now() });
@@ -2364,6 +2542,7 @@ export async function joinQueueWithToken(
   userId: string,
   type: 'jackpot' | 'hof' | 'jackhof',
   tokenId: string,
+  source: QueueRoundSource = 'wheel',
 ): Promise<{ queue: DraftQueue; joinedRoundId: number | null }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
@@ -2379,11 +2558,9 @@ export async function joinQueueWithToken(
     const existing = queue.rounds.find(r => r.members.some(m => m.tokenId === tokenId));
     if (existing) return { queue, joinedRoundId: existing.roundId };
 
-    let round = queue.rounds.find(
-      r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
-    );
+    let round = findOpenRound(queue, source, userId);
     if (!round) {
-      round = newRound(queue.nextRoundId++);
+      round = newRound(queue.nextRoundId++, source);
       queue.rounds.push(round);
     }
     round.members.push({ wallet: userId, joinedAt: Date.now(), tokenId });
@@ -2760,18 +2937,18 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(FIRST_PURCHASE_PROMO_ID);
 
-  const unlocked = await db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const [userSnap, promoSnap] = await Promise.all([tx.get(userRef), tx.get(promoRef)]);
-    if (!userSnap.exists) return false;
+    if (!userSnap.exists) return { unlock: false, isReturning: false };
     const user = userSnap.data() as User;
     // Past the gate already, or no winnings outstanding — nothing to do.
-    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return false;
-    if ((user.pendingWheelWinnings || 0) <= 0) return false;
+    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return { unlock: false, isReturning: false };
+    if ((user.pendingWheelWinnings || 0) <= 0) return { unlock: false, isReturning: false };
 
     // Idempotency: dedup completions on the first-purchase promo doc.
     const promo = promoSnap.exists ? deepClone(promoSnap.data() as Promo) : null;
     const seen = promo?.completedDraftIds || [];
-    if (seen.includes(draftId)) return false;
+    if (seen.includes(draftId)) return { unlock: false, isReturning: false };
 
     const gate = applyCompletionGate({
       usedFreePass: true,
@@ -2788,11 +2965,15 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
       promo.completedDraftIds = [...seen, draftId];
       tx.set(promoRef, stripUndefined(promo), { merge: true });
     }
-    return gate.unlock;
+    // Returning players get the CLASSIC first-purchase offer — carried on the
+    // stream event so the unlock bell can pitch the variant-correct math.
+    const isReturning = (user as { isReturningPlayer?: boolean }).isReturningPlayer === true
+      || isReturningWalletSync(userId);
+    return { unlock: gate.unlock, isReturning };
   });
 
-  if (unlocked) {
-    pushStreamEventBg(userId, 'first-purchase-unlocked', {});
+  if (result.unlock) {
+    pushStreamEventBg(userId, 'first-purchase-unlocked', { isReturning: result.isReturning });
   }
 }
 
@@ -3126,6 +3307,130 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
   });
 }
 
+// ─── Chase Your Pick (limited-time, thru Sun 12pm PT) ───────────────────────
+const PICK_CHASE_PROMO_ID = 'pick-chase';
+const PICK_CHASE_MAX_SPINS = 5;           // cap: +1 spin per draft, maxes at 5
+const PICK_CHASE_SEEN_LEDGER_MAX = 60;    // idempotency ledger cap per user
+
+/**
+ * Chase Your Pick (Boris 2026-07-22, live thru Sun 12pm PT — gated by
+ * promoWeekendActive). Called from reveal-complete for EVERY human seat with
+ * that seat's draft slot (1–10):
+ *
+ *   • No active chase (fresh, or the 24h ran out, or they just won) → THIS
+ *     draft's slot becomes the target and a 24h countdown starts. No spins yet.
+ *   • Active chase → this is an attempt. Match the target slot → win
+ *     min(draftsInRun−1, 5) spins (2nd draft in the run = 1, 6th+ = 5), then
+ *     the chase RESETS so the next filled draft sets a new target. Miss → keep
+ *     chasing (target + timer unchanged).
+ *
+ * FREE and paid drafts both count (no paid-gate) — safe at the 5-spin cap (a
+ * chase costs ~10 drafts and pays back ≤5, so it can't print). Idempotent per
+ * (user, draftId) via a capped seen-ledger. Requires the pick-chase promo doc
+ * to already exist (real seeded users) — bots have no promo docs, so they
+ * no-op naturally; callers also pre-exclude bots.
+ */
+export async function recordPickChase(
+  userId: string,
+  draftId: string,
+  draftName: string,
+  slot: number,
+): Promise<void> {
+  // Match Your Pick is PERMANENT (Boris 2026-07-25) — it does NOT expire with
+  // the promo window; it just stops counting FREE drafts when the window ends.
+  // promoCreditAllowed handles both sides of that transition in one call:
+  // a 'free'-stamped token returns promoWeekendActive() (true during the
+  // window, false after), 'paid' is always true. Same gate daily-drafts /
+  // pick-10 / jackpot use, so all four flip to paid-only together at the
+  // deadline with no deploy.
+  if (!(await promoCreditAllowed(userId, draftId, undefined, 'pick-chase'))) return;
+  // Launch gate: crediting only runs once the promo is PUBLIC. While it's
+  // admin-preview-only (pre-launch), this no-ops — so backfilled promo docs
+  // sit dormant and no one gets a pre-announcement bell. Moving 'pick-chase'
+  // into VISIBLE_PROMO_TYPES_ORDER is the single switch that turns it all on.
+  if (!VISIBLE_PROMO_TYPES.has('pick-chase')) return;
+  if (!Number.isInteger(slot) || slot < 1 || slot > 10) return;
+  const db = getAdminFirestore();
+  const promoRef = db
+    .collection(USERS_COLLECTION)
+    .doc(userId)
+    .collection(PROMOS_SUBCOLLECTION)
+    .doc(PICK_CHASE_PROMO_ID);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(promoRef);
+    if (!snap.exists) return { won: 0, changed: false }; // not seeded (bot / never logged in)
+    const promo = deepClone(snap.data() as Promo);
+    if (promo.type !== 'pick-chase') return { won: 0, changed: false };
+
+    const mc = (promo.modalContent || {}) as Record<string, unknown>;
+    const seen = (mc.chaseSeenDraftIds as string[] | undefined) || [];
+    if (seen.includes(draftId)) return { won: 0, changed: false }; // already processed this draft
+
+    const now = Date.now();
+    const timerMs = promo.timerEndTime ? new Date(promo.timerEndTime).getTime() : 0;
+    const expired = timerMs <= now;
+    const targetSlot = (mc.chaseTargetSlot as number | undefined);
+    const activeChase = typeof targetSlot === 'number' && !expired;
+
+    let won = 0;
+    let resetChase = false;
+    if (!activeChase) {
+      // Start a fresh chase — this draft sets the target.
+      mc.chaseTargetSlot = slot;
+      mc.chaseRunLength = 1;
+      // Meter = Free Spins the NEXT filled draft is worth (min(runLength, 5)),
+      // out of the 5 cap — drives the x/5 bar on every promo surface.
+      promo.progressCurrent = Math.min(1, PICK_CHASE_MAX_SPINS);
+      promo.timerEndTime = new Date(now + TWENTY_FOUR_HOURS_MS).toISOString();
+    } else {
+      const runLength = ((mc.chaseRunLength as number | undefined) || 1) + 1;
+      mc.chaseRunLength = runLength;
+      promo.progressCurrent = Math.min(runLength, PICK_CHASE_MAX_SPINS);
+      if (slot === targetSlot) {
+        won = Math.min(runLength - 1, PICK_CHASE_MAX_SPINS);
+        promo.claimCount = (promo.claimCount || 0) + won;
+        promo.claimable = true;
+        mc.totalChaseSpins = ((mc.totalChaseSpins as number | undefined) || 0) + won;
+        mc.chaseHistory = [
+          { date: new Date().toISOString(), slot, spins: won, attempts: runLength - 1, draftId, draftName },
+          ...((mc.chaseHistory as unknown[] | undefined) || []),
+        ].slice(0, 50);
+        resetChase = true; // next filled draft sets a new target
+      }
+      // miss → keep chasing (target + timer unchanged)
+    }
+
+    mc.chaseSeenDraftIds = [...seen, draftId].slice(-PICK_CHASE_SEEN_LEDGER_MAX);
+    promo.modalContent = mc as Promo['modalContent'];
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
+
+    if (resetChase) {
+      // Clear the chase so the user's next draft starts fresh — dormant meter 0/5.
+      delete (promo.modalContent as Record<string, unknown>).chaseTargetSlot;
+      (promo.modalContent as Record<string, unknown>).chaseRunLength = 0;
+      promo.progressCurrent = 0;
+    }
+    tx.set(promoRef, stripUndefined(promo), { merge: true });
+    if (resetChase) {
+      tx.update(promoRef, {
+        'modalContent.chaseTargetSlot': FieldValue.delete(),
+        timerEndTime: FieldValue.delete(),
+      });
+    }
+    return { won, changed: true };
+  });
+
+  if (result.won > 0) {
+    pushStreamEventBg(userId, 'promo-pick-chase', { draftId, slot, spins: result.won });
+  } else if (result.changed) {
+    // Silent refetch ping (no bell) so the card's pick slot / attempt / countdown
+    // update the instant a draft locks a slot or advances the chase — not on the
+    // next poll. Mirrors how purchases nudge the promos to refetch live.
+    pushStreamEventBg(userId, 'notification', { draftId });
+  }
+}
+
 /**
  * True when the CURRENT 100-draft batch has had ALL its specials hit — the 1
  * Jackpot AND all 5 HOF designated drafts for this batch have filled. Mirrors
@@ -3207,8 +3512,12 @@ export async function allBatchSpecialsHit(): Promise<boolean> {
  */
 export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
   const state = await getBatchSpecialsState();
-  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
-  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
+  // ⛔ HARD-PINNED TO SLOT 10 (Boris 2026-07-26: "it should never do that, it
+  // should always be on pick 10 only"). The 6/9/10 ladder was retired with the
+  // rolling-lane cutover and is now structurally unreachable — pinning here
+  // rather than relying on `rolling` means it can't come back even if
+  // RollingStartDraft were ever unset. The tier branches below are kept only
+  // so the shape/telemetry stay intact; they no longer change the payout.
   return { slots: [10], tier: 'base', batchStart: state.batchStart };
 }
 
@@ -3224,10 +3533,9 @@ export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: '
  */
 export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number; rolling: boolean }> {
   const state = await getBatchSpecialsState({ display: true });
-  const rolling = state.rolling === true;
-  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart, rolling };
-  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart, rolling };
-  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling };
+  // Pinned to base for the same reason as getPick10ActiveSlots — display must
+  // never advertise a slot the credit path won't pay.
+  return { slots: [10], tier: 'base', batchStart: state.batchStart, rolling: state.rolling === true };
 }
 
 // Bound the bell fan-out so a misread tracker can never broadcast to an
@@ -3248,6 +3556,18 @@ const PICK10_EXPANSION_MAX_FANOUT = 10000;
  * never throws into the promo-credit path that calls it.
  */
 export async function announcePick10ExpansionIfActivated(): Promise<void> {
+  // ⛔ RETIRED 2026-07-26. This broadcast told EVERY user "New Promo — Pick 6,
+  // 9 & 10 Free Spins" the moment a batch's specials were all hit. The ladder
+  // it announced no longer exists (slot 10 is the only winning slot, hard-
+  // pinned in getPick10ActiveSlots), so the bell would have promised spins
+  // that can never be paid — to the whole userbase at once.
+  //
+  // Kept as a no-op rather than deleted: it's still called from the promo-
+  // credit path and the reveal backstop, and a no-op is safer than chasing
+  // every caller. Delete the function and its call sites when convenient.
+  return;
+
+  // eslint-disable-next-line no-unreachable
   try {
     const { allHit, jpHit, batchStart } = await getBatchSpecialsState();
     if (!jpHit) return;
@@ -3337,67 +3657,90 @@ export async function announcePick10ExpansionIfActivated(): Promise<void> {
 // ==================== JACKPOT-HIT PROMO: RECORD WHEN USER LANDS IN A JACKPOT DRAFT ====================
 
 const JACKPOT_HIT_PROMO_ID = '4';
-const BATCH_SIZE = 100;
 
 /**
  * Bonus tiers for the jackpot promo:
- *   • slot 1–25  → 10 spins (early-batch hit)
+ *   • slot 1–25  → 10 spins (early-window hit)
  *   • slot 26–50 → 5 spins
  *   • slot 51–100 → 0 spins — NO bonus spin draw (Boris 2026-06-30). The jackpot
  *     draft still functions (league winner → finals); only the bonus spins are
- *     gated to the first 50 of each batch. awardJackpotDraw skips the entire draw
+ *     gated to the first 50 of each window. awardJackpotDraw skips the entire draw
  *     when this returns 0 (no winner, no credit, no bells, no receipt).
- * `position` is 1-indexed within the current batch (1..100).
+ * `position` is 1-indexed within the JP lane's current window (1..100).
+ * Delegates to lib/rollingLanes so the promo CARD advertises exactly the tiers
+ * the crediting path pays.
  */
-function jackpotSpinReward(position: number): number {
-  if (position >= 1 && position <= 25) return 10;
-  if (position >= 26 && position <= 50) return 5;
-  return 0;
-}
+const jackpotSpinReward = jpRewardForPosition;
 
 // (Legacy jackpotWinnerIndex + getDraftWinnerOwner helpers removed 2026-06-24 —
 // they only fed the retired recordJackpotHit path. The VRF draw winner is now
 // derived in awardJackpotDraw via deriveDrawWinnerIdx over the PAID list.)
 
 /**
- * Resolve the position-in-batch for the JP draft. Prefer reading the
- * draftTracker.FilledLeaguesCount counter (same source as
- * /api/batches/current); fall back to the last entry's position+1 if the
- * counter is unreadable. Slight drift if multiple drafts fill in parallel
- * is acceptable on staging.
+ * Read the JP lane inputs off draftTracker, then ask lib/rollingLanes where
+ * `draftNo` sits in its window. The CREDIT path must pass the jackpot draft's
+ * OWN global number (see getJackpotDraftPosition — defaulting to the live
+ * filled count paid BBB #349 ten spins at true position 94); pass `filled + 1`
+ * for the display question ("what would the NEXT jackpot pay?"). The
+ * no-argument default (the current filled count) is only a last-resort
+ * fallback. Falls back to a safe position 1 if the tracker is unreadable.
  */
-async function getCurrentBatchPosition(): Promise<number> {
+async function readJpCycle(draftNo?: number): Promise<JpCycleState & { filled: number }> {
+  const fallback = { ...computeJpCycle([], 0, 0, 1), filled: 0 };
   try {
     const db = getAdminFirestore();
     const snap = await db.collection('drafts').doc('draftTracker').get();
-    if (!snap.exists) return 1;
+    if (!snap.exists) return fallback;
     const d = snap.data() as {
       FilledLeaguesCount?: number;
       RollingStartDraft?: number;
       JackpotLeagueIds?: number[];
     } | undefined;
     const filled = Number(d?.FilledLeaguesCount ?? 0);
-    if (filled <= 0) return 1;
-    // ROLLING-LANE ERA (draft >= RollingStartDraft): "position" becomes the
-    // hit's 1-indexed spot within the JP lane's OWN window, replayed from the
-    // id array the same way lib/rollingLanes.ts does. The tracker already
-    // contains this hit (id == filled), so replay only the EARLIER hits to
-    // find the window this one landed in. Tiers (1-25 → 10 spins, 26-50 → 5)
-    // carry over unchanged, now window-relative (Boris 2026-07-20).
+    if (filled <= 0) return fallback;
     const rollingStart = Number(d?.RollingStartDraft ?? 0);
-    if (rollingStart > 0 && filled >= rollingStart) {
-      const priorHits = (Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [])
-        .filter((id) => Number(id) >= rollingStart && Number(id) < filled);
-      const { replayJpLane } = await import('@/lib/rollingLanes');
-      const windowStart = replayJpLane(priorHits, rollingStart, filled).windowStart;
-      const pos = filled - windowStart + 1;
-      return pos >= 1 && pos <= 100 ? pos : 1;
-    }
-    // Legacy fixed-batch era: 1-indexed position within the aligned batch.
-    return ((filled - 1) % BATCH_SIZE) + 1;
+    const jpIds = Array.isArray(d?.JackpotLeagueIds) ? d.JackpotLeagueIds : [];
+    return { ...computeJpCycle(jpIds, rollingStart, filled, draftNo ?? filled), filled };
   } catch {
-    return 1;
+    return fallback;
   }
+}
+
+/**
+ * Live Jackpot-promo cycle for the promo modal — the window the NEXT draft
+ * opens into, so the card answers "what does a jackpot pay if it hits now?".
+ * Shares computeJpCycle with the crediting path so the two can't drift.
+ */
+export async function getJackpotCycleState(): Promise<JpCycleState & { filled: number }> {
+  const { filled } = await readJpCycle();
+  return readJpCycle(filled + 1);
+}
+
+/**
+ * Resolve the position-in-window for the JP draft being credited. Tiers
+ * (1-25 → 10 spins, 26-50 → 5, else 1) are window-relative in the rolling-lane
+ * era (Boris 2026-07-20) and aligned-batch-relative before it.
+ *
+ * ⚠️ Must be anchored to the DRAFT'S OWN global number, never the live
+ * FilledLeaguesCount. The draw can run long after the draft fills (slow drafts
+ * fire it at reveal/close; the backstop can fire days later), by which point
+ * the filled count has moved on AND the draft's own hit is already in
+ * JackpotLeagueIds — computeJpCycle then counts the draft's own hit as a
+ * "prior" hit, sees a freshly reset window, and pays position 1. That is
+ * exactly how BBB #349 (true position 94 → no draw at all) paid 10 spins on
+ * 2026-07-29. The draft number is parsed from the "BBB #N" display name; if
+ * that ever fails, position is null and the caller must pay NOTHING (Richard
+ * 2026-07-29) — a guessed position risks a repeat over-payment, and the draw
+ * doc's `positionUnresolved` flag makes the skip easy to spot and hand-fix.
+ */
+async function getJackpotDraftPosition(draftId: string, displayName?: string): Promise<{ position: number | null; draftNo: number | null }> {
+  const parsed = /#\s*(\d+)/.exec(displayName ?? '');
+  const draftNo: number | null = parsed ? Number(parsed[1]) : null;
+  if (draftNo === null) {
+    logger.warn('promo.jackpot_draw.position_unresolved', { context: { draftId, displayName: displayName ?? null } });
+    return { position: null, draftNo: null };
+  }
+  return { position: (await readJpCycle(draftNo)).position, draftNo };
 }
 
 /**
@@ -3417,6 +3760,19 @@ async function getCurrentBatchPosition(): Promise<number> {
  */
 export async function awardJackpotDraw(draftId: string, displayName?: string): Promise<{ winnerWallet: string | null; reward: number } | null> {
   const db = getAdminFirestore();
+
+  // Private-league jackpot drafts (password-gated groups, own commit-reveal
+  // batch) have NO position in the public rolling window, so the spin draw
+  // never applies. Without this check the name parse below would fail-safe to
+  // "pays nobody" anyway, but it would flag positionUnresolved and warn —
+  // this makes the skip intentional and the logs quiet (Richard 2026-08-10).
+  try {
+    const leagueSnap = await db.collection('drafts').doc(draftId).get();
+    if (leagueSnap.get('PrivateLeagueId')) {
+      logger.info('promo.jackpot_draw.private_skip', { draftId });
+      return null;
+    }
+  } catch { /* fall through — the parse fail-safe still protects the draw */ }
 
   // Idempotency gate FIRST.
   const drawRef = db.collection('jackpot_draws').doc(draftId);
@@ -3454,8 +3810,11 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     if (t === 'paid' || (t === 'free' && promoWeekendActive())) paid.push(w);
   }
 
-  const position = await getCurrentBatchPosition();
-  const reward = jackpotSpinReward(position);
+  // An unresolved position pays NOTHING (Richard 2026-07-29): guessing the
+  // window position is how BBB #349 over-paid. The skipped draw doc keeps the
+  // `positionUnresolved` flag so it can be found and hand-run if it was real.
+  const { position, draftNo } = await getJackpotDraftPosition(draftId, displayName);
+  const reward = position === null ? 0 : jackpotSpinReward(position);
 
   // Slots 51–100 of the batch award NO bonus spins (Boris 2026-06-30). Skip the
   // spin draw entirely: no winner pick, no spin credit, NO bells, no on-chain
@@ -3469,7 +3828,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     for (const w of paid) {
       await unlockBadge(w, 'jackpot-club', { source: 'jackpot-draw', draftId }, { silent: true }).catch(() => {});
     }
-    await drawRef.set({ noSpinDraw: true, reward: 0, position }, { merge: true });
+    await drawRef.set({ noSpinDraw: true, reward: 0, position, draftNo, positionUnresolved: position === null }, { merge: true });
     logger.info('promo.jackpot_draw.no_spins', { context: { draftId, position, paidCount: paid.length } });
     return null;
   }
@@ -3516,6 +3875,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     participants: humans.length,
     reward,
     position,
+    draftNo,
     filledCount,
     atIso,
     vrfPeriod: sealed?.periodNumber ?? null,
@@ -3958,7 +4318,8 @@ export async function getEquippedBadgesBatch(userIds: string[]): Promise<Record<
  * stored username is just the wallet — caller falls back to Go API.
  */
 // Counter doc that hands out permanent, unique banana handle numbers.
-// First handle is 10000 (always 5 digits), incrementing by 1 per user.
+// First handle is 10000 (always 5 digits); each assignment advances the
+// counter by a random forward jump (see assignBananaNumber).
 const BANANA_NUMBER_COUNTER_DOC = 'banana_user_number';
 const BANANA_NUMBER_START = 10000;
 
@@ -3966,17 +4327,26 @@ const BANANA_NUMBER_START = 10000;
 // who has no username. Concurrency-safe via a Firestore transaction on a
 // shared counter, so two users can never get the same number. Idempotent:
 // returns the existing number if one was already assigned.
-async function assignBananaNumber(userId: string): Promise<number> {
+async function assignBananaNumber(userId: string, opts?: { skipGap?: boolean }): Promise<number> {
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const counterRef = db.collection('counters').doc(BANANA_NUMBER_COUNTER_DOC);
+  // Every assignment jumps the shared counter a random amount forward
+  // (Richard 2026-08-10): bots 5–15, real users 0–7, so handles look
+  // scattered instead of a tidy signup sequence (consecutive runs read as
+  // batch-created clusters in All Users / leaderboards). Skipped numbers
+  // are simply never handed out — the counter only moves forward — so two
+  // accounts can never land on the same number.
+  const gap = opts?.skipGap
+    ? 5 + Math.floor(Math.random() * 11)
+    : Math.floor(Math.random() * 8);
   return db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
     const existing = userSnap.exists ? (userSnap.data() as User).bananaNumber : undefined;
     if (typeof existing === 'number') return existing;
     const counterSnap = await tx.get(counterRef);
     const counterData = counterSnap.exists ? (counterSnap.data() as { next?: number }) : null;
-    let next = typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START;
+    let next = (typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START) + gap;
     // Skip numbers whose "Banana{n}" is already someone's STORED username —
     // ~189 pre-guard accounts carry their old hash default as a real
     // (reserved) name, and an assigned handle must never read identical to
@@ -4000,7 +4370,7 @@ async function assignBananaNumber(userId: string): Promise<number> {
 /**
  * Directory presence for a HOUSE BOT (Boris 2026-07-21): every bot appears in
  * All Users like a real member. Creates the v2_users doc (firstLoginAt makes
- * it roster-eligible), allocates the same sequential Banana#### any user gets,
+ * it roster-eligible), draws a Banana#### from the same shared counter any user gets,
  * stores it as the bot's username, and claims the usernames reservation so
  * the number can never be double-assigned. Idempotent — safe on every mint.
  */
@@ -4022,7 +4392,7 @@ export async function seedBotUserIdentity(wallet: string): Promise<void> {
   }
   const existingName = snap.exists ? ((snap.data() as User).username || '') : '';
   if (existingName && !/^user-0x/i.test(existingName)) return; // already properly named
-  const n = await assignBananaNumber(w);
+  const n = await assignBananaNumber(w, { skipGap: true });
   const name = `Banana${n}`;
   await ref.set({ username: name, username_lower: name.toLowerCase() }, { merge: true });
   await db.collection('usernames').doc(name.toLowerCase()).set({

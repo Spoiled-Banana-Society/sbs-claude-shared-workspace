@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
-import { joinDraft } from '@/lib/api/leagues';
+import { joinDraft, joinPrivateDraft } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 
@@ -64,6 +64,12 @@ export function useEnterDraft() {
   const enterDraftWithPassType = async (
     passType: 'paid' | 'free',
     speed: 'fast' | 'slow' = 'fast',
+    // Password-gated private league target (the /private/[id] page). When set,
+    // the join goes to the group's own currently-filling draft instead of the
+    // public matchmaker — every other part of the flow (join-first, overlay,
+    // retries, bookkeeping, navigation) is IDENTICAL, which is exactly why the
+    // private page rides this hook instead of forking it.
+    privateLeague?: { id: string; password: string },
   ) => {
     if (!user?.walletAddress) return;
     if (inFlightRef.current) return; // a join is already in flight — ignore the double-tap
@@ -181,14 +187,18 @@ export function useEnterDraft() {
     // wallet, or the season join deadline passed. Retrying these just makes
     // the user stare at the overlay for two extra backoffs.
     const isDeterministicRejection = (msg: string) =>
-      /not enough (paid|free) draft passes/i.test(msg) || /deadline to join has passed/i.test(msg);
+      /not enough (paid|free) draft passes/i.test(msg) ||
+      /deadline to join has passed/i.test(msg) ||
+      /incorrect password/i.test(msg);
     let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
       const t0 = Date.now();
       try {
-        draftRoom = await joinDraft(user.walletAddress, speed, 1, passType);
+        draftRoom = privateLeague
+          ? await joinPrivateDraft(user.walletAddress, privateLeague.id, privateLeague.password, speed, passType)
+          : await joinDraft(user.walletAddress, speed, 1, passType);
         reportClientEvent({
           source: 'draft.enter.join_done',
           message: `join attempt ${attempt} → ${draftRoom?.id ? `draftId ${draftRoom.id}` : 'NO draft id'} in ${Date.now() - t0}ms`,
@@ -229,6 +239,8 @@ export function useEnterDraft() {
       void refreshBalance();
       if (rejectionMsg && /not enough/i.test(rejectionMsg)) {
         setJoinError('No draft passes available. Your balance has been refreshed.');
+      } else if (rejectionMsg && /incorrect password/i.test(rejectionMsg)) {
+        setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
       } else if (rejectionMsg) {
         setJoinError('Joining is closed — the deadline to enter drafts has passed.');
       } else {
@@ -272,6 +284,23 @@ export function useEnterDraft() {
           context: { passType, leagueId: newId, speed },
         });
       });
+
+    // A successful join is fresh explicit intent: make sure this draft id is
+    // OFF the hidden/cleared blacklists before persisting the row. Without
+    // this, re-entering a lobby id you'd previously "Clear All"-ed left the
+    // new seat permanently invisible on the drafting page (2026-07-23 wave —
+    // Clear All leaves drafts backend-side, the router re-seats you into the
+    // same reopened lobby id, and the blacklist then hides your real seat).
+    try {
+      for (const key of ['banana-hidden-drafts', 'banana-cleared-drafts']) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const ids: string[] = JSON.parse(raw);
+        if (Array.isArray(ids) && ids.includes(newId)) {
+          localStorage.setItem(key, JSON.stringify(ids.filter((i) => i !== newId)));
+        }
+      }
+    } catch { /* non-fatal — the self-heal poll un-hides on next pass */ }
 
     // Persist the draft so the room + leave flow have the exact token/passType.
     draftStore.addDraft({

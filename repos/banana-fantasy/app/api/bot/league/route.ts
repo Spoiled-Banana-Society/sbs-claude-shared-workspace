@@ -204,35 +204,100 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
 
 // The live draft-activity snapshot appended to fill-alert pings — read from the
 // SAME RTDB node the in-app line subscribes to, so every surface reads identically.
-// Returns '' (append nothing) when the feature is off, the value is missing/stale,
+// Returns null (append nothing) when the feature is off, the value is missing/stale,
 // or there's nothing to show (0 fast drafts / no valid round). It's a SNAPSHOT: it
 // only refreshes on pings that already fire for a real reason (see the injection
 // logic in loadLeagues), so a round ticking up NEVER causes an extra ping.
-async function loadActivitySuffix(): Promise<string> {
-  if (!LIVE_ACTIVITY_ENABLED) return '';
+interface ActivitySnapshot {
+  count: number;
+  round: number;
+  updatedAt: number;
+}
+
+async function loadActivitySnapshot(): Promise<ActivitySnapshot | null> {
+  if (!LIVE_ACTIVITY_ENABLED) return null;
   try {
     const snap = await getAdminDatabase().ref(LIVE_ACTIVITY_RTDB_PATH).get();
     const v = snap.val() as { count?: unknown; round?: unknown; updatedAt?: unknown } | null;
-    if (!v || typeof v !== 'object') return '';
+    if (!v || typeof v !== 'object') return null;
     const count = Number(v.count) || 0;
     const round = Number(v.round) || 0;
     const updatedAt = Number(v.updatedAt) || 0;
-    if (count < 1 || round < 1) return '';
+    if (count < 1 || round < 1) return null;
     // Fail-closed: a stalled/dead aggregator appends nothing, not a frozen line.
-    if (Date.now() - updatedAt > LIVE_ACTIVITY_STALE_MS) return '';
-    // Leading blank line so it sits under the odds with a gap (Discord + X).
-    return `\n\n${formatLiveActivity(count, round)}`;
+    if (Date.now() - updatedAt > LIVE_ACTIVITY_STALE_MS) return null;
+    return { count, round, updatedAt };
   } catch (err) {
     // A bad read must never take the feed down — just append nothing.
     logger.error('[api/bot/league] live-activity read failed', err);
-    return '';
+    return null;
+  }
+}
+
+/**
+ * Render the snapshot as the appended line. `excludeSelf` drops ONE draft from
+ * the count — used for the ping that announces a draft's OWN fill.
+ *
+ * Why (Richard 2026-07-24): the aggregator counts a draft from the moment it
+ * fills (it's in its 60s pre-draft countdown at Round 1), so the "another draft
+ * is going, don't leave" nudge on a fill ping was describing the very draft
+ * being announced — "1 draft going · a draft is on Round 1" IS League #256. With
+ * self dropped, a fill ping only ever advertises OTHER drafts, and when there
+ * are none the line disappears instead of pointing at itself.
+ *
+ * The ROUND needs no adjustment: it's a MAX, and at fill time this draft is on
+ * Round 1, so it can only be the max when every other live draft is also on
+ * Round 1 — in which case Round 1 is still exactly right.
+ */
+function renderActivity(snap: ActivitySnapshot | null, excludeSelf: boolean): string {
+  if (!snap) return '';
+  const count = excludeSelf ? snap.count - 1 : snap.count;
+  if (count < 1) return '';
+  // Leading blank line so it sits under the odds with a gap (Discord + X).
+  return `\n\n${formatLiveActivity(count, snap.round)}`;
+}
+
+// Fill → draft start delay, mirroring Go's CreateDraftInfoForDraft
+// (`draftStartTime = time.Now().Unix() + 60`). Used only to date a draft's live
+// RTDB node so we can tell whether the aggregator's last tick already saw it.
+const FILL_TO_START_MS = 60_000;
+
+/**
+ * Was `docId` itself part of the snapshot's count? The aggregator republishes
+ * every 10s, so a draft that filled seconds ago may not be in the snapshot yet —
+ * subtracting it blindly would then undercount (and could hide a line that's
+ * advertising real other drafts). One tiny RTDB read, done ONLY for the single
+ * just-filled draft, answers it exactly: the draft is in the count if its live
+ * node matches the aggregator's own in-progress test AND that node existed
+ * (fill = start − 60s) by the time the snapshot was written.
+ *
+ * A failed read assumes YES (drop self) — never re-introduce a ping that
+ * describes itself; the cost of being wrong is one missing nudge line.
+ */
+async function isSelfInActivityCount(
+  docId: string,
+  snap: ActivitySnapshot | null,
+): Promise<boolean> {
+  if (!snap) return false;
+  try {
+    const s = await getAdminDatabase().ref(`drafts/${docId}/realTimeDraftInfo`).get();
+    const v = s.val() as Record<string, unknown> | null;
+    if (!v || typeof v !== 'object') return false; // no live node → never counted
+    // Same predicate as the Go aggregator (models/live_activity.go).
+    const startTime = Number(v.draftStartTime) || 0;
+    if (v.isDraftComplete === true) return false;
+    if (startTime <= 0 || Number(v.pickNumber) < 1 || Number(v.roundNum) < 1) return false;
+    return snap.updatedAt >= startTime * 1000 - FILL_TO_START_MS;
+  } catch (err) {
+    logger.error('[api/bot/league] self-activity read failed', err);
+    return true;
   }
 }
 
 async function loadLeagues(): Promise<AbbrevLeague[]> {
   const db = getAdminFirestore();
   // Kick off the activity read in parallel with the Firestore reads below.
-  const activitySuffixPromise = loadActivitySuffix();
+  const activitySnapshotPromise = loadActivitySnapshot();
   const stateRef = db.collection('bot_feed_state').doc('state');
   const [trackerSnap, snap, stateSnap] = await Promise.all([
     db.collection('drafts').doc('draftTracker').get(),
@@ -311,16 +376,34 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     if (!LEAGUE_ID_RE.test(doc.id)) continue;
     const d = doc.data() as Record<string, unknown>;
 
-    // Skip wheel-won Jackpot/HOF lobbies — those run in their OWN lane (the
-    // SpecialDraftCount sequence, named "HOF/Jackpot #N (from Wheel)" /
-    // "Hall of Fame Draft #N") and shouldn't be announced; the bot only pings
-    // for regular drafts (Boris 2026-06-30). A wheel special has its special
-    // Level set WHILE filling AND a non-"BBB #" name; regular batch JP/HOF keep
-    // the "BBB #N" name and only get their special Level after the slot reveal,
-    // so this excludes only the wheel specials.
+    // Skip SPECIAL-lane lobbies — wheel-won AND promo-granted Jackpot / HOF /
+    // JackHOF drafts. They run in their own SpecialDraftCount sequence with
+    // their own (tiny, invite-only) supply, so an @everyone "1 more to fill"
+    // sends the whole server at a seat nobody can buy. They must NEVER ping
+    // (Richard 2026-08-02); the bot announces regular drafts only.
+    //
+    // The old test matched `Level` against the two exact strings 'jackpot' /
+    // 'hall of fame', so the COMBINED level sailed straight through: promo
+    // draft `2025-slow-draft-22` carries Level "JackHOF" and pinged the server
+    // at 9/10 as "1 more to fill Draft Lobby (Slow)". Enumerating special
+    // levels is a losing game — match on what a REGULAR draft positively looks
+    // like instead. Every batch draft wears a "BBB #N" name from the moment its
+    // slot doc is created and keeps it through the slot reveal (verified across
+    // every live doc: batch JP/HOF are "BBB #186", "BBB #349", …). No special
+    // ever does — they're "Jackpot Draft #16", "JackHOF Draft #22",
+    // "HOF #15 (from Wheel)", "JackHOF #28 (from Promo)". So: not BBB → silent.
     const lvl = String(d.Level ?? '').toLowerCase().trim();
+    const src = String(d.Source ?? '').toLowerCase().trim();
     const nm = String(d.DisplayName ?? '').trim();
-    if ((lvl === 'jackpot' || lvl === 'hall of fame') && !/^bbb\b/i.test(nm)) continue;
+    // `Source` is stamped on newer specials only ('promo'/'wheel'); regular
+    // drafts carry '' or nothing. Cheap belt-and-braces on top of the name test.
+    if (src === 'promo' || src === 'wheel') continue;
+    // Password-gated private-league drafts must never ping the server either —
+    // nobody outside the group can take the seat. Their names are the group's
+    // ("KFFL #3"), so the not-BBB test below already drops them; this explicit
+    // check is belt-and-braces (Richard 2026-08-10).
+    if (d.PrivateLeagueId) continue;
+    if (nm ? !/^bbb\b/i.test(nm) : lvl !== '' && lvl !== 'pro') continue;
 
     const numPlayers = Number(d.NumPlayers ?? 0);
     // Skip empty slot docs that exist but nobody has joined — nothing to announce.
@@ -377,11 +460,32 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const pendingOddsLine = buildOddsLine(pendingOdds);
 
   // Snapshot of the live draft-activity line, resolved once for this poll.
-  const activitySuffix = await activitySuffixPromise;
+  const activitySnap = await activitySnapshotPromise;
+  const activitySuffix = renderActivity(activitySnap, false);
+
+  // The one draft whose ping announces its OWN fill — the fast draft wearing the
+  // current league count. It's the only draft that can be inside the activity
+  // count while being the subject of the message, so it's the only one that
+  // needs self dropped (and the only one worth an extra RTDB read). SLOW drafts
+  // are never in the count at all — the aggregator scans fast ids only.
+  const selfFill = parsed.find(
+    (p) =>
+      p.isFilled &&
+      !p.renamePending &&
+      p.draftType === 'fast' &&
+      p.leagueNumber !== null &&
+      p.leagueNumber === filledCount,
+  );
+  const selfFillSuffix =
+    selfFill && activitySnap
+      ? renderActivity(activitySnap, await isSelfInActivityCount(selfFill.docId, activitySnap))
+      : activitySuffix;
 
   const leagues: AbbrevLeague[] = [];
   for (const p of parsed) {
     const { numPlayers, maxPlayers, draftType, isFilled, label, rawName, leagueNumber } = p;
+    // Every draft but the just-filled one advertises the plain snapshot.
+    const suffix = p === selfFill ? selfFillSuffix : activitySuffix;
 
     // Rename still pending → keep reporting the draft exactly as the bot last
     // saw it, so it announces the fill ONCE — with the final league number —
@@ -453,7 +557,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
         const prior = state.seen[key]?.n ?? 0;
         displayName =
           prior > 0 ? `${base}\n\n${'🍌'.repeat(Math.min(prior, REPEAT_BANANA_CAP))}` : base;
-        displayName += activitySuffix; // bake the snapshot into the fresh, stored text
+        displayName += suffix; // bake the snapshot into the fresh, stored text
         appendActivity = false;
         state.seen[key] = { n: prior + 1, at: Date.now() };
         state.lastServed[p.docId] = { numPlayers, base, final: displayName };
@@ -467,7 +571,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // Filled posts and the degraded (no-ledger) path fall through with
     // displayName === base; append the snapshot here. (These fire once, so no
     // dedup bookkeeping is needed.)
-    if (appendActivity) displayName += activitySuffix;
+    if (appendActivity) displayName += suffix;
 
     leagues.push({
       leagueId: p.leagueId,
@@ -476,7 +580,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       // pointed at it; it's recomputed fresh each poll (no dedup), so a consumer
       // that reposts on any byte-change must key on the name/odds, not this whole
       // string. Unused by the bot today, so zero current repost risk.
-      displayNameClean: (draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart) + activitySuffix,
+      displayNameClean: (draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart) + suffix,
       numPlayers,
       maxPlayers,
       draftType,
