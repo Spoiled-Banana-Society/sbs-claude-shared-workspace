@@ -7,6 +7,7 @@ import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { runDropSchedule } from '@/lib/dropRun';
 import { runJpWindowBells } from '@/lib/jpWindowBells';
+import { runBuyBonusRetirementSweep } from '@/lib/buyBonusSweep';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
 
 /**
@@ -33,11 +34,17 @@ export async function GET(req: Request) {
     logger.error('jp_window_bells.cron_failed', { err: (err as Error).message });
     return { ok: false };
   });
+  // Kickoff retirement — no-op until midnight PT, once-ever after. Reads the
+  // (never-deleted) per-user promo docs and credits unclaimed spins.
+  const buyBonusSweep = await runBuyBonusRetirementSweep().catch((err) => {
+    logger.error('buybonus_sweep.cron_failed', { err: (err as Error).message });
+    return { ok: false };
+  });
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('drop')) {
-    return json({ ok: true, held: 'admin-preview', jpBells });
+    return json({ ok: true, held: 'admin-preview', jpBells, buyBonusSweep });
   }
   try {
-    return json({ ...(await runDropSchedule(Date.now())), jpBells });
+    return json({ ...(await runDropSchedule(Date.now())), jpBells, buyBonusSweep });
   } catch (err) {
     logger.error('drop.cron_failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);

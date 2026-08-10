@@ -4313,17 +4313,23 @@ const BANANA_NUMBER_START = 10000;
 // who has no username. Concurrency-safe via a Firestore transaction on a
 // shared counter, so two users can never get the same number. Idempotent:
 // returns the existing number if one was already assigned.
-async function assignBananaNumber(userId: string): Promise<number> {
+async function assignBananaNumber(userId: string, opts?: { skipGap?: boolean }): Promise<number> {
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const counterRef = db.collection('counters').doc(BANANA_NUMBER_COUNTER_DOC);
+  // House bots jump the counter a varied 5–15 ahead (Richard 2026-08-08):
+  // batch-minted bots landing on consecutive Banana numbers read as an
+  // obvious cluster in All Users / leaderboards. Skipped numbers are simply
+  // never handed out (the counter only moves forward), so they can't
+  // collide with real users, who keep getting +1.
+  const gap = opts?.skipGap ? 5 + Math.floor(Math.random() * 11) : 0;
   return db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
     const existing = userSnap.exists ? (userSnap.data() as User).bananaNumber : undefined;
     if (typeof existing === 'number') return existing;
     const counterSnap = await tx.get(counterRef);
     const counterData = counterSnap.exists ? (counterSnap.data() as { next?: number }) : null;
-    let next = typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START;
+    let next = (typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START) + gap;
     // Skip numbers whose "Banana{n}" is already someone's STORED username —
     // ~189 pre-guard accounts carry their old hash default as a real
     // (reserved) name, and an assigned handle must never read identical to
@@ -4369,7 +4375,7 @@ export async function seedBotUserIdentity(wallet: string): Promise<void> {
   }
   const existingName = snap.exists ? ((snap.data() as User).username || '') : '';
   if (existingName && !/^user-0x/i.test(existingName)) return; // already properly named
-  const n = await assignBananaNumber(w);
+  const n = await assignBananaNumber(w, { skipGap: true });
   const name = `Banana${n}`;
   await ref.set({ username: name, username_lower: name.toLowerCase() }, { merge: true });
   await db.collection('usernames').doc(name.toLowerCase()).set({
