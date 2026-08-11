@@ -83,6 +83,12 @@ async function readOpenLobbies(): Promise<NextLobbyResponse> {
       continue;
     }
 
+    // Password-gated private-league lobbies share the public id sequence but
+    // are unjoinable by the matchmaker (Go rejects any join without the
+    // league's password) — and they must never be VISIBLE on a public
+    // surface at all (Richard 2026-08-10).
+    if (d.PrivateLeagueId) continue;
+
     const seats = Number(d.NumPlayers ?? 0);
     const maxSeats = Number(d.MaxPlayers ?? 10) || 10;
     if (!Number.isFinite(seats) || seats < 1 || seats >= maxSeats) continue;

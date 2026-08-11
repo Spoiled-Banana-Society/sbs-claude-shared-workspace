@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
-import { joinDraft } from '@/lib/api/leagues';
+import { joinDraft, joinPrivateDraft } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 
@@ -64,6 +64,12 @@ export function useEnterDraft() {
   const enterDraftWithPassType = async (
     passType: 'paid' | 'free',
     speed: 'fast' | 'slow' = 'fast',
+    // Password-gated private league target (the /private/[id] page). When set,
+    // the join goes to the group's own currently-filling draft instead of the
+    // public matchmaker — every other part of the flow (join-first, overlay,
+    // retries, bookkeeping, navigation) is IDENTICAL, which is exactly why the
+    // private page rides this hook instead of forking it.
+    privateLeague?: { id: string; password: string },
   ) => {
     if (!user?.walletAddress) return;
     if (inFlightRef.current) return; // a join is already in flight — ignore the double-tap
@@ -181,14 +187,19 @@ export function useEnterDraft() {
     // wallet, or the season join deadline passed. Retrying these just makes
     // the user stare at the overlay for two extra backoffs.
     const isDeterministicRejection = (msg: string) =>
-      /not enough (paid|free) draft passes/i.test(msg) || /deadline to join has passed/i.test(msg);
+      /not enough (paid|free) draft passes/i.test(msg) ||
+      /deadline to join has passed/i.test(msg) ||
+      /incorrect password/i.test(msg) ||
+      /already in this league/i.test(msg);
     let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
       const t0 = Date.now();
       try {
-        draftRoom = await joinDraft(user.walletAddress, speed, 1, passType);
+        draftRoom = privateLeague
+          ? await joinPrivateDraft(user.walletAddress, privateLeague.id, privateLeague.password, speed, passType)
+          : await joinDraft(user.walletAddress, speed, 1, passType);
         reportClientEvent({
           source: 'draft.enter.join_done',
           message: `join attempt ${attempt} → ${draftRoom?.id ? `draftId ${draftRoom.id}` : 'NO draft id'} in ${Date.now() - t0}ms`,
@@ -229,6 +240,10 @@ export function useEnterDraft() {
       void refreshBalance();
       if (rejectionMsg && /not enough/i.test(rejectionMsg)) {
         setJoinError('No draft passes available. Your balance has been refreshed.');
+      } else if (rejectionMsg && /incorrect password/i.test(rejectionMsg)) {
+        setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
+      } else if (rejectionMsg && /already in this league/i.test(rejectionMsg)) {
+        setJoinError('You already have a seat in this draft — it starts as soon as the last seats fill.');
       } else if (rejectionMsg) {
         setJoinError('Joining is closed — the deadline to enter drafts has passed.');
       } else {

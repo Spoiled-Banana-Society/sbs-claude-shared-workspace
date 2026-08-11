@@ -1117,12 +1117,14 @@ export function useDraftingPageState() {
             const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
               computeTurnsFromServer(info, draft.liveWalletAddress!);
 
-            const totalPicks = (info.draftOrder?.length || 10) * 15;
-            const isCompleted = info.pickNumber >= totalPicks;
-            if (isCompleted) {
-              draftStore.removeDraft(draft.id);
-              continue;
-            }
+            // Completion removal lives ONLY in the early exit above, which
+            // consults finalPickStillPending() and writes the completed-drafts
+            // ledger. A second unguarded `pickNumber >= totalPicks` removal here
+            // defeated that guard for the person on the clock for the FINAL
+            // pick (Go clamps pickNumber at totalPicks): the early exit kept
+            // the row, this removed it, the active-token un-heal re-added it —
+            // a 1-3s add/remove flicker of the "Pick Now" row for the whole
+            // 8-hour window (FC, R15 P150, 2026-08-10). Don't re-add it.
 
             // /state/info doesn't carry the current pick's absolute
             // end-timestamp, so fetch it from league-players which proxies

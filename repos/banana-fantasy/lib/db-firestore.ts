@@ -3761,6 +3761,19 @@ async function getJackpotDraftPosition(draftId: string, displayName?: string): P
 export async function awardJackpotDraw(draftId: string, displayName?: string): Promise<{ winnerWallet: string | null; reward: number } | null> {
   const db = getAdminFirestore();
 
+  // Private-league jackpot drafts (password-gated groups, own commit-reveal
+  // batch) have NO position in the public rolling window, so the spin draw
+  // never applies. Without this check the name parse below would fail-safe to
+  // "pays nobody" anyway, but it would flag positionUnresolved and warn —
+  // this makes the skip intentional and the logs quiet (Richard 2026-08-10).
+  try {
+    const leagueSnap = await db.collection('drafts').doc(draftId).get();
+    if (leagueSnap.get('PrivateLeagueId')) {
+      logger.info('promo.jackpot_draw.private_skip', { draftId });
+      return null;
+    }
+  } catch { /* fall through — the parse fail-safe still protects the draw */ }
+
   // Idempotency gate FIRST.
   const drawRef = db.collection('jackpot_draws').doc(draftId);
   try {
@@ -4305,7 +4318,8 @@ export async function getEquippedBadgesBatch(userIds: string[]): Promise<Record<
  * stored username is just the wallet — caller falls back to Go API.
  */
 // Counter doc that hands out permanent, unique banana handle numbers.
-// First handle is 10000 (always 5 digits), incrementing by 1 per user.
+// First handle is 10000 (always 5 digits); each assignment advances the
+// counter by a random forward jump (see assignBananaNumber).
 const BANANA_NUMBER_COUNTER_DOC = 'banana_user_number';
 const BANANA_NUMBER_START = 10000;
 
@@ -4317,12 +4331,15 @@ async function assignBananaNumber(userId: string, opts?: { skipGap?: boolean }):
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const counterRef = db.collection('counters').doc(BANANA_NUMBER_COUNTER_DOC);
-  // House bots jump the counter a varied 5–15 ahead (Richard 2026-08-08):
-  // batch-minted bots landing on consecutive Banana numbers read as an
-  // obvious cluster in All Users / leaderboards. Skipped numbers are simply
-  // never handed out (the counter only moves forward), so they can't
-  // collide with real users, who keep getting +1.
-  const gap = opts?.skipGap ? 5 + Math.floor(Math.random() * 11) : 0;
+  // Every assignment jumps the shared counter a random amount forward
+  // (Richard 2026-08-10): bots 5–15, real users 0–7, so handles look
+  // scattered instead of a tidy signup sequence (consecutive runs read as
+  // batch-created clusters in All Users / leaderboards). Skipped numbers
+  // are simply never handed out — the counter only moves forward — so two
+  // accounts can never land on the same number.
+  const gap = opts?.skipGap
+    ? 5 + Math.floor(Math.random() * 11)
+    : Math.floor(Math.random() * 8);
   return db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
     const existing = userSnap.exists ? (userSnap.data() as User).bananaNumber : undefined;
@@ -4353,7 +4370,7 @@ async function assignBananaNumber(userId: string, opts?: { skipGap?: boolean }):
 /**
  * Directory presence for a HOUSE BOT (Boris 2026-07-21): every bot appears in
  * All Users like a real member. Creates the v2_users doc (firstLoginAt makes
- * it roster-eligible), allocates the same sequential Banana#### any user gets,
+ * it roster-eligible), draws a Banana#### from the same shared counter any user gets,
  * stores it as the bot's username, and claims the usernames reservation so
  * the number can never be double-assigned. Idempotent — safe on every mint.
  */

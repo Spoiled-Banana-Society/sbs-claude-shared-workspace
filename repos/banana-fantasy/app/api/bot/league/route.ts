@@ -398,6 +398,11 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // `Source` is stamped on newer specials only ('promo'/'wheel'); regular
     // drafts carry '' or nothing. Cheap belt-and-braces on top of the name test.
     if (src === 'promo' || src === 'wheel') continue;
+    // Password-gated private-league drafts must never ping the server either —
+    // nobody outside the group can take the seat. Their names are the group's
+    // ("KFFL #3"), so the not-BBB test below already drops them; this explicit
+    // check is belt-and-braces (Richard 2026-08-10).
+    if (d.PrivateLeagueId) continue;
     if (nm ? !/^bbb\b/i.test(nm) : lvl !== '' && lvl !== 'pro') continue;
 
     const numPlayers = Number(d.NumPlayers ?? 0);

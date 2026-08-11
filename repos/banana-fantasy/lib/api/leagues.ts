@@ -62,6 +62,99 @@ export async function joinDraft(
     clearTimeout(timeout);
   }
 
+  return mapJoinResponse(res, speed);
+}
+
+/**
+ * Join a password-gated PRIVATE league (ticket-3338 groups). Same Go seat
+ * path as the public join — the only differences are the endpoint (the
+ * password rides the body) and that the backend picks the league (the
+ * group's currently-filling draft) instead of the walk-forward matchmaker.
+ * Response shape matches the public join (array with the seated card), so
+ * the same mapping applies.
+ */
+export async function joinPrivateDraft(
+  walletAddress: string,
+  privateLeagueId: string,
+  password: string,
+  speed: DraftSpeed,
+  passType?: 'paid' | 'free',
+): Promise<DraftRoom> {
+  const wallet = normalizeWalletAddress(walletAddress);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  let res: unknown;
+  try {
+    res = await draftsApi().post<unknown>(
+      `/league/private/${encodeURIComponent(privateLeagueId)}/join/${wallet}`,
+      {
+        password,
+        passType: passType || 'paid',
+      },
+      { signal: controller.signal },
+    );
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Join draft timed out. Please try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return mapJoinResponse(res, speed);
+}
+
+export interface PrivateLeagueBatch {
+  batch: number;
+  commitHash: string;
+  createdAt: string;
+  revealed: boolean;
+  saltHex?: string;
+  jackpotPosition?: number;
+  hofPositions?: number[];
+}
+
+export interface PrivateLeagueDraftRow {
+  draftId: string;
+  displayName: string;
+  level: string;
+  numPlayers: number;
+  filled: boolean;
+}
+
+export interface PrivateLeagueInfo {
+  id: string;
+  name: string;
+  draftType: DraftSpeed;
+  draftsFilled: number;
+  currentDraft?: PrivateLeagueDraftRow;
+  drafts: PrivateLeagueDraftRow[];
+  batches: PrivateLeagueBatch[];
+  batchSize: number;
+  jackpotPer100: number;
+  hofPer100: number;
+}
+
+/**
+ * Password-gated league page payload. Throws ApiError with status 403 on a
+ * wrong password, 404 on an unknown league id.
+ */
+export async function getPrivateLeagueInfo(
+  privateLeagueId: string,
+  password: string,
+  signal?: AbortSignal,
+): Promise<PrivateLeagueInfo> {
+  return draftsApi().post<PrivateLeagueInfo>(
+    `/league/private/${encodeURIComponent(privateLeagueId)}/info`,
+    { password },
+    { signal },
+  );
+}
+
+/** Shared response mapping for the public and private join endpoints. */
+function mapJoinResponse(res: unknown, speed: DraftSpeed): DraftRoom {
   // API returns an array of joined cards — unwrap first element
   const raw = Array.isArray(res) ? res[0] : res;
   const obj: Record<string, unknown> = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};

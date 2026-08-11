@@ -162,7 +162,11 @@ export async function GET(req: Request) {
               // json-tag variant too in case any doc was written differently.
               CurrentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
               currentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
+              PrivateLeagueId?: string;
             } | undefined;
+        // Password-gated private-league drafts never appear on the public
+        // Spectate tab (Richard 2026-08-10).
+        if (data?.PrivateLeagueId) return null;
         const rawMembers = data?.CurrentUsers ?? data?.currentUsers ?? [];
         const members = Array.isArray(rawMembers)
           ? rawMembers.map(u => (u?.OwnerId ?? u?.ownerId ?? '')).filter(Boolean)
