@@ -151,6 +151,12 @@ func selectLowestPartialLeague(startFrom int, maxLookback int, ownerId string, r
 		if l.Level == "Jackpot" || l.Level == "Hall of Fame" || l.Level == "JackHOF" {
 			continue
 		}
+		// Password-gated private drafts share the public id sequence but are
+		// never a walk-forward target — only the private join path (which
+		// checked the password) may seat into them.
+		if l.PrivateLeagueId != "" {
+			continue
+		}
 		if l.NumPlayers <= 0 || l.NumPlayers >= 10 {
 			continue
 		}
@@ -190,6 +196,16 @@ type League struct {
 	// Empty on every league created before 2026-08-02 and on all regular
 	// drafts, and empty reads as "wheel", which is what those all were.
 	Source string `json:"source,omitempty"`
+	// PrivateLeagueId marks this draft as belonging to a password-gated private
+	// league (private_leagues/{id}, e.g. a fantasy group running their KFFL
+	// league inside SBS — ticket-3338). Private drafts use the SAME
+	// "<seasonYear>-<type>-draft-<n>" id sequence as public drafts so the
+	// watchdog, capture cron, and scoring all cover them automatically, but
+	// every join surface must gate on this field: the shared seat transaction
+	// refuses any join whose caller didn't present this exact private id
+	// (public walk-forward, partial-league scan, and house bots all present
+	// none). Empty on every public draft.
+	PrivateLeagueId string `json:"privateLeagueId,omitempty"`
 }
 
 type PlayerDraftInfo struct {
@@ -231,6 +247,13 @@ type DraftLeagueTracker struct {
 	// drafts (not wheel-won specials) are recorded. Best-effort/cosmetic: this
 	// never affects the actual VRF distribution.
 	RecentFills           []RecentFill `json:"recentFills,omitempty" firestore:"RecentFills,omitempty"`
+	// PrivateDraftCounts tracks filled drafts PER private league (key =
+	// private_leagues doc id). Each private league runs its own per-100 batch
+	// (1 JP + 5 HOF at commit-reveal positions, no VRF) completely outside the
+	// public batch: a private fill never touches FilledLeaguesCount,
+	// JackpotLeagueIds, HofLeagueIds, or RecentFills. The count doubles as the
+	// draft's number within its own batch ("KFFL #7" = position 7).
+	PrivateDraftCounts    map[string]int `json:"privateDraftCounts,omitempty" firestore:"PrivateDraftCounts,omitempty"`
 }
 
 // RecentFill records when a batch draft filled, for reveal-time gating in the
@@ -460,9 +483,18 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 					return -1, err
 				}
 				l = *league
-				err = utils.Db.CreateOrUpdateDocument("drafts", l.LeagueId, &league)
-				if err != nil {
-					return -1, err
+				// Precondition CREATE, never a blind Set: between our NotFound
+				// read and this write, the number can be claimed by a private
+				// league allocation (ensureOpenPrivateLeague creates ahead of
+				// the frontier) or a concurrent public create. A blind Set here
+				// would ERASE that doc — including already-consumed seats. On
+				// AlreadyExists just re-read the same number and proceed
+				// normally (seat into it, or skip it via the sentinels).
+				if _, cerr := utils.Db.Client.Collection("drafts").Doc(l.LeagueId).Create(context.Background(), league); cerr != nil {
+					if strings.Contains(cerr.Error(), "AlreadyExists") {
+						continue
+					}
+					return -1, cerr
 				}
 			} else {
 				return -1, err
@@ -471,14 +503,14 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(l.LeagueId)
 		fmt.Println(leagueRef)
-		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType)
+		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "")
 		if err != nil {
-			// Same walk-forward behavior as always: a special, full, or
-			// already-joined league advances to the next league number.
+			// Same walk-forward behavior as always: a special, private, full,
+			// or already-joined league advances to the next league number.
 			// Anything else — including a pass consumed by a concurrent
 			// join — aborts, so we never retry another league with a pass
 			// that's already gone.
-			if errors.Is(err, errLeagueSpecial) || errors.Is(err, errLeagueFull) || errors.Is(err, errAlreadyInLeague) {
+			if errors.Is(err, errLeagueSpecial) || errors.Is(err, errLeaguePrivate) || errors.Is(err, errLeagueFull) || errors.Is(err, errAlreadyInLeague) {
 				currentDraftNum++
 				continue
 			}
@@ -505,6 +537,12 @@ var (
 	errLeagueFull      = errors.New("league is full")
 	errAlreadyInLeague = errors.New("this owner is already in this league")
 	errPassAlreadyUsed = errors.New("pass already used")
+	// errLeaguePrivate: the target league belongs to a password-gated private
+	// league and the caller didn't present its private id. Walk-forward joins
+	// treat it exactly like errLeagueSpecial (skip to the next number); pinned
+	// joins (house bots) surface it — a bot must never land in someone's
+	// private league.
+	errLeaguePrivate = errors.New("this is a private league — joining requires its password")
 )
 
 // seatTokenInLeagueTx atomically seats token.OwnerId in the league at
@@ -522,7 +560,14 @@ var (
 // of it does and the pass is still spendable. draftType is stamped on the
 // bound copies; the closure only mutates its own copy of token, so Firestore's
 // internal retries re-derive everything from a fresh read.
-func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken, draftType string) (League, error) {
+//
+// allowPrivateId is the caller's private-league authorization: the private
+// join path (which already verified the league's password) passes the private
+// id it authorized; every other caller — public walk-forward, house-bot pinned
+// fill — passes "". A league whose PrivateLeagueId doesn't match is rejected
+// with errLeaguePrivate, so the ONLY way into a private draft is through the
+// password check.
+func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken, draftType string, allowPrivateId string) (League, error) {
 	var l League
 	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(leagueRef) // tx.Get, NOT ref.Get!
@@ -541,6 +586,12 @@ func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firest
 		// special (JP/HOF) — and neither may a house bot (Richard, 2026-06-18).
 		if league.Level == "Jackpot" || league.Level == "Hall of Fame" || league.Level == "JackHOF" {
 			return errLeagueSpecial
+		}
+		// Private-league gate — see allowPrivateId in the doc comment. Checked
+		// INSIDE the transaction so a league doc that gains PrivateLeagueId
+		// between a stale read and the seat can never be joined by accident.
+		if league.PrivateLeagueId != "" && league.PrivateLeagueId != allowPrivateId {
+			return errLeaguePrivate
 		}
 		if league.NumPlayers == 10 {
 			fmt.Printf("%s is now locked\r", league.LeagueId)
@@ -701,7 +752,7 @@ func AddCardToSpecificLeague(token *DraftToken, leagueId string) (*League, error
 	leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
 	validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId)
 
-	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType)
+	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "")
 	if err != nil {
 		return nil, err
 	}

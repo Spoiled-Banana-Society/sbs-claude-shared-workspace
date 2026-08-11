@@ -18,6 +18,11 @@ func (lr *LeagueResources) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Post("/{draftType}/owner/{ownerId}", lr.joinDraftLeagues)
+	// Private leagues (password-gated; chi prefers the static "private"
+	// segment over the {draftType} param, so these never shadow the public
+	// join). POST-only — the password travels in the body.
+	r.Post("/private/{privateId}/info", lr.PrivateLeagueInfo)
+	r.Post("/private/{privateId}/join/{ownerId}", lr.JoinPrivateLeague)
 	r.Get("/getGameweek", lr.ReturnGameweekToUser)
 	r.Post("/{draftId}/actions/leave", lr.RemoveUserFromDraft)
 	r.Get("/{draftId}/cards/{tokenId}", lr.ReturnDraftToken)

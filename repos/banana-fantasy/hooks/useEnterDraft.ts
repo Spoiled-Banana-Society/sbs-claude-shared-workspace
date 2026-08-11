@@ -189,8 +189,7 @@ export function useEnterDraft() {
     const isDeterministicRejection = (msg: string) =>
       /not enough (paid|free) draft passes/i.test(msg) ||
       /deadline to join has passed/i.test(msg) ||
-      /incorrect password/i.test(msg) ||
-      /already in this league/i.test(msg);
+      /incorrect password/i.test(msg);
     let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
@@ -242,8 +241,6 @@ export function useEnterDraft() {
         setJoinError('No draft passes available. Your balance has been refreshed.');
       } else if (rejectionMsg && /incorrect password/i.test(rejectionMsg)) {
         setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
-      } else if (rejectionMsg && /already in this league/i.test(rejectionMsg)) {
-        setJoinError('You already have a seat in this draft — it starts as soon as the last seats fill.');
       } else if (rejectionMsg) {
         setJoinError('Joining is closed — the deadline to enter drafts has passed.');
       } else {
