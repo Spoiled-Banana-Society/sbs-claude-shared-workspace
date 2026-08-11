@@ -273,8 +273,13 @@ export default function PrivateLeaguePage() {
                         <div className="mt-2 pt-2 border-t border-white/5 space-y-1">
                           <p className="font-mono text-[11px] text-white/55 break-all">secret: {b.saltHex}</p>
                           <p className="text-xs text-white/60">
-                            <span className="text-jackpot">Jackpot</span> at draft {b.jackpotPosition} ·{' '}
-                            <span className="text-hof">HOF</span> at {b.hofPositions?.join(', ')}
+                            {/* Go reveals positions WITHIN the batch (1..100); convert to
+                                absolute draft numbers so they match the "#N" draft names
+                                for batch 2+ as well. */}
+                            <span className="text-jackpot">Jackpot</span> at draft{' '}
+                            {(b.batch - 1) * info.batchSize + (b.jackpotPosition ?? 0)} ·{' '}
+                            <span className="text-hof">HOF</span> at{' '}
+                            {b.hofPositions?.map((p) => (b.batch - 1) * info.batchSize + p).join(', ')}
                           </p>
                         </div>
                       )}
