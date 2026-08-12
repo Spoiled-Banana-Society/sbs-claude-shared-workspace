@@ -488,44 +488,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Around The Banana — same live lap data the /promos card
-                          shows (Boris 2026-08-12): mini 10-slot grid + slots
-                          covered + seats left, restamped on every promos read. */}
-                      {promo.type === 'around-the-banana' && (() => {
-                        const atb = promo.modalContent?.aroundTheBanana;
-                        const hitCount = (atb?.slotsHit ?? []).length;
-                        const seatsLeft = Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0));
-                        return (
-                          <div className="-mt-2">
-                            <div className="grid grid-cols-10 gap-[3px] mb-1">
-                              {Array.from({ length: 10 }, (_, i) => i + 1).map((sl) => {
-                                const hit = (atb?.slotsHit ?? []).includes(sl);
-                                return (
-                                  <div key={sl} className="h-4 rounded flex items-center justify-center text-[7.5px] font-bold tabular-nums"
-                                    style={hit ? { background: '#ef4444', color: '#fff' } : { background: '#e8e8ed', color: '#9a9a9a' }}>
-                                    {sl}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] mb-1 whitespace-nowrap">
-                              {atb?.won ? (
-                                <span className="font-bold text-[#ef4444]">Made it around! Seat {atb.seatNumber}</span>
-                              ) : (
-                                <>
-                                  <span className="font-bold text-[#ef4444]">{hitCount}/10 slots</span>
-                                  <span className="text-[#c4c4c8]">·</span>
-                                  <span className="font-semibold">{seatsLeft} seats left</span>
-                                </>
-                              )}
-                            </div>
-                            <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-1 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-                              Learn more
-                            </p>
-                          </div>
-                        );
-                      })()}
-
+                      
                       {/* Around The Banana (Boris 2026-08-12): the covered pick
                           slots + live seats-left — same payload the /promos card
                           reads, restamped on every promos refresh. */}
@@ -628,7 +591,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       )}
 
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'around-the-banana' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
                           {/* Kickoff: drafts counted toward the 20-draft cap + live
                               countdown to the Sunday-night cutoff (timerEndTime is
