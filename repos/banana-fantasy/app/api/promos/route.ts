@@ -85,6 +85,26 @@ export async function GET(req: Request) {
       }
     } catch { /* live stats are decoration — promos still return */ }
 
+    // Around The Banana: live race state for the card's slot grid + seats-left
+    // counter, stamped at read time (persisted per-user fields + the one
+    // global winners doc). Decoration — a failure never breaks the list.
+    try {
+      const atb = promos.find((p) => p.type === 'around-the-banana');
+      if (atb) {
+        const { getAtbSeatCount } = await import('@/lib/aroundTheBanana');
+        const seats = await getAtbSeatCount();
+        const mc = atb.modalContent as unknown as Record<string, unknown>;
+        atb.modalContent.aroundTheBanana = {
+          slotsHit: (mc.atbSlotsHit as number[] | undefined) ?? [],
+          seatsClaimed: seats.claimed,
+          seatsTotal: seats.total,
+          completed: !!mc.atbCompletedAt,
+          won: !!mc.atbWonAt,
+          seatNumber: mc.atbSeatNumber as number | undefined,
+        };
+      }
+    } catch { /* live stats are decoration — promos still return */ }
+
     // THE DROP: rebuild the modal's prize copy from tonight's ACTUAL pool.
     // Per-user promo docs are seeded snapshots, so a one-night pool boost
     // (NIGHT_PRIZE_OVERRIDES) would otherwise show yesterday's list.

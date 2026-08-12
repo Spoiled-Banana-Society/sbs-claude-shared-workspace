@@ -144,7 +144,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'I hit HOF on the Banana Wheel — what happens now?',
-        answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (8 hours per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace until the draft fills. Special drafts never earn promos.',
+        answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (8 hours per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace before the draft, and your team can be sold after it wraps — the only time you can\'t sell is while the draft is live. Special drafts never earn promos.',
       },
     ],
   },
@@ -166,7 +166,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'I hit JackHOF on the Banana Wheel — what happens now?',
-        answer: 'Same flow as a wheel Jackpot or HOF, but better: you\'re seated free in a special JackHOF draft that starts automatically once 10 wheel winners join. Slow draft, 8 hours per pick, paused overnight. Your seat is locked, but the pass can be sold on the Marketplace until the draft fills.',
+        answer: 'Same flow as a wheel Jackpot or HOF, but better: you\'re seated free in a special JackHOF draft that starts automatically once 10 wheel winners join. Slow draft, 8 hours per pick, paused overnight. Your seat is locked, but the pass can be sold on the Marketplace before the draft, and the team can be sold after it wraps — the only time you can\'t sell is while the draft is live.',
       },
     ],
   },
@@ -249,7 +249,7 @@ export const mockFAQSections: FAQSection[] = [
         : []),
       {
         question: 'What is a "special draft"?',
-        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (until the draft fills). They\'re free drafts, so they never earn promos.',
+        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (before the draft — and your drafted team can be sold after it wraps, just never mid-draft). They\'re free drafts, so they never earn promos.',
       },
       {
         question: 'Where can I spin the wheel?',

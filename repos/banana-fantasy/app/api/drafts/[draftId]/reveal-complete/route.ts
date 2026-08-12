@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { awardJackpotDraw, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
+import { recordAroundTheBanana } from '@/lib/aroundTheBanana';
 import { waitUntil } from '@vercel/functions';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
@@ -80,6 +81,10 @@ export async function POST(req: Request, { params }: { params: { draftId: string
         const owner = order[pos]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-') && !botSet.has(owner)) {
           await recordPickChase(owner, draftId, draftName, pos + 1);
+          // Around The Banana: the same seat's slot also advances that user's
+          // all-10-slots lap. No-ops entirely until launch (ATB_START_MS +
+          // visibility gate inside); idempotent per (user, draft); paid-gated.
+          await recordAroundTheBanana(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch — tell everyone (bell + push), once per TIER per

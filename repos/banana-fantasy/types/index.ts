@@ -380,7 +380,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -516,6 +516,22 @@ export interface Promo {
       recentWinners: Array<{ cycleId: string; name: string; bananas: number }>;
       /** Permanent all-time credit history for this user. */
       allTime: Array<{ cycleId: string; source: string; bananas: number; at: string }>;
+    };
+    /** Around The Banana: live race state, stamped at read time. The persisted
+     *  per-user fields (atbSlotsHit / atbSeenDraftIds / atbWonAt…) stay
+     *  untyped inside modalContent, same as the chase fields — this is the
+     *  one object the card renders from. */
+    aroundTheBanana?: {
+      /** Pick slots (1–10) this user has drafted from, sorted. */
+      slotsHit: number[];
+      /** Seats taken so far in the first-N race. */
+      seatsClaimed: number;
+      seatsTotal: number;
+      /** This user finished all 10 (with or without a seat). */
+      completed: boolean;
+      /** This user took a seat; seatNumber = their completion order. */
+      won: boolean;
+      seatNumber?: number;
     };
   };
 }

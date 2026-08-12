@@ -956,7 +956,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                             : <><span className="text-white/90 font-semibold">{remaining} more</span> {label} winner{remaining !== 1 ? 's' : ''} to go <span className="text-white/90 font-semibold">({count}/10)</span>.</>}</p>
                       <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — 8 hours per pick).</p>
                       <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJackHof ? 'you skip straight to the season Finals AND enter the Hall of Fame playoff bracket — both perks on this one draft' : isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
-                      <p className="text-white/40 pt-1">Your seat is locked — but until the draft fills, you can sell this pass on the Marketplace and the buyer takes your spot.</p>
+                      <p className="text-white/40 pt-1">Your seat is locked — before the draft fills you can sell this pass on the Marketplace and the buyer takes your spot, and after the draft you can sell your team. You just can&apos;t sell mid-draft.</p>
                     </div>
                     <a
                       href={specialDraftStatus?.draftRoomUrl || '/drafting'}

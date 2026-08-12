@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { setPurchaseFlow } from '@/lib/purchaseFlow';
 import { FIRST_PURCHASE_SPINS_PER_PASS, FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN } from '@/lib/promoMath';
+import { clientLog } from '@/lib/clientLog';
 
 /**
  * Post-deposit claim prompt (Boris 2026-08-07): the moment a deposit lands,
@@ -36,6 +37,17 @@ export function FirstPurchaseClaimModal({
   const [qty, setQty] = useState(defaultQty);
   // Re-derive whenever the modal (re)opens with a fresh deposit amount.
   useEffect(() => { if (isOpen) setQty(defaultQty); }, [isOpen, defaultQty]);
+  // One 'shown' log per open (not per re-render) — lets admin see whether a
+  // deposit that should have triggered this popup actually did, and pair it
+  // against 'dismissed'/'converted' to see who closed it without buying.
+  const shownLoggedRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !shownLoggedRef.current) {
+      shownLoggedRef.current = true;
+      clientLog('promo', 'first_purchase_claim_shown', { variant, depositUsd, defaultQty });
+    }
+    if (!isOpen) shownLoggedRef.current = false;
+  }, [isOpen, variant, depositUsd, defaultQty]);
   if (!isOpen) return null;
 
   const title = variant === 'kickoff'
@@ -46,8 +58,8 @@ export function FirstPurchaseClaimModal({
   const sub = variant === 'kickoff'
     ? 'Every 2 buys = 1 Promo Spin + 2 Bonus Spins. Your money just landed — put it to work. Ends tonight.'
     : variant === 'returning'
-      ? 'Every 2 passes on your first purchase = 1 Free Banana Spin. Your money just landed — put it to work.'
-      : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins. Your money just landed — put it to work.`;
+      ? 'Every 2 passes on your first purchase = 1 Free Banana Spin. The deposit alone doesn\'t earn spins — buying the passes does.'
+      : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins. The deposit alone doesn't earn spins — buying the passes does.`;
   const rewardLine = (() => {
     if (variant === 'kickoff') {
       const promo = Math.floor(qty / 2);
@@ -60,13 +72,19 @@ export function FirstPurchaseClaimModal({
   })();
 
   const goBuy = () => {
+    clientLog('promo', 'first_purchase_claim_converted', { variant, depositUsd, qty });
     setPurchaseFlow({ quantity: qty });
     onClose();
     router.push('/buy-drafts');
   };
 
+  const dismiss = (reason: 'not_now' | 'backdrop') => {
+    clientLog('promo', 'first_purchase_claim_dismissed', { variant, depositUsd, qty, reason });
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => dismiss('backdrop')}>
       <div
         className="relative w-full max-w-sm rounded-3xl border border-banana/30 bg-[#15151c] p-7 text-center shadow-[0_0_40px_rgba(251,191,36,0.25)]"
         onClick={(e) => e.stopPropagation()}
@@ -111,7 +129,7 @@ export function FirstPurchaseClaimModal({
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => dismiss('not_now')}
           className="mt-3 text-white/40 text-sm hover:text-white/70 transition-colors"
         >
           Not now

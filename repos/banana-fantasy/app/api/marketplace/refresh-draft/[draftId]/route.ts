@@ -9,6 +9,7 @@ import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated } from '@/lib/db';
+import { recordAroundTheBanana } from '@/lib/aroundTheBanana';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { waitUntil } from '@vercel/functions';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
@@ -351,6 +352,10 @@ export async function POST(
         const owner = order[pos]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-') && !botSet.has(owner)) {
           await recordPickChase(owner, draftId, draftName, pos + 1);
+          // Around The Banana backstop — mirrors reveal-complete so a missed
+          // reveal still credits the slot at close. Idempotent per (user,
+          // draft) via its seen-ledger; dormant until launch.
+          await recordAroundTheBanana(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch → one bell + push per TIER per batch. Backgrounded

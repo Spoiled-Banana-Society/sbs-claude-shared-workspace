@@ -36,6 +36,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
   'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
   'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
+  'around-the-banana', // 🍌 all 10 pick slots → JACKPOT SEAT — LAUNCHED 2026-08-11
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
@@ -74,31 +75,32 @@ export const LOGGED_OUT_PROMO_TYPES = new Set<PromoType>(['new-user', 'first-pur
 // above at index 2, and FEATURED so it pins to position 1 on every surface.
 // Emptying this array also RELEASES the hourly burn cron, which holds itself
 // while a promo is in admin preview (app/api/crons/eliminator).
-// Nothing staged for admin-only preview right now.
 // 🌙 'drop' — THE DROP, built 2026-08-02, NOT LAUNCHED.
 //
-// ⚠️ DO NOT REMOVE FROM THIS ARRAY WITHOUT RICHARD SAYING SO. While it sits
-// here: only admin wallets see the card, the 8pm lock/prize cron holds
-// completely, and no seat or spin can be awarded. Packs still accrue quietly
-// from filled drafts, so the first post-launch night starts full instead of
-// empty.
+// 🍌 'around-the-banana' LAUNCHED 2026-08-11 (Richard's green light) — now in
+// VISIBLE_PROMO_TYPES_ORDER above, right after banana-draw.
+//
+// ⚠️ DO NOT REMOVE FROM THIS ARRAY WITHOUT RICHARD SAYING SO. While a type
+// sits here: only admin wallets see the card, its crons/crediting hold, and
+// no seat or spin can be awarded.
 export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
  * (above claimable bubbling) and given the big NEW badge treatment.
- * Set to null when no promo is being featured. 'buy-bonus' takes the pin
- * for Kickoff Weekend (through Sun night 2026-08-09); THE DROP gets it
- * back automatically when the window closes — see activeFeaturedType().
+ * Set to null when no promo is being featured.
+ *
+ * 'around-the-banana' took the pin at its 2026-08-11 launch (Richard: the
+ * card must be on TOP — Boris caught it buried on mobile, sitting below the
+ * DROP pin and everyone's in-progress bars). When its 10 seats are claimed,
+ * hand the pin back to 'drop'.
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = 'buy-bonus';
+export const FEATURED_PROMO_TYPE: PromoType | null = 'around-the-banana';
 
 /**
- * FEATURED_PROMO_TYPE resolved against time windows: while the Kickoff
- * Buy 2 → FREE SPIN window is open it holds the pin; the moment it closes
- * the pin reverts to THE DROP (the standing featured promo it borrowed it
- * from) with no teardown deploy. If DROP itself stops being the fallback,
- * update it here.
+ * FEATURED_PROMO_TYPE resolved against time windows. (The Kickoff buy-bonus
+ * window logic lived here through 2026-08-09 — pattern kept for the next
+ * time-boxed feature: gate on the window, return the standing fallback.)
  */
 function activeFeaturedType(): PromoType | null {
   if (FEATURED_PROMO_TYPE === 'buy-bonus' && !isBuyBonusActive()) return 'drop';

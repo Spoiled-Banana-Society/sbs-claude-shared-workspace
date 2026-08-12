@@ -71,6 +71,17 @@ export function eventNotificationContent(
         icon: 'target',
       };
     }
+    case 'promo-around-the-banana': {
+      const seatNo = payload.seatNumber ?? 0;
+      return {
+        type: 'promo',
+        title: 'You made it Around The Banana!',
+        message: `All 10 pick slots covered — you took seat ${seatNo} of 10. Your Jackpot draft pass is in your passes.`,
+        link: '/promos?promo=around-the-banana',
+        dedupeKey: 'promo-around-the-banana-won',
+        icon: 'trophy',
+      };
+    }
     case 'promo-jackpot-hit': {
       const count = payload.awardedCount ?? 1;
       return {

@@ -582,6 +582,52 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // Around The Banana — draft from ALL 10 pick slots; the first 10 players
+    // to cover every slot each win a Jackpot seat (Richard 2026-08-11 — was
+    // JackHOF for a moment during the build, Richard switched it same day).
+    // Built 2026-08-11, NOT LAUNCHED: gated behind ADMIN_PREVIEW_PROMO_TYPES
+    // + ATB_START_MS (lib/aroundTheBanana.ts) until Richard's green light.
+    // Seeded now so every user's promo doc exists dormant before launch.
+    id: 'around-the-banana',
+    type: 'around-the-banana',
+    title: 'Around The Banana → JACKPOT SEAT',
+    description: 'Every draft counts, paid or free. Cover all 10 pick slots and win a Jackpot seat.',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    progressCurrent: 0,
+    // x/10 meter = distinct pick slots covered — a real, bounded target
+    // (unlike Bananas), so the bar earns its place here.
+    progressMax: 10,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Around The Banana → Jackpot Seat',
+      explanation:
+        // Eligibility is the FIRST thing on the card (Richard 2026-08-11:
+        // "make it high up there") — paid AND free both count, any order.
+        '• PAID and FREE drafts BOTH count.\n'
+        + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
+        + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
+        + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'
+        + '• 10 seats total. When they\'re gone, they\'re gone — the card shows how many are left.\n'
+        + '• Any number of drafts counts. Repeat slots don\'t hurt you, only new slots move you forward.\n'
+        + '• Drafts count when they FILL and reveal, not when you enter.\n'
+        + '\n'
+        // Prize explained in ONE line (Richard 2026-08-11: no "what is a
+        // jackpot draft" lecture — just the perk).
+        + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+        // Sell window (Richard 2026-08-11): passes sell BEFORE the draft and
+        // teams sell AFTER it — the only no-sell window is mid-draft. Never
+        // write "sellable until the draft fills" as if that's the end of it.
+        + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+        + '\n'
+        + '• One seat per player.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.',
+    },
+  },
+  {
     // Banana Draw — the 24h JackHOF-seat raffle. Sits near the FRONT (Boris)
     // and carries the NEW tag. `timerEndTime` is stamped per-read with the
     // cycle close, so the promo card's existing bare countdown renders it with
@@ -623,7 +669,7 @@ const seedPromos: Promo[] = [
         + '• Bananas reset every 24 hours — use your drafts.\n'
         + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
         + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in, however many days that takes.\n'
-        + '• Your seat arrives as a JackHOF draft pass in your passes — you can sell it on the marketplace right up until the draft fills. It is a slow draft.\n'
+        + '• Your seat arrives as a JackHOF draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
         + '• One account per person — more than one account makes you ineligible to win prizes.\n'
         + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.',
     },

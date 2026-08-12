@@ -14,8 +14,10 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { FirstPurchaseClaimModal, type ClaimVariant } from '@/components/modals/FirstPurchaseClaimModal';
 import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
+import { API_CONFIG } from '@/lib/api/config';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
@@ -75,7 +77,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
       { q: 'What is a Hall of Fame Draft?', a: 'HOF Drafts are premium draft rooms making up 5% of all drafts. Your team competes for a separate bonus prize pool on top of the regular tournament prizes.' },
       { q: 'How do I get into a HOF Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and 5 HOF are guaranteed in every rolling 100-draft window. 2) The Banana Wheel: land on HOF and you win a guaranteed seat in a HOF draft (from the Wheel), free.' },
       { q: 'What happens when I win a HOF on the Banana Wheel?', a: 'You\'re seated in a HOF draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
-      { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
+      { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won HOF drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
     ],
   },
@@ -85,7 +87,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
       { q: 'What is a Jackpot Draft?', a: 'Jackpot Drafts are the rarest and most valuable draft type — only 1% of all drafts. If you win your league in a Jackpot draft, you skip straight to the finals, bypassing two weeks of playoffs.' },
       { q: 'How do I get into a Jackpot Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and a Jackpot is always within 100 drafts of the last one. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a Jackpot draft (from the Wheel), free.' },
       { q: 'What happens when I win a Jackpot on the Banana Wheel?', a: 'You\'re seated in a Jackpot draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
-      { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
+      { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won Jackpot drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
       { q: 'What exactly happens if I win?', a: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely.' },
     ],
@@ -151,6 +153,7 @@ export default function DraftingPage() {
   const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
   const [showDraftInfo, setShowDraftInfo] = React.useState(false);
+  const [fpClaim, setFpClaim] = React.useState<{ variant: ClaimVariant; depositUsd?: number } | null>(null);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live
@@ -497,7 +500,32 @@ export default function DraftingPage() {
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}
       {showAddFunds && (
-        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+        <AddFundsModal
+          isOpen={true}
+          onClose={() => setShowAddFunds(false)}
+          onFunded={(amountUsd) => {
+            // Same post-deposit promo pitch as the header/homepage Add Funds
+            // flows — this page used to skip it entirely (deposits made from
+            // the draft-room entry flow got no popup at all).
+            const fpOpen = user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true;
+            const kickoffOpen = API_CONFIG.promos.buyBonus.enabled && Date.now() < API_CONFIG.promos.buyBonus.endsAtMs;
+            if (fpOpen || kickoffOpen) {
+              setShowAddFunds(false);
+              setFpClaim({
+                variant: fpOpen ? (user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new') : 'kickoff',
+                depositUsd: amountUsd,
+              });
+            }
+          }}
+        />
+      )}
+      {fpClaim && (
+        <FirstPurchaseClaimModal
+          isOpen={true}
+          onClose={() => setFpClaim(null)}
+          variant={fpClaim.variant}
+          depositUsd={fpClaim.depositUsd}
+        />
       )}
 
       <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />

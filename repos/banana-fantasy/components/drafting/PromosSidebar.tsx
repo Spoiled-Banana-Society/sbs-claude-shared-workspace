@@ -214,6 +214,68 @@ export function PromosSidebar({
                     </div>
                   </div>
                 )}
+                {promo.type === 'around-the-banana' && (() => {
+                  const atb = promo.modalContent?.aroundTheBanana;
+                  const hitCount = (atb?.slotsHit ?? []).length;
+                  const seatsLeft = Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0));
+                  return (
+                    <div className="mt-3 mb-2">
+                      <div className="grid grid-cols-10 gap-[3px] mb-1.5">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((sl) => {
+                          const hit = (atb?.slotsHit ?? []).includes(sl);
+                          return (
+                            <div key={sl} className="h-4 rounded flex items-center justify-center text-[7.5px] font-bold tabular-nums"
+                              style={hit ? { background: '#ef4444', color: '#fff' } : { background: '#e8e8ed', color: '#9a9a9a' }}>
+                              {sl}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
+                        {atb?.won ? (
+                          <span className="font-bold text-[#ef4444]">Made it around! Seat {atb.seatNumber}</span>
+                        ) : (
+                          <>
+                            <span className="font-bold text-[#ef4444]">{hitCount}/10 slots</span>
+                            <span className="text-[#c4c4c8]">·</span>
+                            <span className="font-semibold">{seatsLeft} seats left</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {promo.type === 'around-the-banana' && (() => {
+                  const atb = promo.modalContent?.aroundTheBanana;
+                  const hitCount = (atb?.slotsHit ?? []).length;
+                  const seatsLeft = Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0));
+                  return (
+                    <div className="mt-3 mb-2">
+                      <div className="grid grid-cols-10 gap-[3px] mb-1.5">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((sl) => {
+                          const hit = (atb?.slotsHit ?? []).includes(sl);
+                          return (
+                            <div key={sl} className="h-4 rounded flex items-center justify-center text-[7.5px] font-bold tabular-nums"
+                              style={hit ? { background: '#ef4444', color: '#fff' } : { background: '#e8e8ed', color: '#9a9a9a' }}>
+                              {sl}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] whitespace-nowrap">
+                        {atb?.won ? (
+                          <span className="font-bold text-[#ef4444]">Made it around! Seat {atb.seatNumber}</span>
+                        ) : (
+                          <>
+                            <span className="font-bold text-[#ef4444]">{hitCount}/10 slots</span>
+                            <span className="text-[#c4c4c8]">·</span>
+                            <span className="font-semibold">{seatsLeft} seats left</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* Status line — same one the /promos card carries. */}
                 {!(promo.claimable && !claimedPromos.has(promo.id)) && (
                   <p className="mb-1 text-center text-[10px] text-[#7a7a7e]">

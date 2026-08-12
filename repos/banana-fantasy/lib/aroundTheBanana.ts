@@ -1,0 +1,251 @@
+/**
+ * Around The Banana — draft from ALL 10 pick slots, first N to finish win a
+ * Jackpot seat.
+ *
+ * A user's "pick slot" is their position (1–10) in the randomized draft order,
+ * which does not exist until AFTER a draft fills — so crediting hooks the same
+ * two places as Match Your Pick: reveal-complete (primary) and the
+ * refresh-draft close backstop. NEVER the fill webhook (the order isn't there
+ * yet — the Pick-10 bug on draft 1382).
+ *
+ * Collections
+ *   v2_users/{uid}/promos/around-the-banana   per-user promo doc: atbSlotsHit,
+ *                                             atbSeenDraftIds (idempotency),
+ *                                             atbCompletedAt / atbWonAt
+ *   around_the_banana/state                   the ONE race doc: winners[] —
+ *                                             its length IS the seats-claimed
+ *                                             count, appended in the same
+ *                                             transaction that flips a user to
+ *                                             10/10, so two users completing
+ *                                             simultaneously can never both
+ *                                             take seat #10.
+ *
+ * ⚠️ NOT LAUNCHED. Two switches must BOTH flip to go live (Richard's call):
+ *   1. Set ATB_START_MS below to the launch timestamp.
+ *   2. Move 'around-the-banana' from ADMIN_PREVIEW_PROMO_TYPES into
+ *      VISIBLE_PROMO_TYPES_ORDER (lib/promoFilter.ts).
+ * Until both: the card is admin-preview-only and recordAroundTheBanana
+ * no-ops, so nothing accrues and no seat can be awarded.
+ */
+
+import { FieldValue } from 'firebase-admin/firestore';
+
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { logger } from '@/lib/logger';
+import { unlockBadge } from '@/lib/db';
+import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
+import { pushStreamEventBg } from '@/lib/userEventStream';
+import type { Promo } from '@/types';
+
+export const ATB_PROMO_ID = 'around-the-banana';
+/** First N players to cover all 10 slots win. Richard's opener: 10. */
+export const ATB_SEATS_TOTAL = 10;
+/**
+ * Drafts revealed before this never count — the race starts fresh at launch,
+ * it is NOT a lookup of who already happens to hold all 10 slots historically.
+ * LAUNCHED 2026-08-11 ~3:10pm PT (Richard's green light, same session as the
+ * build). null would put the promo back to fully dormant.
+ */
+export const ATB_START_MS: number | null = 1786486211000;
+/** Idempotency ledger cap per user — same shape as Match Your Pick. */
+const ATB_SEEN_LEDGER_MAX = 120;
+
+const STATE_COLLECTION = 'around_the_banana';
+const STATE_DOC = 'state';
+
+export interface AtbWinner {
+  userId: string;
+  /** 1-indexed order of completion — seat #1 finished first. */
+  seat: number;
+  at: string;
+  /** Flipped true once the Jackpot pass is minted + queued. */
+  seatGranted: boolean;
+}
+
+export function atbActive(now: number = Date.now()): boolean {
+  return ATB_START_MS !== null
+    && now >= ATB_START_MS
+    && VISIBLE_PROMO_TYPES.has('around-the-banana');
+}
+
+/** {claimed, total} for the card — the Banana Draw seat-counter shape. */
+export async function getAtbSeatCount(): Promise<{ claimed: number; total: number }> {
+  if (!isFirestoreConfigured()) return { claimed: 0, total: ATB_SEATS_TOTAL };
+  const snap = await getAdminFirestore().collection(STATE_COLLECTION).doc(STATE_DOC).get();
+  const winners = (snap.data()?.winners ?? []) as AtbWinner[];
+  return { claimed: winners.length, total: ATB_SEATS_TOTAL };
+}
+
+export async function getAtbWinners(): Promise<AtbWinner[]> {
+  if (!isFirestoreConfigured()) return [];
+  const snap = await getAdminFirestore().collection(STATE_COLLECTION).doc(STATE_DOC).get();
+  return (snap.data()?.winners ?? []) as AtbWinner[];
+}
+
+/**
+ * Credit one revealed draft slot toward a user's lap Around The Banana.
+ * Called from reveal-complete + refresh-draft for EVERY human seat with that
+ * seat's slot (1–10). Idempotent per (user, draftId) via a capped seen-ledger.
+ * PAID and FREE drafts both count (Richard 2026-08-11). Bots have no promo
+ * docs, so they no-op naturally; callers also pre-exclude bots.
+ *
+ * The 10/10 completion and the winners[] append happen in ONE transaction on
+ * both docs — the first ATB_SEATS_TOTAL completers take the seats, everyone
+ * after gets atbCompletedAt with no seat ("made it around, seats were gone").
+ */
+export async function recordAroundTheBanana(
+  userId: string,
+  draftId: string,
+  draftName: string,
+  slot: number,
+): Promise<void> {
+  if (!atbActive()) return;
+  if (!Number.isInteger(slot) || slot < 1 || slot > 10) return;
+  // PAID and FREE drafts BOTH count (Richard 2026-08-11, launch day) — no
+  // promoCreditAllowed gate. That's safe here because both callers derive
+  // (owner, slot) from the server's OWN Go draft order, never from client
+  // input, so there is no forged-draftId path for the gate to catch.
+
+  const db = getAdminFirestore();
+  const promoRef = db.collection('v2_users').doc(userId)
+    .collection('promos').doc(ATB_PROMO_ID);
+  const stateRef = db.collection(STATE_COLLECTION).doc(STATE_DOC);
+
+  const result = await db.runTransaction(async (tx) => {
+    const [promoSnap, stateSnap] = await Promise.all([tx.get(promoRef), tx.get(stateRef)]);
+    if (!promoSnap.exists) return { changed: false, wonSeat: 0 }; // bot / never seeded
+    const promo = promoSnap.data() as Promo;
+    if (promo.type !== 'around-the-banana') return { changed: false, wonSeat: 0 };
+
+    const mc = (promo.modalContent || {}) as Record<string, unknown>;
+    const seen = (mc.atbSeenDraftIds as string[] | undefined) || [];
+    if (seen.includes(draftId)) return { changed: false, wonSeat: 0 };
+
+    const slotsHit = new Set((mc.atbSlotsHit as number[] | undefined) || []);
+    const newSlot = !slotsHit.has(slot);
+    slotsHit.add(slot);
+    const sorted = Array.from(slotsHit).sort((a, b) => a - b);
+    const nowIso = new Date().toISOString();
+
+    let wonSeat = 0;
+    const update: Record<string, unknown> = {
+      progressCurrent: sorted.length,
+      updatedAt: nowIso,
+      modalContent: {
+        atbSlotsHit: sorted,
+        atbSeenDraftIds: [...seen, draftId].slice(-ATB_SEEN_LEDGER_MAX),
+      },
+    };
+
+    if (sorted.length === 10 && !mc.atbCompletedAt) {
+      (update.modalContent as Record<string, unknown>).atbCompletedAt = nowIso;
+      (update.modalContent as Record<string, unknown>).atbCompletedDraftName = draftName;
+      const winners = (stateSnap.data()?.winners ?? []) as AtbWinner[];
+      const alreadyWon = winners.some((w) => w.userId === userId);
+      if (!alreadyWon && winners.length < ATB_SEATS_TOTAL) {
+        wonSeat = winners.length + 1;
+        (update.modalContent as Record<string, unknown>).atbWonAt = nowIso;
+        (update.modalContent as Record<string, unknown>).atbSeatNumber = wonSeat;
+        tx.set(stateRef, {
+          winners: FieldValue.arrayUnion({
+            userId, seat: wonSeat, at: nowIso, seatGranted: false,
+          } satisfies AtbWinner),
+        }, { merge: true });
+      }
+    }
+
+    tx.set(promoRef, update, { merge: true });
+    return { changed: true, wonSeat, newSlot };
+  });
+
+  if (result.wonSeat > 0) {
+    // A winner without a seat is the worst failure this promo can have —
+    // awaited (not backgrounded) so the caller's request keeps the lambda
+    // alive through the mint, and any failure logs loud with the winner
+    // already durably recorded in winners[] for a hand re-run.
+    await awardAtbSeat(userId, result.wonSeat)
+      .catch((err) => logger.error('atb.seat_failed', { userId, seat: result.wonSeat, err: String(err) }));
+    pushStreamEventBg(userId, 'promo-around-the-banana', {
+      draftId, slot, seatNumber: result.wonSeat, source: 'around-the-banana',
+    });
+  } else if (result.changed) {
+    // Silent refetch ping (no bell) so the card's slot grid updates the
+    // instant a reveal lands a new slot — same nudge Match Your Pick uses.
+    pushStreamEventBg(userId, 'notification', { draftId });
+  }
+}
+
+/**
+ * Seat the winner in the promo Jackpot round. Lifted from THE DROP's
+ * awardSpecialSeat (lib/dropRun.ts) unchanged in substance: mint a real
+ * Jackpot pass, stamp its Level so the Go engine never spends it on an
+ * ordinary draft, and queue it with source 'promo' (never the wheel-winners'
+ * round — the roarstone incident, Richard 2026-07-30).
+ */
+async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
+  const db = getAdminFirestore();
+  let seated = false;
+
+  const { isAdminMintConfigured, reserveTokensToWallet } = await import('@/lib/onchain/adminMint');
+  if (isAdminMintConfigured()) {
+    try {
+      const res = await reserveTokensToWallet({ to: winnerId, count: 1 });
+      const { recordPassOrigins } = await import('@/lib/onchain/passOrigin');
+      // Free-origin keeps the won seat out of the PAID revenue count.
+      await recordPassOrigins({
+        tokenIds: res.tokenIds, origin: 'admin_grant', ownerAtMint: winnerId,
+        txHash: res.txHash, reason: `around-the-banana:seat-${seat}`, level: 'jackpot',
+      });
+      const { registerMintedTokens } = await import('@/lib/onchain/reconcilePasses');
+      await registerMintedTokens(winnerId, res.tokenIds, 'free')
+        .catch((e) => logger.warn('atb.register_go_failed', { winnerId, err: (e as Error).message }));
+
+      // Stamp the special level so selectTokensByType / countSpendableTokens
+      // SKIP it — without this the pass could be spent on an ordinary draft,
+      // burning the Jackpot seat.
+      await Promise.all(res.tokenIds.map((tid) => db
+        .collection('owners').doc(winnerId.toLowerCase())
+        .collection('validDraftTokens').doc(String(tid))
+        .set({ Level: 'Jackpot' }, { merge: true })));
+
+      const tokenId = res.tokenIds[0];
+      if (tokenId) {
+        const { joinQueueWithToken } = await import('@/lib/db');
+        const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackpot', String(tokenId), 'promo');
+        if (joinedRoundId !== null) {
+          const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+          await ensureSpecialDraftSeat('jackpot', joinedRoundId, winnerId);
+        }
+        seated = true;
+        logger.info('atb.seated_with_token', { winnerId, seat, tokenId, round: joinedRoundId });
+      }
+    } catch (mintErr) {
+      logger.error('atb.mint_failed', { winnerId, seat, err: (mintErr as Error).message });
+    }
+  }
+
+  // FALLBACK — mint unavailable or failed. A seat that can't be sold still
+  // beats no seat. Credit jackpotEntries HERE ONLY (crediting on both paths
+  // would seat the winner twice — the Drop's hard-won rule).
+  if (!seated) {
+    await db.collection('v2_users').doc(winnerId)
+      .set({ jackpotEntries: FieldValue.increment(1) }, { merge: true });
+    const { joinQueue } = await import('@/lib/db');
+    const { joinedRoundIds } = await joinQueue(winnerId, 'jackpot', 'promo');
+    const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+    for (const rid of joinedRoundIds) await ensureSpecialDraftSeat('jackpot', rid, winnerId);
+    logger.warn('atb.seated_legacy_no_token', { winnerId, seat, rounds: joinedRoundIds });
+  }
+
+  // Mark the winner record granted — the recon signal that no one is owed.
+  await db.runTransaction(async (tx) => {
+    const ref = db.collection(STATE_COLLECTION).doc(STATE_DOC);
+    const winners = ((await tx.get(ref)).data()?.winners ?? []) as AtbWinner[];
+    tx.set(ref, {
+      winners: winners.map((w) => (w.userId === winnerId ? { ...w, seatGranted: true } : w)),
+    }, { merge: true });
+  }).catch((err) => logger.warn('atb.grant_mark_failed', { winnerId, err: String(err) }));
+
+  await unlockBadge(winnerId, 'jackpot-club', { source: 'around-the-banana', seat })
+    .catch((err) => logger.warn('atb.badge_failed', { winnerId, err: String(err) }));
+}

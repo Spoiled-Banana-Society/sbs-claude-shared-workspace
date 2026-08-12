@@ -49,6 +49,8 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   // Deep night-blue — THE DROP is the 8pm promo, and the colour keeps it
   // visually distinct from the JackHOF-orange promos that came before it.
   'drop':               { accent: '#6366f1', label: 'The Drop' },
+  // Jackpot red — the prize is a Jackpot seat, so the card wears jackpot's color.
+  'around-the-banana':  { accent: '#ef4444', label: 'Around' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
@@ -529,9 +531,15 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
   const isBanana = promo.type === 'banana-draw';
   const bd = isBanana ? promo.modalContent.bananaDraw : undefined;
 
+  // Around The Banana renders a 10-cell slot grid instead of a bare bar —
+  // WHICH slots are covered matters, not just how many. Live race numbers
+  // (seats left) come restamped on every /api/promos read, same as banana-draw.
+  const isAtb = promo.type === 'around-the-banana';
+  const atb = isAtb ? promo.modalContent.aroundTheBanana : undefined;
+
   // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
   // so it's excluded from the generic progress bar below.
-  const showProgress = !isChase && !isBanana && progressMax > 0;
+  const showProgress = !isChase && !isBanana && !isAtb && progressMax > 0;
   // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
   const timeRemaining = promo.timerEndTime
     ? formatTimeRemaining(promo.timerEndTime)
@@ -626,6 +634,45 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
                 <span className="text-[13px] text-white/45">Fill a draft to earn Bananas</span>
               )}
               <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining || '24:00:00'}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Around The Banana — the 10-slot lap grid: one cell per pick slot,
+            filled cells are slots this user has drafted from. Under it, the
+            live seats-left line (or the user's own finish). */}
+        {isAtb && (
+          <div className="mt-auto mb-4">
+            <div className="grid grid-cols-10 gap-1 mb-2">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((s) => {
+                const hit = (atb?.slotsHit ?? []).includes(s);
+                return (
+                  <div
+                    key={s}
+                    className="h-6 rounded-md flex items-center justify-center text-[10px] font-semibold tabular-nums"
+                    style={hit
+                      ? { background: 'rgba(239,68,68,0.9)', color: '#fff' }
+                      : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}
+                  >
+                    {s}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[13px] text-white/70">
+                {atb?.won ? (
+                  <span className="font-bold text-[#ef4444]">You made it around! Seat {atb.seatNumber} of {atb.seatsTotal}</span>
+                ) : atb?.completed ? (
+                  <span className="text-white/45">All 10 covered — seats were taken</span>
+                ) : (
+                  <>
+                    <span className="font-bold text-[#ef4444]">{(atb?.slotsHit ?? []).length}/10 slots</span>
+                    <span className="text-white/25"> · </span>
+                    {Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0))} seats left
+                  </>
+                )}
+              </span>
             </div>
           </div>
         )}

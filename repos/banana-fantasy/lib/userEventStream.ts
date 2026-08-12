@@ -40,6 +40,7 @@ export type StreamEventType =
   | 'badge-unlock'
   | 'promo-pick-10'
   | 'promo-pick-chase'
+  | 'promo-around-the-banana'
   | 'promo-jackpot-hit'
   | 'promo-buy-10'
   | 'promo-daily-drafts'
@@ -74,6 +75,8 @@ export interface StreamEventPayload {
   awardedCount?: number;
   /** Chase Your Pick: spins won on this hit (multiplier, 1–5). */
   spins?: number;
+  /** Around The Banana: 1-indexed seat the completer took (1 = first around). */
+  seatNumber?: number;
   /**
    * promo-card-free-draft only: true when the award includes the FRONTED
    * first-card-purchase draft (fee covered up front), so the bell explains

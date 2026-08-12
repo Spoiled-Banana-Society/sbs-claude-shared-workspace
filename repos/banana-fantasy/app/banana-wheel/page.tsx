@@ -572,7 +572,7 @@ export default function BananaWheelPage() {
                   Land on Jackpot and you&apos;re placed into a Jackpot draft lobby. Draft starts when 10 wheel winners join. Win that league and skip straight to the finals.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>
@@ -581,7 +581,7 @@ export default function BananaWheelPage() {
                   Land on HOF and you&apos;re placed into a HOF draft lobby. Draft starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>
@@ -590,7 +590,7 @@ export default function BananaWheelPage() {
                   The 0.1% wedge — the rarest prize on the wheel. Land it and you&apos;re placed into a JackHOF draft lobby with BOTH perks: win that league and you skip straight to the finals AND compete for HOF bonus prizes.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>

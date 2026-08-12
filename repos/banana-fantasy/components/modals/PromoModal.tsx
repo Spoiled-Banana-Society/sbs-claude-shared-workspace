@@ -938,7 +938,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <p className="whitespace-pre-line text-text-secondary text-sm leading-relaxed">
             {'• Provably fair — the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
             + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in.\n'
-            + '• Your seat is a slow draft. You can sell it on the marketplace until the draft fills.\n'
+            + '• Your seat is a slow draft. Sell it on the marketplace before the draft, or sell your team after it wraps — you just can\'t sell while the draft is live.\n'
             + '• One account per person — more than one account makes you ineligible to win prizes.\n'
             + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.'}
           </p>
