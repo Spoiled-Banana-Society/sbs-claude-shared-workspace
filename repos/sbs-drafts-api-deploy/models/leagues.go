@@ -503,7 +503,7 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(l.LeagueId)
 		fmt.Println(leagueRef)
-		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "")
+		seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "", 0)
 		if err != nil {
 			// Same walk-forward behavior as always: a special, private, full,
 			// or already-joined league advances to the next league number.
@@ -543,6 +543,11 @@ var (
 	// joins (house bots) surface it — a bot must never land in someone's
 	// private league.
 	errLeaguePrivate = errors.New("this is a private league — joining requires its password")
+	// errPrivateEntryCap: the wallet already holds as many seats across this
+	// private league's drafts as the commissioner has granted it. The exact
+	// message is matched by the frontend (useEnterDraft deterministic
+	// rejections) — change both together.
+	errPrivateEntryCap = errors.New("no entries left for this private league — ask your commissioner for another entry")
 )
 
 // seatTokenInLeagueTx atomically seats token.OwnerId in the league at
@@ -567,7 +572,15 @@ var (
 // fill — passes "". A league whose PrivateLeagueId doesn't match is rejected
 // with errLeaguePrivate, so the ONLY way into a private draft is through the
 // password check.
-func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken, draftType string, allowPrivateId string) (League, error) {
+//
+// privateMaxEntries is the per-wallet seat cap across ALL of the private
+// league's drafts (resolved from the league config by the private join path;
+// ignored when allowPrivateId is ""). Enforced by counting the wallet's actual
+// seats with a query INSIDE this transaction — the seats themselves are the
+// source of truth, so there is no counter to seed or drift, and two
+// concurrent joins can't both slip under the cap (the query's read-set
+// conflicts with the other join's league write and one side retries).
+func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firestore.DocumentRef, token *DraftToken, draftType string, allowPrivateId string, privateMaxEntries int) (League, error) {
 	var l League
 	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(leagueRef) // tx.Get, NOT ref.Get!
@@ -601,6 +614,34 @@ func seatTokenInLeagueTx(leagueRef *firestore.DocumentRef, validTokenRef *firest
 			if league.CurrentUsers[j].OwnerId == token.OwnerId {
 				fmt.Printf("%s is already in %s", token.OwnerId, league.LeagueId)
 				return errAlreadyInLeague
+			}
+		}
+
+		// Private entry cap — count the wallet's seats across every draft of
+		// this private league (still in the tx's read phase; all writes come
+		// later). The current draft is in the query results too, but the
+		// duplicate-owner check above already guarantees it contributes 0.
+		if allowPrivateId != "" {
+			seatDocs, qerr := tx.Documents(utils.Db.Client.Collection("drafts").
+				Where("PrivateLeagueId", "==", allowPrivateId)).GetAll()
+			if qerr != nil {
+				return qerr
+			}
+			used := 0
+			for _, sd := range seatDocs {
+				var pl League
+				if derr := sd.DataTo(&pl); derr != nil {
+					continue
+				}
+				for _, u := range pl.CurrentUsers {
+					if strings.EqualFold(u.OwnerId, token.OwnerId) {
+						used++
+					}
+				}
+			}
+			if used >= privateMaxEntries {
+				fmt.Printf("[private-league] entry cap hit league=%s owner=%s used=%d allowed=%d\n", allowPrivateId, token.OwnerId, used, privateMaxEntries)
+				return errPrivateEntryCap
 			}
 		}
 
@@ -752,7 +793,7 @@ func AddCardToSpecificLeague(token *DraftToken, leagueId string) (*League, error
 	leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
 	validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId)
 
-	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "")
+	seated, err := seatTokenInLeagueTx(leagueRef, validTokenRef, token, draftType, "", 0)
 	if err != nil {
 		return nil, err
 	}

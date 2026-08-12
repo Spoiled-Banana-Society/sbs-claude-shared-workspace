@@ -68,6 +68,29 @@ type PrivateLeagueConfig struct {
 	CurrentDraftId     string    `json:"currentDraftId"`
 	CommissionerWallet string    `json:"commissionerWallet,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
+	// DefaultEntries caps how many seats ONE wallet may take across this
+	// league's drafts (the ticket-3338 point-1 hole: the shared password must
+	// not let a member spend a spare pass on a second entry the commissioner
+	// was never paid for). 0/absent = 1.
+	DefaultEntries int `json:"-"`
+	// Entries is the per-wallet override map (LOWERCASE wallet → allowed
+	// count), bumped by the commissioner from the site's admin view when
+	// someone pays for another entry. An EXPLICIT 0 blocks that wallet.
+	Entries map[string]int `json:"-"`
+	// AdminWallets (lowercase) may read the league's admin roster and bump
+	// Entries via the frontend admin endpoints. SBS site admins always can.
+	AdminWallets []string `json:"-"`
+}
+
+// AllowedEntriesFor resolves how many seats ownerId may take in this league.
+func (cfg *PrivateLeagueConfig) AllowedEntriesFor(ownerId string) int {
+	if v, ok := cfg.Entries[strings.ToLower(ownerId)]; ok {
+		return v
+	}
+	if cfg.DefaultEntries > 0 {
+		return cfg.DefaultEntries
+	}
+	return 1
 }
 
 // PrivateBatchProof is the PUBLIC face of one private batch's commit-reveal,
@@ -104,6 +127,10 @@ func ErrIsPrivateLeagueBadPassword(err error) bool {
 // ErrIsPrivateAlreadyInDraft maps "you already have a seat in the current
 // draft" to a 409 in the handler.
 func ErrIsPrivateAlreadyInDraft(err error) bool { return errors.Is(err, errAlreadyInLeague) }
+
+// ErrIsPrivateEntryCap maps the per-wallet entry cap to a 403. The message is
+// matched by the frontend's deterministic-rejection list — keep them in sync.
+func ErrIsPrivateEntryCap(err error) bool { return errors.Is(err, errPrivateEntryCap) }
 
 // HashPrivateLeaguePassword is the single canonical password→hash mapping,
 // used by both the verifier here and the admin seeding script (which stores
@@ -428,7 +455,7 @@ func JoinPrivateLeague(privateId string, ownerId string, password string, passTy
 		}
 		leagueRef := utils.Db.Client.Collection("drafts").Doc(leagueId)
 		validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", ownerId)).Doc(token.CardId)
-		seated, serr := seatTokenInLeagueTx(leagueRef, validTokenRef, &token, draftType, privateId)
+		seated, serr := seatTokenInLeagueTx(leagueRef, validTokenRef, &token, draftType, privateId, cfg.AllowedEntriesFor(ownerId))
 		if serr != nil {
 			if errors.Is(serr, errLeagueFull) {
 				continue

@@ -32,6 +32,9 @@ func privateLeagueErrorStatus(err error) int {
 		return http.StatusForbidden
 	case models.ErrIsPrivateAlreadyInDraft(err):
 		return http.StatusConflict
+	case models.ErrIsPrivateEntryCap(err):
+		// The wallet used every entry the commissioner granted it (default 1).
+		return http.StatusForbidden
 	case strings.Contains(msg, "code = NotFound"):
 		return http.StatusNotFound
 	case strings.Contains(msg, "not enough"), strings.Contains(msg, "does not have enough"), strings.Contains(msg, "no valid"):
