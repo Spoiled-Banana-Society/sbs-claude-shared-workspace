@@ -20,6 +20,7 @@ import { isDraftingOpen } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
 import { friendlyTxError } from '@/lib/marketplace/txErrors';
+import { resolveWalletFallback } from '@/lib/marketplace/walletFallback';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 import type { MarketplaceTeam } from '@/lib/opensea';
@@ -37,7 +38,7 @@ type CardFlowStep = 'idle' | 'funding' | 'waiting' | 'buying';
 export default function MarketplacePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isLoggedIn, walletAddress, user, setShowLoginModal } = useAuth();
+  const { isLoggedIn, walletAddress, user, setShowLoginModal, isEmbeddedWallet } = useAuth();
   const { addNotification } = useNotifications();
   const { wallets } = useWallets();
   const { sendTransaction } = useSendTransaction();
@@ -60,11 +61,15 @@ export default function MarketplacePage() {
   // "No embedded or connected wallet found for address."
   const sendTx = useCallback(async (
     txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
-    opts: { description: string; waitForReceipt?: boolean },
+    // opts.wallet: mobile external-wallet fallback (see resolveWalletFallback) —
+    // callers resolve a signer when useWallets() is empty and pass it here,
+    // since this closure's selectedWallet is null in exactly that case.
+    opts: { description: string; waitForReceipt?: boolean; wallet?: typeof selectedWallet },
   ): Promise<{ hash: string }> => {
-    if (!selectedWallet) throw new Error('No wallet connected');
+    const activeWallet = opts.wallet ?? selectedWallet;
+    if (!activeWallet) throw new Error('No wallet connected');
 
-    if (selectedWallet.walletClientType === 'privy') {
+    if (activeWallet.walletClientType === 'privy') {
       const receipt = await sendTransaction(
         txRequest,
         // Embedded (web2) wallets sign silently — zero-friction buy/sell/offer.
@@ -74,10 +79,10 @@ export default function MarketplacePage() {
       return { hash: String(r.hash ?? r.transactionHash ?? '') };
     }
 
-    const ethereum = await selectedWallet.getEthereumProvider();
+    const ethereum = await activeWallet.getEthereumProvider();
     const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
     if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
-      await selectedWallet.switchChain(txRequest.chainId);
+      await activeWallet.switchChain(txRequest.chainId);
     }
     const { ethers } = await import('ethers');
     const provider = new ethers.BrowserProvider(ethereum);
@@ -106,9 +111,14 @@ export default function MarketplacePage() {
         throw new Error(err.error || `Cancel failed: ${res.status}`);
       }
       const tx = await res.json();
+      // Mobile external wallet: useWallets() can be empty for a logged-in user
+      // (wallet-SDK login never registers with Privy — ticket-2681); recover
+      // the signer instead of letting sendTx throw "No wallet connected".
+      const activeWallet = selectedWallet
+        ?? (!isEmbeddedWallet ? (await resolveWalletFallback(walletAddress, 'cancel_offer')) as unknown as typeof selectedWallet : null);
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: orderHashes.length > 1 ? `Cancel ${orderHashes.length} offers in one go — fees covered by SBS` : 'Cancel your offer — fees covered by SBS' },
+        { description: orderHashes.length > 1 ? `Cancel ${orderHashes.length} offers in one go — fees covered by SBS` : 'Cancel your offer — fees covered by SBS', wallet: activeWallet },
       );
       // Mark each consumed so it stops showing during OpenSea's indexing lag.
       for (const orderHash of orderHashes) {
@@ -119,7 +129,7 @@ export default function MarketplacePage() {
       addNotification({ type: 'system', title: 'Cancel failed', message: friendlyTxError(err, 'Could not cancel your offers. Please try again.') });
       return false;
     }
-  }, [walletAddress, sendTx, addNotification]);
+  }, [walletAddress, sendTx, addNotification, selectedWallet, isEmbeddedWallet]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('sell');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
@@ -473,8 +483,16 @@ export default function MarketplacePage() {
   const executeBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
 
+    // Mobile external wallet: useWallets() can be empty for a logged-in user
+    // (wallet-SDK login never registers with Privy — ticket-2681). Recover the
+    // signer so the buy doesn't fall into the embedded branch and die at sendTx.
+    let activeWallet = selectedWallet;
+    if (!activeWallet && !isEmbeddedWallet) {
+      activeWallet = (await resolveWalletFallback(walletAddress, 'buy')) as unknown as typeof selectedWallet;
+    }
+
     let txHash: string;
-    if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+    if (activeWallet && activeWallet.walletClientType !== 'privy') {
       // External wallet (MetaMask, Coinbase, …): gasless relay. One free
       // permit signature; the server pulls the USDC and fulfills the Seaport
       // order with the NFT delivered straight to this wallet. No conduit
@@ -483,7 +501,7 @@ export default function MarketplacePage() {
       const { relayBuyExternal } = await import('@/lib/marketplace/relay');
       const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6)) + 10_000n;
       const receipt = await relayBuyExternal({
-        wallet: selectedWallet,
+        wallet: activeWallet,
         orderHash: selectedTeam.orderHash,
         protocolAddress: selectedTeam.protocolAddress,
         priceWei: priceUsdcWei,
@@ -514,7 +532,7 @@ export default function MarketplacePage() {
         const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
         await sendTx(
           { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve USDC for your purchase', waitForReceipt: true },
+          { description: 'Approve USDC for your purchase', waitForReceipt: true, wallet: activeWallet },
         );
       }
 
@@ -522,7 +540,7 @@ export default function MarketplacePage() {
       const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
       const receipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Purchase NFT — gas fees covered by SBS' },
+        { description: 'Purchase NFT — gas fees covered by SBS', wallet: activeWallet },
       );
       txHash = receipt.hash;
     }
@@ -552,7 +570,7 @@ export default function MarketplacePage() {
     });
 
     return txHash;
-  }, [addNotification, selectedTeam, sendTx, walletAddress, selectedWallet]);
+  }, [addNotification, selectedTeam, sendTx, walletAddress, selectedWallet, isEmbeddedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
@@ -709,8 +727,15 @@ export default function MarketplacePage() {
       const { ethers } = await import('ethers');
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
-      if (!selectedWallet) throw new Error('No wallet connected');
-      const ethereum = await selectedWallet.getEthereumProvider();
+      // Mobile external wallet: useWallets() can be empty for a logged-in user
+      // (wallet-SDK login never registers with Privy — ticket-2681). Recover
+      // the signer before giving up — same fallback the mint flow uses.
+      let activeWallet = selectedWallet;
+      if (!activeWallet && !isEmbeddedWallet && walletAddress) {
+        activeWallet = (await resolveWalletFallback(walletAddress, 'list')) as unknown as typeof selectedWallet;
+      }
+      if (!activeWallet) throw new Error('We couldn’t reach your wallet. Open your wallet app and approve the connection, then try again.');
+      const ethereum = await activeWallet.getEthereumProvider();
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
@@ -733,7 +758,7 @@ export default function MarketplacePage() {
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
       if (!isApproved) {
-        if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+        if (activeWallet.walletClientType !== 'privy') {
           // External wallet: we pay the gas — fund the exact shortfall
           // before the approval tx (can't be signature-relayed on ERC-721).
           const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
@@ -742,7 +767,7 @@ export default function MarketplacePage() {
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         const receipt = await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve marketplace to list your NFTs', waitForReceipt: true },
+          { description: 'Approve marketplace to list your NFTs', waitForReceipt: true, wallet: activeWallet },
         );
         logger.debug('[Marketplace] Approval tx:', receipt.hash);
       }
@@ -779,7 +804,7 @@ export default function MarketplacePage() {
       });
       setTxError(friendlyTxError(error, 'Couldn’t create the listing. Please try again.'));
     }
-  }, [addNotification, listPrice, listDurationSeconds, patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
+  }, [addNotification, listPrice, listDurationSeconds, patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress, isEmbeddedWallet]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -798,7 +823,13 @@ export default function MarketplacePage() {
       }
 
       const tx = await response.json();
-      if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+      // Mobile external wallet: recover the signer when useWallets() is empty
+      // (wallet-SDK login never registers with Privy — ticket-2681).
+      let activeWallet = selectedWallet;
+      if (!activeWallet && !isEmbeddedWallet) {
+        activeWallet = (await resolveWalletFallback(walletAddress, 'cancel')) as unknown as typeof selectedWallet;
+      }
+      if (activeWallet && activeWallet.walletClientType !== 'privy') {
         // External wallet: Seaport cancel must come from the lister, so we
         // pay the gas by funding the exact shortfall first.
         const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
@@ -809,7 +840,7 @@ export default function MarketplacePage() {
       // falsely log/show "cancelled" and refetch a still-active listing.
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Cancel your listing', waitForReceipt: true },
+        { description: 'Cancel your listing', waitForReceipt: true, wallet: activeWallet },
       );
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
@@ -839,7 +870,7 @@ export default function MarketplacePage() {
       setCancellingTokenId(null);
       setCancelConfirmTeam(null);
     }
-  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress, selectedWallet]);
+  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress, selectedWallet, isEmbeddedWallet]);
 
   const executeSweep = useCallback(async () => {
     if (sweepTeams.length === 0 || !walletAddress) return;
@@ -923,7 +954,13 @@ export default function MarketplacePage() {
     // External wallets sweep through the gasless relay instead: one free
     // permit signature per team, the server pays every drop of gas, and no
     // conduit approval is ever needed.
-    const externalWallet = selectedWallet && selectedWallet.walletClientType !== 'privy' ? selectedWallet : null;
+    // Mobile external wallet: recover the signer when useWallets() is empty
+    // (wallet-SDK login never registers with Privy — ticket-2681).
+    let sweepWallet = selectedWallet;
+    if (!sweepWallet && !isEmbeddedWallet) {
+      sweepWallet = (await resolveWalletFallback(walletAddress, 'sweep')) as unknown as typeof selectedWallet;
+    }
+    const externalWallet = sweepWallet && sweepWallet.walletClientType !== 'privy' ? sweepWallet : null;
 
     // would revert. Approve max once up front (gas-sponsored + invisible for
     // embedded web2 wallets); after this it never re-prompts.
@@ -1020,7 +1057,7 @@ export default function MarketplacePage() {
     refetchListings();
     refetchMyNfts();
     refetchActivity();
-  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress, selectedWallet]);
+  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress, selectedWallet, isEmbeddedWallet]);
 
   const handleCancel = useCallback((team: MarketplaceTeam | null) => setCancelConfirmTeam(team), []);
 
