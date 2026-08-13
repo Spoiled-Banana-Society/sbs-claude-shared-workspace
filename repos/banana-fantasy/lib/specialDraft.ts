@@ -144,7 +144,11 @@ export async function ensureSpecialDraftSeat(
         // The engine reads it back at fill for the "(from Wheel)"/"(from Promo)"
         // suffix — a promo round used to announce itself as a wheel win. Same
         // default as roundSource(): an untagged round is a wheel round.
-        const source = round?.source ?? 'wheel';
+        // 'atb' is a QUEUE-level segregation tag (Around The Banana rounds
+        // accept only ATB winners); the Go league itself is promo-origin so
+        // the room reads "(from Promo)" like every promo special.
+        const rawSource = round?.source ?? 'wheel';
+        const source = rawSource === 'atb' ? 'promo' : rawSource;
         const res = await goPost('/staging/create-special-draft', { type, wallets, roundId, source });
         if (!res.ok) {
           const text = await res.text().catch(() => '');

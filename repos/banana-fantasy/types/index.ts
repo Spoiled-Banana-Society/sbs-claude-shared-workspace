@@ -553,7 +553,7 @@ export interface QueueMember {
  *  SEPARATE rounds so a 0.1%-wedge winner never shares a draft with a Banana
  *  Draw grantee (Richard, 2026-07-30). Untagged legacy rounds read as 'wheel' —
  *  every pre-existing jackpot/hof round is wheel-origin. */
-export type QueueRoundSource = 'wheel' | 'promo';
+export type QueueRoundSource = 'wheel' | 'promo' | 'atb';
 
 export interface QueueRound {
   roundId: number;

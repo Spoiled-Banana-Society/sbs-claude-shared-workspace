@@ -40,6 +40,11 @@ import type { Promo } from '@/types';
 export const ATB_PROMO_ID = 'around-the-banana';
 /** First N players to cover all 10 slots win. Richard's opener: 10. */
 export const ATB_SEATS_TOTAL = 10;
+/** Lifetime winner cap across both lobbies (Boris 2026-08-12): winners 1-9
+ *  drafted in Jackpot #41 (with one pre-existing promo-seat holder); winner
+ *  #10 opens the SECOND, ATB-only lobby as its seat 1, and nine more (11-19)
+ *  fill it. At 19 the promo is done. */
+export const ATB_TOTAL_WINNER_CAP = 19;
 /**
  * Drafts revealed before this never count — the race starts fresh at launch,
  * it is NOT a lookup of who already happens to hold all 10 slots historically.
@@ -73,7 +78,54 @@ export async function getAtbSeatCount(): Promise<{ claimed: number; total: numbe
   if (!isFirestoreConfigured()) return { claimed: 0, total: ATB_SEATS_TOTAL };
   const snap = await getAdminFirestore().collection(STATE_COLLECTION).doc(STATE_DOC).get();
   const winners = (snap.data()?.winners ?? []) as AtbWinner[];
-  return { claimed: winners.length, total: ATB_SEATS_TOTAL };
+  // Lobby-relative counter (Boris 2026-08-12): batch one counts winners 1-9
+  // against 10 (the 10th chair of lobby one went to a pre-existing promo
+  // seat); from winner #10 on, the card shows LOBBY TWO's count — winner #10
+  // reads "1/10 seats", the race resets, and 9 more chairs remain.
+  const claimed = winners.length <= 9 ? winners.length : winners.length - 9;
+  return { claimed, total: ATB_SEATS_TOTAL };
+}
+
+/**
+ * Lobby-two reset (Boris 2026-08-12): when winner #10 takes seat 1 of the
+ * second lobby, everyone else starts from scratch. Clears each racer's
+ * atbSlotsHit / progressCurrent / completed-without-seat stamps. Deliberately
+ * KEEPS atbSeenDraftIds (old drafts must never re-credit slots into the new
+ * race) and every winner's atbWonAt/atbSeatNumber (their card keeps showing
+ * the seat they won). Marker-guarded on the state doc — runs once, ever.
+ */
+export async function resetAllLapsForLobbyTwo(): Promise<void> {
+  const db = getAdminFirestore();
+  const stateRef = db.collection(STATE_COLLECTION).doc(STATE_DOC);
+  const claimed = await db.runTransaction(async (tx) => {
+    const s = (await tx.get(stateRef)).data() ?? {};
+    if (s.lobbyTwoResetAt) return false;
+    tx.set(stateRef, { lobbyTwoResetAt: new Date().toISOString() }, { merge: true });
+    return true;
+  });
+  if (!claimed) return;
+
+  const snap = await db.collectionGroup('promos').get();
+  let cleared = 0;
+  for (const d of snap.docs) {
+    if (d.id !== ATB_PROMO_ID) continue;
+    const mc = (d.data().modalContent ?? {}) as Record<string, unknown>;
+    const hasProgress = Array.isArray(mc.atbSlotsHit) && (mc.atbSlotsHit as number[]).length > 0;
+    if (!hasProgress && !mc.atbCompletedAt) continue;
+    const update: Record<string, unknown> = {
+      progressCurrent: 0,
+      'modalContent.atbSlotsHit': [],
+    };
+    if (!mc.atbWonAt) {
+      // Completed-but-seatless racers rejoin from zero like everyone else.
+      update['modalContent.atbCompletedAt'] = FieldValue.delete();
+      update['modalContent.atbCompletedDraftName'] = FieldValue.delete();
+    }
+    await d.ref.update(update).catch((err) =>
+      logger.warn('atb.lobby2_reset_doc_failed', { doc: d.ref.path, err: String(err) }));
+    cleared++;
+  }
+  logger.info('atb.lobby2_reset_done', { cleared });
 }
 
 export async function getAtbWinners(): Promise<AtbWinner[]> {
@@ -142,10 +194,11 @@ export async function recordAroundTheBanana(
       (update.modalContent as Record<string, unknown>).atbCompletedDraftName = draftName;
       const winners = (stateSnap.data()?.winners ?? []) as AtbWinner[];
       const alreadyWon = winners.some((w) => w.userId === userId);
-      if (!alreadyWon && winners.length < ATB_SEATS_TOTAL) {
+      if (!alreadyWon && winners.length < ATB_TOTAL_WINNER_CAP) {
         wonSeat = winners.length + 1;
         (update.modalContent as Record<string, unknown>).atbWonAt = nowIso;
-        (update.modalContent as Record<string, unknown>).atbSeatNumber = wonSeat;
+        // Display seat is lobby-relative: winner #10 = seat 1 of lobby two.
+        (update.modalContent as Record<string, unknown>).atbSeatNumber = wonSeat >= 10 ? wonSeat - 9 : wonSeat;
         tx.set(stateRef, {
           winners: FieldValue.arrayUnion({
             userId, seat: wonSeat, at: nowIso, seatGranted: false,
@@ -165,6 +218,13 @@ export async function recordAroundTheBanana(
     // already durably recorded in winners[] for a hand re-run.
     await awardAtbSeat(userId, result.wonSeat)
       .catch((err) => logger.error('atb.seat_failed', { userId, seat: result.wonSeat, err: String(err) }));
+    // Winner #10 opens lobby two (Boris 2026-08-12): the very moment they're
+    // seated, EVERY racer's lap resets to 0/10 — fresh race for the last 9
+    // chairs. Awaited + marker-guarded (once ever).
+    if (result.wonSeat === 10) {
+      await resetAllLapsForLobbyTwo()
+        .catch((err) => logger.error('atb.lobby2_reset_failed', { err: String(err) }));
+    }
     pushStreamEventBg(userId, 'promo-around-the-banana', {
       draftId, slot, seatNumber: result.wonSeat, source: 'around-the-banana',
     });
@@ -211,7 +271,7 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
       const tokenId = res.tokenIds[0];
       if (tokenId) {
         const { joinQueueWithToken } = await import('@/lib/db');
-        const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackpot', String(tokenId), 'promo');
+        const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackpot', String(tokenId), seat >= 10 ? 'atb' : 'promo');
         if (joinedRoundId !== null) {
           const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
           await ensureSpecialDraftSeat('jackpot', joinedRoundId, winnerId);
@@ -231,7 +291,7 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
     await db.collection('v2_users').doc(winnerId)
       .set({ jackpotEntries: FieldValue.increment(1) }, { merge: true });
     const { joinQueue } = await import('@/lib/db');
-    const { joinedRoundIds } = await joinQueue(winnerId, 'jackpot', 'promo');
+    const { joinedRoundIds } = await joinQueue(winnerId, 'jackpot', seat >= 10 ? 'atb' : 'promo');
     const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
     for (const rid of joinedRoundIds) await ensureSpecialDraftSeat('jackpot', rid, winnerId);
     logger.warn('atb.seated_legacy_no_token', { winnerId, seat, rounds: joinedRoundIds });
