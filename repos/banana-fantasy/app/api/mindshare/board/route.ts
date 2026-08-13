@@ -44,12 +44,15 @@ export async function GET(req: Request) {
       rank: i + 1,
     }));
 
-    // Viewer row
+    // Viewer row — the persisted X-link store is v2_twitter_links (keyed by
+    // twitterId, walletAddress lowercased). v2_users.xHandle is client-memory
+    // only and is NEVER written to Firestore (verified 8/13: 0 of 1,435 docs).
     const wallet = (getSearchParam(req, 'wallet') ?? '').toLowerCase();
     let you: { handle: string | null; linked: boolean; rank: number | null; score: number; pct: number } | null = null;
     if (/^0x[0-9a-f]{40}$/.test(wallet)) {
-      const userSnap = await db.collection('v2_users').doc(wallet).get();
-      const rawHandle = userSnap.exists ? String(userSnap.data()?.xHandle ?? '') : '';
+      const linkSnap = await db.collection('v2_twitter_links')
+        .where('walletAddress', '==', wallet).limit(1).get();
+      const rawHandle = linkSnap.empty ? '' : String(linkSnap.docs[0].data()?.twitterHandle ?? '');
       const handle = rawHandle.replace(/^@/, '');
       if (!handle) {
         you = { handle: null, linked: false, rank: null, score: 0, pct: 0 };
@@ -66,18 +69,20 @@ export async function GET(req: Request) {
       }
     }
 
-    // Zero-state: real linked handles so the board has tiles to shuffle at 0.
+    // Zero-state: real linked handles (v2_twitter_links) so the board has
+    // tiles to shuffle at 0, bots excluded via their walletAddress.
     const zeroTiles: string[] = [];
     if (tiles.length < 6) {
-      const [usersSnap, botsSnap] = await Promise.all([
-        db.collection('v2_users').select('xHandle').limit(2000).get(),
+      const [linksSnap, botsSnap] = await Promise.all([
+        db.collection('v2_twitter_links').select('twitterHandle', 'walletAddress').limit(1000).get(),
         db.collection('botWallets').select().get(),
       ]);
       const bots = new Set(botsSnap.docs.map((d) => d.id.toLowerCase()));
       const seen = new Set(ranked.map((t) => t.key));
-      for (const doc of usersSnap.docs) {
-        if (bots.has(doc.id.toLowerCase())) continue;
-        const h = String(doc.data()?.xHandle ?? '').replace(/^@/, '');
+      for (const doc of linksSnap.docs) {
+        const w = String(doc.data()?.walletAddress ?? '').toLowerCase();
+        if (w && bots.has(w)) continue;
+        const h = String(doc.data()?.twitterHandle ?? '').replace(/^@/, '');
         if (!h || seen.has(h.toLowerCase())) continue;
         seen.add(h.toLowerCase());
         zeroTiles.push(h);
