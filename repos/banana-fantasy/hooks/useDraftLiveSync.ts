@@ -288,6 +288,32 @@ export function useDraftLiveSync({
             draftStore.updateDraft(newId, { cardId: draftRoom.cardId });
           }
 
+          // Post-join bookkeeping, same as useEnterDraft's: the Go join above
+          // consumed the real token, so sync the Firestore mirror and write the
+          // draft_entered activity row. This fallback join path never did this,
+          // so entries landing here were INVISIBLE in the profile Activity feed
+          // (part of AceJohn's "not capturing all activity", ticket-2681).
+          // Fire-and-forget — the user is already seated; the mirror self-heals
+          // on the next balance read if this is lost.
+          void fetch('/api/owner/use-pass', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: walletParam,
+              passType: passTypeParam || 'paid',
+              speed: speedParam || 'fast',
+              leagueId: newId,
+              joined: true,
+            }),
+          }).catch((err) => {
+            reportClientError({
+              source: 'draft.enter.bookkeep_fail',
+              message: `fallback-join bookkeeping failed: ${err instanceof Error ? err.message : String(err)}`,
+              route: 'draft-room', actor: walletParam,
+              context: { leagueId: newId, passType: passTypeParam || 'paid', via: 'useDraftLiveSync' },
+            });
+          });
+
           return;
         } catch (err) {
           lastErr = err;

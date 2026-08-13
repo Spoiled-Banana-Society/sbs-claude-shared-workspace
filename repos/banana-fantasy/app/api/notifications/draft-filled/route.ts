@@ -196,13 +196,24 @@ export async function POST(req: NextRequest) {
       await Promise.allSettled(wallets.map(async (w) => {
         const wallet = w.toLowerCase();
         const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
-        if (passType !== 'paid') return;
+        // The feed row is written for EVERY member, stamped with the pass type
+        // they actually used. It used to be paid-only, which made free players'
+        // fills invisible in their profile Activity (AceJohn ticket-2681).
+        // King-of-Drafts is unaffected: tallyKingDrafts counts only
+        // metadata.passType === 'paid' rows, and the admin stats fold dedupes
+        // draftsFilled by draftId.
         await logActivityEvent({
           type: 'draft_filled',
           userId: wallet,
           walletAddress: wallet,
-          metadata: { draftId, passType: 'paid', source: 'fill_webhook' },
+          paymentMethod: passType === 'free' ? 'free' : null,
+          // passType omitted entirely when the resolve failed (null) — never
+          // guess: a wrong FREE stamp on a paid member's row is worse than no
+          // chip, and King's paid-filter must only ever see true stamps.
+          metadata: { draftId, ...(passType ? { passType } : {}), source: 'fill_webhook' },
         }).catch((err) => logger.warn('notifications.draft_filled.activity_log_failed', { draftId, wallet, err: String(err) }));
+        // Ripeness tiers stay PAID-only — that's their definition.
+        if (passType !== 'paid') return;
         await computeAndStoreRipeness(wallet, await fetchOwnerPaidFilledCount(wallet))
           .catch((err) => logger.warn('notifications.draft_filled.ripeness_failed', { draftId, wallet, err: String(err) }));
       }));

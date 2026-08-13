@@ -19,6 +19,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_left: 'Left draft',
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
+  marketplace_bought: 'Bought',
   cashout_completed: 'Cashed out',
   // Presence events exist for the ADMIN live feed only — hidden below.
   user_signed_up: 'Account created',
@@ -40,6 +41,7 @@ const TYPE_ICON: Record<ActivityEventType, string> = {
   draft_left: 'undo',
   draft_won: 'trophy',
   marketplace_sold: 'banknote',
+  marketplace_bought: 'bag',
   cashout_completed: 'banknote',
   user_signed_up: 'check',
   user_returned: 'check',
@@ -67,9 +69,27 @@ function labelFor(e: LiveActivityEvent): string {
   return TYPE_LABEL[e.type];
 }
 
-function leagueShort(e: LiveActivityEvent): string {
-  const id = String(e.metadata?.leagueId ?? '');
-  return id ? id.slice(0, 8) : '';
+// Human-readable league name from the raw id. Draft ids look like
+// "2026-fast-draft-161" — the old 8-char truncation rendered that as the
+// useless "League 2026-fas" (AceJohn ticket-2681). Parse the speed + number
+// out when the id matches; anything else (private leagues, future formats)
+// falls back to the raw id so the row is never blank.
+function leagueLabel(e: LiveActivityEvent): string {
+  const id = String(e.metadata?.leagueId ?? e.metadata?.draftId ?? '');
+  if (!id) return '';
+  const m = id.match(/(fast|slow)-draft-(\d+)/i);
+  if (m) return `${m[1].toLowerCase() === 'slow' ? 'Slow' : 'Fast'} Draft #${m[2]}`;
+  return `League ${id}`;
+}
+
+// "Paid pass" / "Free pass" chip for draft rows — the whole reason users
+// couldn't tell which pass a draft entry used (AceJohn ticket-2681). The
+// pass type is stamped in metadata.passType by use-pass / refund-pass / the
+// fill webhook off the authoritative token, so render it wherever present.
+function passChip(e: LiveActivityEvent): 'paid' | 'free' | null {
+  if (e.type !== 'draft_entered' && e.type !== 'draft_left' && e.type !== 'draft_filled') return null;
+  const p = String(e.metadata?.passType ?? '');
+  return p === 'paid' ? 'paid' : p === 'free' ? 'free' : null;
 }
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
@@ -82,6 +102,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_left: 'text-gray-400',
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
+  marketplace_bought: 'text-cyan-300',
   cashout_completed: 'text-green-300',
   user_signed_up: 'text-gray-400',
   user_returned: 'text-gray-400',
@@ -136,14 +157,12 @@ function describe(e: LiveActivityEvent): string {
       if (spins > 0) return `${spins} wheel spin${spins !== 1 ? 's' : ''} (${promoType})`;
       return `${promoType} reward`;
     }
-    case 'draft_entered': {
-      const lg = leagueShort(e);
-      return lg ? `League ${lg}` : '';
-    }
+    case 'draft_entered':
+      return leagueLabel(e);
     case 'draft_filled':
       return 'Your draft filled — drafting begins';
     case 'draft_left':
-      return '';
+      return leagueLabel(e);
     case 'draft_won': {
       const amount = Number(e.metadata?.amount);
       return Number.isFinite(amount) ? `Won $${amount.toLocaleString()}` : 'Draft win';
@@ -151,6 +170,10 @@ function describe(e: LiveActivityEvent): string {
     case 'marketplace_sold': {
       const price = Number(e.metadata?.price);
       return Number.isFinite(price) ? `Sold for $${price.toLocaleString()}` : 'Marketplace sale';
+    }
+    case 'marketplace_bought': {
+      const price = Number(e.metadata?.price);
+      return Number.isFinite(price) ? `Bought for $${price.toLocaleString()}` : 'Marketplace purchase';
     }
     case 'cashout_completed': {
       // Prefer Coinbase's settled USD (what actually landed in the user's
@@ -284,6 +307,7 @@ export function ActivityHistory({
 function ActivityRow({ event }: { event: LiveActivityEvent }) {
   const tx = event.txHash ? `https://basescan.org/tx/${event.txHash}` : null;
   const detail = describe(event);
+  const chip = passChip(event);
   return (
     <div className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
       {/* Clean line-icon, muted grey — same language as the notification bell. */}
@@ -293,6 +317,17 @@ function ActivityRow({ event }: { event: LiveActivityEvent }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className={`text-xs font-semibold ${TYPE_COLOR[event.type]}`}>{labelFor(event)}</p>
+          {chip && (
+            <span
+              className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full border ${
+                chip === 'paid'
+                  ? 'text-emerald-300 bg-emerald-400/10 border-emerald-400/20'
+                  : 'text-[#fbbf24] bg-[#fbbf24]/10 border-[#fbbf24]/20'
+              }`}
+            >
+              {chip === 'paid' ? 'Paid' : 'Free'}
+            </span>
+          )}
           <p className="text-white/20 text-[10px]">{formatWhen(event.createdAt, event.createdAtIso)}</p>
         </div>
         {detail && <p className="text-white/70 text-xs truncate">{detail}</p>}
