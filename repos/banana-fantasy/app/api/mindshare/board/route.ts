@@ -60,7 +60,7 @@ export async function GET(req: Request) {
           score: (Number(t.attention) || 0) + (Number(t.refBonus) || 0),
         };
       })
-      .filter((t) => !EXCLUDED_HANDLES.has(t.key))
+      .filter((t) => !EXCLUDED_HANDLES.has(t.key) && t.score > 0) // zero-score tweeters don't clutter the board
       .sort((a, b) => b.score - a.score);
     const total = ranked.reduce((s, t) => s + t.score, 0);
 

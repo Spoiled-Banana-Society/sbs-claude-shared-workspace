@@ -62,25 +62,48 @@ function useCountdown(targetMs: number | null): string {
   return `${d > 0 ? `${d}d ` : ''}${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
 }
 
-// Binary-split treemap: stable, animates well with absolutely-positioned tiles.
+// Squarified treemap (Bruls et al.) — keeps tiles near-square instead of the
+// skinny slivers a naive binary split produces (Richard 8/13: "why does this
+// look so ugly"). Items must be sorted by weight desc.
 interface Rect { x: number; y: number; w: number; h: number }
-function layoutTreemap(items: Array<{ key: string; weight: number }>, rect: Rect, out: Array<{ key: string } & Rect>) {
-  if (!items.length) return;
-  if (items.length === 1) { out.push({ key: items[0].key, ...rect }); return; }
-  const total = items.reduce((s, it) => s + it.weight, 0) || 1;
-  let acc = 0; let cut = 1;
-  for (let i = 0; i < items.length - 1; i++) {
-    acc += items[i].weight; cut = i + 1;
-    if (acc >= total / 2) break;
+function worstAspect(areas: number[], totalArea: number, side: number): number {
+  const thickness = totalArea / side;
+  let worst = 0;
+  for (const a of areas) {
+    const len = a / thickness;
+    worst = Math.max(worst, thickness / len, len / thickness);
   }
-  const fa = acc / total;
-  const a = items.slice(0, cut); const b = items.slice(cut);
-  if (rect.w >= rect.h) {
-    layoutTreemap(a, { ...rect, w: rect.w * fa }, out);
-    layoutTreemap(b, { x: rect.x + rect.w * fa, y: rect.y, w: rect.w * (1 - fa), h: rect.h }, out);
-  } else {
-    layoutTreemap(a, { ...rect, h: rect.h * fa }, out);
-    layoutTreemap(b, { x: rect.x, y: rect.y + rect.h * fa, w: rect.w, h: rect.h * (1 - fa) }, out);
+  return worst;
+}
+function layoutTreemap(items: Array<{ key: string; weight: number }>, rect: Rect, out: Array<{ key: string } & Rect>) {
+  if (!items.length || rect.w <= 0 || rect.h <= 0) return;
+  const totalW = items.reduce((s, it) => s + it.weight, 0) || 1;
+  const scale = (rect.w * rect.h) / totalW;
+  const areas = items.map((it) => ({ key: it.key, area: Math.max(it.weight * scale, 1) }));
+  let { x, y, w, h } = rect;
+  let i = 0;
+  while (i < areas.length && w > 0.5 && h > 0.5) {
+    const side = Math.min(w, h);
+    const row: typeof areas = [];
+    let rowArea = 0;
+    let worst = Infinity;
+    while (i < areas.length) {
+      const cand = areas[i];
+      const nextWorst = worstAspect(row.concat(cand).map((r) => r.area), rowArea + cand.area, side);
+      if (row.length === 0 || nextWorst <= worst) {
+        row.push(cand); rowArea += cand.area; worst = nextWorst; i++;
+      } else break;
+    }
+    const thickness = Math.min(rowArea / side, Math.max(w, h));
+    if (w >= h) {
+      let yy = y;
+      for (const it of row) { const hh = (it.area / rowArea) * h; out.push({ key: it.key, x, y: yy, w: thickness, h: hh }); yy += hh; }
+      x += thickness; w -= thickness;
+    } else {
+      let xx = x;
+      for (const it of row) { const ww = (it.area / rowArea) * w; out.push({ key: it.key, x: xx, y, w: ww, h: thickness }); xx += ww; }
+      y += thickness; h -= thickness;
+    }
   }
 }
 
@@ -131,8 +154,10 @@ export default function MindsharePage() {
   const tileItems: Array<{ key: string; label: string; pct: number | null; weight: number; rank: number | null }> = [];
   if (board) {
     if (!zeroState) {
+      // Visual damping (^0.6): the leader stays clearly biggest without one
+      // hot account swallowing half the screen. Labels show the true pct.
       for (const t of board.tiles) {
-        tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight: Math.max(t.score, 1), rank: t.rank });
+        tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight: Math.pow(Math.max(t.score, 1), 0.6), rank: t.rank });
       }
     } else {
       const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))];
@@ -191,20 +216,23 @@ export default function MindsharePage() {
             if (!t) return null;
             const isYou = youKey !== null && r.key === youKey;
             const isKing = !zeroState && t.rank === 1;
-            const tiny = r.w < 92 || r.h < 60;
+            const big = r.w >= 190 && r.h >= 140;
+            const tiny = r.w < 92 || r.h < 58;
             return (
               <div
                 key={r.key}
-                className={`absolute rounded-lg border p-2 overflow-hidden transition-all duration-700 ease-out ${isKing
+                className={`absolute rounded-xl border overflow-hidden transition-all duration-700 ease-out ${isKing
                   ? 'bg-banana border-banana'
-                  : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''}`}
-                style={{ left: r.x + 2, top: r.y + 2, width: Math.max(r.w - 4, 0), height: Math.max(r.h - 4, 0) }}
+                  : (t.rank !== null && t.rank <= 3)
+                    ? 'bg-banana/[0.14] border-banana/30'
+                    : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
+                style={{ left: r.x + 3, top: r.y + 3, width: Math.max(r.w - 6, 0), height: Math.max(r.h - 6, 0) }}
               >
-                <div className={`font-bold truncate ${tiny ? 'text-[10px]' : 'text-[12px]'} ${isKing ? 'text-black' : 'text-white/80'}`}>
+                <div className={`font-bold truncate ${tiny ? 'text-[10px]' : big ? 'text-[14px]' : 'text-[12px]'} ${isKing ? 'text-black' : 'text-white/80'}`}>
                   {t.label}{isYou ? ' · YOU' : ''}
                 </div>
                 {!tiny && (
-                  <div className={`font-extrabold tabular-nums mt-1 ${isKing ? 'text-black text-2xl' : 'text-white text-lg'}`}>
+                  <div className={`font-extrabold tabular-nums mt-1 ${isKing ? 'text-black' : 'text-white'} ${big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
                     {t.pct === null ? '0%' : `${t.pct}%`}
                   </div>
                 )}
