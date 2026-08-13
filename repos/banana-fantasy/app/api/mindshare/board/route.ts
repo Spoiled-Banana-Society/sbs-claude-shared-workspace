@@ -11,7 +11,7 @@
  * zero (Richard 8/13: people should see how it works even at all-zeros).
  */
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { getOrInitState, WEEKS_COLLECTION } from '@/lib/mindshare';
+import { getOrInitState, WEEKS_COLLECTION, EXCLUDED_HANDLES } from '@/lib/mindshare';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +35,7 @@ export async function GET(req: Request) {
           score: (Number(t.attention) || 0) + (Number(t.refBonus) || 0),
         };
       })
+      .filter((t) => !EXCLUDED_HANDLES.has(t.key))
       .sort((a, b) => b.score - a.score);
     const total = ranked.reduce((s, t) => s + t.score, 0);
     const tiles: TileOut[] = ranked.slice(0, 25).map((t, i) => ({

@@ -29,6 +29,10 @@ export const STATE_DOC = 'mindshare_state/live';
 
 const API_BASE = 'https://api.twitterapi.io';
 const SEARCH_QUERY = '@SBSFantasy -from:SBSFantasy';
+
+/** House accounts never compete on the board (Richard 8/13: "take away
+ *  boris vagner and rich vagner lmao"). Lowercased handles. */
+export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner']);
 const MAX_SEARCH_PAGES = 3;
 const REFRESH_BATCH = 60; // recent tweets whose metrics we re-pull per scan
 const MS_DAY = 86_400_000;
@@ -242,8 +246,9 @@ async function rescoreWeek(weekId: string, nowMs: number): Promise<{ tiles: numb
   const byAuthor = new Map<string, { handle: string; perDay: Map<string, number[]>; tweets: number }>();
   for (const doc of snap.docs) {
     const t = doc.data() as RawTweet;
-    const pts = tweetPoints(t, nowMs);
     const key = t.authorHandle.toLowerCase();
+    if (EXCLUDED_HANDLES.has(key)) continue;
+    const pts = tweetPoints(t, nowMs);
     let a = byAuthor.get(key);
     if (!a) { a = { handle: t.authorHandle, perDay: new Map(), tweets: 0 }; byAuthor.set(key, a); }
     a.tweets += 1;
