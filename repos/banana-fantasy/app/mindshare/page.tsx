@@ -156,11 +156,14 @@ export default function MindsharePage() {
     if (!zeroState) {
       // Visual damping (^0.6): the leader stays clearly biggest without one
       // hot account swallowing half the screen. Labels show the true pct.
-      for (const t of board.tiles) {
+      // Map shows TOP 10 ONLY — every tile must be big enough for a name AND
+      // a percent (Richard 8/13: no "@…" slivers, no percentless boxes). The
+      // full 25 live in the leaderboard list.
+      for (const t of board.tiles.slice(0, 10)) {
         tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight: Math.pow(Math.max(t.score, 1), 0.6), rank: t.rank });
       }
     } else {
-      const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))];
+      const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))].slice(0, 18);
       // Deterministic-ish rotation per tick — motion without randomness jitter.
       for (let i = 0; i < names.length; i++) {
         const j = (i + shuffleTick) % names.length;
@@ -217,7 +220,7 @@ export default function MindsharePage() {
             const isYou = youKey !== null && r.key === youKey;
             const isKing = !zeroState && t.rank === 1;
             const big = r.w >= 190 && r.h >= 140;
-            const tiny = r.w < 92 || r.h < 58;
+            const tiny = r.w < 74 || r.h < 48; // with the top-10 cap this should never trigger — safety only
             return (
               <div
                 key={r.key}
