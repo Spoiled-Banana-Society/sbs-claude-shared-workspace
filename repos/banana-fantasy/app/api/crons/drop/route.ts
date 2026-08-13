@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { runDropSchedule } from '@/lib/dropRun';
 import { runJpWindowBells } from '@/lib/jpWindowBells';
 import { runBuyBonusRetirementSweep } from '@/lib/buyBonusSweep';
+import { runLaneRolloverGuard } from '@/lib/laneRolloverGuard';
 import { ADMIN_PREVIEW_PROMO_TYPES } from '@/lib/promoFilter';
 
 /**
@@ -40,11 +41,17 @@ export async function GET(req: Request) {
     logger.error('buybonus_sweep.cron_failed', { err: (err as Error).message });
     return { ok: false };
   });
+  // Lane rollover guard — read-only detection each tick; heals + bells Boris
+  // only on the exact stuck signature (see lib/laneRolloverGuard).
+  const laneGuard = await runLaneRolloverGuard().catch((err) => {
+    logger.error('lane_guard.cron_failed', { err: (err as Error).message });
+    return { ok: false };
+  });
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('drop')) {
-    return json({ ok: true, held: 'admin-preview', jpBells, buyBonusSweep });
+    return json({ ok: true, held: 'admin-preview', jpBells, buyBonusSweep, laneGuard });
   }
   try {
-    return json({ ...(await runDropSchedule(Date.now())), jpBells, buyBonusSweep });
+    return json({ ...(await runDropSchedule(Date.now())), jpBells, buyBonusSweep, laneGuard });
   } catch (err) {
     logger.error('drop.cron_failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);
