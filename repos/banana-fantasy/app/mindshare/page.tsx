@@ -22,8 +22,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
-interface BoardTile { handle: string; score: number; pct: number; rank: number }
-interface BoardYou { handle: string | null; linked: boolean; rank: number | null; score: number; pct: number }
+interface BoardTile { handle: string; display: string; score: number; pct: number; rank: number }
+interface BoardYou { handle: string | null; display: string | null; linked: boolean; rank: number | null; score: number; pct: number }
 interface BoardState {
   week: { id: string; startsAtMs: number; endsAtMs: number };
   total: number;
@@ -132,10 +132,10 @@ export default function MindsharePage() {
   if (board) {
     if (!zeroState) {
       for (const t of board.tiles) {
-        tileItems.push({ key: t.handle.toLowerCase(), label: t.handle, pct: t.pct, weight: Math.max(t.score, 1), rank: t.rank });
+        tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight: Math.max(t.score, 1), rank: t.rank });
       }
     } else {
-      const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.handle))];
+      const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))];
       // Deterministic-ish rotation per tick — motion without randomness jitter.
       for (let i = 0; i < names.length; i++) {
         const j = (i + shuffleTick) % names.length;
@@ -201,7 +201,7 @@ export default function MindsharePage() {
                 style={{ left: r.x + 2, top: r.y + 2, width: Math.max(r.w - 4, 0), height: Math.max(r.h - 4, 0) }}
               >
                 <div className={`font-bold truncate ${tiny ? 'text-[10px]' : 'text-[12px]'} ${isKing ? 'text-black' : 'text-white/80'}`}>
-                  @{t.label}{isYou ? ' · YOU' : ''}
+                  {t.label}{isYou ? ' · YOU' : ''}
                 </div>
                 {!tiny && (
                   <div className={`font-extrabold tabular-nums mt-1 ${isKing ? 'text-black text-2xl' : 'text-white text-lg'}`}>
@@ -233,7 +233,7 @@ export default function MindsharePage() {
                 className={`flex items-center gap-2.5 px-4 py-2 border-b border-white/[0.05] text-[13px] ${youKey === t.handle.toLowerCase() ? 'bg-banana/10' : ''}`}
               >
                 <span className="w-6 text-banana font-bold tabular-nums">{t.rank}</span>
-                <span className="flex-1 min-w-0 truncate text-white/85 font-medium">@{t.handle}</span>
+                <span className="flex-1 min-w-0 truncate text-white/85 font-medium">{t.display}</span>
                 <span className="font-bold tabular-nums text-white">{t.pct}%</span>
               </div>
             ))}
