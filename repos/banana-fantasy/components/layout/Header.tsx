@@ -15,7 +15,10 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
 import { AddFundsModal } from '../modals/AddFundsModal';
+import { FirstPurchaseClaimModal } from '../modals/FirstPurchaseClaimModal';
+import { API_CONFIG } from '@/lib/api/config';
 import { useDropMe } from '@/hooks/useDropMe';
+import { totalSpins } from '@/lib/spinTypes';
 
 // ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
 const HEADER_SPOKES: [number, number][] = [
@@ -45,7 +48,7 @@ function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: 
   );
 }
 // THE DROP pack: clean rounded pack with the gold band on the diagonal — the
-// one gold accent, matching the ticket count. Richard 2026-08-07: no zigzag
+// neutral grey band (Boris 2026-08-07: gold stood out as the only color in the icon row). Richard 2026-08-07: no zigzag
 // crimp edge, just the rectangle + band. Flat strokes only, no glow.
 function HeaderPack({ size = 28 }: { size?: number }) {
   return (
@@ -56,7 +59,7 @@ function HeaderPack({ size = 28 }: { size?: number }) {
         </clipPath>
       </defs>
       {/* the gold BANANA PACK band, wrapping edge to edge (clipped to the body) */}
-      <line x1="1" y1="24" x2="29" y2="13" stroke="#fbbf24" strokeWidth="5" opacity="0.9" clipPath="url(#hdr-pack-clip)" />
+      <line x1="1" y1="24" x2="29" y2="13" stroke="rgba(255,255,255,0.32)" strokeWidth="5" clipPath="url(#hdr-pack-clip)" />
       <rect x="4" y="3" width="22" height="30" rx="3" stroke="rgba(255,255,255,0.62)" strokeWidth="2.2" />
     </svg>
   );
@@ -89,6 +92,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // Deposit bankroll balance chip (flag-gated). Pure read of the
   // useAuth-polled wallet USDC — NO fetching of its own (Rule #0).
   const [showAddFunds, setShowAddFunds] = useState(false);
+  const [fpClaim, setFpClaim] = useState<{ variant: 'new' | 'returning' | 'kickoff'; depositUsd?: number } | null>(null);
   useEffect(() => {
     if (!stillResolving) { setResolveTimedOut(false); return; }
     const t = setTimeout(() => setResolveTimedOut(true), 8000);
@@ -110,29 +114,17 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // (user.createdAt is stamped at load time, not at signup). If storage is
   // unavailable (private mode) we just show it — erring toward helping a new
   // user beats hiding it.
-  const [showFaqNav, setShowFaqNav] = useState(false);
-  useEffect(() => {
-    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-    try {
-      const KEY = 'sbs-faq-nav-first-seen';
-      let firstSeen = Number(localStorage.getItem(KEY));
-      if (!firstSeen || Number.isNaN(firstSeen)) {
-        firstSeen = Date.now();
-        localStorage.setItem(KEY, String(firstSeen));
-      }
-      setShowFaqNav(Date.now() - firstSeen < WEEK_MS);
-    } catch {
-      setShowFaqNav(true);
-    }
-  }, []);
-
   // Nav items — desktop only
   const navItems = [
     { href: '/draft', label: 'Draft', tooltip: 'View active drafts', auth: false },
     { href: '/teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
-    // FAQ rides along for a visitor's first week only (see showFaqNav above).
-    ...(showFaqNav ? [{ href: '/faq', label: 'FAQ', tooltip: 'New here? How SBS works', auth: false }] : []),
+    // Banana X Mindshare (Richard 2026-08-13): nav label is just "X" — the
+    // live attention board. Text link, not an icon (his pick over icon-row).
+    { href: '/mindshare', label: 'X', tooltip: 'Banana X Mindshare: top 25 win every Thursday night', auth: false },
+    // FAQ shown for ALL users on desktop (Boris 2026-07-23), right after Promos
+    // — links to the same /faq page as the profile-dropdown FAQ.
+    { href: '/faq', label: 'FAQ', tooltip: 'How SBS works', auth: false },
     // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
     // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in
     // the profile menu — so they no longer clutter the top nav.
@@ -154,7 +146,11 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         <div className="flex items-center justify-between h-14 md:h-16">
           {/* Left side: Logo + Desktop Navigation */}
           <div className="flex items-center gap-2">
-            <Logo size="lg" compactMobile />
+            {/* shrink-0 so the header pills can never squeeze the logo smaller
+                on mobile (Boris 2026-07-23). */}
+            <span className="shrink-0">
+              <Logo size="lg" compactMobile />
+            </span>
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
@@ -308,7 +304,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         <p className="font-semibold">Banana Wheel</p>
                         {isLoggedIn && user ? (
                           <p className="text-text-secondary text-xs mt-1">
-                            {user.wheelSpins} spin{user.wheelSpins !== 1 ? 's' : ''} available
+                            {totalSpins(user.wheelSpins, user.purchaseSpins)} spin{totalSpins(user.wheelSpins, user.purchaseSpins) !== 1 ? 's' : ''} available
                           </p>
                         ) : (
                           <p className="text-text-muted text-xs mt-1">Win drafts, Jackpots, HOF entries</p>
@@ -318,13 +314,13 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   >
                     <Link
                       href="/banana-wheel"
-                      aria-label={`Banana Wheel${isLoggedIn && user && user.wheelSpins > 0 ? `: ${user.wheelSpins} spins available` : ''}`}
+                      aria-label={`Banana Wheel${isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 ? `: ${totalSpins(user.wheelSpins, user.purchaseSpins)} spins available` : ''}`}
                       className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
                       <HeaderWheel size={28} />
-                      {isLoggedIn && user && user.wheelSpins > 0 && (
+                      {isLoggedIn && user && totalSpins(user.wheelSpins, user.purchaseSpins) > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                          {user.wheelSpins}
+                          {totalSpins(user.wheelSpins, user.purchaseSpins)}
                         </span>
                       )}
                     </Link>
@@ -380,7 +376,33 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
       {/* Mount only while open — useFundWallet crashes when mounted at page
           level (see CLAUDE.md troubleshooting / BuyPassesModal precedent). */}
       {showAddFunds && (
-        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+        <AddFundsModal
+          isOpen={true}
+          onClose={() => setShowAddFunds(false)}
+          onFunded={(amountUsd) => {
+            // Deposit landed: pitch the best promo they can act on while the
+            // balance is hot — first-purchase if unclaimed, else the live
+            // Kickoff buy-bonus. Default qty = what they just deposited
+            // (Boris 2026-08-07: "$100 in → prompt them to buy 4").
+            const fpOpen = user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true;
+            const kickoffOpen = API_CONFIG.promos.buyBonus.enabled && Date.now() < API_CONFIG.promos.buyBonus.endsAtMs;
+            if (fpOpen || kickoffOpen) {
+              setShowAddFunds(false);
+              setFpClaim({
+                variant: fpOpen ? (user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new') : 'kickoff',
+                depositUsd: amountUsd,
+              });
+            }
+          }}
+        />
+      )}
+      {fpClaim && (
+        <FirstPurchaseClaimModal
+          isOpen={true}
+          onClose={() => setFpClaim(null)}
+          variant={fpClaim.variant}
+          depositUsd={fpClaim.depositUsd}
+        />
       )}
     </header>
   );

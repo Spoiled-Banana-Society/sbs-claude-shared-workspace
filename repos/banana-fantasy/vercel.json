@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/crons/deposit-credit-sweep",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/crons/reconcile-special-seats",
@@ -85,6 +85,10 @@
     {
       "path": "/api/crons/jp-window-bells",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/crons/mindshare-scan",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
