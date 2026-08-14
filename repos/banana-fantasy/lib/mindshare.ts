@@ -28,7 +28,10 @@ export const WEEKS_COLLECTION = 'mindshare_weeks';
 export const STATE_DOC = 'mindshare_state/live';
 
 const API_BASE = 'https://api.twitterapi.io';
-const SEARCH_QUERY = '@SBSFantasy -from:SBSFantasy';
+// Widened 8/13 (Richard: "yes def widen it") — untagged SBS talk counts too.
+// Deliberately NO bare "SBS" term: that's a Korean broadcaster + UK special
+// forces, the junk would drown the signal. Phrases stay quoted.
+const SEARCH_QUERY = '(@SBSFantasy OR sbsfantasy OR "banana best ball" OR "spoiled banana society") -from:SBSFantasy';
 
 /** House accounts never compete on the board (Richard 8/13: "take away
  *  boris vagner and rich vagner lmao"). Lowercased handles. */
