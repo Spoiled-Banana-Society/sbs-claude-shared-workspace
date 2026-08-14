@@ -53,7 +53,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   };
   useEffect(() => {
     // Keep targets warm so the page swap is instant.
-    ['/draft', '/teams', '/promos', '/banana-wheel', '/drop', '/notifications'].forEach((h) => {
+    ['/draft', '/teams', '/promos', '/banana-wheel', '/drop', '/mindshare', '/notifications'].forEach((h) => {
       try { router.prefetch(h); } catch { /* best-effort */ }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,6 +143,23 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
           </defs>
           <line x1="1" y1="24" x2="29" y2="13" stroke={active ? '#fbbf24' : 'rgba(255,255,255,0.32)'} strokeWidth="5" clipPath="url(#tab-pack-clip)" />
           <rect x="4" y="3" width="22" height="30" rx="3" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="2.2" />
+        </svg>
+      ),
+    },
+    {
+      // Banana X Mindshare (Richard 2026-08-13): 7th tab, between Packs and
+      // Alerts, label just "X" — the live attention board. He explicitly chose
+      // 7 tabs over merging Rewards or any home-screen/promos-card entry.
+      href: '/mindshare',
+      label: 'Hype',
+      matchPaths: ['/mindshare'],
+      badge: 0,
+      icon: (active: boolean) => (
+        // Treemap glyph — same flat-stroke language as the other tabs.
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.6" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2.5" />
+          <line x1="12" y1="4" x2="12" y2="20" />
+          <line x1="12" y1="12.5" x2="21" y2="12.5" />
         </svg>
       ),
     },

@@ -8,6 +8,7 @@ import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-a
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { friendlyTxError } from '@/lib/marketplace/txErrors';
+import { resolveWalletFallback } from '@/lib/marketplace/walletFallback';
 import { bananaPlaceholderName } from '@/utils/helpers';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useListTeam } from '@/hooks/useListTeam';
@@ -171,11 +172,15 @@ export default function NftDetailPage() {
   // External wallets sign via their own provider and pay their own gas.
   const sendTx = useCallback(async (
     txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
-    opts: { description: string; waitForReceipt?: boolean },
+    // opts.wallet: mobile external-wallet fallback (see resolveWalletFallback) —
+    // handlers resolve a signer when useWallets() is empty and pass it here,
+    // since this closure's selectedWallet is null in exactly that case.
+    opts: { description: string; waitForReceipt?: boolean; wallet?: typeof selectedWallet },
   ): Promise<{ hash: string }> => {
-    if (!selectedWallet) throw new Error('No wallet connected');
+    const activeWallet = opts.wallet ?? selectedWallet;
+    if (!activeWallet) throw new Error('No wallet connected');
 
-    if (selectedWallet.walletClientType === 'privy') {
+    if (activeWallet.walletClientType === 'privy') {
       const receipt = await sendTransaction(
         txRequest,
         // Embedded (web2) wallets sign silently — zero-friction buy/sell/offer.
@@ -185,10 +190,10 @@ export default function NftDetailPage() {
       return { hash: String(r.hash ?? r.transactionHash ?? '') };
     }
 
-    const ethereum = await selectedWallet.getEthereumProvider();
+    const ethereum = await activeWallet.getEthereumProvider();
     const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
     if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
-      await selectedWallet.switchChain(txRequest.chainId);
+      await activeWallet.switchChain(txRequest.chainId);
     }
     const { ethers } = await import('ethers');
     const provider = new ethers.BrowserProvider(ethereum);
@@ -538,14 +543,23 @@ export default function NftDetailPage() {
       ? Number(nft.listing.price.current.value) / Math.pow(10, nft.listing.price.current.decimals ?? 18)
       : null;
 
+    // Mobile external wallet: useWallets() can be empty for a logged-in user
+    // (wallet-SDK login never registers with Privy — ticket-2681). Without
+    // this, the buy falls into the embedded branch below and dies at sendTx
+    // with "No wallet connected". Recover the signer like the mint flow does.
+    let activeWallet = selectedWallet;
+    if (!activeWallet && !isEmbeddedWallet) {
+      activeWallet = (await resolveWalletFallback(walletAddress, 'buy')) as unknown as typeof selectedWallet;
+    }
+
     let txHashResult: string;
-    if (selectedWallet && selectedWallet.walletClientType !== 'privy' && nft.listing?.price?.current?.value) {
+    if (activeWallet && activeWallet.walletClientType !== 'privy' && nft.listing?.price?.current?.value) {
       // External wallet (MetaMask, Coinbase, …): gasless relay. One free
       // permit signature; the server pulls the USDC and fulfills the Seaport
       // order with the NFT delivered straight to this wallet. No ETH needed.
       const { relayBuyExternal } = await import('@/lib/marketplace/relay');
       const receipt = await relayBuyExternal({
-        wallet: selectedWallet,
+        wallet: activeWallet,
         orderHash: nft.listing.order_hash,
         protocolAddress: nft.listing.protocol_address,
         priceWei: BigInt(nft.listing.price.current.value),
@@ -560,7 +574,7 @@ export default function NftDetailPage() {
       );
       const receipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Purchase NFT — gas fees covered by SBS' },
+        { description: 'Purchase NFT — gas fees covered by SBS', wallet: activeWallet },
       );
       txHashResult = receipt.hash;
     }
@@ -616,7 +630,7 @@ export default function NftDetailPage() {
     });
 
     return txHashResult;
-  }, [nft, walletAddress, sendTx, tokenId, addNotification, selectedWallet]);
+  }, [nft, walletAddress, sendTx, tokenId, addNotification, selectedWallet, isEmbeddedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
@@ -725,9 +739,18 @@ export default function NftDetailPage() {
       tokenId, amount: offerAmount, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
     });
     if (!walletAddress) { setShowLoginModal(true); return; }
-    if (!selectedWallet) {
+    let activeWallet = selectedWallet;
+    if (!activeWallet && walletsReady && !isEmbeddedWallet) {
+      // Mobile external wallet: login via the wallet's own SDK never registers
+      // with Privy, so useWallets() stays empty on this device and "reconnect"
+      // advice can't work (ticket-2681). Recover the signer directly — same
+      // fallback the mint flow has used since June.
+      setOfferError(null);
+      activeWallet = (await resolveWalletFallback(walletAddress, 'make_offer')) as unknown as typeof selectedWallet;
+    }
+    if (!activeWallet) {
       setOfferError(walletsReady
-        ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+        ? 'We couldn’t reach your wallet. Open your wallet app and approve the connection, then tap Submit Offer again.'
         : 'Still connecting your wallet — give it a second and tap Submit Offer again.');
       return;
     }
@@ -763,17 +786,17 @@ export default function NftDetailPage() {
       const { createOffer } = await import('@/lib/marketplace/offer');
       const { ethers } = await import('ethers');
 
-      const ethereum = await selectedWallet.getEthereumProvider();
+      const ethereum = await activeWallet.getEthereumProvider();
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       const requiredAmount = ethers.parseUnits(amount.toString(), 6);
 
-      if (selectedWallet.walletClientType !== 'privy') {
+      if (activeWallet.walletClientType !== 'privy') {
         // External wallet: gasless USDC approval — free permit signature,
         // the server submits it on-chain and pays the gas.
         const { ensureConduitAllowanceGasless } = await import('@/lib/marketplace/relay');
-        await ensureConduitAllowanceGasless({ wallet: selectedWallet, requiredWei: BigInt(requiredAmount) });
+        await ensureConduitAllowanceGasless({ wallet: activeWallet, requiredWei: BigInt(requiredAmount) });
       } else {
         // Embedded wallet: sponsored approve tx, as before.
         const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
@@ -802,7 +825,7 @@ export default function NftDetailPage() {
           const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
           await sendTx(
             { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-            { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true },
+            { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true, wallet: activeWallet },
           );
         }
       }
@@ -853,26 +876,36 @@ export default function NftDetailPage() {
       setOfferError(friendlyTxError(err, 'Failed to create offer. Please try again.'));
       setOfferStep('input');
     }
-  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft, walletsReady, wallets.length, setShowLoginModal]);
+  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft, walletsReady, wallets.length, isEmbeddedWallet, setShowLoginModal]);
 
   const handleAcceptOffer = useCallback(async (offer: OfferData) => {
+    clientLog('marketplace#', 'offer_accept_clicked', {
+      tokenId, orderHash: offer.orderHash, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
+    });
     if (!walletAddress) { setShowLoginModal(true); return; }
-    // Same dead-button trap as Submit Offer — say so instead of no-oping.
-    if (!selectedWallet) {
+    setAcceptingOfferHash(offer.orderHash);
+    setAcceptError(null);
+    // Same dead-button trap as Submit Offer — recover the signer via the
+    // mobile fallback before giving up (ticket-2681: reconnect advice can't
+    // work when the wallet SDK login never registers with Privy).
+    let activeWallet = selectedWallet;
+    if (!activeWallet && walletsReady && !isEmbeddedWallet) {
+      activeWallet = (await resolveWalletFallback(walletAddress, 'accept_offer')) as unknown as typeof selectedWallet;
+    }
+    if (!activeWallet) {
+      setAcceptingOfferHash(null);
       setAcceptError(walletsReady
-        ? 'Your wallet isn’t connected to this session. Reconnect it, then accept again.'
+        ? 'We couldn’t reach your wallet. Open your wallet app and approve the connection, then accept again.'
         : 'Still connecting your wallet — give it a second and try again.');
       return;
     }
-    setAcceptingOfferHash(offer.orderHash);
-    setAcceptError(null);
 
     try {
       const { getOfferFulfillmentTx } = await import('@/lib/marketplace/offer');
       const { ethers } = await import('ethers');
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
-      const ethereum = await selectedWallet.getEthereumProvider();
+      const ethereum = await activeWallet.getEthereumProvider();
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
@@ -895,7 +928,7 @@ export default function NftDetailPage() {
       const checkResult = await checkRes.json();
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
-      const isExternal = selectedWallet.walletClientType !== 'privy';
+      const isExternal = activeWallet.walletClientType !== 'privy';
 
       if (!isApproved) {
         if (isExternal) {
@@ -907,7 +940,7 @@ export default function NftDetailPage() {
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve marketplace — no cost to you', waitForReceipt: true },
+          { description: 'Approve marketplace — no cost to you', waitForReceipt: true, wallet: activeWallet },
         );
       }
 
@@ -924,7 +957,7 @@ export default function NftDetailPage() {
       }
       const acceptReceipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Accept offer — gas fees covered by SBS', waitForReceipt: true },
+        { description: 'Accept offer — gas fees covered by SBS', waitForReceipt: true, wallet: activeWallet },
       );
       const acceptTxHash = acceptReceipt.hash || null;
 
@@ -985,7 +1018,7 @@ export default function NftDetailPage() {
     } finally {
       setAcceptingOfferHash(null);
     }
-  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft, walletsReady, setShowLoginModal]);
+  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft, walletsReady, wallets.length, isEmbeddedWallet, setShowLoginModal]);
 
   const handleCancelOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress) return;

@@ -24,6 +24,8 @@ import {
 } from '@/lib/onchain/relaySeaport';
 import { acquireAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
+import { logActivityEvent } from '@/lib/activityEvents';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -352,6 +354,39 @@ export async function POST(req: Request) {
       priceUsdc: Number(price) / 1_000_000,
       txHash: fulfillTxHash,
     });
+
+    // Profile Activity rows for BOTH sides of the sale. These two types
+    // existed in the feed UI since launch but nothing ever wrote them — a
+    // sold or bought team was invisible in Activity History (AceJohn
+    // ticket-2681). runInBackground so the writes survive the lambda freeze
+    // without delaying the response; logActivityEvent is best-effort and can
+    // never fail a completed purchase. OpenSea-native sales (outside the
+    // app) still don't emit — only the in-app relay path knows the price at
+    // the moment of sale.
+    {
+      const sellerAddress = listing.order.parameters.offerer.toLowerCase();
+      const priceUsd = Number(price) / 1_000_000;
+      const shared = {
+        paymentMethod: 'usdc' as const,
+        quantity: 1,
+        tokenIds: [String(listing.tokenId)],
+        txHash: fulfillTxHash,
+      };
+      runInBackground('marketplace.sold_activity', logActivityEvent({
+        ...shared,
+        type: 'marketplace_sold',
+        userId: sellerAddress,
+        walletAddress: sellerAddress,
+        metadata: { price: priceUsd, tokenId: String(listing.tokenId), buyer: buyerAddress, orderHash },
+      }));
+      runInBackground('marketplace.bought_activity', logActivityEvent({
+        ...shared,
+        type: 'marketplace_bought',
+        userId: buyerAddress,
+        walletAddress: buyerAddress,
+        metadata: { price: priceUsd, tokenId: String(listing.tokenId), seller: sellerAddress, orderHash },
+      }));
+    }
 
     return json({
       success: true,

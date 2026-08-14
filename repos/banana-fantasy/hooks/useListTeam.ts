@@ -5,6 +5,7 @@ import { useSendTransaction, useWallets } from '@privy-io/react-auth';
 
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { friendlyTxError, userFacingTxError } from '@/lib/marketplace/txErrors';
+import { resolveWalletFallback } from '@/lib/marketplace/walletFallback';
 import { clientLog } from '@/lib/clientLog';
 import { logger } from '@/lib/logger';
 
@@ -46,19 +47,22 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
   // (MetaMask, etc.) sign via their own provider and pay their own gas.
   const sendTx = useCallback(async (
     txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
-    opts: { description: string; waitForReceipt?: boolean },
+    // opts.wallet: mobile external-wallet fallback (see resolveWalletFallback) —
+    // callers resolve a signer when useWallets() is empty and pass it here.
+    opts: { description: string; waitForReceipt?: boolean; wallet?: typeof selectedWallet },
   ): Promise<{ hash: string }> => {
-    if (!selectedWallet) throw new Error('No wallet connected');
-    if (selectedWallet.walletClientType === 'privy') {
+    const activeWallet = opts.wallet ?? selectedWallet;
+    if (!activeWallet) throw new Error('No wallet connected');
+    if (activeWallet.walletClientType === 'privy') {
       // Embedded (web2) wallets sign silently — zero-friction listing.
       const receipt = await sendTransaction(txRequest, { sponsor: true, uiOptions: { description: opts.description, showWalletUIs: false } });
       const r = receipt as Record<string, unknown>;
       return { hash: String(r.hash ?? r.transactionHash ?? '') };
     }
-    const ethereum = await selectedWallet.getEthereumProvider();
+    const ethereum = await activeWallet.getEthereumProvider();
     const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
     if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
-      await selectedWallet.switchChain(txRequest.chainId);
+      await activeWallet.switchChain(txRequest.chainId);
     }
     const { ethers } = await import('ethers');
     const provider = new ethers.BrowserProvider(ethereum);
@@ -83,12 +87,20 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
       const { ethers } = await import('ethers');
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
-      if (!selectedWallet) {
+      let activeWallet = selectedWallet;
+      if (!activeWallet && walletsReady && walletAddress) {
+        // Mobile external wallet: login via the wallet's own SDK never
+        // registers with Privy, so useWallets() stays empty on this device and
+        // "reconnect" advice can't work (ticket-2681). Recover the signer —
+        // same fallback the mint flow has used since June.
+        activeWallet = (await resolveWalletFallback(walletAddress, 'list')) as unknown as typeof selectedWallet;
+      }
+      if (!activeWallet) {
         throw userFacingTxError(walletsReady
-          ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+          ? 'We couldn’t reach your wallet. Open your wallet app and approve the connection, then try again.'
           : 'Still connecting your wallet — give it a second and tap List for Sale again.');
       }
-      const ethereum = await selectedWallet.getEthereumProvider();
+      const ethereum = await activeWallet.getEthereumProvider();
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
@@ -110,7 +122,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
       if (!isApproved) {
-        if (selectedWallet.walletClientType !== 'privy') {
+        if (activeWallet.walletClientType !== 'privy') {
           // External wallet: we pay the gas — fund the exact shortfall
           // before the approval tx (can't be signature-relayed on ERC-721).
           const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
@@ -119,7 +131,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve marketplace to list your NFTs', waitForReceipt: true },
+          { description: 'Approve marketplace to list your NFTs', waitForReceipt: true, wallet: activeWallet },
         );
       }
 
@@ -132,7 +144,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
     } finally {
       setBusy(false);
     }
-  }, [selectedWallet, sendTx, walletsReady, wallets.length]);
+  }, [selectedWallet, sendTx, walletsReady, wallets.length, walletAddress]);
 
   const cancelTeam = useCallback(async (tokenId: string, orderHash: string) => {
     setError(null);
@@ -141,11 +153,15 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
       tokenId, walletsReady, walletCount: wallets.length, hasSelected: !!selectedWallet,
     });
     try {
-      // Same wallet-not-in-session trap as listTeam — fail with the reason, not
-      // the generic message (sendTx would otherwise throw a bare error mid-flow).
-      if (!selectedWallet) {
+      // Same wallet-not-in-session trap as listTeam — recover the signer via
+      // the mobile fallback before giving up (ticket-2681).
+      let activeWallet = selectedWallet;
+      if (!activeWallet && walletsReady && walletAddress) {
+        activeWallet = (await resolveWalletFallback(walletAddress, 'cancel')) as unknown as typeof selectedWallet;
+      }
+      if (!activeWallet) {
         throw userFacingTxError(walletsReady
-          ? 'Your wallet isn’t connected to this session. Reconnect it (log out and back in with the same wallet), then try again.'
+          ? 'We couldn’t reach your wallet. Open your wallet app and approve the connection, then try again.'
           : 'Still connecting your wallet — give it a second and try again.');
       }
       const response = await fetch('/api/marketplace/cancel', {
@@ -158,7 +174,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         throw new Error(errorData.error || `Cancel failed: ${response.status}`);
       }
       const tx = await response.json();
-      if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+      if (activeWallet.walletClientType !== 'privy') {
         // External wallet: Seaport cancel must come from the lister, so we
         // pay the gas by funding the exact shortfall first.
         const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
@@ -166,7 +182,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
       }
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Cancel your listing', waitForReceipt: true },
+        { description: 'Cancel your listing', waitForReceipt: true, wallet: activeWallet },
       );
       logger.debug('[useListTeam] Cancelled listing for token:', tokenId);
       // Record a 'cancel' activity so the delisting shows in the token's feed

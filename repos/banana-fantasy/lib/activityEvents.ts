@@ -22,10 +22,16 @@ export type ActivityEventType =
   | 'spin_won'            // wheel spin — any prize
   | 'promo_claimed'       // promo reward claimed (new-user, buy-bonus, referral, etc.)
   | 'draft_entered'       // user entered a draft (a pass is "used")
-  | 'draft_filled'        // a PAID draft the user is in hit 10/10 (fill webhook) — King-of-Drafts scoring basis
+  | 'draft_filled'        // a draft the user is in hit 10/10 (fill webhook). metadata.passType
+                          // says which pass that member used — King-of-Drafts counts ONLY
+                          // passType:'paid' rows (tallyKingDrafts filters), free rows are
+                          // display-only in the profile feed. Do not drop the free rows
+                          // "for cleanliness": that's the bug that made free players'
+                          // fills invisible (AceJohn ticket-2681, 2026-08-13).
   | 'draft_left'          // user left a filling draft before start (pass refunded)
   | 'draft_won'           // league finalized, user finished in paying place
-  | 'marketplace_sold'    // team listed → sold
+  | 'marketplace_sold'    // your listed team sold (in-app relay buys; OpenSea-native sales don't emit)
+  | 'marketplace_bought'  // you bought a team on the marketplace (in-app relay buys)
   | 'cashout_completed'   // offramp settled — Coinbase or direct USDC/bank
   | 'deposit_completed'   // card deposit (Add Funds) verified on-chain — metadata: { amountUsd, feeCents, provider }
   // ── Presence events (admin Live Activity only — hidden from the user-facing
