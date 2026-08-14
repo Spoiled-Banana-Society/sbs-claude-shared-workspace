@@ -60,7 +60,11 @@ export async function GET(req: Request) {
           score: (Number(t.attention) || 0) + (Number(t.refBonus) || 0),
         };
       })
-      .filter((t) => !EXCLUDED_HANDLES.has(t.key) && t.score > 0) // zero-score tweeters don't clutter the board
+      // Board = SBS accounts ONLY (Richard 8/13: "new people dont get shit,
+      // its if they have accounts with us"). Unlinked tweeters are scored and
+      // banked in Firestore but never shown — the moment they link, they
+      // appear with all their points. Zero-score tiles don't clutter either.
+      .filter((t) => !EXCLUDED_HANDLES.has(t.key) && t.score > 0 && handleToWallet.has(t.key))
       .sort((a, b) => b.score - a.score);
     const total = ranked.reduce((s, t) => s + t.score, 0);
 

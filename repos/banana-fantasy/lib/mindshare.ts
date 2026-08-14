@@ -34,7 +34,7 @@ const SEARCH_QUERY = '@SBSFantasy -from:SBSFantasy';
  *  boris vagner and rich vagner lmao"). Lowercased handles. */
 export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner']);
 const MAX_SEARCH_PAGES = 3;
-const REFRESH_BATCH = 60; // recent tweets whose metrics we re-pull per scan
+const REFRESH_BATCH = 48; // recent tweets whose metrics we re-pull per scan (twitterapi hard cap: 50 ids/request)
 const MS_DAY = 86_400_000;
 
 // Scoring weights — tune on real data during the week-1/2 soft launch.
