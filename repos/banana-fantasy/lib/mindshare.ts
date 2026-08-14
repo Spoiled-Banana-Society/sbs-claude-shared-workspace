@@ -53,7 +53,7 @@ const W = {
   viewsCap: 50_000,
   replyMult: 0.45,
   dayDecay: 0.5, // nth-best tweet of an ET day is worth 1/(1 + 0.5*(n-1))
-  minFollowers: 25,
+  minFollowers: 5, // was 25 — zeroed real small-account community members (Wildcat23 at 11 followers, 8/13); the 90-day age gate is the real farming filter
   minAccountAgeDays: 90,
 };
 

@@ -186,6 +186,7 @@ const MOCK_USER: User | null = MOCK_AUTH
       usdcBalance: 0,
       freeDrafts: 0,
       wheelSpins: 0,
+      purchaseSpins: 0,
       jackpotEntries: 0,
       hofEntries: 0,
       cardPurchaseCount: 0,
@@ -796,6 +797,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             usdcBalance: 0,
             freeDrafts: 0,
             wheelSpins: 0,
+            purchaseSpins: 0,
             jackpotEntries: 0,
             hofEntries: 0,
             cardPurchaseCount: 0,
@@ -1035,6 +1037,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           ...prev,
           wheelSpins: (d.wheelSpins as number) ?? prev.wheelSpins,
+          purchaseSpins: typeof d.purchaseSpins === 'number' ? d.purchaseSpins : prev.purchaseSpins,
           freeDrafts: (d.freeDrafts as number) ?? prev.freeDrafts,
           jackpotEntries: (d.jackpotEntries as number) ?? prev.jackpotEntries,
           hofEntries: (d.hofEntries as number) ?? prev.hofEntries,
@@ -1048,6 +1051,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // after a purchase and unlocks for new users post free-drafts.
           firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
           firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
+          // Server-computed first-purchase pitch variant — drives which offer
+          // copy (buy 1 get 2 / buy 2 get 1 / nothing) every surface renders.
+          firstPurchaseVariant: d.firstPurchaseVariant === 'new' || d.firstPurchaseVariant === 'returning' || d.firstPurchaseVariant === 'done'
+            ? d.firstPurchaseVariant
+            : prev.firstPurchaseVariant,
           // Spin-explainer gating — so the "a spin wins up to 20" text hides
           // once they've actually spun.
           hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
@@ -1259,6 +1267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       draftPasses?: number;
       freeDrafts?: number;
       wheelSpins?: number;
+      purchaseSpins?: number;
       jackpotEntries?: number;
       hofEntries?: number;
       cardPurchaseCount?: number;
@@ -1281,6 +1290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         draftPasses: typeof firestoreBalance!.draftPasses === 'number' ? firestoreBalance!.draftPasses : prev.draftPasses,
         freeDrafts: typeof firestoreBalance!.freeDrafts === 'number' ? firestoreBalance!.freeDrafts : prev.freeDrafts,
         wheelSpins: typeof firestoreBalance!.wheelSpins === 'number' ? firestoreBalance!.wheelSpins : prev.wheelSpins,
+        purchaseSpins: typeof firestoreBalance!.purchaseSpins === 'number' ? firestoreBalance!.purchaseSpins : prev.purchaseSpins,
         jackpotEntries: typeof firestoreBalance!.jackpotEntries === 'number' ? firestoreBalance!.jackpotEntries : prev.jackpotEntries,
         hofEntries: typeof firestoreBalance!.hofEntries === 'number' ? firestoreBalance!.hofEntries : prev.hofEntries,
         cardPurchaseCount: typeof firestoreBalance!.cardPurchaseCount === 'number' ? firestoreBalance!.cardPurchaseCount : prev.cardPurchaseCount,
@@ -1316,6 +1326,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : 0,
               freeDrafts: typeof data.freeDrafts === 'number' ? data.freeDrafts : 0,
               wheelSpins: typeof data.wheelSpins === 'number' ? data.wheelSpins : 0,
+              purchaseSpins: typeof data.purchaseSpins === 'number' ? data.purchaseSpins : 0,
               jackpotEntries: typeof data.jackpotEntries === 'number' ? data.jackpotEntries : 0,
               hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,
             };
@@ -1335,7 +1346,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Trigger Privy's Twitter OAuth linking flow
   // linkTwitter() redirects to Twitter — when user returns, privy.user updates
   // with the new linkedAccount, which our effect above detects and verifies.
-  const handleLinkTwitter = useCallback(() => {
+  // ── Stuck-"Connecting…" watchdog ────────────────────────────────────────
+  // handleLinkTwitter sets isTwitterLinking(true) and hands off to Privy's
+  // OAuth popup. The only reset lives in the verify path's `finally`, which
+  // runs ONLY on a successful link — so closing the popup, cancelling on X, or
+  // any silent OAuth failure left the flag true FOREVER. Every Connect button
+  // is disabled={isTwitterLinking}, so one abandoned attempt bricked X-connect
+  // app-wide until a full page reload. That's the "I can't click Connect
+  // anymore" report (Levi / Banana10549, 2026-07-26).
+  //
+  // Two escapes, both no-ops on the happy path (a real link clears the flag
+  // first): come back to the tab without a link → clear; and a hard timeout in
+  // case focus never fires (mobile in-app browsers, redirect flows).
+  useEffect(() => {
+    if (!isTwitterLinking) return;
+
+    const clear = (msg?: string) => {
+      setIsTwitterLinking(false);
+      if (msg) setTwitterError(msg);
+    };
+
+    const onFocus = () => {
+      // Give Privy a beat to finish a link that DID succeed before deciding
+      // the user bailed — otherwise we'd race a good connect.
+      window.setTimeout(() => {
+        setIsTwitterLinking((linking) => {
+          if (!linking) return false;
+          setTwitterError('X wasn\u2019t connected. Tap Connect to try again.');
+          return false;
+        });
+      }, 2500);
+    };
+
+    window.addEventListener('focus', onFocus);
+    const hardStop = window.setTimeout(
+      () => clear('That took too long. Tap Connect to try again.'),
+      90_000,
+    );
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.clearTimeout(hardStop);
+    };
+  }, [isTwitterLinking]);
+
+  const handleLinkTwitter = useCallback(async () => {
     // Don't silently no-op when we're not ready yet — that invisible failure
     // (user taps Connect, NOTHING happens, no error, no spinner) was a top
     // cause of "I can't connect my X" reports. Always give feedback.
@@ -1350,6 +1404,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsTwitterLinking(true);
     setTwitterError(null);
     try {
+      // Changing X accounts (AceJohn 2026-08-13): Privy allows ONE X per
+      // person, so if one is already attached, unlink it first — this makes
+      // the same Connect flow double as "switch to a different X".
+      const existing = privy.user?.linkedAccounts?.find(
+        (a: { type: string }) => a.type === 'twitter_oauth'
+      ) as { subject?: string } | undefined;
+      if (existing?.subject) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (privy as any).unlinkTwitter?.(existing.subject);
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (privy as any).linkTwitter();
     } catch (err) {
@@ -1388,7 +1452,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isWalletAdmin(walletAddress) &&
     window.sessionStorage.getItem('sbs-view-as') === 'new';
   const exposedUser = viewAsNewPreview && user
-    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true }
+    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true, firstPurchaseVariant: 'new' as const }
     : user;
 
   return (

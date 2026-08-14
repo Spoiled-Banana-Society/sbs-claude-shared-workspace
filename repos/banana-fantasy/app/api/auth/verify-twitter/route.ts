@@ -89,6 +89,17 @@ export async function POST(req: Request) {
       newUserPromoClaimed: false,
     });
 
+    // X-account SWAP cleanup (AceJohn case, 2026-08-13): when the same person
+    // links a different X, remove their old link rows so wallet↔handle lookups
+    // (mindshare board, profile) resolve to the CURRENT account only.
+    try {
+      const stale = await db.collection(TWITTER_LINKS_COLLECTION)
+        .where('privyUserId', '==', privyUserId).get();
+      for (const doc of stale.docs) {
+        if (doc.id !== twitterId) await doc.ref.delete();
+      }
+    } catch { /* best-effort — a stale row is cosmetic, not blocking */ }
+
     // Background user event (waitUntil-backed — feeds referral milestone
     // detection; a detached promise dies with the frozen lambda).
     try {

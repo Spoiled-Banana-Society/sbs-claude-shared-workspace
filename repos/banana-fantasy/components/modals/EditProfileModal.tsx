@@ -240,7 +240,18 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
                 </svg>
                 <span className="text-text-primary font-medium">{user.xHandle || 'Connected'}</span>
               </div>
-              <span className="text-xs text-success font-medium">Connected</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-success font-medium">Connected</span>
+                {/* Switch to a different X (AceJohn 2026-08-13) — the connect
+                    flow unlinks the old account first, so one tap swaps. */}
+                <button
+                  type="button"
+                  onClick={() => linkTwitter()}
+                  className="text-xs text-text-secondary hover:text-banana underline underline-offset-2 transition-colors"
+                >
+                  Change
+                </button>
+              </div>
             </div>
           ) : (
             <>
