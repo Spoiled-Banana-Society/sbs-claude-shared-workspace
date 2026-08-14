@@ -182,7 +182,7 @@ export default function MindsharePage() {
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pt-5 sm:pt-8 pb-28 lg:pb-12">
       {/* header */}
       <div className="flex items-baseline gap-3 flex-wrap">
-        <h1 className="text-white text-2xl sm:text-3xl font-bold">Banana Hype</h1>
+        <h1 className="text-white text-2xl sm:text-3xl font-bold">Banana X Mindshare</h1>
         <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-white/40">
           <span className="w-2 h-2 rounded-full bg-success animate-pulse" />LIVE
         </span>

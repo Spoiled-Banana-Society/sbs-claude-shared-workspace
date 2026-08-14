@@ -151,7 +151,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       // Alerts, label just "X" — the live attention board. He explicitly chose
       // 7 tabs over merging Rewards or any home-screen/promos-card entry.
       href: '/mindshare',
-      label: 'Hype',
+      label: 'X',
       matchPaths: ['/mindshare'],
       badge: 0,
       icon: (active: boolean) => (
