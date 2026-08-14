@@ -40,11 +40,21 @@ export async function GET() {
     const weeksSnap = await db.collection(WEEKS_COLLECTION)
       .orderBy('startsAtMs', 'desc').limit(2).get();
 
+    // House tweets get their OWN query per week — a busy week (400+ docs)
+    // pushes our multi-day-old posts outside any newest-N slice, which is
+    // exactly how the SBS filter went empty on 8/14. Handle-case variants
+    // covered because authorHandle is stored raw from the X API.
+    const HOUSE_QUERY_HANDLES = [
+      'SBSFantasy', 'sbsfantasy', 'BorisVagner', 'borisvagner',
+      'RichVagner', 'richvagner', 'sbsdraftbot', 'SBSDraftBot',
+    ];
     const byId = new Map<string, FeedTweet>();
     await Promise.all(weeksSnap.docs.map(async (week) => {
-      const snap = await week.ref.collection('tweets')
-        .orderBy('createdAtMs', 'desc').limit(150).get();
-      for (const d of snap.docs) {
+      const [recentSnap, houseSnap] = await Promise.all([
+        week.ref.collection('tweets').orderBy('createdAtMs', 'desc').limit(300).get(),
+        week.ref.collection('tweets').where('authorHandle', 'in', HOUSE_QUERY_HANDLES).get(),
+      ]);
+      for (const d of [...recentSnap.docs, ...houseSnap.docs]) {
         if (d.id.startsWith('rt-')) continue; // synthetic RT credit, not a tweet
         const t = d.data();
         const handle = String(t.authorHandle ?? '').trim();
