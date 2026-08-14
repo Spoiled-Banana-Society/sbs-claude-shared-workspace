@@ -66,12 +66,16 @@ interface BoardState {
   zeroTiles: string[];
 }
 
-const PRIZES: Array<{ places: string; prize: string; first?: boolean }> = [
-  { places: '1st', prize: 'JackHOF seat', first: true },
-  { places: '2nd and 3rd', prize: 'Jackpot seat' },
-  { places: '4th to 6th', prize: 'HOF seat' },
-  { places: '7th to 15th', prize: '3 wheel spins' },
-  { places: '16th to 25th', prize: '1 wheel spin' },
+// Tier accent strips — the prize ladder, the map tiles and the leaderboard
+// rank numbers all speak the same color per tier (Boris 8/14: subtle, no
+// loud fills). JackHOF = its two components red→gold; spins stay banana/neutral.
+const STRIP_JACKHOF = 'bg-gradient-to-r from-jackpot to-hof';
+const PRIZES: Array<{ places: string; prize: string; first?: boolean; strip: string }> = [
+  { places: '1st', prize: 'JackHOF seat', first: true, strip: STRIP_JACKHOF },
+  { places: '2nd and 3rd', prize: 'Jackpot seat', strip: 'bg-jackpot' },
+  { places: '4th to 6th', prize: 'HOF seat', strip: 'bg-hof' },
+  { places: '7th to 15th', prize: '3 wheel spins', strip: 'bg-banana' },
+  { places: '16th to 25th', prize: '1 wheel spin', strip: 'bg-white/25' },
 ];
 
 function prizeForRank(rank: number): string | null {
@@ -81,6 +85,26 @@ function prizeForRank(rank: number): string | null {
   if (rank <= 15) return '3 wheel spins';
   if (rank <= 25) return '1 wheel spin';
   return null;
+}
+
+/** Accent strip class for a rank's tile — mirrors the prize ladder. */
+function stripForRank(rank: number | null): string | null {
+  if (rank === null) return null;
+  if (rank === 1) return STRIP_JACKHOF;
+  if (rank <= 3) return 'bg-jackpot';
+  if (rank <= 6) return 'bg-hof';
+  if (rank <= 15) return 'bg-banana';
+  if (rank <= 25) return 'bg-white/25';
+  return null;
+}
+
+/** Leaderboard rank-number color per tier. */
+function rankTextForRank(rank: number): string {
+  if (rank === 1) return 'text-banana';
+  if (rank <= 3) return 'text-jackpot';
+  if (rank <= 6) return 'text-hof';
+  if (rank <= 15) return 'text-banana';
+  return 'text-white/40';
 }
 
 function timeAgo(ms: number): string {
@@ -282,10 +306,11 @@ export default function MindsharePage() {
         {PRIZES.map((p) => (
           <div
             key={p.places}
-            className={`rounded-xl border px-3 py-2.5 ${p.first
+            className={`relative overflow-hidden rounded-xl border px-3 py-2.5 ${p.first
               ? 'bg-banana border-banana col-span-2 sm:col-span-1'
               : 'bg-white/[0.03] border-white/[0.07]'}`}
           >
+            <div className={`absolute top-0 left-0 right-0 h-[3px] ${p.strip}`} />
             <div className={`text-[10px] font-bold tracking-widest ${p.first ? 'text-black/60' : 'text-white/40'}`}>{p.places.toUpperCase()}</div>
             <div className={`text-[13px] font-bold mt-0.5 ${p.first ? 'text-black' : 'text-white'}`}>{p.prize}</div>
           </div>
@@ -308,10 +333,15 @@ export default function MindsharePage() {
                 className={`absolute rounded-xl border overflow-hidden transition-all duration-700 ease-out ${isKing
                   ? 'bg-banana border-banana'
                   : (t.rank !== null && t.rank <= 3)
-                    ? 'bg-banana/[0.14] border-banana/30'
-                    : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
+                    ? 'bg-jackpot/[0.07] border-jackpot/25'
+                    : (t.rank !== null && t.rank <= 6)
+                      ? 'bg-hof/[0.06] border-hof/25'
+                      : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
                 style={{ left: r.x + 3, top: r.y + 3, width: Math.max(r.w - 6, 0), height: Math.max(r.h - 6, 0) }}
               >
+                {!zeroState && stripForRank(t.rank) && (
+                  <div className={`absolute top-0 left-0 right-0 h-[3px] ${stripForRank(t.rank)}`} />
+                )}
                 {/* Name is ALWAYS fully readable (Boris 8/14: no "thayt…"):
                     font auto-shrinks to fit the tile width, and if it hits the
                     floor it wraps to a second line instead of ellipsizing. */}
@@ -358,7 +388,7 @@ export default function MindsharePage() {
                 title={prizeForRank(t.rank) ?? undefined}
                 className={`flex items-center gap-2.5 px-4 py-2 border-b border-white/[0.05] text-[13px] ${youKey === t.handle.toLowerCase() ? 'bg-banana/10' : ''}`}
               >
-                <span className="w-6 text-banana font-bold tabular-nums">{t.rank}</span>
+                <span className={`w-6 font-bold tabular-nums ${rankTextForRank(t.rank)}`}>{t.rank}</span>
                 <span className="flex-1 min-w-0 truncate text-white/85 font-medium">{t.display}</span>
                 <span className="font-bold tabular-nums text-white">{t.pct}%</span>
               </div>
