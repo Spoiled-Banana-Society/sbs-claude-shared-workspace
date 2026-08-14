@@ -121,7 +121,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     // Banana X Mindshare (Richard 2026-08-13): nav label is just "X" — the
     // live attention board. Text link, not an icon (his pick over icon-row).
-    { href: '/mindshare', label: 'X', tooltip: 'Banana X Mindshare: top 25 win every Thursday night', auth: false },
+    { href: '/mindshare', label: 'Hype', tooltip: 'Banana Hype: top 25 win every Thursday night', auth: false },
     // FAQ shown for ALL users on desktop (Boris 2026-07-23), right after Promos
     // — links to the same /faq page as the profile-dropdown FAQ.
     { href: '/faq', label: 'FAQ', tooltip: 'How SBS works', auth: false },
