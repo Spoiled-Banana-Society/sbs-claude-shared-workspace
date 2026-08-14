@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -69,6 +71,23 @@ export async function runLaneRolloverGuard(): Promise<Record<string, unknown>> {
       out.hof = await heal(db, 'hof', meta.hofCycle!, hits[4], filled);
     }
   }
+
+  // ── Schedule guard (Boris 2026-08-14, after the 659/665/667 skip): a rolled
+  // pointer is not enough — the engine's draw-scheduling can lag MANY fills
+  // (18 on 08-13/14), letting sealed positions slip past as Pros. Each tick:
+  // if the current window has fewer scheduled ids than it owes, write the
+  // sealed positions ourselves — same seed, same math, first-valid extension
+  // draws for any position already passed. Additive arrayUnion only.
+  out.jpSched = await ensureWindowScheduled(db, 'jp', meta.jpCycle!, meta.jpStart!, 1,
+    (t.JackpotLeagueIds ?? []).map(Number), filled).catch((err) => {
+      logger.error('lane_guard.jp_sched_failed', { err: (err as Error).message });
+      return { ok: false };
+    });
+  out.hofSched = await ensureWindowScheduled(db, 'hof', meta.hofCycle!, meta.hofStart!, 5,
+    (t.HofLeagueIds ?? []).map(Number), filled).catch((err) => {
+      logger.error('lane_guard.hof_sched_failed', { err: (err as Error).message });
+      return { ok: false };
+    });
   return out;
 }
 
@@ -116,4 +135,100 @@ async function heal(
     logger.warn('lane_guard.bell_failed', { err: (err as Error).message });
   }
   return { healed: true, hit, newStart: hit + 1 };
+}
+
+
+/** Sealed-position derivation — identical math to the engine's era model:
+ *  combinedSeed = SHA256(serverSalt ++ vrfRandomness); draw i =
+ *  HMAC(seed, '{lane}:{cycle}:{i}') first 8 bytes BE mod 100. */
+async function laneSeed(db: FirebaseFirestore.Firestore, lane: 'jp' | 'hof'): Promise<Buffer | null> {
+  const era = (await db.collection('lane_eras').doc(`${lane}-era-1`).get()).data() as
+    { serverSalt?: string; vrfRandomness?: string } | undefined;
+  if (!era?.serverSalt || !era?.vrfRandomness) return null;
+  return crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(era.serverSalt.slice(2), 'hex'),
+    Buffer.from(era.vrfRandomness.slice(2), 'hex'),
+  ])).digest();
+}
+
+function drawPos(seed: Buffer, lane: 'jp' | 'hof', cycle: number, i: number): number {
+  return Number(crypto.createHmac('sha256', seed)
+    .update(`${lane}:${cycle}:${i}`).digest().readBigUInt64BE(0) % 100n);
+}
+
+/**
+ * Ensure the ACTIVE window carries its owed scheduled draws. Base draws are
+ * indices 0..need-1 (dedupe-bumped ascending, mirroring the engine); any base
+ * position that has already passed unscheduled (would be a silent skip) is
+ * substituted by the next extension draws (i = need, need+1, …) under the
+ * documented first-valid rule (> filled+1, inside the window, not taken).
+ * Writes are additive (arrayUnion) + audited + belled — never removals.
+ */
+async function ensureWindowScheduled(
+  db: FirebaseFirestore.Firestore,
+  lane: 'jp' | 'hof',
+  cycle: number,
+  windowStart: number,
+  need: number,
+  laneIds: number[],
+  filled: number,
+): Promise<Record<string, unknown>> {
+  const wEnd = windowStart + 99;
+  if (filled < windowStart - 1) return { skip: 'window-not-active' };
+  const inWindow = laneIds.filter((h) => h >= windowStart && h <= wEnd);
+  if (inWindow.length >= need) return { ok: true };
+
+  const seed = await laneSeed(db, lane);
+  if (!seed) return { skip: 'no-era-seed' };
+
+  // Rebuild the engine's base schedule (dedupe-bump on the sorted raws).
+  const raws: number[] = [];
+  for (let i = 0; i < need; i++) raws.push(drawPos(seed, lane, cycle, i));
+  const taken = new Set<number>();
+  const base: number[] = [];
+  for (const p of [...raws].sort((a, b) => a - b)) {
+    let q = p; while (taken.has(q)) q++;
+    taken.add(q); base.push(q);
+  }
+  const scheduled = new Set(inWindow);
+  const toAdd: number[] = [];
+  let ext = need; // next extension index
+  for (const pos of base) {
+    const hit = windowStart + pos;
+    if (scheduled.has(hit)) continue;      // engine already has it
+    if (hit > filled + 1) { toAdd.push(hit); taken.add(pos); continue; }
+    // Base position already passed unscheduled — substitute (first-valid rule).
+    for (; ext < need + 60; ext++) {
+      const p2 = drawPos(seed, lane, cycle, ext);
+      const h2 = windowStart + p2;
+      if (h2 > filled + 1 && h2 <= wEnd && !taken.has(p2) && !scheduled.has(h2)) {
+        toAdd.push(h2); taken.add(p2); ext++; break;
+      }
+    }
+  }
+  if (!toAdd.length) return { ok: true, note: 'nothing addable' };
+
+  const field = lane === 'jp' ? 'JackpotLeagueIds' : 'HofLeagueIds';
+  await db.collection('drafts').doc('draftTracker')
+    .update({ [field]: FieldValue.arrayUnion(...toAdd) });
+  await db.collection('lane_proofs').doc(`${lane}-${cycle}`).set({
+    globals: FieldValue.arrayUnion(...toAdd),
+    healNote: `schedule written by lane guard (engine lag) — added ${toAdd.join(', ')} at filled=${filled}`,
+  }, { merge: true });
+  await db.collection('lane_heals').doc(`${lane}-sched-${cycle}-${filled}`).set({
+    lane, cycle, added: toAdd, filled, atIso: new Date().toISOString(), by: 'lane-guard-scheduler',
+  });
+  logger.error('lane_guard.schedule_written', { lane, cycle, added: toAdd, filled });
+  try {
+    const { createNotification } = await import('@/lib/queueNotifications');
+    await createNotification(ADMIN_BELL_WALLET, {
+      type: 'promo',
+      title: `⚠️ Lane guard scheduled ${lane.toUpperCase()} draws`,
+      message: `Engine lagged on scheduling — guard wrote sealed positions ${toAdd.join(', ')} for ${lane.toUpperCase()} cycle ${cycle} (filled=${filled}). Audited in lane_heals.`,
+      link: '/admin',
+      dedupeKey: `lane-sched-${lane}-${cycle}-${toAdd[0]}`,
+      icon: 'award',
+    });
+  } catch { /* bell is best-effort */ }
+  return { wrote: toAdd };
 }

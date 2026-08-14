@@ -193,16 +193,17 @@ export default function MindsharePage() {
       <div className="flex items-baseline gap-3 flex-wrap">
         <h1 className="text-white text-2xl sm:text-3xl font-bold">Banana Hype</h1>
         <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-white/40">
-          <span className="w-2 h-2 rounded-full bg-success animate-pulse" />LIVE
+          <span className="w-2 h-2 rounded-full bg-success animate-pulse" />LIVE · WEEKLY
         </span>
         <span className="ml-auto text-[12px] sm:text-sm font-bold text-banana tabular-nums border border-banana/40 rounded-lg px-3 py-1.5">
-          🏆 Rewards in {countdown || '…'}
+          🏆 This week ends in {countdown || '…'}
         </span>
       </div>
       <p className="text-white/45 text-sm mt-2 max-w-2xl">
-        The live board of who owns SBS attention on X. Posts, quotes, retweets and replies about SBS all grow
-        your tile, and pulling new people into the contest grows it fastest. Board pays Thursday night, resets
-        on the spot, next race starts immediately.
+        <b className="text-white/70">The weekly leaderboard</b> of who owns SBS attention on X. Posts, quotes,
+        retweets and replies about SBS all grow your tile, and pulling new people into the contest grows it
+        fastest. Every Thursday night the top 25 of the week get paid, the board resets to zero, and a brand
+        new week starts on the spot — everybody back to even, every week.
       </p>
 
       {/* prize ladder — the focus, never buried */}
@@ -263,7 +264,7 @@ export default function MindsharePage() {
 
         <div className="lg:w-[300px] flex-none rounded-2xl border border-white/[0.07] bg-white/[0.02] overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-white/[0.07] text-[11px] font-bold tracking-widest text-white/40">
-            THE 25 · ALL WIN THURSDAY
+            THIS WEEK&apos;S 25 · ALL WIN THURSDAY
           </div>
           <div className="flex-1 overflow-y-auto max-h-[380px]">
             {(board?.tiles ?? []).map((t) => (

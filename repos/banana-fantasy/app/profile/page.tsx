@@ -51,6 +51,20 @@ function memberSince(iso: string): string {
 export default function ProfilePage() {
   const { user, login, isLoading: authLoading, isEmbeddedWallet } = useAuth();
   const [copiedWallet, setCopiedWallet] = useState(false);
+  // Real X-link status from v2_twitter_links — user.xHandle is client-memory
+  // only and showed linked users as "Not linked" (Richard 8/13). Stable-scalar
+  // dep only (Rule #0).
+  const [linkedX, setLinkedX] = useState<string | null>(null);
+  const profileWallet = user?.walletAddress?.toLowerCase() ?? '';
+  useEffect(() => {
+    if (!profileWallet) { setLinkedX(null); return; }
+    let alive = true;
+    void fetch(`/api/auth/twitter-link?wallet=${encodeURIComponent(profileWallet)}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && typeof d.handle === 'string') setLinkedX(`@${d.handle}`); })
+      .catch(() => { /* transient */ });
+    return () => { alive = false; };
+  }, [profileWallet]);
   const { exportWallet } = useExportWallet();
   const [exportArmed, setExportArmed] = useState(false);
   const [exportError, setExportError] = useState(false);
@@ -346,10 +360,10 @@ export default function ProfilePage() {
                 </span>
                 <div>
                   <p className="text-white text-sm font-medium">X / Twitter</p>
-                  <p className="text-white/30 text-xs">{user.xHandle || 'Not linked'}</p>
+                  <p className="text-white/30 text-xs">{user.xHandle || linkedX || 'Not linked'}</p>
                 </div>
               </div>
-              {user.xHandle ? (
+              {(user.xHandle || linkedX) ? (
                 <span className="text-green-400/60 text-xs font-bold">Verified</span>
               ) : (
                 <span className="text-white/20 text-xs">—</span>

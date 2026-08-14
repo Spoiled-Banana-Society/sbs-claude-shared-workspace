@@ -1389,7 +1389,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isTwitterLinking]);
 
-  const handleLinkTwitter = useCallback(() => {
+  const handleLinkTwitter = useCallback(async () => {
     // Don't silently no-op when we're not ready yet — that invisible failure
     // (user taps Connect, NOTHING happens, no error, no spinner) was a top
     // cause of "I can't connect my X" reports. Always give feedback.
@@ -1404,6 +1404,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsTwitterLinking(true);
     setTwitterError(null);
     try {
+      // Changing X accounts (AceJohn 2026-08-13): Privy allows ONE X per
+      // person, so if one is already attached, unlink it first — this makes
+      // the same Connect flow double as "switch to a different X".
+      const existing = privy.user?.linkedAccounts?.find(
+        (a: { type: string }) => a.type === 'twitter_oauth'
+      ) as { subject?: string } | undefined;
+      if (existing?.subject) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (privy as any).unlinkTwitter?.(existing.subject);
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (privy as any).linkTwitter();
     } catch (err) {

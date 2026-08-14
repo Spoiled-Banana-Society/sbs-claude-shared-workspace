@@ -28,13 +28,16 @@ export const WEEKS_COLLECTION = 'mindshare_weeks';
 export const STATE_DOC = 'mindshare_state/live';
 
 const API_BASE = 'https://api.twitterapi.io';
-const SEARCH_QUERY = '@SBSFantasy -from:SBSFantasy';
+// Widened 8/13 (Richard: "yes def widen it") — untagged SBS talk counts too.
+// Deliberately NO bare "SBS" term: that's a Korean broadcaster + UK special
+// forces, the junk would drown the signal. Phrases stay quoted.
+const SEARCH_QUERY = '(@SBSFantasy OR sbsfantasy OR "banana best ball" OR "spoiled banana society") -from:SBSFantasy';
 
 /** House accounts never compete on the board (Richard 8/13: "take away
  *  boris vagner and rich vagner lmao"). Lowercased handles. */
-export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner']);
+export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner', 'drmichellevagner']);
 const MAX_SEARCH_PAGES = 3;
-const REFRESH_BATCH = 60; // recent tweets whose metrics we re-pull per scan
+const REFRESH_BATCH = 48; // recent tweets whose metrics we re-pull per scan (twitterapi hard cap: 50 ids/request)
 const MS_DAY = 86_400_000;
 
 // Scoring weights — tune on real data during the week-1/2 soft launch.
@@ -50,7 +53,7 @@ const W = {
   viewsCap: 50_000,
   replyMult: 0.45,
   dayDecay: 0.5, // nth-best tweet of an ET day is worth 1/(1 + 0.5*(n-1))
-  minFollowers: 25,
+  minFollowers: 5, // was 25 — zeroed real small-account community members (Wildcat23 at 11 followers, 8/13); the 90-day age gate is the real farming filter
   minAccountAgeDays: 90,
 };
 
@@ -200,7 +203,76 @@ async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
     if (sawOld || !data.has_next_page || !data.next_cursor) break;
     cursor = String(data.next_cursor);
   }
+  // Second source: the @SBSFantasy MENTIONS TIMELINE — a different read
+  // surface that catches tweets X search hides (quality-filtered accounts,
+  // some quotes). Merged + deduped by tweet id.
+  try {
+    const data = await apiGet('/twitter/user/mentions?userName=SBSFantasy');
+    const seen = new Set(out.map((t) => t.id));
+    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
+      const t = parseTweet(raw);
+      if (!t || seen.has(t.id) || EXCLUDED_HANDLES.has(t.authorHandle.toLowerCase())) continue;
+      if (t.createdAtMs > 0 && t.createdAtMs < sinceMs) continue;
+      out.push(t);
+    }
+  } catch { /* best-effort — search remains the primary source */ }
   return out;
+}
+
+/** Credit retweeters of @SBSFantasy's own recent posts.
+ *  X search HIDES native retweets, so pure-RT engagement (Silkyjohnson case,
+ *  8/13: "he did engage" — all his activity was RTs) is invisible to the
+ *  mention scan. This pulls the retweeter lists of our own recent tweets and
+ *  writes a small credit doc per retweeter (scored at W.baseRetweet). */
+async function creditRetweeters(weekId: string, nowMs: number): Promise<number> {
+  const db = getAdminFirestore();
+  // -filter:replies is load-bearing: the SBS account replies constantly, so
+  // page 1 of a bare from: search is ALL replies with zero RTs and the real
+  // posts (the ones people retweet) never surface. Two pages, RT'd-only.
+  const ourTweets: RawTweet[] = [];
+  let cursor = '';
+  for (let page = 0; page < 2; page++) {
+    const qs = new URLSearchParams({ query: 'from:SBSFantasy -filter:replies', queryType: 'Latest' });
+    if (cursor) qs.set('cursor', cursor);
+    const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
+    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
+      const t = parseTweet(raw);
+      if (t && nowMs - t.createdAtMs < 7 * MS_DAY && t.retweets > 0) ourTweets.push(t);
+    }
+    if (!data.has_next_page || !data.next_cursor) break;
+    cursor = String(data.next_cursor);
+  }
+  ourTweets.splice(10);
+  let credited = 0;
+  for (const ours of ourTweets) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let users: any[] = [];
+    try {
+      const r = await apiGet(`/twitter/tweet/retweeters?tweetId=${ours.id}`);
+      users = Array.isArray(r.users) ? r.users : (Array.isArray(r.retweeters) ? r.retweeters : []);
+    } catch { continue; }
+    for (const u of users) {
+      const handle = String(u?.userName ?? '').trim();
+      if (!handle || EXCLUDED_HANDLES.has(handle.toLowerCase())) continue;
+      const docId = `rt-${ours.id}-${handle.toLowerCase()}`.slice(0, 900);
+      try {
+        await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(docId).create({
+          id: docId,
+          text: `RT of ${ours.id}`,
+          createdAtMs: nowMs,
+          isReply: false,
+          isRetweet: true,
+          retweets: 0, quotes: 0, replies: 0, likes: 0, views: 0,
+          authorHandle: handle,
+          authorFollowers: Number(u?.followers) || 0,
+          authorCreatedAtMs: Date.parse(String(u?.createdAt ?? '')) || 0,
+        });
+        credited++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (e: any) { if (e?.code !== 6) throw e; }
+    }
+  }
+  return credited;
 }
 
 /** Refresh engagement metrics for recent stored tweets (engagement keeps growing). */
@@ -312,17 +384,83 @@ async function rolloverIfDue(state: MindshareState, nowMs: number): Promise<Mind
   return next;
 }
 
+// ── one-time Privy → v2_twitter_links backfill ──────────────────────────────
+// Users who connected X on-site via Privy but never hit the verify-twitter
+// route have NO site-side link row (Silkyjohnson case, Richard 8/13: nobody
+// should ever have to reconnect). Runs ONCE inside the cron, where
+// PRIVY_APP_SECRET exists; marker-guarded, existing rows never touched.
+async function backfillPrivyLinksOnce(): Promise<Record<string, unknown> | null> {
+  const db = getAdminFirestore();
+  const marker = db.doc('mindshare_state/privy-link-backfill');
+  if ((await marker.get()).exists) return null;
+  const appId = (process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim();
+  const secret = (process.env.PRIVY_APP_SECRET ?? '').trim();
+  if (!appId || !secret) return { backfill: 'skipped: privy creds missing' };
+
+  const [usersSnap, linksSnap] = await Promise.all([
+    db.collection('v2_users').select().get(),
+    db.collection('v2_twitter_links').select().get(),
+  ]);
+  const siteWallets = new Set(usersSnap.docs.map((d) => d.id.toLowerCase()));
+  const existing = new Set(linksSnap.docs.map((d) => d.id));
+
+  const auth = 'Basic ' + Buffer.from(`${appId}:${secret}`).toString('base64');
+  let cursor: string | null = null;
+  let scanned = 0; let created = 0;
+  for (let page = 0; page < 60; page++) {
+    const url = new URL('https://auth.privy.io/api/v1/users');
+    url.searchParams.set('limit', '100');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const res = await fetch(url, { headers: { Authorization: auth, 'privy-app-id': appId }, cache: 'no-store' });
+    if (!res.ok) return { backfill: `privy ${res.status}` };
+    const data = (await res.json()) as { data?: Array<Record<string, unknown>>; next_cursor?: string };
+    for (const u of data.data ?? []) {
+      scanned++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const accounts = (u.linked_accounts ?? []) as any[];
+      const tw = accounts.find((a) => a?.type === 'twitter_oauth' && a?.subject && a?.username);
+      if (!tw || existing.has(String(tw.subject))) continue;
+      const wallet = accounts
+        .filter((a) => a?.type === 'wallet' && typeof a?.address === 'string')
+        .map((a) => String(a.address).toLowerCase())
+        .find((w) => siteWallets.has(w));
+      if (!wallet) continue;
+      try {
+        await db.collection('v2_twitter_links').doc(String(tw.subject)).create({
+          twitterId: String(tw.subject),
+          twitterHandle: String(tw.username),
+          walletAddress: wallet,
+          privyUserId: String(u.id ?? ''),
+          backfilledAt: new Date().toISOString(),
+          backfillSource: 'privy-backfill-2026-08-13',
+        });
+        created++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (e: any) { if (e?.code !== 6) throw e; }
+    }
+    cursor = data.next_cursor ?? null;
+    if (!cursor) break;
+  }
+  await marker.set({ ranAt: FieldValue.serverTimestamp(), scanned, created });
+  return { backfillScanned: scanned, backfillCreated: created };
+}
+
 // ── the scan entrypoint (called by the cron) ────────────────────────────────
 export async function runMindshareScan(): Promise<Record<string, unknown>> {
   const nowMs = Date.now();
   let state = await getOrInitState();
   state = await rolloverIfDue(state, nowMs);
 
+  let backfill: Record<string, unknown> | null = null;
+  try { backfill = await backfillPrivyLinksOnce(); } catch (e) {
+    backfill = { backfill: `error: ${e instanceof Error ? e.message.slice(0, 120) : 'unknown'}` };
+  }
+
   if (!apiKey()) {
     return { ok: false, reason: 'TWITTERAPI_IO_KEY missing', weekId: state.weekId };
   }
 
-  let pulled = 0; let refreshed = 0; let apiError: string | null = null;
+  let pulled = 0; let refreshed = 0; let rtCredits = 0; let apiError: string | null = null;
   try {
     const sinceMs = Math.max(state.startsAtMs, (state.lastScanMs ?? 0) - 15 * 60_000);
     const fresh = await fetchNewMentions(sinceMs);
@@ -335,6 +473,7 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
     }
     await batch.commit();
     refreshed = await refreshRecentMetrics(state.weekId, nowMs);
+    rtCredits = await creditRetweeters(state.weekId, nowMs);
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
     apiError = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
@@ -342,5 +481,5 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
 
   const scored = await rescoreWeek(state.weekId, nowMs);
   await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, ...scored, ...(apiError ? { apiError } : {}) };
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
 }
