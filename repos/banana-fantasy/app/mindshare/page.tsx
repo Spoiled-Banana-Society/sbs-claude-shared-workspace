@@ -26,7 +26,29 @@ interface BoardTile { handle: string; display: string; score: number; pct: numbe
 interface FeedTweet {
   id: string; handle: string; text: string; createdAtMs: number;
   likes: number; retweets: number; replies: number; views: number;
-  isReply: boolean; ours: boolean;
+  isReply: boolean; isQuote: boolean; ours: boolean;
+}
+
+type FeedFilter = 'all' | 'posts' | 'quotes' | 'replies' | 'sbs';
+const FEED_FILTERS: Array<{ key: FeedFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'posts', label: 'Posts' },
+  { key: 'quotes', label: 'Quotes' },
+  { key: 'replies', label: 'Replies' },
+  { key: 'sbs', label: 'SBS' },
+];
+
+function feedKind(t: FeedTweet): 'post' | 'quote' | 'reply' {
+  if (t.isQuote) return 'quote';
+  if (t.isReply) return 'reply';
+  return 'post';
+}
+
+function matchesFilter(t: FeedTweet, f: FeedFilter): boolean {
+  if (f === 'all') return true;
+  if (f === 'sbs') return t.ours;
+  const kind = feedKind(t);
+  return (f === 'posts' && kind === 'post') || (f === 'quotes' && kind === 'quote') || (f === 'replies' && kind === 'reply');
 }
 interface BoardYou { handle: string | null; display: string | null; linked: boolean; rank: number | null; score: number; pct: number }
 interface BoardState {
@@ -132,6 +154,7 @@ export default function MindsharePage() {
 
   const [board, setBoard] = useState<BoardState | null>(null);
   const [feed, setFeed] = useState<FeedTweet[]>([]);
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
   const [shuffleTick, setShuffleTick] = useState(0);
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapSize, setMapSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -282,9 +305,23 @@ export default function MindsharePage() {
                     : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
                 style={{ left: r.x + 3, top: r.y + 3, width: Math.max(r.w - 6, 0), height: Math.max(r.h - 6, 0) }}
               >
-                <div className={`font-bold truncate ${tiny ? 'text-[10px]' : big ? 'text-[14px]' : 'text-[12px]'} ${isKing ? 'text-black' : 'text-white/80'}`}>
-                  {t.label}{isYou ? ' · YOU' : ''}
-                </div>
+                {/* Name is ALWAYS fully readable (Boris 8/14: no "thayt…"):
+                    font auto-shrinks to fit the tile width, and if it hits the
+                    floor it wraps to a second line instead of ellipsizing. */}
+                {(() => {
+                  const label = `${t.label}${isYou ? ' · YOU' : ''}`;
+                  const maxFs = big ? 14 : tiny ? 11 : 12;
+                  const fitFs = Math.floor((r.w - (big ? 34 : 18)) / (0.62 * Math.max(label.length, 1)));
+                  const nameFs = Math.max(8, Math.min(maxFs, fitFs));
+                  return (
+                    <div
+                      className={`font-bold leading-tight break-words ${isKing ? 'text-black' : 'text-white/80'}`}
+                      style={{ fontSize: nameFs }}
+                    >
+                      {label}
+                    </div>
+                  );
+                })()}
                 {/* The percent ALWAYS renders — tiny tiles just get compact
                     type (Boris 8/14: every tile must show its number). */}
                 <div className={`font-extrabold tabular-nums ${tiny ? 'text-[12px] mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'} ${tiny ? '' : big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
@@ -379,8 +416,28 @@ export default function MindsharePage() {
           <p className="text-white/45 text-[13px] mt-1 px-1">
             The posts building the board, as they happen. Tap one to jump in on X — every interaction grows a tile.
           </p>
+          {/* filter pills — pick what to see; counts keep them honest */}
+          <div className="mt-3 flex items-center gap-1.5 flex-wrap px-1">
+            {FEED_FILTERS.map((f) => {
+              const count = f.key === 'all' ? feed.length : feed.filter((t) => matchesFilter(t, f.key)).length;
+              if (f.key !== 'all' && count === 0) return null;
+              const active = feedFilter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setFeedFilter(f.key)}
+                  className={`rounded-full border px-3 py-1.5 text-[12px] font-bold transition-colors ${active
+                    ? 'bg-banana border-banana text-black'
+                    : 'bg-white/[0.03] border-white/[0.09] text-white/60 hover:text-white/85 hover:border-white/20'}`}
+                >
+                  {f.label}
+                  <span className={`ml-1.5 tabular-nums font-semibold ${active ? 'text-black/50' : 'text-white/30'}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {feed.map((t, i) => (
+            {feed.filter((t) => matchesFilter(t, feedFilter)).map((t, i) => (
               <a
                 key={t.id}
                 href={`https://x.com/${t.handle}/status/${t.id}`}
@@ -398,8 +455,10 @@ export default function MindsharePage() {
                   {t.ours && (
                     <span className="flex-none bg-banana text-black text-[9px] font-extrabold tracking-widest px-1.5 py-0.5 rounded-full">SBS</span>
                   )}
-                  {t.isReply && !t.ours && (
-                    <span className="flex-none text-[10px] font-bold text-white/30 tracking-wider">REPLY</span>
+                  {feedKind(t) !== 'post' && (
+                    <span className="flex-none text-[10px] font-bold text-white/30 tracking-wider">
+                      {feedKind(t) === 'quote' ? 'QUOTE' : 'REPLY'}
+                    </span>
                   )}
                   <span className="ml-auto flex-none text-[11px] text-white/35 tabular-nums">{timeAgo(t.createdAtMs)}</span>
                 </div>

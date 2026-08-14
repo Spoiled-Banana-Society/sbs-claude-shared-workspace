@@ -11,7 +11,7 @@
  * NOT tweets and never appear here.
  */
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { WEEKS_COLLECTION } from '@/lib/mindshare';
+import { WEEKS_COLLECTION, EXCLUDED_HANDLES } from '@/lib/mindshare';
 import { json, jsonError } from '@/lib/api/routeUtils';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,8 @@ interface FeedTweet {
   replies: number;
   views: number;
   isReply: boolean;
+  isQuote: boolean;
+  /** House content: the company handle AND the founders' personal handles. */
   ours: boolean;
 }
 
@@ -56,7 +58,8 @@ export async function GET() {
           replies: Number(t.replies) || 0,
           views: Number(t.views) || 0,
           isReply: Boolean(t.isReply),
-          ours: handle.toLowerCase() === 'sbsfantasy',
+          isQuote: Boolean(t.isQuote),
+          ours: EXCLUDED_HANDLES.has(handle.toLowerCase()),
         });
       }
     }));

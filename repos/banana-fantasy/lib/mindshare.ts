@@ -139,6 +139,7 @@ interface RawTweet {
   createdAtMs: number;
   isReply: boolean;
   isRetweet: boolean;
+  isQuote: boolean;
   retweets: number; quotes: number; replies: number; likes: number; views: number;
   authorHandle: string;
   authorFollowers: number;
@@ -162,6 +163,7 @@ function parseTweet(t: any): RawTweet | null {
     createdAtMs,
     isReply: Boolean(t?.isReply) || Boolean(t?.inReplyToId),
     isRetweet: Boolean(t?.retweeted_tweet),
+    isQuote: Boolean(t?.quoted_tweet) || Boolean(t?.isQuote),
     retweets: Number(t?.retweetCount) || 0,
     quotes: Number(t?.quoteCount) || 0,
     replies: Number(t?.replyCount) || 0,
@@ -273,6 +275,7 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
           createdAtMs: nowMs,
           isReply: false,
           isRetweet: true,
+          isQuote: false,
           retweets: 0, quotes: 0, replies: 0, likes: 0, views: 0,
           authorHandle: handle,
           authorFollowers: Number(u?.followers) || 0,
@@ -302,7 +305,9 @@ async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<numb
   for (const t of fresh) {
     batch.set(
       db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id),
-      { retweets: t.retweets, quotes: t.quotes, replies: t.replies, likes: t.likes, views: t.views },
+      // isQuote rides along so pre-8/14 docs (stored before the flag existed)
+      // self-heal on their next metrics refresh and filter correctly in the feed.
+      { retweets: t.retweets, quotes: t.quotes, replies: t.replies, likes: t.likes, views: t.views, isQuote: t.isQuote },
       { merge: true },
     );
   }
