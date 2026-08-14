@@ -24,9 +24,16 @@ import { useExportWallet } from '@privy-io/react-auth';
  *
  * 2026-07-03: Rockin_Korotkin sent 341 APE on ApeChain to his embedded
  * wallet; export lets him recover it from MetaMask himself.
+ *
+ * 2026-08-02: the_tikman sent 26.537714 USDC to his embedded wallet on
+ * ETHEREUM MAINNET instead of Base (tx 0x4d208760…b5f1, from his own
+ * EIP-7702 smart account). Funds are safe at the same address on mainnet
+ * but unreachable — the wallet holds 0 ETH there and our app is Base-only.
+ * Export lets him move it himself once he has gas.
  */
 const KEY_EXPORT_ALLOWLIST = new Set<string>([
   '0xfff36cb99d9d7432ba70d6a93c1a72d49a7fc98e',
+  '0x59e8ca8bbaf42037d8da75e8ca96732efd29092c',
 ]);
 
 function truncateAddress(addr: string): string {
@@ -44,6 +51,20 @@ function memberSince(iso: string): string {
 export default function ProfilePage() {
   const { user, login, isLoading: authLoading, isEmbeddedWallet } = useAuth();
   const [copiedWallet, setCopiedWallet] = useState(false);
+  // Real X-link status from v2_twitter_links — user.xHandle is client-memory
+  // only and showed linked users as "Not linked" (Richard 8/13). Stable-scalar
+  // dep only (Rule #0).
+  const [linkedX, setLinkedX] = useState<string | null>(null);
+  const profileWallet = user?.walletAddress?.toLowerCase() ?? '';
+  useEffect(() => {
+    if (!profileWallet) { setLinkedX(null); return; }
+    let alive = true;
+    void fetch(`/api/auth/twitter-link?wallet=${encodeURIComponent(profileWallet)}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && typeof d.handle === 'string') setLinkedX(`@${d.handle}`); })
+      .catch(() => { /* transient */ });
+    return () => { alive = false; };
+  }, [profileWallet]);
   const { exportWallet } = useExportWallet();
   const [exportArmed, setExportArmed] = useState(false);
   const [exportError, setExportError] = useState(false);
@@ -174,6 +195,14 @@ export default function ProfilePage() {
               >
                 {copiedWallet ? '✅ Copied!' : truncateAddress(user.walletAddress)}
               </button>
+
+              {/* Network guard — this address exists on every EVM chain, but we
+                  only read Base. Users have pasted it into Coinbase/MetaMask and
+                  sent on Ethereum mainnet, stranding the funds (the_tikman,
+                  2026-08-02). Say the network wherever the address is copyable. */}
+              <p className="text-white/25 text-[11px] mt-1">
+                Base network only — funds sent on another network won&apos;t show up here
+              </p>
 
               <p className="text-white/20 text-[11px] mt-1">
                 Member since {memberSince(user.createdAt || new Date().toISOString())}
@@ -331,10 +360,10 @@ export default function ProfilePage() {
                 </span>
                 <div>
                   <p className="text-white text-sm font-medium">X / Twitter</p>
-                  <p className="text-white/30 text-xs">{user.xHandle || 'Not linked'}</p>
+                  <p className="text-white/30 text-xs">{user.xHandle || linkedX || 'Not linked'}</p>
                 </div>
               </div>
-              {user.xHandle ? (
+              {(user.xHandle || linkedX) ? (
                 <span className="text-green-400/60 text-xs font-bold">Verified</span>
               ) : (
                 <span className="text-white/20 text-xs">—</span>

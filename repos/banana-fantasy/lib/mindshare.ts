@@ -312,11 +312,77 @@ async function rolloverIfDue(state: MindshareState, nowMs: number): Promise<Mind
   return next;
 }
 
+// ── one-time Privy → v2_twitter_links backfill ──────────────────────────────
+// Users who connected X on-site via Privy but never hit the verify-twitter
+// route have NO site-side link row (Silkyjohnson case, Richard 8/13: nobody
+// should ever have to reconnect). Runs ONCE inside the cron, where
+// PRIVY_APP_SECRET exists; marker-guarded, existing rows never touched.
+async function backfillPrivyLinksOnce(): Promise<Record<string, unknown> | null> {
+  const db = getAdminFirestore();
+  const marker = db.doc('mindshare_state/privy-link-backfill');
+  if ((await marker.get()).exists) return null;
+  const appId = (process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim();
+  const secret = (process.env.PRIVY_APP_SECRET ?? '').trim();
+  if (!appId || !secret) return { backfill: 'skipped: privy creds missing' };
+
+  const [usersSnap, linksSnap] = await Promise.all([
+    db.collection('v2_users').select().get(),
+    db.collection('v2_twitter_links').select().get(),
+  ]);
+  const siteWallets = new Set(usersSnap.docs.map((d) => d.id.toLowerCase()));
+  const existing = new Set(linksSnap.docs.map((d) => d.id));
+
+  const auth = 'Basic ' + Buffer.from(`${appId}:${secret}`).toString('base64');
+  let cursor: string | null = null;
+  let scanned = 0; let created = 0;
+  for (let page = 0; page < 60; page++) {
+    const url = new URL('https://auth.privy.io/api/v1/users');
+    url.searchParams.set('limit', '100');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const res = await fetch(url, { headers: { Authorization: auth, 'privy-app-id': appId }, cache: 'no-store' });
+    if (!res.ok) return { backfill: `privy ${res.status}` };
+    const data = (await res.json()) as { data?: Array<Record<string, unknown>>; next_cursor?: string };
+    for (const u of data.data ?? []) {
+      scanned++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const accounts = (u.linked_accounts ?? []) as any[];
+      const tw = accounts.find((a) => a?.type === 'twitter_oauth' && a?.subject && a?.username);
+      if (!tw || existing.has(String(tw.subject))) continue;
+      const wallet = accounts
+        .filter((a) => a?.type === 'wallet' && typeof a?.address === 'string')
+        .map((a) => String(a.address).toLowerCase())
+        .find((w) => siteWallets.has(w));
+      if (!wallet) continue;
+      try {
+        await db.collection('v2_twitter_links').doc(String(tw.subject)).create({
+          twitterId: String(tw.subject),
+          twitterHandle: String(tw.username),
+          walletAddress: wallet,
+          privyUserId: String(u.id ?? ''),
+          backfilledAt: new Date().toISOString(),
+          backfillSource: 'privy-backfill-2026-08-13',
+        });
+        created++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (e: any) { if (e?.code !== 6) throw e; }
+    }
+    cursor = data.next_cursor ?? null;
+    if (!cursor) break;
+  }
+  await marker.set({ ranAt: FieldValue.serverTimestamp(), scanned, created });
+  return { backfillScanned: scanned, backfillCreated: created };
+}
+
 // ── the scan entrypoint (called by the cron) ────────────────────────────────
 export async function runMindshareScan(): Promise<Record<string, unknown>> {
   const nowMs = Date.now();
   let state = await getOrInitState();
   state = await rolloverIfDue(state, nowMs);
+
+  let backfill: Record<string, unknown> | null = null;
+  try { backfill = await backfillPrivyLinksOnce(); } catch (e) {
+    backfill = { backfill: `error: ${e instanceof Error ? e.message.slice(0, 120) : 'unknown'}` };
+  }
 
   if (!apiKey()) {
     return { ok: false, reason: 'TWITTERAPI_IO_KEY missing', weekId: state.weekId };
@@ -342,5 +408,5 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
 
   const scored = await rescoreWeek(state.weekId, nowMs);
   await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, ...scored, ...(apiError ? { apiError } : {}) };
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
 }
