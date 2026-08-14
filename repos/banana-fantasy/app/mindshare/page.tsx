@@ -26,16 +26,17 @@ interface BoardTile { handle: string; display: string; score: number; pct: numbe
 interface FeedTweet {
   id: string; handle: string; text: string; createdAtMs: number;
   likes: number; retweets: number; replies: number; views: number;
-  isReply: boolean; isQuote: boolean; ours: boolean;
+  isReply: boolean; isQuote: boolean; ours: boolean; bot: boolean;
 }
 
-type FeedFilter = 'all' | 'posts' | 'quotes' | 'replies' | 'sbs';
+type FeedFilter = 'all' | 'posts' | 'quotes' | 'replies' | 'sbs' | 'bot';
 const FEED_FILTERS: Array<{ key: FeedFilter; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'posts', label: 'Posts' },
-  { key: 'quotes', label: 'Quotes' },
+  { key: 'quotes', label: 'QRTs' },
   { key: 'replies', label: 'Replies' },
   { key: 'sbs', label: 'SBS' },
+  { key: 'bot', label: 'Draft Bot' },
 ];
 
 function feedKind(t: FeedTweet): 'post' | 'quote' | 'reply' {
@@ -44,11 +45,17 @@ function feedKind(t: FeedTweet): 'post' | 'quote' | 'reply' {
   return 'post';
 }
 
+// Filter semantics (Boris 8/14): SBS = posts (and QRTs) we made, never our
+// comments — those live under Replies with everyone else's. Draft Bot = only
+// @sbsdraftbot's own tweets. Posts = original posts by people (bot excluded —
+// it has its own section).
 function matchesFilter(t: FeedTweet, f: FeedFilter): boolean {
   if (f === 'all') return true;
-  if (f === 'sbs') return t.ours;
+  if (f === 'sbs') return t.ours && !t.isReply;
+  if (f === 'bot') return t.bot;
   const kind = feedKind(t);
-  return (f === 'posts' && kind === 'post') || (f === 'quotes' && kind === 'quote') || (f === 'replies' && kind === 'reply');
+  if (f === 'posts') return kind === 'post' && !t.bot;
+  return (f === 'quotes' && kind === 'quote') || (f === 'replies' && kind === 'reply');
 }
 interface BoardYou { handle: string | null; display: string | null; linked: boolean; rank: number | null; score: number; pct: number }
 interface BoardState {
@@ -455,9 +462,12 @@ export default function MindsharePage() {
                   {t.ours && (
                     <span className="flex-none bg-banana text-black text-[9px] font-extrabold tracking-widest px-1.5 py-0.5 rounded-full">SBS</span>
                   )}
+                  {t.bot && (
+                    <span className="flex-none border border-white/20 text-white/50 text-[9px] font-extrabold tracking-widest px-1.5 py-0.5 rounded-full">DRAFT BOT</span>
+                  )}
                   {feedKind(t) !== 'post' && (
                     <span className="flex-none text-[10px] font-bold text-white/30 tracking-wider">
-                      {feedKind(t) === 'quote' ? 'QUOTE' : 'REPLY'}
+                      {feedKind(t) === 'quote' ? 'QRT' : 'REPLY'}
                     </span>
                   )}
                   <span className="ml-auto flex-none text-[11px] text-white/35 tabular-nums">{timeAgo(t.createdAtMs)}</span>

@@ -34,8 +34,10 @@ const API_BASE = 'https://api.twitterapi.io';
 const SEARCH_QUERY = '(@SBSFantasy OR sbsfantasy OR "banana best ball" OR "spoiled banana society") -from:SBSFantasy';
 
 /** House accounts never compete on the board (Richard 8/13: "take away
- *  boris vagner and rich vagner lmao"). Lowercased handles. */
-export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner', 'drmichellevagner']);
+ *  boris vagner and rich vagner lmao"). Lowercased handles.
+ *  sbsdraftbot added 8/14: the draft-results bot must never bank tile points —
+ *  its posts are stored for the public feed's Draft Bot filter only. */
+export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner', 'drmichellevagner', 'sbsdraftbot']);
 const MAX_SEARCH_PAGES = 3;
 const REFRESH_BATCH = 48; // recent tweets whose metrics we re-pull per scan (twitterapi hard cap: 50 ids/request)
 const MS_DAY = 86_400_000;
@@ -247,6 +249,16 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   // Persist our own posts for the public feed (/api/mindshare/feed). Scoring
   // is untouched — rescoreWeek skips EXCLUDED_HANDLES, and refreshRecentMetrics
   // keeps their engagement counts fresh like any other stored tweet.
+  // The draft bot's posts ride the same batch (its own feed filter) — also
+  // scoring-exempt via EXCLUDED_HANDLES.
+  try {
+    const qs = new URLSearchParams({ query: 'from:sbsdraftbot -filter:replies', queryType: 'Latest' });
+    const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
+    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
+      const t = parseTweet(raw);
+      if (t && nowMs - t.createdAtMs < 7 * MS_DAY) ourTweets.push(t);
+    }
+  } catch { /* best-effort — bot posts also arrive via the mention search */ }
   if (ourTweets.length > 0) {
     const feedBatch = db.batch();
     for (const t of ourTweets) {

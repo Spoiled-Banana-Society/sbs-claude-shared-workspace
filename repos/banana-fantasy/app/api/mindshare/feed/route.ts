@@ -29,6 +29,8 @@ interface FeedTweet {
   isQuote: boolean;
   /** House content: the company handle AND the founders' personal handles. */
   ours: boolean;
+  /** @sbsdraftbot — its tweets get their own Draft Bot filter, never SBS. */
+  bot: boolean;
 }
 
 export async function GET() {
@@ -48,6 +50,11 @@ export async function GET() {
         const handle = String(t.authorHandle ?? '').trim();
         const text = String(t.text ?? '');
         if (!handle || !text || text.startsWith('RT of ')) continue;
+        const hLower = handle.toLowerCase();
+        const isBot = hLower === 'sbsdraftbot';
+        // House replies stay in the feed — they just live under the Replies
+        // filter like everyone else's; the SBS filter is posts-only
+        // (Boris 8/14). The bot gets its own filter with only its tweets.
         byId.set(d.id, {
           id: d.id,
           handle,
@@ -59,7 +66,8 @@ export async function GET() {
           views: Number(t.views) || 0,
           isReply: Boolean(t.isReply),
           isQuote: Boolean(t.isQuote),
-          ours: EXCLUDED_HANDLES.has(handle.toLowerCase()),
+          ours: EXCLUDED_HANDLES.has(hLower) && !isBot,
+          bot: isBot,
         });
       }
     }));
