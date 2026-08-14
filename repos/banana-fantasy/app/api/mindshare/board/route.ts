@@ -109,7 +109,10 @@ export async function GET(req: Request) {
     const displayFor = (handleLower: string, handleRaw: string): string => {
       const w = handleToWallet.get(handleLower);
       const name = w ? usernameByWallet.get(w) : undefined;
-      return name ?? `@${handleRaw}`;
+      // Placeholder site names ("User-0xdaca…") aren't identities — the X
+      // handle reads better until they pick a real username (Richard 8/13).
+      if (name && !/^user-0x/i.test(name)) return name;
+      return `@${handleRaw}`;
     };
 
     const tiles: TileOut[] = ranked.slice(0, 25).map((t, i) => ({
