@@ -203,6 +203,19 @@ async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
     if (sawOld || !data.has_next_page || !data.next_cursor) break;
     cursor = String(data.next_cursor);
   }
+  // Second source: the @SBSFantasy MENTIONS TIMELINE — a different read
+  // surface that catches tweets X search hides (quality-filtered accounts,
+  // some quotes). Merged + deduped by tweet id.
+  try {
+    const data = await apiGet('/twitter/user/mentions?userName=SBSFantasy');
+    const seen = new Set(out.map((t) => t.id));
+    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
+      const t = parseTweet(raw);
+      if (!t || seen.has(t.id) || EXCLUDED_HANDLES.has(t.authorHandle.toLowerCase())) continue;
+      if (t.createdAtMs > 0 && t.createdAtMs < sinceMs) continue;
+      out.push(t);
+    }
+  } catch { /* best-effort — search remains the primary source */ }
   return out;
 }
 
