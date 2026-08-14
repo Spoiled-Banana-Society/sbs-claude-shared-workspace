@@ -32,10 +32,10 @@ interface FeedTweet {
 type FeedFilter = 'all' | 'posts' | 'quotes' | 'replies' | 'sbs' | 'bot';
 const FEED_FILTERS: Array<{ key: FeedFilter; label: string }> = [
   { key: 'all', label: 'All' },
+  { key: 'sbs', label: 'SBS' },
   { key: 'posts', label: 'Posts' },
   { key: 'quotes', label: 'QRTs' },
   { key: 'replies', label: 'Replies' },
-  { key: 'sbs', label: 'SBS' },
   { key: 'bot', label: 'Draft Bot' },
 ];
 
