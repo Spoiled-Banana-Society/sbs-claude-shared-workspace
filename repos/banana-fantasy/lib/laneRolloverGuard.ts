@@ -88,6 +88,26 @@ export async function runLaneRolloverGuard(): Promise<Record<string, unknown>> {
       logger.error('lane_guard.hof_sched_failed', { err: (err as Error).message });
       return { ok: false };
     });
+
+  // ── Dead-id enforcement (Boris 2026-08-14): drafts 659/665/667 filled as
+  // Pro during the engine's schedule-lag incident and were replaced by sealed
+  // extension draws (722/726/732). Something keeps union-ing the dead trio
+  // back into the tracker (each re-add makes the HOF counter lie: 5→2). Until
+  // the writer is found and killed, the guard strips them within one tick.
+  {
+    const DEAD_HOF_IDS = [659, 665, 667];
+    const present = (t.HofLeagueIds ?? []).map(Number).filter((h) => DEAD_HOF_IDS.includes(h));
+    if (present.length) {
+      await db.runTransaction(async (tx) => {
+        const ref = db.collection('drafts').doc('draftTracker');
+        const cur = (await tx.get(ref)).data() as { HofLeagueIds?: number[] } | undefined;
+        const cleaned = (cur?.HofLeagueIds ?? []).filter((h) => !DEAD_HOF_IDS.includes(Number(h)));
+        tx.update(ref, { HofLeagueIds: cleaned });
+      });
+      logger.error('lane_guard.dead_ids_stripped', { ids: present, filled });
+      out.deadIdsStripped = present;
+    }
+  }
   return out;
 }
 
