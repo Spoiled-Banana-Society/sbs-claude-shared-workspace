@@ -299,14 +299,30 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   return credited;
 }
 
-/** Refresh engagement metrics for recent stored tweets (engagement keeps growing). */
+/** Refresh engagement metrics for stored tweets (engagement keeps growing).
+ *  Rotating cursor (8/14): the old 2-day/limit-48 read returned the SAME
+ *  oldest 48 docs every scan — newer docs never refreshed and pre-isQuote
+ *  docs never healed. The cursor walks the whole week batch-by-batch and
+ *  wraps, so every doc cycles through roughly every half hour. */
 async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<number> {
+  void nowMs;
   const db = getAdminFirestore();
-  const cutoff = nowMs - 2 * MS_DAY;
-  const snap = await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets')
-    .where('createdAtMs', '>=', cutoff).limit(REFRESH_BATCH).get();
+  const weekRef = db.collection(WEEKS_COLLECTION).doc(weekId);
+  const cursor = Number((await weekRef.get()).data()?.refreshCursorMs) || 0;
+  const tweetsCol = weekRef.collection('tweets');
+  let snap = await tweetsCol.where('createdAtMs', '>', cursor)
+    .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
+  if (snap.empty && cursor > 0) {
+    // End of the week's docs — wrap to the start for the next lap.
+    await weekRef.set({ refreshCursorMs: 0 }, { merge: true });
+    snap = await tweetsCol.where('createdAtMs', '>', 0)
+      .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
+  }
   if (snap.empty) return 0;
-  const ids = snap.docs.map((d) => d.id);
+  const lastCreatedAtMs = Number(snap.docs[snap.docs.length - 1].data()?.createdAtMs) || 0;
+  await weekRef.set({ refreshCursorMs: lastCreatedAtMs }, { merge: true });
+  const ids = snap.docs.map((d) => d.id).filter((id) => !id.startsWith('rt-'));
+  if (!ids.length) return 0;
   const data = await apiGet(`/twitter/tweets?tweet_ids=${ids.join(',')}`);
   const fresh = (Array.isArray(data.tweets) ? data.tweets : [])
     .map(parseTweet)
