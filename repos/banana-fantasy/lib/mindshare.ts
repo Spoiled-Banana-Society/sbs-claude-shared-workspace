@@ -206,6 +206,51 @@ async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
   return out;
 }
 
+/** Credit retweeters of @SBSFantasy's own recent posts.
+ *  X search HIDES native retweets, so pure-RT engagement (Silkyjohnson case,
+ *  8/13: "he did engage" — all his activity was RTs) is invisible to the
+ *  mention scan. This pulls the retweeter lists of our own recent tweets and
+ *  writes a small credit doc per retweeter (scored at W.baseRetweet). */
+async function creditRetweeters(weekId: string, nowMs: number): Promise<number> {
+  const db = getAdminFirestore();
+  const qs = new URLSearchParams({ query: 'from:SBSFantasy', queryType: 'Latest' });
+  const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
+  const ourTweets = (Array.isArray(data.tweets) ? data.tweets : [])
+    .map(parseTweet)
+    .filter((t): t is RawTweet => t !== null && nowMs - t.createdAtMs < 7 * MS_DAY)
+    .slice(0, 8);
+  let credited = 0;
+  for (const ours of ourTweets) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let users: any[] = [];
+    try {
+      const r = await apiGet(`/twitter/tweet/retweeters?tweetId=${ours.id}`);
+      users = Array.isArray(r.users) ? r.users : (Array.isArray(r.retweeters) ? r.retweeters : []);
+    } catch { continue; }
+    for (const u of users) {
+      const handle = String(u?.userName ?? '').trim();
+      if (!handle || EXCLUDED_HANDLES.has(handle.toLowerCase())) continue;
+      const docId = `rt-${ours.id}-${handle.toLowerCase()}`.slice(0, 900);
+      try {
+        await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(docId).create({
+          id: docId,
+          text: `RT of ${ours.id}`,
+          createdAtMs: nowMs,
+          isReply: false,
+          isRetweet: true,
+          retweets: 0, quotes: 0, replies: 0, likes: 0, views: 0,
+          authorHandle: handle,
+          authorFollowers: Number(u?.followers) || 0,
+          authorCreatedAtMs: Date.parse(String(u?.createdAt ?? '')) || 0,
+        });
+        credited++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (e: any) { if (e?.code !== 6) throw e; }
+    }
+  }
+  return credited;
+}
+
 /** Refresh engagement metrics for recent stored tweets (engagement keeps growing). */
 async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<number> {
   const db = getAdminFirestore();
@@ -391,7 +436,7 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
     return { ok: false, reason: 'TWITTERAPI_IO_KEY missing', weekId: state.weekId };
   }
 
-  let pulled = 0; let refreshed = 0; let apiError: string | null = null;
+  let pulled = 0; let refreshed = 0; let rtCredits = 0; let apiError: string | null = null;
   try {
     const sinceMs = Math.max(state.startsAtMs, (state.lastScanMs ?? 0) - 15 * 60_000);
     const fresh = await fetchNewMentions(sinceMs);
@@ -404,6 +449,7 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
     }
     await batch.commit();
     refreshed = await refreshRecentMetrics(state.weekId, nowMs);
+    rtCredits = await creditRetweeters(state.weekId, nowMs);
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
     apiError = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
@@ -411,5 +457,5 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
 
   const scored = await rescoreWeek(state.weekId, nowMs);
   await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
 }
