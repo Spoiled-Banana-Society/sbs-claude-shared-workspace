@@ -144,17 +144,42 @@ function kFmt(n: number): string {
   return String(n);
 }
 
-function useCountdown(targetMs: number | null): string {
+/** Premium segmented countdown — big tabular digits per unit, seconds tick
+ *  with a soft flip every beat. Flat strokes + banana accents, no glow. */
+function CountdownChip({ targetMs }: { targetMs: number | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  if (!targetMs) return '';
-  const s = Math.max(0, Math.floor((targetMs - now) / 1000));
+  const s = targetMs ? Math.max(0, Math.floor((targetMs - now) / 1000)) : 0;
   const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60); const sec = s % 60;
-  return `${d > 0 ? `${d}d ` : ''}${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
+  const seg = (v: number, unit: string, tickKey?: number) => (
+    <span className="flex flex-col items-center min-w-[26px]">
+      <span
+        key={tickKey}
+        className="text-banana font-extrabold tabular-nums text-[16px] sm:text-[18px] leading-none"
+        style={tickKey !== undefined ? { animation: 'secTick 380ms ease-out' } : undefined}
+      >
+        {String(v).padStart(2, '0')}
+      </span>
+      <span className="text-[8px] font-bold tracking-[0.15em] text-white/35 mt-1">{unit}</span>
+    </span>
+  );
+  const colon = <span className="text-banana/35 font-bold text-[14px] -mt-3 select-none">:</span>;
+  return (
+    <span className="ml-auto flex items-center gap-2 sm:gap-2.5 border border-banana/40 bg-banana/[0.05] rounded-xl px-3 sm:px-4 py-2">
+      <span className="text-[10px] font-bold tracking-widest text-white/50 mr-0.5">🏆 WEEK ENDS IN</span>
+      {seg(d, 'DAYS')}
+      {colon}
+      {seg(h, 'HRS')}
+      {colon}
+      {seg(m, 'MIN')}
+      {colon}
+      {seg(sec, 'SEC', sec)}
+    </span>
+  );
 }
 
 // Squarified treemap (Bruls et al.) — keeps tiles near-square instead of the
@@ -268,7 +293,6 @@ export default function MindsharePage() {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  const countdown = useCountdown(board?.week.endsAtMs ?? null);
   const zeroState = !board || board.total <= 0;
 
   // Build tile list: scored tiles, or shuffled real handles at zero.
@@ -312,16 +336,17 @@ export default function MindsharePage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pt-5 sm:pt-8 pb-28 lg:pb-12">
-      <style>{`@keyframes tileIn { from { opacity: 0; transform: scale(0.97) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+      <style>{`
+        @keyframes tileIn { from { opacity: 0; transform: scale(0.97) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes secTick { from { opacity: 0.15; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
       {/* header */}
       <div className="flex items-baseline gap-3 flex-wrap">
         <h1 className="text-white text-2xl sm:text-3xl font-bold">Banana Hype</h1>
         <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-white/40">
           <span className="w-2 h-2 rounded-full bg-success animate-pulse" />LIVE · WEEKLY
         </span>
-        <span className="ml-auto text-[12px] sm:text-sm font-bold text-banana tabular-nums border border-banana/40 rounded-lg px-3 py-1.5">
-          🏆 This week ends in {countdown || '…'}
-        </span>
+        <CountdownChip targetMs={board?.week.endsAtMs ?? null} />
       </div>
       <p className="text-white/45 text-sm mt-2 max-w-2xl">
         <b className="text-white/70">The weekly leaderboard</b> of who owns SBS attention on X. Posts, quotes,
