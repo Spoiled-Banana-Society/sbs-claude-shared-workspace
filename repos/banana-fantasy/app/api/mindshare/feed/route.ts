@@ -72,9 +72,13 @@ export async function GET() {
       }
     }));
 
-    const tweets = [...byId.values()]
-      .sort((a, b) => b.createdAtMs - a.createdAtMs)
-      .slice(0, 80);
+    // House + bot content ALWAYS survives the cap (Boris 8/14: the SBS pill
+    // vanished because 50 fresh replies + bot posts crowded our older posts
+    // out of a newest-80 slice) — only community tweets get truncated.
+    const all = [...byId.values()].sort((a, b) => b.createdAtMs - a.createdAtMs);
+    const house = all.filter((t) => t.ours || t.bot);
+    const community = all.filter((t) => !t.ours && !t.bot).slice(0, Math.max(120 - house.length, 60));
+    const tweets = [...house, ...community].sort((a, b) => b.createdAtMs - a.createdAtMs);
 
     return json({ tweets }, {
       headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },

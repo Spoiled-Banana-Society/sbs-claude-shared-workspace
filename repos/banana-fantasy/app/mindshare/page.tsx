@@ -70,12 +70,15 @@ interface BoardState {
 // rank numbers all speak the same color per tier (Boris 8/14: subtle, no
 // loud fills). JackHOF = its two components red→gold; spins stay banana/neutral.
 const STRIP_JACKHOF = 'bg-gradient-to-r from-jackpot to-hof';
+// Every tier owns a DISTINCT color (Boris 8/14: nothing shares, spins tiers
+// differ from each other too): JackHOF red→gold, Jackpot red, HOF gold,
+// 3 spins purple, 1 spin teal.
 const PRIZES: Array<{ places: string; prize: string; first?: boolean; strip: string }> = [
   { places: '1st', prize: 'JackHOF seat', first: true, strip: STRIP_JACKHOF },
   { places: '2nd and 3rd', prize: 'Jackpot seat', strip: 'bg-jackpot' },
   { places: '4th to 6th', prize: 'HOF seat', strip: 'bg-hof' },
-  { places: '7th to 15th', prize: '3 wheel spins', strip: 'bg-banana' },
-  { places: '16th to 25th', prize: '1 wheel spin', strip: 'bg-white/25' },
+  { places: '7th to 15th', prize: '3 wheel spins', strip: 'bg-pro' },
+  { places: '16th to 25th', prize: '1 wheel spin', strip: 'bg-teal-400' },
 ];
 
 function prizeForRank(rank: number): string | null {
@@ -93,17 +96,18 @@ function stripForRank(rank: number | null): string | null {
   if (rank === 1) return STRIP_JACKHOF;
   if (rank <= 3) return 'bg-jackpot';
   if (rank <= 6) return 'bg-hof';
-  if (rank <= 15) return 'bg-banana';
-  if (rank <= 25) return 'bg-white/25';
+  if (rank <= 15) return 'bg-pro';
+  if (rank <= 25) return 'bg-teal-400';
   return null;
 }
 
-/** Leaderboard rank-number color per tier. */
+/** Leaderboard rank-number color per tier — mirrors the strips exactly. */
 function rankTextForRank(rank: number): string {
   if (rank === 1) return 'text-banana';
   if (rank <= 3) return 'text-jackpot';
   if (rank <= 6) return 'text-hof';
-  if (rank <= 15) return 'text-banana';
+  if (rank <= 15) return 'text-pro';
+  if (rank <= 25) return 'text-teal-400';
   return 'text-white/40';
 }
 
@@ -518,7 +522,8 @@ export default function MindsharePage() {
           <div className="mt-3 flex items-center gap-1.5 flex-wrap px-1">
             {FEED_FILTERS.map((f) => {
               const count = f.key === 'all' ? feed.length : feed.filter((t) => matchesFilter(t, f.key)).length;
-              if (f.key !== 'all' && count === 0) return null;
+              // Every pill stays visible (Boris 8/14: "there should be an SBS
+              // one") — an empty category shows its empty-state, not a gap.
               const active = feedFilter === f.key;
               return (
                 <button
@@ -534,6 +539,11 @@ export default function MindsharePage() {
               );
             })}
           </div>
+          {feed.filter((t) => matchesFilter(t, feedFilter)).length === 0 && (
+            <div className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-8 text-center text-white/35 text-[13px]">
+              Nothing here yet — this fills as the week rolls.
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {feed.filter((t) => matchesFilter(t, feedFilter)).map((t, i) => (
               <a
