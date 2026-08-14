@@ -233,32 +233,30 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   // -filter:replies is load-bearing: the SBS account replies constantly, so
   // page 1 of a bare from: search is ALL replies with zero RTs and the real
   // posts (the ones people retweet) never surface. Two pages, RT'd-only.
+  // House posts window: 14 DAYS (Boris 8/14: the feed's SBS filter should
+  // carry a week or two of our posts, not just launch-week). One combined
+  // query covers the company handle, both founders' personals AND the draft
+  // bot — the founders' posts no longer depend on the mention search
+  // happening to match them.
   const ourTweets: RawTweet[] = [];
   let cursor = '';
-  for (let page = 0; page < 2; page++) {
-    const qs = new URLSearchParams({ query: 'from:SBSFantasy -filter:replies', queryType: 'Latest' });
+  for (let page = 0; page < 3; page++) {
+    const qs = new URLSearchParams({
+      query: '(from:SBSFantasy OR from:BorisVagner OR from:RichVagner OR from:sbsdraftbot) -filter:replies',
+      queryType: 'Latest',
+    });
     if (cursor) qs.set('cursor', cursor);
     const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
     for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
       const t = parseTweet(raw);
-      if (t && nowMs - t.createdAtMs < 7 * MS_DAY) ourTweets.push(t);
+      if (t && nowMs - t.createdAtMs < 14 * MS_DAY) ourTweets.push(t);
     }
     if (!data.has_next_page || !data.next_cursor) break;
     cursor = String(data.next_cursor);
   }
-  // Persist our own posts for the public feed (/api/mindshare/feed). Scoring
+  // Persist house posts for the public feed (/api/mindshare/feed). Scoring
   // is untouched — rescoreWeek skips EXCLUDED_HANDLES, and refreshRecentMetrics
   // keeps their engagement counts fresh like any other stored tweet.
-  // The draft bot's posts ride the same batch (its own feed filter) — also
-  // scoring-exempt via EXCLUDED_HANDLES.
-  try {
-    const qs = new URLSearchParams({ query: 'from:sbsdraftbot -filter:replies', queryType: 'Latest' });
-    const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
-    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
-      const t = parseTweet(raw);
-      if (t && nowMs - t.createdAtMs < 7 * MS_DAY) ourTweets.push(t);
-    }
-  } catch { /* best-effort — bot posts also arrive via the mention search */ }
   if (ourTweets.length > 0) {
     const feedBatch = db.batch();
     for (const t of ourTweets) {

@@ -315,11 +315,11 @@ export default function MindsharePage() {
         // enough to carry its name AND percent — labels show the true pct,
         // only the AREA is floored (Boris 8/14: thaytrader's 2.6% sliver).
         let weight = Math.max(Math.pow(Math.max(t.score, 1), 0.6), maxWeight * 0.3);
-        // Ambient breathing (Boris 8/14: the board should feel alive): a
-        // deterministic ±1.5% weight drift per 5s tick makes the boundaries
-        // glide gently via the tiles' 700ms transition. Numbers never move —
-        // only the layout breathes.
-        weight *= 1 + 0.015 * Math.sin((idx * 2.1 + shuffleTick) * 1.7);
+        // Ambient breathing (Boris 8/14: alive but SUBTLE — toned down from
+        // ±1.5% on his call): a deterministic ±0.6% weight drift per 5s tick
+        // makes the boundaries glide via the tiles' 1s transition. Numbers
+        // never move — only the layout breathes.
+        weight *= 1 + 0.006 * Math.sin((idx * 2.1 + shuffleTick) * 1.7);
         tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight, rank: t.rank });
       });
     } else {
@@ -341,7 +341,7 @@ export default function MindsharePage() {
   return (
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pt-5 sm:pt-8 pb-28 lg:pb-12">
       <style>{`
-        @keyframes tileIn { from { opacity: 0; transform: scale(0.97) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes tileIn { from { opacity: 0; transform: scale(0.99) translateY(3px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         @keyframes secTick { from { opacity: 0.15; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
       {/* header */}
@@ -388,7 +388,7 @@ export default function MindsharePage() {
             return (
               <div
                 key={r.key}
-                className={`absolute rounded-xl border overflow-hidden transition-all duration-700 ease-out ${isKing
+                className={`absolute rounded-xl border overflow-hidden transition-all duration-1000 ease-in-out ${isKing
                   ? 'bg-banana border-banana'
                   : (t.rank !== null && t.rank <= 3)
                     ? 'bg-jackpot/[0.07] border-jackpot/25'
