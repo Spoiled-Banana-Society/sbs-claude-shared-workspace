@@ -107,6 +107,29 @@ function rankTextForRank(rank: number): string {
   return 'text-white/40';
 }
 
+/** Percent that counts up from 0 on first mount (~700ms ease-out), then
+ *  tracks pct changes instantly on later poll refreshes. */
+function CountUpPct({ pct }: { pct: number }) {
+  const [shown, setShown] = useState(0);
+  const animated = useRef(false);
+  useEffect(() => {
+    if (animated.current) { setShown(pct); return; }
+    animated.current = true;
+    const start = performance.now();
+    const dur = 700;
+    let raf = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setShown(Math.round(pct * eased * 10) / 10);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [pct]);
+  return <>{shown}%</>;
+}
+
 function timeAgo(ms: number): string {
   const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
   if (s < 60) return `${s}s`;
@@ -259,13 +282,18 @@ export default function MindsharePage() {
       // full 25 live in the leaderboard list.
       const top = board.tiles.slice(0, 10);
       const maxWeight = Math.pow(Math.max(top[0]?.score ?? 1, 1), 0.6);
-      for (const t of top) {
+      top.forEach((t, idx) => {
         // Weight floor (30% of the leader): the last-ranked tile stays big
         // enough to carry its name AND percent — labels show the true pct,
         // only the AREA is floored (Boris 8/14: thaytrader's 2.6% sliver).
-        const weight = Math.max(Math.pow(Math.max(t.score, 1), 0.6), maxWeight * 0.3);
+        let weight = Math.max(Math.pow(Math.max(t.score, 1), 0.6), maxWeight * 0.3);
+        // Ambient breathing (Boris 8/14: the board should feel alive): a
+        // deterministic ±1.5% weight drift per 5s tick makes the boundaries
+        // glide gently via the tiles' 700ms transition. Numbers never move —
+        // only the layout breathes.
+        weight *= 1 + 0.015 * Math.sin((idx * 2.1 + shuffleTick) * 1.7);
         tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight, rank: t.rank });
-      }
+      });
     } else {
       const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))].slice(0, 18);
       // Deterministic-ish rotation per tick — motion without randomness jitter.
@@ -284,6 +312,7 @@ export default function MindsharePage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pt-5 sm:pt-8 pb-28 lg:pb-12">
+      <style>{`@keyframes tileIn { from { opacity: 0; transform: scale(0.97) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
       {/* header */}
       <div className="flex items-baseline gap-3 flex-wrap">
         <h1 className="text-white text-2xl sm:text-3xl font-bold">Banana Hype</h1>
@@ -320,7 +349,7 @@ export default function MindsharePage() {
       {/* board + leaderboard */}
       <div className="mt-4 flex flex-col lg:flex-row gap-3">
         <div ref={mapRef} className="relative flex-1 min-h-[380px] sm:min-h-[440px] rounded-2xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-          {rects.map((r) => {
+          {rects.map((r, tileIdx) => {
             const t = tileByKey.get(r.key);
             if (!t) return null;
             const isYou = youKey !== null && r.key === youKey;
@@ -337,7 +366,13 @@ export default function MindsharePage() {
                     : (t.rank !== null && t.rank <= 6)
                       ? 'bg-hof/[0.06] border-hof/25'
                       : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
-                style={{ left: r.x + 3, top: r.y + 3, width: Math.max(r.w - 6, 0), height: Math.max(r.h - 6, 0) }}
+                style={{
+                  left: r.x + 3, top: r.y + 3, width: Math.max(r.w - 6, 0), height: Math.max(r.h - 6, 0),
+                  // Staggered entrance on first paint; afterwards the 700ms
+                  // transition owns all movement (breathing + data shifts).
+                  animation: 'tileIn 500ms ease-out both',
+                  animationDelay: `${tileIdx * 55}ms`,
+                }}
               >
                 {!zeroState && stripForRank(t.rank) && (
                   <div className={`absolute top-0 left-0 right-0 h-[3px] ${stripForRank(t.rank)}`} />
@@ -362,7 +397,7 @@ export default function MindsharePage() {
                 {/* The percent ALWAYS renders — tiny tiles just get compact
                     type (Boris 8/14: every tile must show its number). */}
                 <div className={`font-extrabold tabular-nums ${tiny ? 'text-[12px] mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'} ${tiny ? '' : big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
-                  {t.pct === null ? '0%' : `${t.pct}%`}
+                  {t.pct === null ? '0%' : <CountUpPct pct={t.pct} />}
                 </div>
               </div>
             );
@@ -382,15 +417,16 @@ export default function MindsharePage() {
             THIS WEEK&apos;S 25 · ALL WIN THURSDAY
           </div>
           <div className="flex-1 overflow-y-auto max-h-[380px]">
-            {(board?.tiles ?? []).map((t) => (
+            {(board?.tiles ?? []).map((t, rowIdx) => (
               <div
                 key={t.handle}
                 title={prizeForRank(t.rank) ?? undefined}
                 className={`flex items-center gap-2.5 px-4 py-2 border-b border-white/[0.05] text-[13px] ${youKey === t.handle.toLowerCase() ? 'bg-banana/10' : ''}`}
+                style={{ animation: 'tileIn 400ms ease-out both', animationDelay: `${Math.min(rowIdx, 15) * 30}ms` }}
               >
                 <span className={`w-6 font-bold tabular-nums ${rankTextForRank(t.rank)}`}>{t.rank}</span>
                 <span className="flex-1 min-w-0 truncate text-white/85 font-medium">{t.display}</span>
-                <span className="font-bold tabular-nums text-white">{t.pct}%</span>
+                <span className="font-bold tabular-nums text-white"><CountUpPct pct={t.pct} /></span>
               </div>
             ))}
             {(!board || board.tiles.length === 0) && (
