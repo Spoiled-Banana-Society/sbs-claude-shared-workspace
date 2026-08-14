@@ -23,6 +23,11 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
 interface BoardTile { handle: string; display: string; score: number; pct: number; rank: number }
+interface FeedTweet {
+  id: string; handle: string; text: string; createdAtMs: number;
+  likes: number; retweets: number; replies: number; views: number;
+  isReply: boolean; ours: boolean;
+}
 interface BoardYou { handle: string | null; display: string | null; linked: boolean; rank: number | null; score: number; pct: number }
 interface BoardState {
   week: { id: string; startsAtMs: number; endsAtMs: number };
@@ -47,6 +52,20 @@ function prizeForRank(rank: number): string | null {
   if (rank <= 15) return '3 wheel spins';
   if (rank <= 25) return '1 wheel spin';
   return null;
+}
+
+function timeAgo(ms: number): string {
+  const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function kFmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(n);
 }
 
 function useCountdown(targetMs: number | null): string {
@@ -112,6 +131,7 @@ export default function MindsharePage() {
   const wallet = (walletAddress ?? '').toLowerCase();
 
   const [board, setBoard] = useState<BoardState | null>(null);
+  const [feed, setFeed] = useState<FeedTweet[]>([]);
   const [shuffleTick, setShuffleTick] = useState(0);
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapSize, setMapSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -138,6 +158,21 @@ export default function MindsharePage() {
     const t = setInterval(() => { void load(); }, 60_000);
     return () => clearInterval(t);
   }, [load]);
+
+  // The live tweet catalog — refreshes on the same 60s cadence as the board.
+  useEffect(() => {
+    const loadFeed = async () => {
+      try {
+        const res = await fetch('/api/mindshare/feed', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as { tweets?: FeedTweet[] };
+        if (Array.isArray(data.tweets)) setFeed(data.tweets);
+      } catch { /* transient */ }
+    };
+    void loadFeed();
+    const t = setInterval(() => { void loadFeed(); }, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Zero-state motion: reorder the equal tiles every few seconds so the board
   // visibly "moves people around" while everyone is at 0.
@@ -168,8 +203,14 @@ export default function MindsharePage() {
       // Map shows TOP 10 ONLY — every tile must be big enough for a name AND
       // a percent (Richard 8/13: no "@…" slivers, no percentless boxes). The
       // full 25 live in the leaderboard list.
-      for (const t of board.tiles.slice(0, 10)) {
-        tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight: Math.pow(Math.max(t.score, 1), 0.6), rank: t.rank });
+      const top = board.tiles.slice(0, 10);
+      const maxWeight = Math.pow(Math.max(top[0]?.score ?? 1, 1), 0.6);
+      for (const t of top) {
+        // Weight floor (30% of the leader): the last-ranked tile stays big
+        // enough to carry its name AND percent — labels show the true pct,
+        // only the AREA is floored (Boris 8/14: thaytrader's 2.6% sliver).
+        const weight = Math.max(Math.pow(Math.max(t.score, 1), 0.6), maxWeight * 0.3);
+        tileItems.push({ key: t.handle.toLowerCase(), label: t.display, pct: t.pct, weight, rank: t.rank });
       }
     } else {
       const names = [...(board.zeroTiles.length ? board.zeroTiles : board.tiles.map((t) => t.display))].slice(0, 18);
@@ -244,11 +285,11 @@ export default function MindsharePage() {
                 <div className={`font-bold truncate ${tiny ? 'text-[10px]' : big ? 'text-[14px]' : 'text-[12px]'} ${isKing ? 'text-black' : 'text-white/80'}`}>
                   {t.label}{isYou ? ' · YOU' : ''}
                 </div>
-                {!tiny && (
-                  <div className={`font-extrabold tabular-nums mt-1 ${isKing ? 'text-black' : 'text-white'} ${big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
-                    {t.pct === null ? '0%' : `${t.pct}%`}
-                  </div>
-                )}
+                {/* The percent ALWAYS renders — tiny tiles just get compact
+                    type (Boris 8/14: every tile must show its number). */}
+                <div className={`font-extrabold tabular-nums ${tiny ? 'text-[12px] mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'} ${tiny ? '' : big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
+                  {t.pct === null ? '0%' : `${t.pct}%`}
+                </div>
               </div>
             );
           })}
@@ -325,6 +366,61 @@ export default function MindsharePage() {
           account. Farming, bots and junk engagement score zero, and SBS may review winners before crediting.
         </p>
       </div>
+
+      {/* the live tweet catalog — every post behind the board, click to engage on X */}
+      {feed.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-baseline gap-3 px-1">
+            <h2 className="text-white text-lg font-bold">The Feed</h2>
+            <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-white/40">
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />EVERY POST · LIVE
+            </span>
+          </div>
+          <p className="text-white/45 text-[13px] mt-1 px-1">
+            The posts building the board, as they happen. Tap one to jump in on X — every interaction grows a tile.
+          </p>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {feed.map((t, i) => (
+              <a
+                key={t.id}
+                href={`https://x.com/${t.handle}/status/${t.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`group rounded-xl border p-3.5 transition-all duration-200 hover:-translate-y-0.5 ${t.ours
+                  ? 'bg-banana/[0.06] border-banana/25 hover:border-banana/50'
+                  : 'bg-white/[0.03] border-white/[0.07] hover:border-white/20 hover:bg-white/[0.05]'}`}
+                style={{ animation: `feedIn 480ms ease-out both`, animationDelay: `${Math.min(i, 12) * 45}ms` }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-[12.5px] font-bold truncate ${t.ours ? 'text-banana' : 'text-white/85'}`}>
+                    @{t.handle}
+                  </span>
+                  {t.ours && (
+                    <span className="flex-none bg-banana text-black text-[9px] font-extrabold tracking-widest px-1.5 py-0.5 rounded-full">SBS</span>
+                  )}
+                  {t.isReply && !t.ours && (
+                    <span className="flex-none text-[10px] font-bold text-white/30 tracking-wider">REPLY</span>
+                  )}
+                  <span className="ml-auto flex-none text-[11px] text-white/35 tabular-nums">{timeAgo(t.createdAtMs)}</span>
+                </div>
+                <p className="mt-1.5 text-[13px] leading-snug text-white/70 line-clamp-4 whitespace-pre-line">
+                  {t.text}
+                </p>
+                <div className="mt-2.5 flex items-center gap-3.5 text-[11px] text-white/35 tabular-nums">
+                  <span>♥ {kFmt(t.likes)}</span>
+                  <span>↻ {kFmt(t.retweets)}</span>
+                  <span>💬 {kFmt(t.replies)}</span>
+                  {t.views > 0 && <span className="ml-auto">{kFmt(t.views)} views</span>}
+                  <svg viewBox="0 0 24 24" className={`w-3 h-3 ${t.views > 0 ? '' : 'ml-auto'} fill-current opacity-60 group-hover:opacity-100 transition-opacity`} aria-hidden>
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                </div>
+              </a>
+            ))}
+          </div>
+          <style>{`@keyframes feedIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        </div>
+      )}
     </div>
   );
 }

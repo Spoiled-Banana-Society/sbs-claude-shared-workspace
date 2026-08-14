@@ -237,14 +237,25 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
     const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
     for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
       const t = parseTweet(raw);
-      if (t && nowMs - t.createdAtMs < 7 * MS_DAY && t.retweets > 0) ourTweets.push(t);
+      if (t && nowMs - t.createdAtMs < 7 * MS_DAY) ourTweets.push(t);
     }
     if (!data.has_next_page || !data.next_cursor) break;
     cursor = String(data.next_cursor);
   }
-  ourTweets.splice(10);
+  // Persist our own posts for the public feed (/api/mindshare/feed). Scoring
+  // is untouched — rescoreWeek skips EXCLUDED_HANDLES, and refreshRecentMetrics
+  // keeps their engagement counts fresh like any other stored tweet.
+  if (ourTweets.length > 0) {
+    const feedBatch = db.batch();
+    for (const t of ourTweets) {
+      feedBatch.set(db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id), { ...t }, { merge: true });
+    }
+    await feedBatch.commit();
+  }
+  // RT-credit pass only cares about posts that actually have retweets.
+  const rtCandidates = ourTweets.filter((t) => t.retweets > 0).slice(0, 10);
   let credited = 0;
-  for (const ours of ourTweets) {
+  for (const ours of rtCandidates) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let users: any[] = [];
     try {
