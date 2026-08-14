@@ -286,12 +286,16 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   });
 
   const sorted = gated.sort((a, b) => {
-    // -1. The new-user welcome promo (only rendered for actual new users)
-    //     outranks everything, including the featured pin — a first-timer's
-    //     very first card is their free-spin welcome (Boris 2026-07-03).
-    const aNU = a.type === 'new-user' ? 1 : 0;
-    const bNU = b.type === 'new-user' ? 1 : 0;
-    if (aNU !== bNU) return bNU - aNU;
+    // -1. The two CONVERSION cards outrank everything, including the featured
+    //     pin and claimable/progress bubbling (Boris 2026-08-14: they must
+    //     always be the first cards a user sees). New-user welcome first
+    //     (only rendered for actual new users — Boris 2026-07-03), then
+    //     first-purchase — which makes first-purchase slot #1 for returning
+    //     players, who never see the new-user card.
+    const convRank = (p: Promo) => (p.type === 'new-user' ? 2 : p.type === 'first-purchase' ? 1 : 0);
+    const aConv = convRank(a);
+    const bConv = convRank(b);
+    if (aConv !== bConv) return bConv - aConv;
     // 0. Featured promo is pinned next, above everything else —
     //    it's the limited-time card we're actively pushing.
     const featuredType = activeFeaturedType();
