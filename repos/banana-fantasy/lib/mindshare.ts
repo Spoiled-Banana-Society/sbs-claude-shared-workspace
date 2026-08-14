@@ -213,12 +213,23 @@ async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
  *  writes a small credit doc per retweeter (scored at W.baseRetweet). */
 async function creditRetweeters(weekId: string, nowMs: number): Promise<number> {
   const db = getAdminFirestore();
-  const qs = new URLSearchParams({ query: 'from:SBSFantasy', queryType: 'Latest' });
-  const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
-  const ourTweets = (Array.isArray(data.tweets) ? data.tweets : [])
-    .map(parseTweet)
-    .filter((t): t is RawTweet => t !== null && nowMs - t.createdAtMs < 7 * MS_DAY)
-    .slice(0, 8);
+  // -filter:replies is load-bearing: the SBS account replies constantly, so
+  // page 1 of a bare from: search is ALL replies with zero RTs and the real
+  // posts (the ones people retweet) never surface. Two pages, RT'd-only.
+  const ourTweets: RawTweet[] = [];
+  let cursor = '';
+  for (let page = 0; page < 2; page++) {
+    const qs = new URLSearchParams({ query: 'from:SBSFantasy -filter:replies', queryType: 'Latest' });
+    if (cursor) qs.set('cursor', cursor);
+    const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
+    for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
+      const t = parseTweet(raw);
+      if (t && nowMs - t.createdAtMs < 7 * MS_DAY && t.retweets > 0) ourTweets.push(t);
+    }
+    if (!data.has_next_page || !data.next_cursor) break;
+    cursor = String(data.next_cursor);
+  }
+  ourTweets.splice(10);
   let credited = 0;
   for (const ours of ourTweets) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
