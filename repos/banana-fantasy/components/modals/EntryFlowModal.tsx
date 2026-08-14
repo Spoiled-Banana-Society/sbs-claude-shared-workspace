@@ -2,12 +2,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
+import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
+import { firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
+import { useAuth } from '@/hooks/useAuth';
+import { useNextLobbyFill } from '@/hooks/useNextLobbyFill';
+import { LobbyFillBar } from '@/components/drafting/LobbyFillBar';
+import { getActivePrivateLeague, type ActivePrivateLeague } from '@/lib/privateLeagueSession';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** 'balance' = buy a seat with wallet USDC right now, then join. */
-  onComplete: (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => void;
+  /** 'balance' = buy a seat with wallet USDC right now, then join.
+   *  opts.forcePublic — the user explicitly picked a public draft over their
+   *  private league; forward it to enterDraftWithPassType untouched. */
+  onComplete: (
+    passType: 'paid' | 'free' | 'balance',
+    speed: 'fast' | 'slow',
+    opts?: { forcePublic?: boolean },
+  ) => void;
   paidPasses: number;
   freePasses: number;
   isSubmitting?: boolean;
@@ -55,6 +67,22 @@ export function EntryFlowModal({
 }: EntryFlowModalProps) {
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | 'balance' | null>(null);
+  // Private-league routing (ticket-2681): when the user has unlocked a private
+  // league, this modal names it and routes the join there by default — the
+  // "public instead" link is the one way to opt out. Snapshot on open (it's
+  // localStorage, not reactive).
+  const [privLeague, setPrivLeague] = useState<ActivePrivateLeague | null>(null);
+  const [joinPublic, setJoinPublic] = useState(false);
+  const privateMode = !!privLeague && !joinPublic;
+  // First-purchase offer line under the $25 join row. Variant is computed
+  // server-side (balance stream); logged-out / not-yet-loaded renders the
+  // new-player offer explicitly labeled "New players" so a returning player
+  // is never baited. 'done' → firstPurchaseEntryLine returns null → no line.
+  const { user } = useAuth();
+  const fpOfferLine = firstPurchaseEntryLine(user?.firstPurchaseVariant ?? 'unknown');
+  // Only polls while the speed step is actually on screen — the pass-type step
+  // has nothing lane-specific to show, since paid and free share lobbies.
+  const nextLobby = useNextLobbyFill(isOpen && step === 'speed');
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
@@ -70,6 +98,10 @@ export function EntryFlowModal({
     if (!isOpen) {
       setStep('pass-type');
       setSelectedPassType(null);
+      setJoinPublic(false);
+    } else {
+      const active = getActivePrivateLeague();
+      setPrivLeague(active ? { id: active.id, name: active.name, draftType: active.draftType } : null);
     }
   }, [isOpen]);
 
@@ -78,13 +110,21 @@ export function EntryFlowModal({
   const handlePassSelect = (type: 'paid' | 'free' | 'balance') => {
     if (isSubmitting) return;
     setSelectedPassType(type);
+    if (privateMode && privLeague) {
+      // The league's lane is fixed, so there is no speed to choose — the pick
+      // of a seat IS the completion. forcePublic:false = route into the league.
+      onComplete(type, privLeague.draftType, { forcePublic: false });
+      return;
+    }
     setStep('speed');
   };
 
   const handleSpeedSelect = (speed: 'fast' | 'slow') => {
     if (isSubmitting) return;
     if (selectedPassType) {
-      onComplete(selectedPassType, speed);
+      // Reaching the speed step with a private league remembered means the
+      // user took the "public draft instead" path — say so explicitly.
+      onComplete(selectedPassType, speed, { forcePublic: joinPublic });
     }
   };
 
@@ -132,11 +172,15 @@ export function EntryFlowModal({
           </svg>
         </button>
 
-        {/* Step indicators — the chooser always precedes the speed step now. */}
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <div className={`w-2 h-2 rounded-full transition-all ${step === 'pass-type' ? 'bg-banana w-4' : 'bg-white/20'}`} />
-          <div className={`w-2 h-2 rounded-full transition-all ${step === 'speed' ? 'bg-banana w-4' : 'bg-white/20'}`} />
-        </div>
+        {/* Step indicators — the chooser always precedes the speed step now.
+            (Private mode is single-step — the league fixes the speed — so the
+            two-dot indicator would promise a step that never comes.) */}
+        {!privateMode && (
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <div className={`w-2 h-2 rounded-full transition-all ${step === 'pass-type' ? 'bg-banana w-4' : 'bg-white/20'}`} />
+            <div className={`w-2 h-2 rounded-full transition-all ${step === 'speed' ? 'bg-banana w-4' : 'bg-white/20'}`} />
+          </div>
+        )}
 
         {/* Step 1: Pass Type Selection */}
         {step === 'pass-type' && (
@@ -145,9 +189,41 @@ export function EntryFlowModal({
               <h2 className="text-xl font-bold text-white">Which Draft Pass?</h2>
             </div>
 
+            {/* Private-league routing banner — the member sees, before spending
+                anything, exactly which draft this pass enters. */}
+            {privLeague && (
+              privateMode ? (
+                <div className="rounded-xl border border-[#fbbf24]/40 bg-[#fbbf24]/10 px-4 py-3 text-center">
+                  <p className="text-white text-sm font-semibold">
+                    🔒 Joining <span className="text-[#fbbf24]">{privLeague.name}</span> — your private league
+                  </p>
+                  <p className="text-white/50 text-xs mt-0.5">
+                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick'} · paid Draft Pass only
+                  </p>
+                  <button
+                    onClick={() => { if (!isSubmitting) setJoinPublic(true); }}
+                    className="text-white/45 text-xs underline underline-offset-2 hover:text-white/70 transition-colors mt-1.5"
+                  >
+                    Join a public SBS draft instead
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center">
+                  <p className="text-white/70 text-sm">Joining a <span className="text-white font-semibold">public SBS draft</span></p>
+                  <button
+                    onClick={() => { if (!isSubmitting) setJoinPublic(false); }}
+                    className="text-[#fbbf24]/80 text-xs underline underline-offset-2 hover:text-[#fbbf24] transition-colors mt-1"
+                  >
+                    ← Back to {privLeague.name}
+                  </button>
+                </div>
+              )
+            )}
+
             <div className="space-y-3">
-              {/* Row 1 — the paid seat. Your pass when you hold one, the $25
-                  buy-in when you don't. */}
+              {/* Row 1 — the paid seat. Your Paid Draft Pass when you hold one,
+                  the $25 buy-in (from balance, or Add Funds if short) when you
+                  don't. Never a greyed "0" in the deposit world. */}
               <button
                 onClick={handleSeatSelect}
                 disabled={(!hasPaid && !buyingSeat) || isSubmitting}
@@ -169,6 +245,17 @@ export function EntryFlowModal({
                           : 'Add funds to enter'}
                       </p>
                     )}
+                    {/* Only on the BUY variant — spending a pass you already own
+                        isn't a purchase, so it doesn't come with a spin. */}
+                    {buyingSeat && SPIN_ON_PURCHASE_UI_ENABLED && (
+                      <p className="text-banana/70 text-xs mt-0.5">Includes a free bonus spin</p>
+                    )}
+                    {/* First-purchase offer — only under the $25 buy-in row
+                        (spending a held pass isn't a purchase), hidden once
+                        the bonus is consumed (variant 'done'). */}
+                    {buyingSeat && fpOfferLine && (
+                      <p className="text-banana/70 text-xs mt-0.5">{fpOfferLine}</p>
+                    )}
                   </div>
                   <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>
                     {buyingSeat ? `$${ENTRY_PRICE_USD}` : paidPasses}
@@ -176,22 +263,22 @@ export function EntryFlowModal({
                 </div>
               </button>
 
-              <button
-                onClick={() => hasFree && handlePassSelect('free')}
-                disabled={!hasFree || isSubmitting}
-                className={`w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 text-left transition-all ${
-                  hasFree
-                    ? 'border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer'
-                    : 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <p className={`font-semibold ${hasFree ? 'text-white' : 'text-white/40'}`}>Free Draft Pass</p>
-                  <p className={`text-3xl font-bold ${hasFree ? 'text-green-500' : 'text-white/40'}`}>
-                    {freePasses}
-                  </p>
-                </div>
-              </button>
+              {/* Free Draft Pass — only shown when the user actually HAS one; a
+                  greyed "0" card is noise (Boris 2026-07-22). Hidden while a
+                  private league is the target: those take paid passes only, so
+                  offering the free row would just set up a rejection. */}
+              {hasFree && !privateMode && (
+                <button
+                  onClick={() => handlePassSelect('free')}
+                  disabled={isSubmitting}
+                  className="w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer text-left transition-all disabled:opacity-60"
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <p className="font-semibold text-white">Free Draft Pass</p>
+                    <p className="text-3xl font-bold text-green-500">{freePasses}</p>
+                  </div>
+                </button>
+              )}
 
               {/* Row 3 — stock up without drafting. This is the only route to
                   buying several at once, which the buy-4 / buy-10 promos need,
@@ -213,6 +300,18 @@ export function EntryFlowModal({
                 </button>
               )}
             </div>
+
+            {/* Private mode completes from THIS step (no speed step), so the
+                balance-purchase spinner/error must render here too. */}
+            {privateMode && payingWithBalance && isSubmitting && (
+              <div className="flex items-center justify-center gap-2 text-white/60 text-sm">
+                <span className="inline-block w-4 h-4 border-2 border-banana border-t-transparent rounded-full animate-spin" />
+                Joining draft…
+              </div>
+            )}
+            {privateMode && balanceError && !isSubmitting && (
+              <p className="text-center text-red-400 text-sm">{balanceError}</p>
+            )}
 
             <button
               onClick={() => {
@@ -252,6 +351,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
+                    <LobbyFillBar fill={nextLobby.fast} className="mt-2" />
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>
@@ -268,6 +368,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                    <LobbyFillBar fill={nextLobby.slow} className="mt-2" />
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>

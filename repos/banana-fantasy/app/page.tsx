@@ -120,7 +120,11 @@ export default function HomePage() {
     modals.push('entry-flow');
   };
 
-  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (
+    passType: 'paid' | 'free' | 'balance',
+    speed: 'fast' | 'slow',
+    opts?: { forcePublic?: boolean },
+  ) => {
     if (passType === 'balance') {
       // Bought from balance inside the chooser (user holds a free pass but wants
       // a paid seat). Modal stays open until the charge lands so a failure is
@@ -128,13 +132,13 @@ export default function HomePage() {
       const ok = await buyPassWithBalance();
       if (!ok) return;
       modals.closeAll();
-      void enterDraftWithPassType('paid', speed);
+      void enterDraftWithPassType('paid', speed, undefined, opts);
       return;
     }
     modals.closeAll();
     // Hand off to the single shared entry flow — pass gate, join-before-navigate,
     // overlay, promo-type, and URL seeding all live in useEnterDraft now.
-    void enterDraftWithPassType(passType, speed);
+    void enterDraftWithPassType(passType, speed, undefined, opts);
   };
 
   const handleBuyFromBalance = async (qty: number) => {
@@ -223,7 +227,7 @@ export default function HomePage() {
       <EntryFlowModal
         isOpen={modals.isOpen('entry-flow')}
         onClose={() => { clearBuyError(); modals.closeAll(); }}
-        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
+        onComplete={(passType, speed, opts) => void handleEntryComplete(passType, speed, opts)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={isJoiningDraft || depositBuying}

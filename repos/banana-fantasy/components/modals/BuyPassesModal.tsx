@@ -15,6 +15,8 @@ import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
+import { joinPrivateDraft } from '@/lib/api/leagues';
+import { getActivePrivateLeague } from '@/lib/privateLeagueSession';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -749,37 +751,53 @@ export function BuyPassesModal({
 
     const addr = walletAddress || user?.id || 'staging-user';
 
+    // Private-league routing (ticket-2681, 2026-08-14): a member who just
+    // bought passes from their league's "Get a Draft Pass" link must land in
+    // THEIR league — this exact post-purchase join is how AceJohn's pass went
+    // to a public lobby of strangers. The league's lane wins over the clicked
+    // speed (the pick-speed screen shows a single league button in that case).
+    const privateTarget = getActivePrivateLeague();
+    const laneSpeed: 'fast' | 'slow' = privateTarget ? privateTarget.draftType : speed;
+
     setPhase('joining');
     setJoinError(null);
-    clientLog('payment', 'join_draft_start', { wallet: addr, speed });
+    clientLog('payment', 'join_draft_start', { wallet: addr, speed: laneSpeed, privateLeagueId: privateTarget?.id ?? null });
 
     try {
-      // Join a draft
-      const apiBase = getDraftsApiUrl();
-      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr });
-      // Draft TYPE is decided solely by the backend's provably-fair logic —
-      // the client never sends a draftType (would be a rigged-outcome vector).
-      const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numLeaguesToJoin: 1 }),
-      });
+      let draftId = '';
+      let contestName = '';
+      if (privateTarget) {
+        const room = await joinPrivateDraft(addr, privateTarget.id, privateTarget.password, laneSpeed, 'paid');
+        draftId = room.id;
+        contestName = room.contestName || `${privateTarget.name} draft`;
+      } else {
+        // Join a draft
+        const apiBase = getDraftsApiUrl();
+        logger.debug('[BuyModal] Joining draft:', { apiBase, speed: laneSpeed, addr });
+        // Draft TYPE is decided solely by the backend's provably-fair logic —
+        // the client never sends a draftType (would be a rigged-outcome vector).
+        const joinRes = await fetch(`${apiBase}/league/${laneSpeed}/owner/${addr}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ numLeaguesToJoin: 1 }),
+        });
 
-      if (!joinRes.ok) {
-        const errText = await joinRes.text().catch(() => 'Unknown error');
-        throw new Error(`Join failed (${joinRes.status}): ${errText}`);
+        if (!joinRes.ok) {
+          const errText = await joinRes.text().catch(() => 'Unknown error');
+          throw new Error(`Join failed (${joinRes.status}): ${errText}`);
+        }
+
+        const joinData = await joinRes.json();
+        logger.debug('[BuyModal] Join response:', JSON.stringify(joinData));
+        // API returns an array of joined cards
+        const card = Array.isArray(joinData) ? joinData[0] : joinData;
+        draftId = String(card?._leagueId ?? card?.draftId ?? card?.leagueId ?? card?.id ?? '');
+        contestName = String(card?._leagueDisplayName ?? card?.displayName ?? `Draft ${draftId}`);
       }
-
-      const joinData = await joinRes.json();
-      logger.debug('[BuyModal] Join response:', JSON.stringify(joinData));
-      // API returns an array of joined cards
-      const card = Array.isArray(joinData) ? joinData[0] : joinData;
-      const draftId = String(card?._leagueId ?? card?.draftId ?? card?.leagueId ?? card?.id ?? '');
-      const contestName = String(card?._leagueDisplayName ?? card?.displayName ?? `Draft ${draftId}`);
       logger.debug('[BuyModal] Parsed:', { draftId, contestName });
 
       if (!draftId) throw new Error('No draft ID returned from join API');
-      clientLog('payment', 'join_draft_success', { wallet: addr, speed, draftId });
+      clientLog('payment', 'join_draft_success', { wallet: addr, speed: laneSpeed, draftId, privateLeagueId: privateTarget?.id ?? null });
 
       // In staging mode, bots will fill AFTER user lands in draft room lobby
       // (triggered by draft-room page once WebSocket connects)
@@ -792,7 +810,7 @@ export function BuyPassesModal({
           contestName,
           status: 'filling',
           type: 'pro',
-          draftSpeed: speed,
+          draftSpeed: laneSpeed,
           players: 1,
           maxPlayers: 10,
           joinedAt: Date.now(),
@@ -804,7 +822,7 @@ export function BuyPassesModal({
       const params = new URLSearchParams({
         id: draftId,
         name: contestName,
-        speed,
+        speed: laneSpeed,
       });
       if (isStagingMode() && addr) {
         params.set('mode', 'live');
@@ -824,7 +842,7 @@ export function BuyPassesModal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to join draft';
       console.error('[BuyModal] Join error:', msg, err);
-      clientLog('payment', 'join_draft_failed', { wallet: addr, speed, error: msg });
+      clientLog('payment', 'join_draft_failed', { wallet: addr, speed: laneSpeed, privateLeagueId: privateTarget?.id ?? null, error: msg });
       joinInFlightRef.current = false;
       setIsJoiningDraft(false);
       setJoinError(msg);
@@ -833,6 +851,10 @@ export function BuyPassesModal({
   };
 
   const isWeb2 = user?.loginMethod === 'social';
+
+  // Private-league target for the post-purchase join (ticket-2681). Sync
+  // localStorage read, only while the pick-speed screen is actually up.
+  const pickSpeedPrivateLeague = phase === 'pick-speed' ? getActivePrivateLeague() : null;
 
   // Clean, crypto-free progress model. Each visible row maps to one or more
   // real internal stages (funding / waiting-for-usdc / signing / processing).
@@ -1393,9 +1415,31 @@ export function BuyPassesModal({
         {phase === 'pick-speed' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <p className="text-center text-white/50 text-sm mb-6">
-              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> purchased · pick a speed to enter
+              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> purchased{pickSpeedPrivateLeague ? '' : ' · pick a speed to enter'}
             </p>
 
+            {/* Private-league member (ticket-2681): their league's lane is
+                fixed, so the speed choice collapses into one league button —
+                and their pass can never wander into the public matchmaker. */}
+            {pickSpeedPrivateLeague ? (
+              <button
+                onClick={() => handlePickSpeed(pickSpeedPrivateLeague.draftType)}
+                disabled={isJoiningDraft}
+                className="w-full group relative overflow-hidden rounded-xl border-2 border-banana/40 bg-banana/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-banana/70 hover:bg-banana/10 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <div className="flex w-full items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">🔒 Enter {pickSpeedPrivateLeague.name}</h3>
+                    <p className="text-banana text-sm font-medium">
+                      Your private league · {pickSpeedPrivateLeague.draftType === 'slow' ? '8 hours per pick' : '30 seconds per pick'}
+                    </p>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-banana transition-colors">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </div>
+              </button>
+            ) : (
             <div className="space-y-4">
               <button
                 onClick={() => handlePickSpeed('fast')}
@@ -1429,6 +1473,7 @@ export function BuyPassesModal({
                 </div>
               </button>
             </div>
+            )}
 
             {/* Footer */}
             <div className="mt-6 flex items-center justify-between">

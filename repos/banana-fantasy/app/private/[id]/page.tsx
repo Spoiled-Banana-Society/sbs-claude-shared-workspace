@@ -22,6 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { getPrivateLeagueInfo, type PrivateLeagueInfo } from '@/lib/api/leagues';
+import { setActivePrivateLeague, clearActivePrivateLeague } from '@/lib/privateLeagueSession';
 import { ApiError } from '@/lib/api/client';
 
 const POLL_MS = 15_000;
@@ -66,12 +67,21 @@ export default function PrivateLeaguePage() {
       setAuthedPassword(pw);
       setPwError(null);
       try { localStorage.setItem(pwStorageKey(privateId), pw); } catch { /* private mode */ }
+      // Remember this league as the member's join target: from here on, every
+      // "Enter Draft" anywhere on the site routes into it (with a visible
+      // public escape hatch in the entry modal). See lib/privateLeagueSession.
+      setActivePrivateLeague({
+        id: privateId,
+        name: data.name || 'Private league',
+        draftType: data.draftType === 'slow' ? 'slow' : 'fast',
+      });
       return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         if (!opts?.silent) setPwError('Incorrect password.');
         // A stored password that stopped working must not keep auto-retrying.
         try { localStorage.removeItem(pwStorageKey(privateId)); } catch { /* ignore */ }
+        clearActivePrivateLeague();
         setAuthedPassword('');
       } else if (err instanceof ApiError && err.status === 404) {
         if (!opts?.silent) setPwError('This league does not exist. Check the link with your commissioner.');
