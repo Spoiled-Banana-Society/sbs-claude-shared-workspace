@@ -155,11 +155,11 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       matchPaths: ['/mindshare'],
       badge: 0,
       icon: (active: boolean) => (
-        // Treemap glyph — same flat-stroke language as the other tabs.
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.6" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="16" rx="2.5" />
-          <line x1="12" y1="4" x2="12" y2="20" />
-          <line x1="12" y1="12.5" x2="21" y2="12.5" />
+        // Clean X letterform (Boris 2026-08-13) — the board lives on X, so the
+        // tab wears the letter; bold rounded strokes match the tab-bar weight.
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="2.6" strokeLinecap="round">
+          <line x1="6.5" y1="5" x2="17.5" y2="19" />
+          <line x1="17.5" y1="5" x2="6.5" y2="19" />
         </svg>
       ),
     },

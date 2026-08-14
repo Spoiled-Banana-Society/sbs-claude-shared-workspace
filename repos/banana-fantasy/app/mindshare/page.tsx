@@ -116,11 +116,20 @@ export default function MindsharePage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapSize, setMapSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
+  const buildRef = useRef<string | null>(null);
   const load = useCallback(async () => {
     try {
       const qs = wallet ? `?wallet=${encodeURIComponent(wallet)}` : '';
       const res = await fetch(`/api/mindshare/board${qs}`, { cache: 'no-store' });
-      if (res.ok) setBoard((await res.json()) as BoardState);
+      if (!res.ok) return;
+      // Stale-tab guard: a long-lived tab keeps polling fresh DATA but renders
+      // with the page code it loaded — reload once when a new deploy shows up.
+      const build = res.headers.get('x-mindshare-build');
+      if (build) {
+        if (buildRef.current === null) buildRef.current = build;
+        else if (buildRef.current !== build) { window.location.reload(); return; }
+      }
+      setBoard((await res.json()) as BoardState);
     } catch { /* transient */ }
   }, [wallet]);
 

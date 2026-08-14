@@ -142,6 +142,11 @@ export async function GET(req: Request) {
       tiles,
       you,
       zeroTiles,
+    }, {
+      // Stale-tab guard: the page compares this against the value it saw on
+      // first load and reloads itself when a new deploy lands (launch-day
+      // iterations left open tabs rendering with old page code — Richard 8/13).
+      headers: { 'x-mindshare-build': (process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev').slice(0, 12) },
     });
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : 'board read failed', 500);
