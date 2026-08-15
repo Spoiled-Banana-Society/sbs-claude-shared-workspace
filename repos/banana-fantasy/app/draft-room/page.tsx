@@ -2921,6 +2921,7 @@ function DraftRoomContent() {
           <DraftRoomDrafting
             engine={engine}
             usersMap={draftRoomUsers}
+            contestName={contestName}
             phase={phase}
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}

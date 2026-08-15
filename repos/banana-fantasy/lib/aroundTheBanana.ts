@@ -40,10 +40,12 @@ import type { Promo } from '@/types';
 export const ATB_PROMO_ID = 'around-the-banana';
 /** First N players to cover all 10 slots win. Richard's opener: 10. */
 export const ATB_SEATS_TOTAL = 10;
-/** Lifetime winner cap across both rounds (Boris 2026-08-12, rev 2): round
+/** Total seat cap across both rounds (Boris 2026-08-12, rev 2): round
  *  one = winners 1-10 (nine drafted in Jackpot #41, MobySlick's seat honored
  *  in the wheel lobby); round two = winners 11-20 filling the ATB-only lobby
- *  from scratch. At 20 the promo is done. */
+ *  from scratch. At 20 the promo is done. NOT a lifetime per-user cap —
+ *  round-one winners can win AGAIN in round two (Richard 2026-08-14); the
+ *  repeat guard in recordAroundTheBanana is round-scoped. */
 export const ATB_TOTAL_WINNER_CAP = 20;
 /**
  * Drafts revealed before this never count — the race starts fresh at launch,
@@ -92,6 +94,12 @@ export async function getAtbSeatCount(): Promise<{ claimed: number; total: numbe
  * KEEPS atbSeenDraftIds (old drafts must never re-credit slots into the new
  * race) and every winner's atbWonAt/atbSeatNumber (their card keeps showing
  * the seat they won). Marker-guarded on the state doc — runs once, ever.
+ *
+ * NOTE 2026-08-14: this reset (ran 8/13) also KEPT round-one winners'
+ * atbCompletedAt, which silently blocked them from re-completing — wrong per
+ * Richard (winners CAN win again in round two). Backfilled by
+ * scripts/_backfill-atb-winners-round2.mjs: completedAt cleared for seats
+ * 1-10 so their next 10/10 credit re-triggers the win branch.
  */
 export async function resetAllLapsForLobbyTwo(): Promise<void> {
   const db = getAdminFirestore();
@@ -192,7 +200,11 @@ export async function recordAroundTheBanana(
       (update.modalContent as Record<string, unknown>).atbCompletedAt = nowIso;
       (update.modalContent as Record<string, unknown>).atbCompletedDraftName = draftName;
       const winners = (stateSnap.data()?.winners ?? []) as AtbWinner[];
-      const alreadyWon = winners.some((w) => w.userId === userId);
+      // Repeat guard is ROUND-scoped (Richard 2026-08-14): a round-one winner
+      // (seats 1-10) CAN take a round-two seat — only a seat already won in
+      // the CURRENT round blocks. Round two = winners 11+.
+      const roundFloorSeat = winners.length >= 10 ? 11 : 1;
+      const alreadyWon = winners.some((w) => w.userId === userId && w.seat >= roundFloorSeat);
       if (!alreadyWon && winners.length < ATB_TOTAL_WINNER_CAP) {
         wonSeat = winners.length + 1;
         (update.modalContent as Record<string, unknown>).atbWonAt = nowIso;

@@ -14,6 +14,7 @@ import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsi
 import { teamNoFromToken } from '@/lib/teamCardData';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { saveImageToDevice } from '@/lib/saveImage';
+import { generateBoardImage, type BoardImageCell } from '@/lib/draftBoardImage';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
@@ -602,6 +603,85 @@ export default function DraftResultsPage() {
     setTimeout(() => setRosterSaved(false), 2000);
   }, [generateRosterImage, title]);
 
+  // Save the FULL draft board image — reconstructs the 150-pick board from
+  // allRosters (each roster player carries its pickNum) plus the
+  // draftOrder-derived column map, then renders via the shared canvas
+  // renderer (lib/draftBoardImage) — same output as the in-draft-room save.
+  const [boardSaved, setBoardSaved] = useState(false);
+  const handleSaveBoard = async () => {
+    const colByOwner: Record<string, number> = {};
+    for (const key of playerKeys) {
+      const p = pickPositionByOwner[key.toLowerCase()];
+      if (p) colByOwner[key] = p - 1;
+    }
+    // Fallback for old drafts missing draftOrder info: a team's round-1 pick
+    // number IS its column (snake round 1 runs in draft order).
+    for (const key of playerKeys) {
+      if (colByOwner[key] !== undefined) continue;
+      const r = allRosters[key];
+      if (!r) continue;
+      const first = POSITION_ORDER.flatMap((pos) => r[pos] || []).find((p) => p.pickNum >= 1 && p.pickNum <= 10);
+      if (first) colByOwner[key] = first.pickNum - 1;
+    }
+
+    const cells: BoardImageCell[] = [];
+    const ownerNames: string[] = Array.from({ length: 10 }, () => '');
+    for (const key of playerKeys) {
+      const col = colByOwner[key];
+      if (col === undefined || col < 0 || col > 9) continue;
+      // Own column shows the real handle — never "My Team" on a shareable image.
+      if (walletAddress && key.toLowerCase() === walletAddress.toLowerCase()) {
+        const live = usersMap[key.toLowerCase()]?.displayName;
+        ownerNames[col] = live && !isPlaceholderName(live, key) ? live : bananaPlaceholderName(key);
+      } else {
+        ownerNames[col] = getPlayerLabel(key);
+      }
+      const r = allRosters[key];
+      if (!r) continue;
+      for (const pos of POSITION_ORDER) {
+        for (const p of r[pos] || []) {
+          cells.push({
+            pickNum: p.pickNum,
+            round: p.round || Math.ceil(p.pickNum / 10),
+            playerId: p.playerId,
+            position: p.playerId.split('-')[1] || p.position,
+            ownerIndex: col,
+          });
+        }
+      }
+    }
+    if (cells.length === 0) return;
+
+    const selfKey = walletAddress
+      ? playerKeys.find((k) => k.toLowerCase() === walletAddress.toLowerCase())
+      : undefined;
+    const leagueNo = title.replace(/\D/g, '');
+    const boardType = /jackhof/i.test(draftLevel)
+      ? 'jackhof'
+      : /jackpot/i.test(draftLevel)
+        ? 'jackpot'
+        : /hof|hall of fame/i.test(draftLevel)
+          ? 'hof'
+          : draftLevel
+            ? 'pro'
+            : null;
+    const blob = await generateBoardImage({
+      cells,
+      ownerNames,
+      userDraftPosition: selfKey !== undefined && colByOwner[selfKey] !== undefined ? colByOwner[selfKey] : -1,
+      leagueNumber: leagueNo,
+      draftType: boardType,
+    });
+    if (!blob) return;
+    const objUrl = URL.createObjectURL(blob);
+    const ok = await saveImageToDevice(objUrl, leagueNo ? `League #${leagueNo} Board` : 'SBS Draft Board');
+    setTimeout(() => URL.revokeObjectURL(objUrl), 15_000);
+    if (ok) {
+      setBoardSaved(true);
+      setTimeout(() => setBoardSaved(false), 2000);
+    }
+  };
+
   // Save card image — fetch→blob→download via the shared helper (mobile gets
   // the native share sheet). The old /api/save-card proxy rejected our
   // same-origin /api/og/team-card URL, so it "downloaded" a JSON error named
@@ -893,12 +973,12 @@ export default function DraftResultsPage() {
           })}
         </div>
 
-        {/* Download roster image */}
-        <div className="text-center py-4">
+        {/* Download roster / full draft board images */}
+        <div className="flex items-start justify-center gap-10 py-4">
           <button
             onClick={handleSaveRoster}
-            className="p-2 text-white/30 hover:text-white/70 transition-colors"
-            aria-label="Download roster"
+            className="flex flex-col items-center gap-1 p-2 text-white/30 hover:text-white/70 transition-colors"
+            aria-label="Download roster image"
           >
             {rosterSaved ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
@@ -911,6 +991,27 @@ export default function DraftResultsPage() {
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             )}
+            <span className="text-[10px] uppercase tracking-wide font-semibold">Roster</span>
+          </button>
+          <button
+            onClick={handleSaveBoard}
+            className="flex flex-col items-center gap-1 p-2 text-white/30 hover:text-white/70 transition-colors"
+            aria-label="Download draft board image"
+          >
+            {boardSaved ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="3" y1="15" x2="21" y2="15" />
+                <line x1="9" y1="9" x2="9" y2="21" />
+                <line x1="15" y1="9" x2="15" y2="21" />
+              </svg>
+            )}
+            <span className="text-[10px] uppercase tracking-wide font-semibold">Board</span>
           </button>
         </div>
 

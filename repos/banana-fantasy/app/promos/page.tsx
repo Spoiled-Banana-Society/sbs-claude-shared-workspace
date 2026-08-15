@@ -661,8 +661,17 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] text-white/70">
+                {/* Winners keep their seat line AND the live race — they can
+                    win again next round (Richard 2026-08-14), so hiding the
+                    slots/seats-left read as "didn't reset" (AceJohn 8/14). */}
                 {atb?.won ? (
-                  <span className="font-bold text-[#ef4444]">You made it around! Seat {atb.seatNumber} of {atb.seatsTotal}</span>
+                  <>
+                    <span className="font-bold text-[#ef4444]">Won Seat {atb.seatNumber}</span>
+                    <span className="text-white/25"> · </span>
+                    <span className="font-bold text-[#ef4444]">{(atb?.slotsHit ?? []).length}/10 slots</span>
+                    <span className="text-white/25"> · </span>
+                    {Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0))} seats left
+                  </>
                 ) : atb?.completed ? (
                   <span className="text-white/45">All 10 covered — seats were taken</span>
                 ) : (

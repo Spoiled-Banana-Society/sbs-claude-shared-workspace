@@ -510,8 +510,15 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               })}
                             </div>
                             <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] mb-1 whitespace-nowrap">
+                              {/* Winners can win again next round — keep the live race visible. */}
                               {atb?.won ? (
-                                <span className="font-bold text-[#ef4444]">Made it around! Seat {atb.seatNumber}</span>
+                                <>
+                                  <span className="font-bold text-[#ef4444]">Won Seat {atb.seatNumber}</span>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-bold text-[#ef4444]">{hitCount}/10</span>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold">{seatsLeft} seats left</span>
+                                </>
                               ) : (
                                 <>
                                   <span className="font-bold text-[#ef4444]">{hitCount}/10 slots</span>

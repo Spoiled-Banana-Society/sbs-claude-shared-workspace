@@ -67,6 +67,8 @@ interface DraftRoomDraftingProps {
    *  the sidebar at whichever drafter the user clicked on. */
   spectator?: boolean;
   usersMap?: DraftRoomUsersMap;
+  /** Normalized contest name ("League #343") — titles the saved board image. */
+  contestName?: string;
 }
 
 export function DraftRoomDrafting({
@@ -99,6 +101,7 @@ export function DraftRoomDrafting({
   showBanner = true,
   spectator = false,
   usersMap,
+  contestName,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
@@ -599,6 +602,8 @@ export function DraftRoomDrafting({
                       ? user.username
                       : bananaPlaceholderName(walletParam || '')
                   }
+                  leagueNumber={(contestName || '').replace(/\D/g, '')}
+                  draftType={visibleDraftType}
                 />
               )}
               {activeTab === 'roster' && (

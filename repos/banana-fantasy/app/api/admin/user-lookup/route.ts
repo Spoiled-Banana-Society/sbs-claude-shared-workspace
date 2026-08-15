@@ -205,13 +205,19 @@ async function readIdentity(wallet: string) {
   // Fan out Firestore read + Go-API owner-profile read in parallel — the
   // owner profile carries the user-chosen displayName + avatar that the
   // Firestore doc doesn't mirror.
-  const [doc, ownerProfile] = await Promise.all([
+  const [doc, ownerProfile, twitterLink] = await Promise.all([
     db.collection('v2_users').doc(wallet).get(),
     fetchOwnerProfile(wallet),
+    db.collection('v2_twitter_links').where('walletAddress', '==', wallet).limit(1).get()
+      .catch(() => null),
   ]);
   if (!doc.exists && !ownerProfile.displayName) return null;
   const d = doc.exists ? (doc.data() ?? {}) : {};
+  const rawHandle = twitterLink && !twitterLink.empty
+    ? String(twitterLink.docs[0].data()?.twitterHandle ?? '').replace(/^@/, '').trim()
+    : '';
   return {
+    twitterHandle: rawHandle || null,
     walletAddress: typeof d.walletAddress === 'string' ? d.walletAddress.toLowerCase() : wallet,
     username:
       typeof d.username === 'string' && !d.username.startsWith('User-') ? d.username : null,

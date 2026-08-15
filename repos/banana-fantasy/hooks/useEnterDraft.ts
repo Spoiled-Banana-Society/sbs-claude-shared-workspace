@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
 import { joinDraft, joinPrivateDraft } from '@/lib/api/leagues';
+import { getActivePrivateLeague, clearActivePrivateLeague } from '@/lib/privateLeagueSession';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 
@@ -70,9 +71,32 @@ export function useEnterDraft() {
     // retries, bookkeeping, navigation) is IDENTICAL, which is exactly why the
     // private page rides this hook instead of forking it.
     privateLeague?: { id: string; password: string },
+    opts?: {
+      /** User explicitly chose a public draft over their private league. */
+      forcePublic?: boolean;
+    },
   ) => {
     if (!user?.walletAddress) return;
     if (inFlightRef.current) return; // a join is already in flight — ignore the double-tap
+
+    // Private-league auto-routing (ticket-2681, 2026-08-14). A member who
+    // unlocked /private/[id] expects EVERY "Enter Draft" to be their group's
+    // draft — before this, those clicks went to the public matchmaker and
+    // burned passes on strangers' lobbies (AceJohn). So without an explicit
+    // target: route into the remembered league, on its fixed lane, with a
+    // paid pass (private leagues never take free passes). EntryFlowModal
+    // names the league and offers the public escape (opts.forcePublic).
+    let autoPrivate = false;
+    if (!privateLeague && !opts?.forcePublic) {
+      const active = getActivePrivateLeague();
+      if (active) {
+        privateLeague = { id: active.id, password: active.password };
+        passType = 'paid';
+        speed = active.draftType;
+        autoPrivate = true;
+      }
+    }
+
     inFlightRef.current = true;
     setJoinError(null);
     // Overlay up from the TAP, not after the pass-spend round-trip. The spend
@@ -179,9 +203,9 @@ export function useEnterDraft() {
     // than the Go join, so it can't compete with it. Fire-and-forget.
     reportClientEvent({
       source: 'draft.enter.join_start',
-      message: `starting join (${speed}/${passType}) — join-first, nothing spent yet`,
+      message: `starting join (${speed}/${passType}${privateLeague ? ` → private:${privateLeague.id}${autoPrivate ? ' (auto)' : ''}` : ' → public'}) — join-first, nothing spent yet`,
       route: 'enter-draft', actor: user.walletAddress,
-      context: { speed, passType },
+      context: { speed, passType, privateLeagueId: privateLeague?.id ?? null, autoPrivate },
     }, { skipThrottle: true });
     // Go's rejections that a retry can never change: no matching pass in the
     // wallet, or the season join deadline passed. Retrying these just makes
@@ -241,9 +265,19 @@ export function useEnterDraft() {
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
       if (rejectionMsg && /not enough/i.test(rejectionMsg)) {
-        setJoinError('No draft passes available. Your balance has been refreshed.');
+        setJoinError(autoPrivate
+          ? 'Your private league takes paid Draft Passes and you have none available. Get a pass, then tap Enter Draft again.'
+          : 'No draft passes available. Your balance has been refreshed.');
       } else if (rejectionMsg && /incorrect password/i.test(rejectionMsg)) {
-        setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
+        if (autoPrivate) {
+          // The remembered password no longer works (commissioner rotated it).
+          // Kill the stale session so joins don't dead-end here forever, and
+          // send the member back to their league link for the new password.
+          clearActivePrivateLeague({ alsoPassword: true });
+          setJoinError('Your league password changed. Your pass was NOT used — open your league page link and enter the new password.');
+        } else {
+          setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
+        }
       } else if (rejectionMsg && /already in this league/i.test(rejectionMsg)) {
         setJoinError('You already have a seat in this draft — it starts as soon as the last seats fill.');
       } else if (rejectionMsg && /no entries left for this private league/i.test(rejectionMsg)) {

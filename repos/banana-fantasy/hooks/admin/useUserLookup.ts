@@ -97,6 +97,8 @@ export interface UserLookupIdentity {
   displayName: string | null;
   /** PFP image URL pulled from the Go owner API. Null when not set. */
   avatar: string | null;
+  /** Linked X handle (no @) from v2_twitter_links. Null when not linked. */
+  twitterHandle?: string | null;
   email: string | null;
   blueCheckVerified: boolean;
   banned: boolean;

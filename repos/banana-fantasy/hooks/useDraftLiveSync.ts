@@ -223,9 +223,16 @@ export function useDraftLiveSync({
 
       for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
         try {
-          const { joinDraft } = await import('@/lib/api/leagues');
+          const { joinDraft, joinPrivateDraft } = await import('@/lib/api/leagues');
           // Draft TYPE is never client-chosen — backend provably-fair only.
-          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
+          // Private-league members route into THEIR league (ticket-2681) —
+          // even this bare-/draft-room fallback join must never put a member's
+          // pass into the public matchmaker.
+          const { getActivePrivateLeague } = await import('@/lib/privateLeagueSession');
+          const activePrivate = getActivePrivateLeague();
+          const draftRoom = activePrivate
+            ? await joinPrivateDraft(walletParam, activePrivate.id, activePrivate.password, activePrivate.draftType, 'paid')
+            : await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 
           const newId = draftRoom.id;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { getPositionColorHex, TOTAL_ROUNDS } from '@/lib/draftRoomConstants';
 import type { DraftSummarySlot } from '@/hooks/useDraftEngine';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
@@ -8,6 +8,8 @@ import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { getTruncatedAccountName } from '@/utils/helpers';
 import { useSelfPfp } from '@/hooks/useSelfPfp';
+import { generateBoardImage } from '@/lib/draftBoardImage';
+import { saveImageToDevice } from '@/lib/saveImage';
 
 interface DraftBoardGridProps {
   draftOrder: DraftPlayer[];
@@ -22,6 +24,11 @@ interface DraftBoardGridProps {
   /** The current user's own board label — their custom name or default
    *  "Banana####". Shown on their column instead of the word "You". */
   userDisplayName?: string;
+  /** Numeric league id ("343") — titles the saved board image. */
+  leagueNumber?: string;
+  /** Visible draft type — colors the saved image's subtitle. Pass the
+   *  REVEALED type only (jackpot/HOF must never leak pre-reveal). */
+  draftType?: string | null;
 }
 
 export function DraftBoardGrid({
@@ -35,6 +42,8 @@ export function DraftBoardGrid({
   userEquippedBadge,
   userRipeness,
   userDisplayName,
+  leagueNumber,
+  draftType,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -64,7 +73,85 @@ export function DraftBoardGrid({
   // Get first 10 items from draftSummary for headings (owner names)
   const headings = draftSummary.slice(0, 10);
 
+  // One label per column — shared by the on-screen header row and the saved
+  // board image so the two can never disagree.
+  const columnLabel = (idx: number): string => {
+    const player = draftOrder[idx];
+    const slot = draftSummary[idx];
+    const resolvedUser = !player?.isYou && player?.name
+      ? usersMap?.[player.name.toLowerCase()]
+      : null;
+    return player
+      ? (player.isYou
+          ? (userDisplayName || 'You')
+          : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
+      : (slot?.ownerName || '');
+  };
+
+  // "Save board" — renders the board to a branded PNG (lib/draftBoardImage)
+  // and hands it to the device via the shared save helper (mobile gets the
+  // native share sheet). Button appears once there's at least one pick.
+  const hasAnyPick = draftSummary.some((s) => s.playerId !== '');
+  const [boardSaved, setBoardSaved] = useState(false);
+  const [boardSaving, setBoardSaving] = useState(false);
+  const handleSaveBoard = async () => {
+    if (boardSaving) return;
+    setBoardSaving(true);
+    try {
+      const blob = await generateBoardImage({
+        cells: draftSummary.map((s) => ({
+          pickNum: s.pickNum,
+          round: s.round,
+          playerId: s.playerId,
+          position: s.position,
+          ownerIndex: s.ownerIndex,
+        })),
+        ownerNames: Array.from({ length: 10 }, (_, i) => columnLabel(i)),
+        userDraftPosition,
+        leagueNumber,
+        draftType,
+      });
+      if (!blob) return;
+      const objUrl = URL.createObjectURL(blob);
+      const ok = await saveImageToDevice(
+        objUrl,
+        leagueNumber ? `League #${leagueNumber} Board` : 'SBS Draft Board',
+      );
+      setTimeout(() => URL.revokeObjectURL(objUrl), 15_000);
+      if (ok) {
+        setBoardSaved(true);
+        setTimeout(() => setBoardSaved(false), 2000);
+      }
+    } finally {
+      setBoardSaving(false);
+    }
+  };
+
   return (
+    <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
+      {hasAnyPick && (
+        <div className="flex justify-end px-3 pt-1 -mb-1">
+          <button
+            onClick={handleSaveBoard}
+            disabled={boardSaving}
+            title="Save board image"
+            aria-label="Save board image"
+            className="p-1.5 text-white/30 hover:text-white/70 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {boardSaved ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
     <div
       ref={gridRef}
       className="font-primary"
@@ -76,8 +163,6 @@ export function DraftBoardGrid({
         // (Richard, 2026-07-05: end-slot drafters had to scroll the whole
         // board back left just to reach the Draft tab).
         width: '100%',
-        maxWidth: 1200,
-        margin: '0 auto',
         padding: 10,
         overflow: 'auto',
         WebkitOverflowScrolling: 'touch',
@@ -101,11 +186,7 @@ export function DraftBoardGrid({
           const resolvedUser = !player?.isYou && player?.name
             ? usersMap?.[player.name.toLowerCase()]
             : null;
-          const displayLabel = player
-            ? (player.isYou
-                ? (userDisplayName || 'You')
-                : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
-            : slot.ownerName;
+          const displayLabel = columnLabel(idx) || slot.ownerName;
 
           const avatarUrl = player?.isYou
             ? (selfPfp || '/banana-profile.png')
@@ -259,6 +340,7 @@ export function DraftBoardGrid({
           })}
         </div>
       ))}
+    </div>
     </div>
   );
 }

@@ -62,14 +62,18 @@ export default function BuyDraftsPage() {
     }
   }, [router]);
 
-  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (
+    passType: 'paid' | 'free' | 'balance',
+    speed: 'fast' | 'slow',
+    opts?: { forcePublic?: boolean },
+  ) => {
     if (passType === 'balance') {
       const ok = await buyPassWithBalance();
       if (!ok) return; // error stays visible in the modal
-      void enterDraftWithPassType('paid', speed);
+      void enterDraftWithPassType('paid', speed, undefined, opts);
       return;
     }
-    void enterDraftWithPassType(passType, speed);
+    void enterDraftWithPassType(passType, speed, undefined, opts);
   };
 
   const handleBuyFromBalance = async (qty: number) => {
@@ -112,7 +116,7 @@ export default function BuyDraftsPage() {
       <EntryFlowModal
         isOpen={mode === 'entry'}
         onClose={() => { clearBuyError(); leave(); }}
-        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
+        onComplete={(passType, speed, opts) => void handleEntryComplete(passType, speed, opts)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={joiningLobby || depositBuying}
