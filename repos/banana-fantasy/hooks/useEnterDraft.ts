@@ -213,10 +213,7 @@ export function useEnterDraft() {
     const isDeterministicRejection = (msg: string) =>
       /not enough (paid|free) draft passes/i.test(msg) ||
       /deadline to join has passed/i.test(msg) ||
-      /incorrect password/i.test(msg) ||
-      /already in this league/i.test(msg) ||
-      // Private-league per-wallet entry cap (Go errPrivateEntryCap — keep in sync).
-      /no entries left for this private league/i.test(msg);
+      /incorrect password/i.test(msg);
     let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
@@ -278,10 +275,6 @@ export function useEnterDraft() {
         } else {
           setJoinError('Incorrect league password. Your pass was NOT used — re-enter the password and try again.');
         }
-      } else if (rejectionMsg && /already in this league/i.test(rejectionMsg)) {
-        setJoinError('You already have a seat in this draft — it starts as soon as the last seats fill.');
-      } else if (rejectionMsg && /no entries left for this private league/i.test(rejectionMsg)) {
-        setJoinError('You’ve used all your entries for this league. Your pass was NOT used — ask your commissioner to add another entry.');
       } else if (rejectionMsg) {
         setJoinError('Joining is closed — the deadline to enter drafts has passed.');
       } else {
