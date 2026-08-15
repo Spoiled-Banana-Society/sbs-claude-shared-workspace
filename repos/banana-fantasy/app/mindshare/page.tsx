@@ -365,12 +365,12 @@ export default function MindsharePage() {
           <div
             key={p.places}
             className={`relative overflow-hidden rounded-xl border px-3 py-2.5 ${p.first
-              ? 'bg-orange-500 border-orange-500 col-span-2 sm:col-span-1'
+              ? 'bg-orange-600 border-orange-500 col-span-2 sm:col-span-1'
               : 'bg-white/[0.03] border-white/[0.07]'}`}
           >
             <div className={`absolute top-0 left-0 right-0 h-[3px] ${p.strip}`} />
-            <div className={`text-[10px] font-bold tracking-widest ${p.first ? 'text-black/60' : 'text-white/40'}`}>{p.places.toUpperCase()}</div>
-            <div className={`text-[13px] font-bold mt-0.5 ${p.first ? 'text-black' : 'text-white'}`}>{p.prize}</div>
+            <div className={`text-[10px] font-bold tracking-widest ${p.first ? 'text-white/70' : 'text-white/40'}`}>{p.places.toUpperCase()}</div>
+            <div className="text-[13px] font-bold mt-0.5 text-white">{p.prize}</div>
           </div>
         ))}
       </div>
@@ -389,7 +389,7 @@ export default function MindsharePage() {
               <div
                 key={r.key}
                 className={`absolute rounded-xl border overflow-hidden transition-all duration-1000 ease-in-out ${isKing
-                  ? 'bg-orange-500 border-orange-500'
+                  ? 'bg-orange-600 border-orange-500'
                   : (t.rank !== null && t.rank <= 3)
                     ? 'bg-jackpot/[0.07] border-jackpot/25'
                     : (t.rank !== null && t.rank <= 6)
@@ -419,7 +419,7 @@ export default function MindsharePage() {
                   const nameFs = Math.max(8, Math.min(maxFs, fitFs));
                   return (
                     <div
-                      className={`font-bold leading-tight break-words ${isKing ? 'text-black' : 'text-white/80'}`}
+                      className={`font-bold leading-tight break-words ${isKing ? 'text-white' : 'text-white/80'}`}
                       style={{ fontSize: nameFs }}
                     >
                       {label}
@@ -436,7 +436,7 @@ export default function MindsharePage() {
                   const pctFs = tiny ? 12 : Math.max(14, Math.min(tierPx, Math.floor(r.h * 0.3), Math.floor((r.w - 14) * 0.3)));
                   return (
                     <div
-                      className={`font-extrabold tabular-nums ${tiny ? 'mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'}`}
+                      className={`font-extrabold tabular-nums ${tiny ? 'mt-0.5' : 'mt-1'} ${isKing ? 'text-white' : 'text-white'}`}
                       style={{ fontSize: pctFs, lineHeight: 1.1 }}
                     >
                       {t.pct === null ? '0%' : <CountUpPct pct={t.pct} />}
