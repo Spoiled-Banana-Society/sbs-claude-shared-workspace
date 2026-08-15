@@ -411,7 +411,10 @@ export default function MindsharePage() {
                     floor it wraps to a second line instead of ellipsizing. */}
                 {(() => {
                   const label = `${t.label}${isYou ? ' · YOU' : ''}`;
-                  const maxFs = big ? 14 : tiny ? 11 : 12;
+                  // Name size follows the PRIZE TIER like the percent does
+                  // (Boris 8/15: better prize = bigger name) — clamped to fit.
+                  const tierNameFs = t.rank === 1 ? 22 : t.rank !== null && t.rank <= 3 ? 18 : t.rank !== null && t.rank <= 6 ? 15 : 13;
+                  const maxFs = tiny ? 11 : tierNameFs;
                   const fitFs = Math.floor((r.w - (big ? 34 : 18)) / (0.62 * Math.max(label.length, 1)));
                   const nameFs = Math.max(8, Math.min(maxFs, fitFs));
                   return (
