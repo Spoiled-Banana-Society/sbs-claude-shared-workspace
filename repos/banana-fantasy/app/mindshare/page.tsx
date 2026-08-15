@@ -369,7 +369,7 @@ export default function MindsharePage() {
               : 'bg-white/[0.03] border-white/[0.07]'}`}
           >
             <div className={`absolute top-0 left-0 right-0 h-[3px] ${p.strip}`} />
-            <div className={`text-[10px] font-bold tracking-widest ${p.first ? 'text-white/70' : 'text-white/40'}`}>{p.places.toUpperCase()}</div>
+            <div className={`text-[11px] font-bold tracking-widest ${p.first ? 'text-white/85' : 'text-white/75'}`}>{p.places.toUpperCase()}</div>
             <div className="text-[13px] font-bold mt-0.5 text-white">{p.prize}</div>
           </div>
         ))}
