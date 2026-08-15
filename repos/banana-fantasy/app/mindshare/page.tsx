@@ -424,10 +424,22 @@ export default function MindsharePage() {
                   );
                 })()}
                 {/* The percent ALWAYS renders — tiny tiles just get compact
-                    type (Boris 8/14: every tile must show its number). */}
-                <div className={`font-extrabold tabular-nums ${tiny ? 'text-[12px] mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'} ${tiny ? '' : big ? (isKing ? 'text-5xl' : 'text-3xl') : 'text-lg'}`}>
-                  {t.pct === null ? '0%' : <CountUpPct pct={t.pct} />}
-                </div>
+                    type (Boris 8/14: every tile must show its number).
+                    Size follows the PRIZE TIER (Boris 8/15: better prize =
+                    visually bigger percent) — rank 1 largest, 2-3 next,
+                    4-6 next, 7+ smallest — clamped to what fits the tile. */}
+                {(() => {
+                  const tierPx = t.rank === 1 ? 48 : t.rank !== null && t.rank <= 3 ? 38 : t.rank !== null && t.rank <= 6 ? 28 : 20;
+                  const pctFs = tiny ? 12 : Math.max(14, Math.min(tierPx, Math.floor(r.h * 0.3), Math.floor((r.w - 14) * 0.3)));
+                  return (
+                    <div
+                      className={`font-extrabold tabular-nums ${tiny ? 'mt-0.5' : 'mt-1'} ${isKing ? 'text-black' : 'text-white'}`}
+                      style={{ fontSize: pctFs, lineHeight: 1.1 }}
+                    >
+                      {t.pct === null ? '0%' : <CountUpPct pct={t.pct} />}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
