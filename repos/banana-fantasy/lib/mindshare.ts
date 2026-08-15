@@ -434,7 +434,13 @@ async function rolloverIfDue(state: MindshareState, nowMs: number): Promise<Mind
 async function backfillPrivyLinksOnce(): Promise<Record<string, unknown> | null> {
   const db = getAdminFirestore();
   const marker = db.doc('mindshare_state/privy-link-backfill');
-  if ((await marker.get()).exists) return null;
+  // Recurring (8/15, was one-shot): new users who sign up WITH X via Privy
+  // get no site-side link row until this runs — a stale one-shot marker left
+  // every post-backfill signup unlinked (blank X handle in admin lookup,
+  // invisible on the Hype board). Re-sweep daily; create() is idempotent.
+  const markerSnap = await marker.get();
+  const lastRunMs = markerSnap.data()?.ranAt?.toMillis?.() ?? 0;
+  if (Date.now() - lastRunMs < 24 * 3600 * 1000) return null;
   const appId = (process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim();
   const secret = (process.env.PRIVY_APP_SECRET ?? '').trim();
   if (!appId || !secret) return { backfill: 'skipped: privy creds missing' };
