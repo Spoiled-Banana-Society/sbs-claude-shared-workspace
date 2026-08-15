@@ -69,7 +69,7 @@ interface BoardState {
 // Tier accent strips — the prize ladder, the map tiles and the leaderboard
 // rank numbers all speak the same color per tier (Boris 8/14: subtle, no
 // loud fills). JackHOF = its two components red→gold; spins stay banana/neutral.
-const STRIP_JACKHOF = 'bg-gradient-to-r from-jackpot to-hof';
+const STRIP_JACKHOF = 'bg-orange-500'; // red + gold mixed = orange (Boris 8/15)
 // Every tier owns a DISTINCT color (Boris 8/14: nothing shares, spins tiers
 // differ from each other too): JackHOF red→gold, Jackpot red, HOF gold,
 // 3 spins purple, 1 spin teal.
@@ -103,7 +103,7 @@ function stripForRank(rank: number | null): string | null {
 
 /** Leaderboard rank-number color per tier — mirrors the strips exactly. */
 function rankTextForRank(rank: number): string {
-  if (rank === 1) return 'text-banana';
+  if (rank === 1) return 'text-orange-400';
   if (rank <= 3) return 'text-jackpot';
   if (rank <= 6) return 'text-hof';
   if (rank <= 15) return 'text-pro';
@@ -365,7 +365,7 @@ export default function MindsharePage() {
           <div
             key={p.places}
             className={`relative overflow-hidden rounded-xl border px-3 py-2.5 ${p.first
-              ? 'bg-banana border-banana col-span-2 sm:col-span-1'
+              ? 'bg-orange-500 border-orange-500 col-span-2 sm:col-span-1'
               : 'bg-white/[0.03] border-white/[0.07]'}`}
           >
             <div className={`absolute top-0 left-0 right-0 h-[3px] ${p.strip}`} />
@@ -389,7 +389,7 @@ export default function MindsharePage() {
               <div
                 key={r.key}
                 className={`absolute rounded-xl border overflow-hidden transition-all duration-1000 ease-in-out ${isKing
-                  ? 'bg-banana border-banana'
+                  ? 'bg-orange-500 border-orange-500'
                   : (t.rank !== null && t.rank <= 3)
                     ? 'bg-jackpot/[0.07] border-jackpot/25'
                     : (t.rank !== null && t.rank <= 6)
