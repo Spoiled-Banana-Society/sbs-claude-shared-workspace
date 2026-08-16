@@ -650,7 +650,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       )}
 
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, pick-chase, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'around-the-banana' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'pick-chase' && promo.type !== 'around-the-banana' && promo.type !== 'banana-vault' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
                           {/* Kickoff: drafts counted toward the 20-draft cap + live
                               countdown to the Sunday-night cutoff (timerEndTime is

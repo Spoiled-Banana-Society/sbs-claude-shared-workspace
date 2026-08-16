@@ -195,7 +195,7 @@ export function PromosSidebar({
                     <DropCountdown wallet={user?.walletAddress ?? null} />
                   </div>
                 )}
-                {!isChase && hasProgress && (
+                {!isChase && hasProgress && promo.type !== 'banana-vault' && (
                   <div className="mb-2">
                     <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
                       {/* Kickoff buy-bonus: same detail line the /promos card
