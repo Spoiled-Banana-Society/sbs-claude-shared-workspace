@@ -215,7 +215,7 @@ export function PromosSidebar({
                   </div>
                 )}
                 {promo.type === 'banana-vault' && (() => {
-                  const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean } } | undefined)?.bananaVault;
+                  const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number } } | undefined)?.bananaVault;
                   const revealed = bv?.revealedSlots ?? [];
                   const pending = bv?.unrevealed ?? 0;
                   const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
@@ -260,7 +260,9 @@ export function PromosSidebar({
                         </div>
                       )}
                       <p className="mt-1 text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
-                        Free + paid count · First 5 to click 2 with paid: 2 Free Spins
+                        {(bv?.bountiesLeft ?? 5) > 0
+                          ? `Free + paid count · First 5 to click 2 with paid: 2 Free Spins (${bv?.bountiesLeft ?? 5} left)`
+                          : 'Free + paid count · Spin bounties all claimed — seats still live'}
                       </p>
                     </div>
                   );

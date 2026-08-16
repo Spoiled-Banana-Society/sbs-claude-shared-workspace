@@ -53,6 +53,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [vaultMsg, setVaultMsg] = useState<string | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
   const [vaultClaimedKinds, setVaultClaimedKinds] = useState<{ spins?: boolean; seat?: boolean }>({});
+  const [vaultCracked, setVaultCracked] = useState(false);
+  const vaultStageRef = useRef<HTMLDivElement>(null);
   // ⛔ Client-side Pick-slot LADDER REMOVED 2026-07-26. It read the SSE's
   // legacy per-100 counters (jackpotRemaining/hofRemaining), which don't know
   // the rolling-lane era retired the ladder on 2026-07-20 — so a batch's 5th
@@ -833,9 +835,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     </div>
   );
 
-  // 🔒 The Banana Vault — interactive tumblers: tap to reveal clicks landed at
-  // fill time, then CLAIM buttons deliver locked prizes (reveal → claim = the
-  // two dopamine hits; prizes were already won at fill, Boris 2026-08-15).
+  // 🔒 The Banana Vault — interactive tumblers with the PACK-OPENING treatment
+  // (Boris 8/16): tap → 1.4s escalating rattle + building gold glow → either a
+  // burst flash + number punch-in + confetti (hit) or a gray slump + ✕ (miss).
+  // 4th click fires a second confetti wave + the VAULT CRACKED takeover.
+  // Prizes were locked at fill; the tap is pure reveal ceremony.
   const renderVaultContent = () => {
     type VaultPayload = {
       open?: boolean; seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number;
@@ -845,13 +849,34 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     const bv = (promo.modalContent as { bananaVault?: VaultPayload } | undefined)?.bananaVault;
     if (!bv) return null;
     const revealedAll = [...new Set([...(bv.revealedSlots ?? []), ...vaultJustRevealed])].sort((a, b) => a - b);
-    const pendingCount = Math.max(0, (bv.unrevealed ?? 0) - vaultJustRevealed.length);
+    const pendingCount = Math.max(0, (bv.unrevealed ?? 0) - vaultJustRevealed.length - vaultJustMissed.filter((m) => !(bv.missedSlots ?? []).includes(m)).length);
     const wallet = user?.walletAddress?.toLowerCase();
+
+    const spawnParticles = (colors: string[], count: number) => {
+      const host = vaultStageRef.current;
+      if (!host) return;
+      const rect = host.getBoundingClientRect();
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;width:8px;height:8px;border-radius:2px;pointer-events:none;z-index:20;';
+        el.style.left = `${rect.width / 2}px`;
+        el.style.top = '70px';
+        el.style.background = colors[i % colors.length];
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 60 + Math.random() * 120;
+        el.animate([
+          { opacity: 1, transform: 'translate(0,0) rotate(0deg)' },
+          { opacity: 0, transform: `translate(${Math.cos(ang) * dist}px, ${Math.sin(ang) * dist - 40}px) rotate(${Math.random() * 720 - 360}deg)` },
+        ], { duration: 900, easing: 'ease-out', fill: 'forwards' });
+        host.appendChild(el);
+        setTimeout(() => el.remove(), 950);
+      }
+    };
 
     const tapVault = async () => {
       if (!wallet || vaultBusy) return;
       setVaultBusy(true);
-      setVaultShaking(true);
+      setVaultShaking(true); // rattle phase
       try {
         const res = await fetch('/api/vault/reveal', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -864,18 +889,35 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           setVaultShaking(false);
           if (missed.length > 0) setVaultJustMissed((prev) => [...new Set([...prev, ...missed])]);
           if (slots.length === 0) {
-            setVaultMsg(missed.length > 0
-              ? `…no click. Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} ${missed.length > 1 ? 'are' : 'is'} not in your combo — crossed off your map.`
-              : '…nothing new. Your next draft could click one.');
+            if (missed.length > 0) {
+              spawnParticles(['rgba(255,255,255,0.25)'], 6);
+              setVaultMsg(`…no click. Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} crossed off your map.`);
+            } else {
+              setVaultMsg('…nothing new. Your next draft could click one.');
+            }
+            setVaultBusy(false);
           } else {
-            // stagger the clicks open one at a time
             slots.forEach((sl, i) => setTimeout(() => {
-              setVaultJustRevealed((prev) => (prev.includes(sl) ? prev : [...prev, sl]));
-            }, i * 600));
+              setVaultJustRevealed((prev) => {
+                const next = prev.includes(sl) ? prev : [...prev, sl];
+                const total = new Set([...(bv.revealedSlots ?? []), ...next]).size;
+                spawnParticles(['#fbbf24', '#22c55e', '#ffffff'], 26);
+                if (total >= 4) {
+                  setTimeout(() => {
+                    spawnParticles(['#fbbf24', '#ef4444', '#22c55e', '#ffffff'], 60);
+                    setVaultCracked(true);
+                  }, 650);
+                }
+                return next;
+              });
+            }, i * 800));
             setVaultMsg(slots.length === 1 ? '🔓 CLICK! A tumbler opened.' : `🔓 ${slots.length} tumblers clicked open!`);
+            if (missed.length > 0) {
+              setVaultMsg((m) => `${m} Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} crossed off.`);
+            }
+            setTimeout(() => setVaultBusy(false), slots.length * 800 + 400);
           }
-          setVaultBusy(false);
-        }, 600);
+        }, 1400); // rattle duration
       } catch {
         setVaultShaking(false);
         setVaultBusy(false);
@@ -893,9 +935,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         const data = await res.json();
         if (data.ok) {
           setVaultClaimedKinds((prev) => ({ ...prev, [kind]: true }));
+          spawnParticles(kind === 'seat' ? ['#ef4444', '#fbbf24', '#ffffff'] : ['#fbbf24', '#ffffff'], 40);
           setVaultMsg(kind === 'spins'
             ? '🎰 2 Free Spins added to your wheel!'
-            : '💥 VAULT OPEN — your Jackpot seat is locked in. Only Vault winners share that lobby.');
+            : '💥 Jackpot seat locked in — only Vault winners share that lobby.');
         }
       } finally {
         setVaultBusy(false);
@@ -904,39 +947,79 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
     return (
       <div className="space-y-4">
-        {/* tumblers */}
-        <div className="flex justify-center gap-3">
-          {Array.from({ length: 4 }, (_, i) => {
-            const num = revealedAll[i];
-            const isRevealed = num !== undefined;
-            const isPending = !isRevealed && i < revealedAll.length + pendingCount;
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={isPending ? tapVault : undefined}
-                disabled={!isPending || vaultBusy}
-                className={`w-16 h-20 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
-                  isRevealed
-                    ? 'border-green-500/70 bg-green-500/10'
-                    : isPending
-                      ? `border-banana bg-banana/10 cursor-pointer ${vaultShaking ? 'animate-bounce' : 'animate-pulse'}`
-                      : 'border-white/15 bg-white/[0.03]'
-                }`}
-              >
-                <span className={`text-3xl font-black tabular-nums ${
-                  isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/20'
-                }`}>
-                  {isRevealed ? num : '?'}
-                </span>
-                <span className={`text-[8px] font-bold tracking-wider mt-1 ${
-                  isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/30'
-                }`}>
-                  {isRevealed ? 'CLICKED' : isPending ? 'TAP' : 'SEALED'}
-                </span>
-              </button>
-            );
-          })}
+        <style>{`
+          @keyframes vaultRattle {
+            0% { transform: translate(0) rotate(0); box-shadow: 0 0 0 rgba(251,191,36,0); }
+            15% { transform: translate(-2px,1px) rotate(-1deg); }
+            30% { transform: translate(3px,-1px) rotate(1.4deg); box-shadow: 0 0 16px rgba(251,191,36,0.25); }
+            45% { transform: translate(-3px,2px) rotate(-1.8deg); }
+            60% { transform: translate(4px,-2px) rotate(2.4deg); box-shadow: 0 0 32px rgba(251,191,36,0.5); }
+            75% { transform: translate(-5px,2px) rotate(-2.8deg); }
+            90% { transform: translate(5px,-3px) rotate(3.2deg); box-shadow: 0 0 50px rgba(251,191,36,0.8); }
+            100% { transform: translate(0) rotate(0); box-shadow: 0 0 58px rgba(251,191,36,0.9); }
+          }
+          @keyframes vaultBurst {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.16); box-shadow: 0 0 80px rgba(34,197,94,0.9), 0 0 130px rgba(251,191,36,0.5); }
+            100% { transform: scale(1); box-shadow: 0 0 22px rgba(34,197,94,0.4); }
+          }
+          @keyframes vaultPunch { 0% { transform: scale(3); opacity: 0; } 60% { transform: scale(0.9); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+          @keyframes vaultBannerIn { 0% { opacity: 0; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
+          @media (prefers-reduced-motion: reduce) { .vault-rattle, .vault-burst { animation: none !important; } }
+        `}</style>
+        {/* tumblers + particle host */}
+        <div ref={vaultStageRef} className="relative">
+          <div className="flex justify-center gap-3">
+            {Array.from({ length: 4 }, (_, i) => {
+              const num = revealedAll[i];
+              const isRevealed = num !== undefined;
+              const justNow = isRevealed && vaultJustRevealed.includes(num);
+              const isPending = !isRevealed && i < revealedAll.length + pendingCount;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={isPending ? tapVault : undefined}
+                  disabled={!isPending || vaultBusy}
+                  className={`w-16 h-20 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                    isRevealed
+                      ? 'border-green-500/70 bg-green-500/10'
+                      : isPending
+                        ? 'border-banana bg-banana/10 cursor-pointer'
+                        : 'border-white/15 bg-white/[0.03]'
+                  } ${isPending && vaultShaking ? 'vault-rattle' : isPending ? 'animate-pulse' : ''} ${justNow ? 'vault-burst' : ''}`}
+                  style={isPending && vaultShaking
+                    ? { animation: 'vaultRattle 1400ms cubic-bezier(.36,.07,.19,.97) both' }
+                    : justNow ? { animation: 'vaultBurst 420ms ease-out both' } : undefined}
+                >
+                  <span
+                    className={`text-3xl font-black tabular-nums ${
+                      isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/20'
+                    }`}
+                    style={justNow ? { animation: 'vaultPunch 500ms cubic-bezier(.2,1.6,.35,1) both' } : undefined}
+                  >
+                    {isRevealed ? num : '?'}
+                  </span>
+                  <span className={`text-[8px] font-bold tracking-wider mt-1 ${
+                    isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/30'
+                  }`}>
+                    {isRevealed ? 'CLICKED' : isPending ? 'TAP' : 'SEALED'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* VAULT CRACKED takeover */}
+          {vaultCracked && (
+            <div
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1 rounded-xl bg-black/85"
+              style={{ animation: 'vaultBannerIn 500ms cubic-bezier(.2,1.4,.35,1) both' }}
+              onClick={() => setVaultCracked(false)}
+            >
+              <span className="text-2xl font-black text-banana">💥 VAULT CRACKED</span>
+              <span className="text-xs font-bold text-white/70">All 4 tumblers open — claim your Jackpot seat below</span>
+            </div>
+          )}
         </div>
         {pendingCount > 0 && !vaultMsg && (
           <p className="text-center text-banana text-sm font-bold animate-pulse">
@@ -947,6 +1030,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <p className="text-center text-xs text-text-secondary">
           <span className="font-bold text-red-400">{bv.seatsLeft ?? 0} Jackpot seats left</span> in this vault
         </p>
+        {/* Personal bounty status (Boris 8/15): users can't otherwise tell
+            which of their clicks were paid — show the meter while the race
+            is live and they haven't already won it. */}
+        {(bv.bountiesLeft ?? 0) > 0 && !bv.spinsClaimable && (bv.paidClicks ?? 0) < 2 && (
+          <p className="text-center text-xs text-banana font-semibold">
+            🎰 Bounty: {bv.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins ({bv.bountiesLeft} left)
+          </p>
+        )}
         {/* YOUR SLOT MAP (Boris 8/15): earned info only — green = your revealed
             clicks, ✕ = slots you tried that aren't in your combo, ? = untried.
             Misses only mark AFTER a tap so the reveal suspense stays intact. */}
@@ -975,14 +1066,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             </div>
           );
         })()}
-        {/* Personal bounty status (Boris 8/15): users can't otherwise tell
-            which of their clicks were paid — show the meter while the race
-            is live and they haven't already won it. */}
-        {(bv.bountiesLeft ?? 0) > 0 && !bv.spinsClaimable && (bv.paidClicks ?? 0) < 2 && (
-          <p className="text-center text-xs text-banana font-semibold">
-            🎰 Bounty: {bv.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins ({bv.bountiesLeft} left)
-          </p>
-        )}
         {bv.spinsClaimable && !vaultClaimedKinds.spins && (
           <button
             type="button"

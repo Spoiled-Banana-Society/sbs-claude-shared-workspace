@@ -542,7 +542,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
   // click, gold pulse = face-down click waiting for the tap, gray = sealed.
   const isVault = promo.type === 'banana-vault';
   const bv = isVault
-    ? (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean } }).bananaVault
+    ? (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number } }).bananaVault
     : undefined;
 
   // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
@@ -683,7 +683,15 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
                 <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-white/40">
-                <span className="text-white/60 font-semibold">Free + paid drafts</span> count toward the seat · First 5 to click 2 tumblers <span className="text-white/60 font-semibold">with paid drafts</span> win 2 Free Spins each · any order
+                {(bv?.bountiesLeft ?? 5) > 0 ? (
+                  <>
+                    <span className="text-white/60 font-semibold">Free + paid drafts</span> count toward the seat · First 5 to click 2 tumblers <span className="text-white/60 font-semibold">with paid drafts</span> win 2 Free Spins each ({bv?.bountiesLeft ?? 5} left) · any order
+                  </>
+                ) : (
+                  <>
+                    <span className="text-white/60 font-semibold">Free + paid drafts</span> count toward the seat · Spin bounties all claimed — seats still live · any order
+                  </>
+                )}
               </p>
             </div>
           );
