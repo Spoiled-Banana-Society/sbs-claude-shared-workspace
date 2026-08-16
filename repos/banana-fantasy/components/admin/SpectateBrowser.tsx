@@ -282,7 +282,9 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     // Boris 2026-07-03: FILLING lobbies on top, the one closest to full
     // first; started drafts below. Within each group keep the API's
     // newest-first order (Array.sort is stable).
+    // Richard 2026-08-15: FAST drafts above SLOW inside each group.
     if (a.filling !== b.filling) return a.filling ? -1 : 1;
+    if (a.speed !== b.speed) return a.speed === 'fast' ? -1 : 1;
     if (a.filling && b.filling) return (b.numPlayers ?? 0) - (a.numPlayers ?? 0);
     return 0;
   });

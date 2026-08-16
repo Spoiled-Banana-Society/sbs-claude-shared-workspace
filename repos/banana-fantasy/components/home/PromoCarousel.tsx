@@ -399,7 +399,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         carries the same description the /promos page card shows.
                         First-purchase keeps its bespoke fixed lines above. */}
                     {promo.type !== 'first-purchase' && promo.description && (
-                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] line-clamp-2">
+                      <p className={`mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] ${promo.type === 'banana-vault' ? '' : 'line-clamp-2'}`}>
                         {promo.description}
                       </p>
                     )}
