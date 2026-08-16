@@ -21,6 +21,9 @@ type PrivateLeagueRequestBody struct {
 	Password string `json:"password"`
 	// PassType ('paid'|'free') — join only; same semantics as the public join.
 	PassType string `json:"passType,omitempty"`
+	// Speed ('fast'|'slow') — join only; honored by "both"-lane leagues,
+	// ignored by single-lane leagues (their one speed wins).
+	Speed string `json:"speed,omitempty"`
 }
 
 // privateLeagueErrorStatus maps model errors to client-appropriate statuses so
@@ -104,7 +107,7 @@ func (lr *LeagueResources) JoinPrivateLeague(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	card, err := models.JoinPrivateLeague(privateId, ownerId, req.Password, req.PassType)
+	card, err := models.JoinPrivateLeague(privateId, ownerId, req.Password, req.PassType, req.Speed)
 	if err != nil {
 		fmt.Printf("[private-league] join failed league=%s owner=%s: %v\n", privateId, ownerId, err)
 		http.Error(w, err.Error(), privateLeagueErrorStatus(err))

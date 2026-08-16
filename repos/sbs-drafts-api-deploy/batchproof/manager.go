@@ -71,6 +71,16 @@ func NewManager(client *Client, db *firestore.Client, variant string, disabledMs
 // from main.go after both contracts are loaded. Optional — if not set,
 // the vrf-commit-merkle variant is unavailable and routing errors will
 // fire if it's somehow selected via Firestore config.
+// SetDb swaps the manager's Firestore client. Called by the utils layer's
+// client recycler: the manager captures utils.Db.Client ONCE at boot, so when
+// the recycler replaced (and closed) that client, every lane/batch read died
+// forever with "the client connection is closing" — the root cause of the
+// JP #434/#633 and HOF #649 rollover failures (4 incidents, Aug 3-14 2026).
+// Plain pointer swap, same synchronization model as utils.Db.Client itself.
+func (m *Manager) SetDb(db *firestore.Client) {
+	m.db = db
+}
+
 func (m *Manager) SetMerkleClient(client *Client) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

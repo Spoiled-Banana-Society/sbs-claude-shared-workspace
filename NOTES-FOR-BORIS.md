@@ -4,6 +4,16 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## Aug 14 — Private-league sticky routing shipped (ticket-2681, AceJohn) — touches EntryFlowModal + BuyPassesModal
+
+Zero private joins had EVER hit the Go API since the 8/10 launch — AceJohn (and likely the whole KFFL/KoD group) entered the league password, then clicked the normal Enter Draft / post-purchase join and burned passes in PUBLIC lobbies. Shipped on sbs-frontend-v2 commit 9c7cf37c (deployed, Ready):
+
+- New `lib/privateLeagueSession.ts`: unlocking /private/[id] remembers the league; `useEnterDraft`, EntryFlowModal (banner + "Join a public SBS draft instead" escape, single-step, free row hidden), BuyPassesModal pick-speed (single "Enter {league}" button), and the bare draft-room fallback all route members into their league (paid pass, league lane). Password rotation clears the session with a clear error.
+- If you touch EntryFlowModal/BuyPassesModal, keep the `getActivePrivateLeague()` routing intact — this is the fix for the whole class of "my private entry went public" bugs.
+- Comp'd AceJohn 1 free pass via one-shot `/api/crons/grant-acejohn-privlane-comp` (token 7734, tx 0xaf66348b…, guard doc set — safe to delete the route on a future cleanup).
+- ⚠️ Security heads-up found while running it: our cron routes accept a client-supplied `x-vercel-cron` header — I triggered the one-shot from an external curl WITHOUT the CRON_SECRET. Anyone who guesses a cron path can fire it. We should drop the x-vercel-cron shortcut or verify it only for Vercel-originated requests.
+- Also FYI: your Go 00196 deploy from this morning — please confirm it was drift-checked against 00195's source zip.
+
 ## Jul 4 — Unique usernames for REAL: killed the wallet-hash "Banana#####" everywhere (deploying today)
 
 **Incident that triggered it:** Richard's brand-new account displayed "Banana46559" (client wallet-hash, 90k-value space). You granted his pass by searching that name — it matched a DIFFERENT account (created 6/26) that has "Banana46559" STORED as its username, so pass token #1398 (2:49pm ET 7/4) went to wallet `0x205f87ec21fd5d5ab98f7ccd08f73a4df8120950`. Unused so far (0 drafts); claw back / re-grant at your discretion — Richard said hold for now.

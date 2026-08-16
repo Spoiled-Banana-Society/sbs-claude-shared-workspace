@@ -195,6 +195,9 @@ func initBatchProof() error {
 	}
 
 	batchproof.Set(mgr)
+	// Keep the manager's Firestore client fresh across recycles (root fix for
+	// the Aug 2026 lane failures — see Manager.SetDb).
+	utils.OnFirestoreClientRecycled = mgr.SetDb
 	fmt.Printf("[batchproof] manager initialized: variant=%s contract=%s signer=%s rpc=%s\n",
 		variant, client.ContractAddress().Hex(), client.SignerAddress().Hex(), rpcURL)
 	return nil

@@ -60,12 +60,19 @@ type PrivateLeagueConfig struct {
 	Name string `json:"name"`
 	// PasswordHash = hex(sha256(trimmed password)). Never serialized to JSON.
 	PasswordHash string `json:"-"`
-	// DraftType is the speed every draft in this league runs at: "fast"
-	// (30s/pick, ~30min total) or "slow" (8h/pick).
+	// DraftType is the speed this league's drafts run at: "fast" (30s/pick,
+	// ~30min total), "slow" (8h/pick), or "both" (2026-08-15: the league
+	// runs a fast lane AND a slow lane side by side — same password, same
+	// per-wallet entry cap across both, same JP/HOF batch).
 	DraftType string `json:"draftType"`
 	// CurrentDraftId is the currently-filling draft ("" until the first join;
-	// advanced by ensureOpenPrivateLeague when the current one fills).
-	CurrentDraftId     string    `json:"currentDraftId"`
+	// advanced by ensureOpenPrivateLeague when the current one fills). For a
+	// "both" league this is the FAST lane's current draft.
+	CurrentDraftId string `json:"currentDraftId"`
+	// CurrentSlowDraftId is the slow lane's currently-filling draft. Only
+	// used when DraftType == "both" (single-lane slow leagues keep using
+	// CurrentDraftId, so nothing existing moves).
+	CurrentSlowDraftId string    `json:"currentSlowDraftId"`
 	CommissionerWallet string    `json:"commissionerWallet,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
 	// DefaultEntries caps how many seats ONE wallet may take across this
@@ -80,6 +87,51 @@ type PrivateLeagueConfig struct {
 	// AdminWallets (lowercase) may read the league's admin roster and bump
 	// Entries via the frontend admin endpoints. SBS site admins always can.
 	AdminWallets []string `json:"-"`
+}
+
+// LaneSpeeds lists the draft speeds this league offers, in display order.
+func (cfg *PrivateLeagueConfig) LaneSpeeds() []string {
+	switch strings.ToLower(cfg.DraftType) {
+	case "slow":
+		return []string{"slow"}
+	case "both":
+		return []string{"fast", "slow"}
+	default:
+		return []string{"fast"}
+	}
+}
+
+// laneSpeedFor resolves which lane a join lands in. A single-lane league
+// ignores the request (its one speed is the speed); a "both" league honors
+// the member's choice, defaulting to fast.
+func (cfg *PrivateLeagueConfig) laneSpeedFor(requested string) string {
+	dt := strings.ToLower(cfg.DraftType)
+	if dt == "both" {
+		if strings.ToLower(requested) == "slow" {
+			return "slow"
+		}
+		return "fast"
+	}
+	if dt == "slow" {
+		return "slow"
+	}
+	return "fast"
+}
+
+// currentDraftField names the config field that tracks the given lane's
+// currently-filling draft (see CurrentDraftId / CurrentSlowDraftId).
+func (cfg *PrivateLeagueConfig) currentDraftField(speed string) string {
+	if strings.ToLower(cfg.DraftType) == "both" && speed == "slow" {
+		return "CurrentSlowDraftId"
+	}
+	return "CurrentDraftId"
+}
+
+func (cfg *PrivateLeagueConfig) currentDraftFor(speed string) string {
+	if cfg.currentDraftField(speed) == "CurrentSlowDraftId" {
+		return cfg.CurrentSlowDraftId
+	}
+	return cfg.CurrentDraftId
 }
 
 // AllowedEntriesFor resolves how many seats ownerId may take in this league.
@@ -286,14 +338,12 @@ func RevealPrivateBatch(privateId string, batchNum int) error {
 // frontier — see privateLeagueReserveOffset) when there is no open one. Runs
 // as a single transaction on the config doc, so a burst of members joining at
 // once converges on ONE league instead of scattering across several.
-func ensureOpenPrivateLeague(privateId string, cfg *PrivateLeagueConfig) (string, error) {
+func ensureOpenPrivateLeague(privateId string, cfg *PrivateLeagueConfig, speed string) (string, error) {
 	cfgRef := utils.Db.Client.Collection(privateLeaguesCollection).Doc(privateId)
 	trackerRef := utils.Db.Client.Collection("drafts").Doc("draftTracker")
 
-	draftType := strings.ToLower(cfg.DraftType)
-	if draftType != "slow" {
-		draftType = "fast"
-	}
+	draftType := cfg.laneSpeedFor(speed)
+	currentField := cfg.currentDraftField(draftType)
 
 	var resolved string
 	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
@@ -307,16 +357,17 @@ func ensureOpenPrivateLeague(privateId string, cfg *PrivateLeagueConfig) (string
 			return err
 		}
 
-		// Reuse the current draft while it still has open seats.
-		if fresh.CurrentDraftId != "" {
-			snap, gerr := tx.Get(utils.Db.Client.Collection("drafts").Doc(fresh.CurrentDraftId))
+		// Reuse this lane's current draft while it still has open seats.
+		current := fresh.currentDraftFor(draftType)
+		if current != "" {
+			snap, gerr := tx.Get(utils.Db.Client.Collection("drafts").Doc(current))
 			if gerr == nil && snap.Exists() {
 				var l League
 				if derr := snap.DataTo(&l); derr != nil {
 					return derr
 				}
-				if l.PrivateLeagueId == privateId && l.NumPlayers < 10 {
-					resolved = fresh.CurrentDraftId
+				if l.PrivateLeagueId == privateId && l.NumPlayers < 10 && strings.Contains(l.LeagueId, "-"+draftType+"-") {
+					resolved = current
 					return nil
 				}
 			} else if gerr != nil && !strings.Contains(gerr.Error(), "code = NotFound") {
@@ -380,7 +431,7 @@ func ensureOpenPrivateLeague(privateId string, cfg *PrivateLeagueConfig) (string
 		if serr := tx.Set(utils.Db.Client.Collection("drafts").Doc(leagueId), newLeague); serr != nil {
 			return serr
 		}
-		if serr := tx.Set(cfgRef, map[string]interface{}{"CurrentDraftId": leagueId}, firestore.MergeAll); serr != nil {
+		if serr := tx.Set(cfgRef, map[string]interface{}{currentField: leagueId}, firestore.MergeAll); serr != nil {
 			return serr
 		}
 		resolved = leagueId
@@ -396,7 +447,7 @@ func ensureOpenPrivateLeague(privateId string, cfg *PrivateLeagueConfig) (string
 // verifying the password. Consumes one pass of passType exactly like a public
 // join; runs the SAME seat transaction and post-join bookkeeping (fill trigger
 // included) as every other join. Returns the seated card.
-func JoinPrivateLeague(privateId string, ownerId string, password string, passType string) (*DraftToken, error) {
+func JoinPrivateLeague(privateId string, ownerId string, password string, passType string, speed string) (*DraftToken, error) {
 	cfg, err := GetPrivateLeagueConfig(privateId)
 	if err != nil {
 		return nil, err
@@ -441,7 +492,7 @@ func JoinPrivateLeague(privateId string, ownerId string, password string, passTy
 	// resolve and seat (10 buddies mashing join at once), re-resolve — the
 	// next pass allocates the following league.
 	for attempt := 0; attempt < 3; attempt++ {
-		leagueId, lerr := ensureOpenPrivateLeague(privateId, cfg)
+		leagueId, lerr := ensureOpenPrivateLeague(privateId, cfg, speed)
 		if lerr != nil {
 			return nil, lerr
 		}
@@ -477,6 +528,7 @@ type PrivateLeagueDraftSummary struct {
 	Level       string `json:"level"`
 	NumPlayers  int    `json:"numPlayers"`
 	Filled      bool   `json:"filled"`
+	DraftType   string `json:"draftType"`
 }
 
 // PrivateLeagueInfo is the league page payload (password-gated).
@@ -484,8 +536,13 @@ type PrivateLeagueInfo struct {
 	Id            string                      `json:"id"`
 	Name          string                      `json:"name"`
 	DraftType     string                      `json:"draftType"`
+	// Lanes = the speeds this league offers ("fast", "slow", or both).
+	Lanes         []string                    `json:"lanes"`
 	DraftsFilled  int                         `json:"draftsFilled"`
+	// CurrentDraft = the fast lane's filling draft (legacy single-lane
+	// field, kept for older clients); CurrentDrafts has every lane.
 	CurrentDraft  *PrivateLeagueDraftSummary  `json:"currentDraft,omitempty"`
+	CurrentDrafts map[string]*PrivateLeagueDraftSummary `json:"currentDrafts"`
 	Drafts        []PrivateLeagueDraftSummary `json:"drafts"`
 	Batches       []PrivateBatchProof         `json:"batches"`
 	BatchSize     int                         `json:"batchSize"`
@@ -510,6 +567,8 @@ func GetPrivateLeagueInfo(privateId string, password string) (*PrivateLeagueInfo
 		Id:            privateId,
 		Name:          cfg.Name,
 		DraftType:     cfg.DraftType,
+		Lanes:         cfg.LaneSpeeds(),
+		CurrentDrafts: make(map[string]*PrivateLeagueDraftSummary),
 		Drafts:        make([]PrivateLeagueDraftSummary, 0),
 		Batches:       make([]PrivateBatchProof, 0),
 		BatchSize:     batchproof.BatchSize,
@@ -543,17 +602,27 @@ func GetPrivateLeagueInfo(privateId string, password string) (*PrivateLeagueInfo
 		if derr := d.DataTo(&l); derr != nil {
 			continue
 		}
+		rowType := "fast"
+		if strings.Contains(l.LeagueId, "-slow-") {
+			rowType = "slow"
+		}
 		row := PrivateLeagueDraftSummary{
 			DraftId:     l.LeagueId,
 			DisplayName: l.DisplayName,
 			Level:       l.Level,
 			NumPlayers:  l.NumPlayers,
 			Filled:      l.NumPlayers >= 10,
+			DraftType:   rowType,
 		}
 		info.Drafts = append(info.Drafts, row)
-		if l.LeagueId == cfg.CurrentDraftId && l.NumPlayers < 10 {
-			cur := row
-			info.CurrentDraft = &cur
+		for _, lane := range info.Lanes {
+			if l.LeagueId == cfg.currentDraftFor(lane) && l.NumPlayers < 10 && rowType == lane {
+				cur := row
+				info.CurrentDrafts[lane] = &cur
+				if lane == info.Lanes[0] {
+					info.CurrentDraft = &cur
+				}
+			}
 		}
 	}
 

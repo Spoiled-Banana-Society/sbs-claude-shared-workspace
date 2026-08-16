@@ -363,21 +363,26 @@ func (m *Manager) LaneAfterAssignment(draftNum int, hitJP bool, hitHOF bool) {
 	if !hitJP && !hitHOF {
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-		meta, err := m.loadLaneMeta(ctx)
-		if err != nil || meta == nil {
-			fmt.Printf("[lanes] after-assignment meta load failed: %v\n", err)
-			return
-		}
-		if hitJP {
-			m.completeLaneIfDone(ctx, LaneJP, meta.JPCycle, meta.JPStart, draftNum)
-		}
-		if hitHOF {
-			m.completeLaneIfDone(ctx, LaneHOF, meta.HOFCycle, meta.HOFStart, draftNum)
-		}
-	}()
+	// SYNCHRONOUS since 2026-08-14: this ran in a fire-and-forget goroutine,
+	// which Cloud Run CPU-throttles the moment the fill request returns — the
+	// rollover randomly froze (#434, #633, #649) whenever no other request
+	// kept the instance hot. Hits are rare (≤6 per 100 fills) and the work is
+	// a handful of Firestore ops (the era ceremony case is once per ~10k
+	// drafts), so paying it inline on the fill that landed the hit is cheap
+	// and GUARANTEES the next window opens before this request completes.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	meta, err := m.loadLaneMeta(ctx)
+	if err != nil || meta == nil {
+		fmt.Printf("[lanes] after-assignment meta load failed: %v\n", err)
+		return
+	}
+	if hitJP {
+		m.completeLaneIfDone(ctx, LaneJP, meta.JPCycle, meta.JPStart, draftNum)
+	}
+	if hitHOF {
+		m.completeLaneIfDone(ctx, LaneHOF, meta.HOFCycle, meta.HOFStart, draftNum)
+	}
 }
 
 // completeLaneIfDone checks whether draftNum completed the lane's current
