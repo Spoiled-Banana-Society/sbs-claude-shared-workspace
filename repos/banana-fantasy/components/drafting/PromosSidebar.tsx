@@ -215,7 +215,7 @@ export function PromosSidebar({
                   </div>
                 )}
                 {promo.type === 'banana-vault' && (() => {
-                  const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number } } | undefined)?.bananaVault;
+                  const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number; paidClicks?: number } } | undefined)?.bananaVault;
                   const revealed = bv?.revealedSlots ?? [];
                   const pending = bv?.unrevealed ?? 0;
                   const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
@@ -259,10 +259,13 @@ export function PromosSidebar({
                           {formatChaseTime(promo.timerEndTime)}
                         </div>
                       )}
-                      <p className="mt-1 text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
+                      <p className="mt-1 text-center text-[9px] leading-snug font-semibold text-[#b45309] px-1">
                         {(bv?.bountiesLeft ?? 5) > 0
-                          ? `Free + paid count · First 5 to click 2 with paid: 2 Free Spins (${bv?.bountiesLeft ?? 5} left)`
-                          : 'Free + paid count · Spin bounties all claimed — seats still live'}
+                          ? `🎰 Bounty: ${bv?.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins (${bv?.bountiesLeft ?? 5} left)`
+                          : 'Spin bounties all claimed — seats still live'}
+                      </p>
+                      <p className="mt-0.5 text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
+                        Free + paid count toward the seat · any order
                       </p>
                     </div>
                   );
