@@ -74,6 +74,8 @@ export function EntryFlowModal({
   const [privLeague, setPrivLeague] = useState<ActivePrivateLeague | null>(null);
   const [joinPublic, setJoinPublic] = useState(false);
   const privateMode = !!privLeague && !joinPublic;
+  // Single-lane private leagues have no speed step; 'both'-lane ones do.
+  const privateSingleStep = privateMode && privLeague?.draftType !== 'both';
   // First-purchase offer line under the $25 join row. Variant is computed
   // server-side (balance stream); logged-out / not-yet-loaded renders the
   // new-player offer explicitly labeled "New players" so a returning player
@@ -82,7 +84,7 @@ export function EntryFlowModal({
   const fpOfferLine = firstPurchaseEntryLine(user?.firstPurchaseVariant ?? 'unknown');
   // Only polls while the speed step is actually on screen — the pass-type step
   // has nothing lane-specific to show, since paid and free share lobbies.
-  const nextLobby = useNextLobbyFill(isOpen && step === 'speed');
+  const nextLobby = useNextLobbyFill(isOpen && step === 'speed' && !privateMode);
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
@@ -110,20 +112,22 @@ export function EntryFlowModal({
   const handlePassSelect = (type: 'paid' | 'free' | 'balance') => {
     if (isSubmitting) return;
     setSelectedPassType(type);
-    if (privateMode && privLeague) {
+    if (privateMode && privLeague && privLeague.draftType !== 'both') {
       // The league's lane is fixed, so there is no speed to choose — the pick
       // of a seat IS the completion. forcePublic:false = route into the league.
       onComplete(type, privLeague.draftType, { forcePublic: false });
       return;
     }
+    // Public, or a 'both'-lane private league: the member picks fast/slow next.
     setStep('speed');
   };
 
   const handleSpeedSelect = (speed: 'fast' | 'slow') => {
     if (isSubmitting) return;
     if (selectedPassType) {
-      // Reaching the speed step with a private league remembered means the
-      // user took the "public draft instead" path — say so explicitly.
+      // With a private league remembered: joinPublic=true means the user took
+      // the "public draft instead" path; joinPublic=false here means a
+      // 'both'-lane league and this speed picks its lane.
       onComplete(selectedPassType, speed, { forcePublic: joinPublic });
     }
   };
@@ -175,7 +179,7 @@ export function EntryFlowModal({
         {/* Step indicators — the chooser always precedes the speed step now.
             (Private mode is single-step — the league fixes the speed — so the
             two-dot indicator would promise a step that never comes.) */}
-        {!privateMode && (
+        {!privateSingleStep && (
           <div className="flex items-center justify-center gap-2 mb-6">
             <div className={`w-2 h-2 rounded-full transition-all ${step === 'pass-type' ? 'bg-banana w-4' : 'bg-white/20'}`} />
             <div className={`w-2 h-2 rounded-full transition-all ${step === 'speed' ? 'bg-banana w-4' : 'bg-white/20'}`} />
@@ -198,7 +202,7 @@ export function EntryFlowModal({
                     🔒 Joining <span className="text-[#fbbf24]">{privLeague.name}</span> — your private league
                   </p>
                   <p className="text-white/50 text-xs mt-0.5">
-                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick'} · paid or free Draft Pass
+                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : privLeague.draftType === 'both' ? 'Fast or slow · you pick next' : 'Fast draft · 30s per pick'} · paid or free Draft Pass
                   </p>
                   <button
                     onClick={() => { if (!isSubmitting) setJoinPublic(true); }}
@@ -329,6 +333,9 @@ export function EntryFlowModal({
           <div>
             <div className="text-center mb-8">
               <h2 className="text-2xl font-bold text-white mb-2">Choose Draft Speed</h2>
+              {privateMode && privLeague && (
+                <p className="text-[#fbbf24] text-sm font-semibold mb-1">🔒 {privLeague.name} — your private league</p>
+              )}
               {payingWithBalance ? (
                 <p className="text-white/50 text-sm">
                   Balance: <span className="text-banana font-semibold tabular-nums">${balanceUsd.toFixed(2)}</span>
@@ -350,7 +357,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Fast Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
-                    <LobbyFillBar fill={nextLobby.fast} className="mt-2" />
+                    {!privateMode && <LobbyFillBar fill={nextLobby.fast} className="mt-2" />}
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>
@@ -367,7 +374,7 @@ export function EntryFlowModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
                     <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
-                    <LobbyFillBar fill={nextLobby.slow} className="mt-2" />
+                    {!privateMode && <LobbyFillBar fill={nextLobby.slow} className="mt-2" />}
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>

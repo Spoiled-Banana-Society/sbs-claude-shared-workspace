@@ -92,7 +92,9 @@ export function useEnterDraft() {
       const active = getActivePrivateLeague();
       if (active) {
         privateLeague = { id: active.id, password: active.password };
-        speed = active.draftType;
+        // A 'both'-lane league lets the member pick fast/slow — keep the
+        // speed the caller chose; a single-lane league fixes it.
+        if (active.draftType !== 'both') speed = active.draftType;
         autoPrivate = true;
       }
     }

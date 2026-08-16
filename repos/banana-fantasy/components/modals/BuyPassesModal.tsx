@@ -757,7 +757,9 @@ export function BuyPassesModal({
     // to a public lobby of strangers. The league's lane wins over the clicked
     // speed (the pick-speed screen shows a single league button in that case).
     const privateTarget = getActivePrivateLeague();
-    const laneSpeed: 'fast' | 'slow' = privateTarget ? privateTarget.draftType : speed;
+    // A 'both'-lane league honors the clicked speed; a single-lane league fixes it.
+    const laneSpeed: 'fast' | 'slow' =
+      privateTarget && privateTarget.draftType !== 'both' ? privateTarget.draftType : speed;
 
     setPhase('joining');
     setJoinError(null);
@@ -1421,9 +1423,9 @@ export function BuyPassesModal({
             {/* Private-league member (ticket-2681): their league's lane is
                 fixed, so the speed choice collapses into one league button —
                 and their pass can never wander into the public matchmaker. */}
-            {pickSpeedPrivateLeague ? (
+            {pickSpeedPrivateLeague && pickSpeedPrivateLeague.draftType !== 'both' ? (
               <button
-                onClick={() => handlePickSpeed(pickSpeedPrivateLeague.draftType)}
+                onClick={() => handlePickSpeed(pickSpeedPrivateLeague.draftType === 'slow' ? 'slow' : 'fast')}
                 disabled={isJoiningDraft}
                 className="w-full group relative overflow-hidden rounded-xl border-2 border-banana/40 bg-banana/5 p-5 min-h-[5.5rem] flex flex-col justify-center text-left transition-all duration-300 hover:border-banana/70 hover:bg-banana/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -1441,6 +1443,9 @@ export function BuyPassesModal({
               </button>
             ) : (
             <div className="space-y-4">
+              {pickSpeedPrivateLeague && (
+                <p className="text-banana text-sm font-semibold text-center">🔒 Entering {pickSpeedPrivateLeague.name} — pick your lane</p>
+              )}
               <button
                 onClick={() => handlePickSpeed('fast')}
                 disabled={isJoiningDraft}

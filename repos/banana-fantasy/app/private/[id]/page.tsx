@@ -80,7 +80,7 @@ export default function PrivateLeaguePage() {
       setActivePrivateLeague({
         id: privateId,
         name: data.name || 'Private league',
-        draftType: data.draftType === 'slow' ? 'slow' : 'fast',
+        draftType: data.draftType === 'slow' ? 'slow' : data.draftType === 'both' ? 'both' : 'fast',
       });
       return true;
     } catch (err) {
@@ -148,14 +148,19 @@ export default function PrivateLeaguePage() {
 
   const paidPasses = user?.draftPasses ?? 0;
   const freePasses = user?.freeDrafts ?? 0;
-  const speed = (info?.draftType === 'slow' ? 'slow' : 'fast') as 'fast' | 'slow';
-  const seats = info?.currentDraft?.numPlayers ?? 0;
+  // Lanes this league offers. 'both' (8/15) = a fast lane AND a slow lane,
+  // each with its own filling draft; older backends only send draftType.
+  const lanes: Array<'fast' | 'slow'> = info?.lanes && info.lanes.length > 0
+    ? info.lanes
+    : info?.draftType === 'both' ? ['fast', 'slow'] : [info?.draftType === 'slow' ? 'slow' : 'fast'];
+  const currentDraftFor = (lane: 'fast' | 'slow') =>
+    info?.currentDrafts?.[lane] ?? (lane === lanes[0] ? info?.currentDraft : undefined) ?? null;
   const alreadySeated = false; // server rejects a dupe seat with a clear message
 
   // Paid or free both seat you — the password is the gate (Richard 8/15).
-  const handleJoin = (passType: 'paid' | 'free') => {
+  const handleJoin = (passType: 'paid' | 'free', lane: 'fast' | 'slow') => {
     if (!info || !authedPassword) return;
-    void enterDraftWithPassType(passType, speed, { id: privateId, password: authedPassword });
+    void enterDraftWithPassType(passType, lane, { id: privateId, password: authedPassword });
   };
 
   const copyHash = (hash: string) => {
@@ -200,8 +205,8 @@ export default function PrivateLeaguePage() {
   }
 
   // ——— Unlocked ———
-  const currentName = info?.currentDraft?.displayName || info?.name || 'Next draft';
-  const fillPct = Math.min(100, Math.max(0, (seats / 10) * 100));
+  const laneLabel = (lane: 'fast' | 'slow') =>
+    lane === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick · ~30 min';
 
   return (
     <main className="min-h-screen bg-[#0a0a0f] px-4 pt-10 pb-24">
@@ -211,7 +216,7 @@ export default function PrivateLeaguePage() {
           <p className="text-[#fbbf24] text-[11px] font-semibold tracking-[0.2em] uppercase mb-1">Private League</p>
           <h1 className="text-white text-3xl font-bold">{info?.name}</h1>
           <p className="text-white/40 text-sm mt-1">
-            {speed === 'fast' ? 'Fast drafts · 30s per pick · ~30 min' : 'Slow drafts · 8h per pick'} · 10 seats
+            {lanes.length > 1 ? 'Fast and slow drafts' : lanes[0] === 'slow' ? 'Slow drafts · 8h per pick' : 'Fast drafts · 30s per pick · ~30 min'} · 10 seats
             {info ? ` · ${info.draftsFilled} drafted` : ''}
           </p>
           {isCommissioner && (
@@ -224,54 +229,63 @@ export default function PrivateLeaguePage() {
           )}
         </header>
 
-        {/* Current draft + join */}
-        <section className="glass-card rounded-2xl border border-white/10 p-5">
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="text-white font-semibold">{currentName}</h2>
-            <span className="text-white/60 text-sm tabular-nums">{seats}/10 seats</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-5">
-            <div className="h-full rounded-full bg-white" style={{ width: `${fillPct}%` }} />
-          </div>
-          {!user?.walletAddress ? (
-            <p className="text-white/50 text-sm text-center">Log in to take a seat.</p>
-          ) : paidPasses > 0 || freePasses > 0 ? (
-            <div className="space-y-2">
-              {paidPasses > 0 && (
-                <button
-                  onClick={() => handleJoin('paid')}
-                  disabled={joiningLobby || alreadySeated}
-                  className="w-full rounded-xl bg-[#fbbf24] text-black font-semibold py-3 disabled:opacity-40 transition-opacity"
+        {/* Current draft + join — one card per lane */}
+        {lanes.map((lane) => {
+          const cur = currentDraftFor(lane);
+          const seats = cur?.numPlayers ?? 0;
+          const fillPct = Math.min(100, Math.max(0, (seats / 10) * 100));
+          const currentName = cur?.displayName || (lanes.length > 1 ? `${info?.name ?? 'Next'} · ${lane === 'slow' ? 'Slow' : 'Fast'}` : info?.name || 'Next draft');
+          return (
+            <section key={lane} className="glass-card rounded-2xl border border-white/10 p-5">
+              <div className="flex items-baseline justify-between mb-1">
+                <h2 className="text-white font-semibold">{currentName}</h2>
+                <span className="text-white/60 text-sm tabular-nums">{seats}/10 seats</span>
+              </div>
+              <p className={`text-xs mb-3 ${lane === 'slow' ? 'text-blue-300/80' : 'text-yellow-300/80'}`}>{laneLabel(lane)}</p>
+              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-5">
+                <div className="h-full rounded-full bg-white" style={{ width: `${fillPct}%` }} />
+              </div>
+              {!user?.walletAddress ? (
+                <p className="text-white/50 text-sm text-center">Log in to take a seat.</p>
+              ) : paidPasses > 0 || freePasses > 0 ? (
+                <div className="space-y-2">
+                  {paidPasses > 0 && (
+                    <button
+                      onClick={() => handleJoin('paid', lane)}
+                      disabled={joiningLobby || alreadySeated}
+                      className="w-full rounded-xl bg-[#fbbf24] text-black font-semibold py-3 disabled:opacity-40 transition-opacity"
+                    >
+                      Enter with a Draft Pass · {paidPasses} available
+                    </button>
+                  )}
+                  {freePasses > 0 && (
+                    <button
+                      onClick={() => handleJoin('free', lane)}
+                      disabled={joiningLobby || alreadySeated}
+                      className={`w-full rounded-xl font-semibold py-3 disabled:opacity-40 transition-opacity ${
+                        paidPasses > 0
+                          ? 'border border-green-500/50 text-green-400'
+                          : 'bg-[#fbbf24] text-black'
+                      }`}
+                    >
+                      Enter with a Free Draft Pass · {freePasses} available
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  href="/buy-drafts"
+                  className="block w-full rounded-xl border border-[#fbbf24]/50 text-[#fbbf24] text-center font-semibold py-3"
                 >
-                  Enter with a Draft Pass · {paidPasses} available
-                </button>
+                  Get a Draft Pass to enter
+                </Link>
               )}
-              {freePasses > 0 && (
-                <button
-                  onClick={() => handleJoin('free')}
-                  disabled={joiningLobby || alreadySeated}
-                  className={`w-full rounded-xl font-semibold py-3 disabled:opacity-40 transition-opacity ${
-                    paidPasses > 0
-                      ? 'border border-green-500/50 text-green-400'
-                      : 'bg-[#fbbf24] text-black'
-                  }`}
-                >
-                  Enter with a Free Draft Pass · {freePasses} available
-                </button>
-              )}
-            </div>
-          ) : (
-            <Link
-              href="/buy-drafts"
-              className="block w-full rounded-xl border border-[#fbbf24]/50 text-[#fbbf24] text-center font-semibold py-3"
-            >
-              Get a Draft Pass to enter
-            </Link>
-          )}
-          <p className="text-white/35 text-xs text-center mt-3">
-            The draft starts the moment the 10th seat fills.
-          </p>
-        </section>
+              <p className="text-white/35 text-xs text-center mt-3">
+                The draft starts the moment the 10th seat fills.
+              </p>
+            </section>
+          );
+        })}
 
         {/* League drafts */}
         {info && info.drafts.length > 0 && (
@@ -284,7 +298,12 @@ export default function PrivateLeaguePage() {
                   const chip = levelChip(d.level);
                   return (
                     <li key={d.draftId} className="flex items-center justify-between py-2.5">
-                      <span className="text-white/85 text-sm">{d.displayName}</span>
+                      <span className="text-white/85 text-sm">
+                        {d.displayName}
+                        {lanes.length > 1 && d.draftType && (
+                          <span className={`ml-2 text-[10px] uppercase tracking-wide ${d.draftType === 'slow' ? 'text-blue-300/70' : 'text-yellow-300/70'}`}>{d.draftType}</span>
+                        )}
+                      </span>
                       <span className="flex items-center gap-2">
                         {d.filled ? (
                           <span className={`text-[11px] px-2 py-0.5 rounded-full border ${chip.cls}`}>{chip.label}</span>

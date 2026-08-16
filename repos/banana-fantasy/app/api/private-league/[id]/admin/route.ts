@@ -106,7 +106,7 @@ async function buildLeagueView(leagueId: string, cfg: Awaited<ReturnType<typeof 
   return {
     id: leagueId,
     name: cfg.Name ?? leagueId,
-    draftType: cfg.DraftType === 'slow' ? 'slow' : 'fast',
+    draftType: cfg.DraftType === 'slow' ? 'slow' : cfg.DraftType === 'both' ? 'both' : 'fast',
     defaultEntries: cfg.DefaultEntries && cfg.DefaultEntries > 0 ? cfg.DefaultEntries : 1,
     members,
     drafts: drafts.map((d) => ({
