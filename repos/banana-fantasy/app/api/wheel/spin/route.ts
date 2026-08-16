@@ -32,6 +32,37 @@ import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
+
+// Client-supplied spin id (idempotency key). Strict v4-shaped UUID so it can be
+// used verbatim as a Firestore doc id — anything else is ignored and the server
+// mints its own id exactly as before.
+const CLIENT_SPIN_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Idempotent replay. When the client retries a spin (its first request timed
+ * out or died on the network) it re-sends the SAME clientSpinId. If that spin
+ * already settled we hand back the stored outcome instead of spinning again —
+ * so a retry can never consume a second spin, pay twice, or land on a
+ * different wedge than the one the first request already recorded.
+ */
+function replayResponse(data: FirebaseFirestore.DocumentData) {
+  const bonusDrafts = typeof data.bonusDrafts === 'number' ? data.bonusDrafts : 0;
+  return json(
+    {
+      spinId: data.spinId,
+      result: data.result,
+      prize: data.prize,
+      angle: typeof data.angle === 'number' ? data.angle : 0,
+      mintOnChain: typeof data.mintOnChain === 'boolean' ? data.mintOnChain : bonusDrafts > 0,
+      periodNumber: data.periodNumber ?? null,
+      spinIndex: data.spinIndexInPeriod ?? null,
+      spinSource: data.spinSource ?? 'promo',
+      bonusDrafts,
+      replayed: true,
+    },
+    200,
+  );
+}
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const jwksCache: {
@@ -195,6 +226,23 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
 
+    // Idempotency key from the client (see replayResponse). Fast path: if this
+    // exact spin already settled, replay it before touching the RNG/period.
+    const clientSpinId =
+      typeof body.clientSpinId === 'string' && CLIENT_SPIN_ID_REGEX.test(body.clientSpinId.trim())
+        ? body.clientSpinId.trim().toLowerCase()
+        : null;
+    const spinId = clientSpinId ?? crypto.randomUUID();
+    const userRef = db.collection(USERS_COLLECTION).doc(userId);
+    const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
+    if (clientSpinId) {
+      const existing = await spinRef.get();
+      if (existing.exists) {
+        logger.info('wheel.spin.replayed', { spinId, userId, phase: 'pre-tx' });
+        return replayResponse(existing.data()!);
+      }
+    }
+
     const seed = generateSeed();
     const nonce = generateNonce();
 
@@ -267,16 +315,12 @@ export async function POST(req: Request) {
 
     const segmentCenter = index * segmentAngle + segmentAngle / 2;
     const angle = (360 - segmentCenter + 360) % 360;
-    const spinId = crypto.randomUUID();
 
     const prize = {
       type: segment.prizeType,
       value: segment.prizeValue,
     };
     const timestamp = nowIso();
-
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
-    const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
 
     // Which stack this spin comes out of decides what it pays. Promo spins pay
     // the wedge in full; purchase spins pay wedge-minus-one because the buyer
@@ -330,7 +374,21 @@ export async function POST(req: Request) {
       },
     });
 
+    // Set when a concurrent request with the same clientSpinId won the race
+    // inside the transaction — we then replay ITS stored outcome.
+    let replayData = null as FirebaseFirestore.DocumentData | null;
+
     await db.runTransaction(async (tx) => {
+      if (clientSpinId) {
+        // Read the spin doc INSIDE the tx: if a duplicate request already
+        // settled this id, do NOT claim/decrement again — replay it. Firestore
+        // serializes the two txs on this doc, so exactly one creates it.
+        const dup = await tx.get(spinRef);
+        if (dup.exists) {
+          replayData = dup.data()!;
+          return;
+        }
+      }
       const userDoc = await tx.get(userRef);
       const userData = userDoc.data();
       const promoLeft = Math.max(0, (userData?.[PROMO_SPINS_FIELD] as number | undefined) ?? 0);
@@ -398,6 +456,10 @@ export async function POST(req: Request) {
         // wedge alone, or a 5-Draft hit reads as "5 free drafts" when 4 landed.
         spinSource,
         bonusDrafts: draftPassCount,
+        // Stored so an idempotent replay returns the identical landing angle
+        // and mint flag the first response carried.
+        angle,
+        mintOnChain,
       });
 
       // Atomic counter update with floor-of-0 on every counter so legacy
@@ -449,6 +511,11 @@ export async function POST(req: Request) {
       // agree about whether the spin happened.
       addActivityEventToTx(tx, spinActivityDoc);
     });
+
+    if (replayData) {
+      logger.info('wheel.spin.replayed', { spinId, userId, phase: 'in-tx' });
+      return replayResponse(replayData);
+    }
 
     // Everything below runs AFTER the response is sent. The Firestore tx
     // above already credited freeDrafts/jackpotEntries/hofEntries — the

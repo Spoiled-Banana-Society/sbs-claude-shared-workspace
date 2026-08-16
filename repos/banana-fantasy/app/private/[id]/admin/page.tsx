@@ -36,7 +36,7 @@ interface DraftRow {
 interface AdminView {
   id: string;
   name: string;
-  draftType: 'fast' | 'slow';
+  draftType: 'fast' | 'slow' | 'both';
   defaultEntries: number;
   members: MemberRow[];
   drafts: DraftRow[];
@@ -329,7 +329,7 @@ export default function PrivateLeagueAdminPage() {
           <h1 className="text-white text-3xl font-bold">{view?.name ?? 'Private League'}</h1>
           {view && (
             <p className="text-white/40 text-sm mt-1">
-              {view.draftType === 'fast' ? 'Fast drafts' : 'Slow drafts'} · members join at{' '}
+              {view.draftType === 'both' ? 'Fast and slow drafts' : view.draftType === 'fast' ? 'Fast drafts' : 'Slow drafts'} · members join at{' '}
               <span className="text-white/60">/private/{view.id}</span>
             </p>
           )}

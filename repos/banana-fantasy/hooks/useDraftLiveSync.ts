@@ -231,7 +231,7 @@ export function useDraftLiveSync({
           const { getActivePrivateLeague } = await import('@/lib/privateLeagueSession');
           const activePrivate = getActivePrivateLeague();
           const draftRoom = activePrivate
-            ? await joinPrivateDraft(walletParam, activePrivate.id, activePrivate.password, activePrivate.draftType, 'paid')
+            ? await joinPrivateDraft(walletParam, activePrivate.id, activePrivate.password, activePrivate.draftType === 'both' ? (speedParam || 'fast') : activePrivate.draftType, passTypeParam || 'paid')
             : await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 

@@ -36,7 +36,8 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
   'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
   'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
-  'around-the-banana', // 🍌 all 10 pick slots → JACKPOT SEAT — LAUNCHED 2026-08-11
+  // 🍌 'around-the-banana' RETIRED 2026-08-15 — all 20 seats claimed, the exclusive
+  // ATB Jackpot lobby is drafting. Card removed per Boris (no sold-out post).
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
@@ -95,7 +96,7 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
  * DROP pin and everyone's in-progress bars). When its 10 seats are claimed,
  * hand the pin back to 'drop'.
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = 'around-the-banana';
+export const FEATURED_PROMO_TYPE: PromoType | null = 'drop';
 
 /**
  * FEATURED_PROMO_TYPE resolved against time windows. (The Kickoff buy-bonus

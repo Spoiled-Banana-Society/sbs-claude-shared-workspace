@@ -90,6 +90,8 @@ export async function joinPrivateDraft(
       {
         password,
         passType: passType || 'paid',
+        // Honored by 'both'-lane leagues; single-lane leagues ignore it.
+        speed,
       },
       { signal: controller.signal },
     );
@@ -122,14 +124,20 @@ export interface PrivateLeagueDraftRow {
   level: string;
   numPlayers: number;
   filled: boolean;
+  draftType?: DraftSpeed;
 }
 
 export interface PrivateLeagueInfo {
   id: string;
   name: string;
-  draftType: DraftSpeed;
+  /** 'fast' | 'slow' | 'both' — 'both' = a fast lane and a slow lane side by side. */
+  draftType: DraftSpeed | 'both';
+  /** Lanes offered, in display order (older backends omit → derive from draftType). */
+  lanes?: DraftSpeed[];
   draftsFilled: number;
+  /** Fast lane's filling draft (legacy field); use currentDrafts for every lane. */
   currentDraft?: PrivateLeagueDraftRow;
+  currentDrafts?: Partial<Record<DraftSpeed, PrivateLeagueDraftRow | null>>;
   drafts: PrivateLeagueDraftRow[];
   batches: PrivateLeagueBatch[];
   batchSize: number;

@@ -219,8 +219,13 @@ export const SPIN_DURATION_MS = 3600;
 // speed the instant the user taps, while the RNG request is in flight, so
 // it never sits frozen waiting on the network. Linear so we can estimate
 // its live angle when the result lands and decelerate forward onto it.
-const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
-const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
+// Safety cap on the free spin; the result almost always lands within ~1s.
+// Sized to outlast the spin request's timeout + one retry (useSpin:
+// 10s + 1s + 10s) so a slow/lost response never leaves the wheel frozen
+// mid-air while the retry is still working — it keeps turning until the
+// result lands or the spin gives up and resets.
+const FREE_SPIN_MS = 24000;
+const FREE_SPIN_TURNS = 60;  // ~2.5 rev/s — fast and energetic (same speed as before)
 // Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
 const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
 // Landing easing — ease-out-QUART: a STRONG ease-out so the wheel slows early

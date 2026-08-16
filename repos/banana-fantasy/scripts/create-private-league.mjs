@@ -1,6 +1,6 @@
 // Create (or update) a password-gated private league — ticket-3338 groups.
 //
-//   node scripts/create-private-league.mjs <id> "<Display Name>" "<password>" [fast|slow] [commissionerWallet]
+//   node scripts/create-private-league.mjs <id> "<Display Name>" "<password>" [fast|slow|both] [commissionerWallet]
 //
 // e.g.  node scripts/create-private-league.mjs kffl "KFFL" "some-password" fast 0xabc...
 //
@@ -26,7 +26,7 @@ const db = admin.firestore();
 
 const [id, name, password, speedArg, commissioner] = process.argv.slice(2);
 if (!id || !name || !password) {
-  console.error('usage: node scripts/create-private-league.mjs <id> "<Display Name>" "<password>" [fast|slow] [commissionerWallet]');
+  console.error('usage: node scripts/create-private-league.mjs <id> "<Display Name>" "<password>" [fast|slow|both] [commissionerWallet]');
   process.exit(1);
 }
 const leagueId = id.toLowerCase();
@@ -34,7 +34,8 @@ if (!/^[a-z0-9-]{2,30}$/.test(leagueId)) {
   console.error(`id must be 2-30 chars of a-z 0-9 dash (it becomes the /private/${leagueId} URL)`);
   process.exit(1);
 }
-const draftType = (speedArg || 'fast').toLowerCase() === 'slow' ? 'slow' : 'fast';
+const speedLc = (speedArg || 'fast').toLowerCase();
+const draftType = speedLc === 'slow' ? 'slow' : speedLc === 'both' ? 'both' : 'fast';
 const passwordHash = createHash('sha256').update(password.trim()).digest('hex');
 
 const ref = db.collection('private_leagues').doc(leagueId);

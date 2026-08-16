@@ -106,7 +106,7 @@ async function buildLeagueView(leagueId: string, cfg: Awaited<ReturnType<typeof 
   return {
     id: leagueId,
     name: cfg.Name ?? leagueId,
-    draftType: cfg.DraftType === 'slow' ? 'slow' : 'fast',
+    draftType: cfg.DraftType === 'slow' ? 'slow' : cfg.DraftType === 'both' ? 'both' : 'fast',
     defaultEntries: cfg.DefaultEntries && cfg.DefaultEntries > 0 ? cfg.DefaultEntries : 1,
     members,
     drafts: drafts.map((d) => ({
@@ -119,6 +119,12 @@ async function buildLeagueView(leagueId: string, cfg: Awaited<ReturnType<typeof 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     const ctx = await requirePrivateLeagueAdmin(req, params.id);
+    // ?probe=1 — the member-facing /private/[id] page asks "am I this
+    // league's commissioner?" to decide whether to show the admin link.
+    // Auth only, no roster build; the answer is nothing but a boolean.
+    if (new URL(req.url).searchParams.get('probe') === '1') {
+      return json({ admin: true, siteAdmin: ctx.siteAdmin });
+    }
     const view = await buildLeagueView(ctx.leagueId, ctx.cfg);
     return json({ ...view, viewer: { wallet: ctx.actorWallet, siteAdmin: ctx.siteAdmin } });
   } catch (err) {

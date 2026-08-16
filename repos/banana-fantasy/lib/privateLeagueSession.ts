@@ -25,8 +25,8 @@ export interface ActivePrivateLeague {
   id: string;
   /** Display name from the league config ("KFFL") — for the modal banner. */
   name: string;
-  /** The league's fixed lane — a private join always drafts at this speed. */
-  draftType: 'fast' | 'slow';
+  /** The league's lane(s): a fixed 'fast' or 'slow', or 'both' (member picks). */
+  draftType: 'fast' | 'slow' | 'both';
 }
 
 export interface ActivePrivateLeagueWithPassword extends ActivePrivateLeague {
@@ -55,7 +55,7 @@ export function getActivePrivateLeague(): ActivePrivateLeagueWithPassword | null
     return {
       id: parsed.id,
       name: typeof parsed.name === 'string' && parsed.name ? parsed.name : 'Private league',
-      draftType: parsed.draftType === 'slow' ? 'slow' : 'fast',
+      draftType: parsed.draftType === 'slow' ? 'slow' : parsed.draftType === 'both' ? 'both' : 'fast',
       password,
     };
   } catch {
