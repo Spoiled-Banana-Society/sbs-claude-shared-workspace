@@ -628,6 +628,42 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // 🔒 The Banana Vault — ATB's successor (Boris 2026-08-15). Every player
+    // gets a SECRET 4-slot combo; every filled draft can click one tumbler.
+    // First 3 to click all 4 win a Jackpot seat; first 5 to click 2 with paid
+    // drafts win 2 Free Spins. 48h vaults; campaign fills ONE vault-only
+    // Jackpot lobby (10 winners across three vaults).
+    id: 'banana-vault',
+    type: 'banana-vault',
+    title: 'The Banana Vault → JACKPOT SEAT',
+    description: 'You have a secret 4-slot combo. Every draft can click a tumbler — collect all 4 in any order.',
+    ctaText: 'Draft to crack it',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    progressCurrent: 0,
+    progressMax: 4,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'The Banana Vault → Jackpot Seat',
+      explanation:
+        '• The Vault dealt you a SECRET combo of 4 pick slots — sealed and random, nobody knows it. Not even us.\n'
+        + '• Every draft counts, PAID or FREE. Your pick slot is the position (1 to 10) you land when a draft fills — random every time.\n'
+        + '• If your slot is one of your 4 numbers, a tumbler CLICKS open — in ANY order, no sequence.\n'
+        + '• Tap your vault after every draft to check. Unclicked tumblers stay secret to the end.\n'
+        + '• FIRST 3 players to click all 4 win a JACKPOT SEAT.\n'
+        + '• First 5 to unlock and click 2 tumblers with PAID drafts win 2 Free Spins each.\n'
+        + '• 48 hours, then the vault re-locks with fresh combos for everyone. Three vaults total — the 10 winners fill one exclusive Vault Jackpot draft, only them.\n'
+        + '\n'
+        + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+        + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. It is a slow draft.\n'
+        + '\n'
+        + '• One seat per player per vault.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.',
+    },
+  },
+  {
     // Banana Draw — the 24h JackHOF-seat raffle. Sits near the FRONT (Boris)
     // and carries the NEW tag. `timerEndTime` is stamped per-read with the
     // cycle close, so the promo card's existing bare countdown renders it with

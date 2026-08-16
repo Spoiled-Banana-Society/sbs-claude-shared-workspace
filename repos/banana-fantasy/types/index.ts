@@ -380,7 +380,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana' | 'banana-vault';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -553,7 +553,7 @@ export interface QueueMember {
  *  SEPARATE rounds so a 0.1%-wedge winner never shares a draft with a Banana
  *  Draw grantee (Richard, 2026-07-30). Untagged legacy rounds read as 'wheel' —
  *  every pre-existing jackpot/hof round is wheel-origin. */
-export type QueueRoundSource = 'wheel' | 'promo' | 'atb';
+export type QueueRoundSource = 'wheel' | 'promo' | 'atb' | 'vault';
 
 export interface QueueRound {
   roundId: number;

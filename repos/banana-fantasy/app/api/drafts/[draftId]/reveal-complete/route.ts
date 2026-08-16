@@ -5,6 +5,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { awardJackpotDraw, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
 import { recordAroundTheBanana } from '@/lib/aroundTheBanana';
+import { recordBananaVault } from '@/lib/bananaVault';
 import { waitUntil } from '@vercel/functions';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
@@ -85,6 +86,9 @@ export async function POST(req: Request, { params }: { params: { draftId: string
           // all-10-slots lap. No-ops entirely until launch (ATB_START_MS +
           // visibility gate inside); idempotent per (user, draft); paid-gated.
           await recordAroundTheBanana(owner, draftId, draftName, pos + 1);
+          // Banana Vault: same seat/slot can click one of the user's secret
+          // tumblers. No-ops when no vault is open; idempotent per (user, draft).
+          await recordBananaVault(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch — tell everyone (bell + push), once per TIER per

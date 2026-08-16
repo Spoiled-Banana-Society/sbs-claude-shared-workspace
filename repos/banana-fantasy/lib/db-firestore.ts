@@ -373,6 +373,15 @@ function calcBuyBonusFreeDrafts(quantity: number): number {
 }
 
 export async function getPromos(userId: string): Promise<Promo[]> {
+  // Banana Vault state (one read per promos fetch) — used by the per-promo
+  // overlay below to stamp the live countdown.
+  const vaultStateForPromos = await (async () => {
+    try {
+      const snap = await getAdminFirestore().collection('banana_vault').doc('state').get();
+      return snap.exists ? (snap.data() as { opensAtMs: number; closesAtMs: number }) : null;
+    } catch { return null; }
+  })();
+
   const db = getAdminFirestore();
   const userData = await ensureUserSeeded(userId);
 
@@ -659,6 +668,40 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.description = 'Ends tonight at midnight PT.';
       promo.modalContent = promo.modalContent || {};
       promo.modalContent.title = 'Kickoff: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins';
+    }
+    // 🔒 Banana Vault: live 48h countdown from the state doc — the card's
+    // existing bare-countdown treatment renders timerEndTime with no custom
+    // wiring (same as Banana Draw). Stamped per read so a new vault's clock
+    // shows without redeploy.
+    if (promo.type === 'banana-vault') {
+      const vs = vaultStateForPromos as (Record<string, unknown> & { opensAtMs: number; closesAtMs: number }) | null;
+      const mc = (promo.modalContent || {}) as Record<string, unknown>;
+      const open = !!vs && Date.now() >= vs.opensAtMs && Date.now() < vs.closesAtMs;
+      if (open) promo.timerEndTime = new Date(vs!.closesAtMs).toISOString();
+      const vaultNumber = (vs?.vaultNumber as number | undefined) ?? 1;
+      const clicksRaw = ((mc.vaultNumber as number | undefined) === vaultNumber
+        ? (mc.vaultClicks as Array<{ slot: number; revealed: boolean }> | undefined) : undefined) || [];
+      const seatWinners = ((vs?.seatWinners as Array<{ userId: string; vaultNumber: number; claimed: boolean }> | undefined) || []);
+      const spinWinners = ((vs?.spinWinners as Array<{ userId: string; vaultNumber: number; claimed: boolean }> | undefined) || []);
+      const seatsCap = (vs?.seatsCap as number | undefined) ?? 3;
+      const uid = userId.toLowerCase();
+      const mySeat = seatWinners.find((w) => w.userId === uid);
+      const mySpins = spinWinners.find((w) => w.userId === uid && w.vaultNumber === vaultNumber);
+      // SANITIZED payload only — unrevealed slot NUMBERS must never reach the
+      // client (the mystery is the product; a savvy user could read them).
+      (promo.modalContent as Record<string, unknown>).bananaVault = {
+        open,
+        vaultNumber,
+        seatsLeft: Math.max(0, seatsCap - seatWinners.filter((w) => w.vaultNumber === vaultNumber).length),
+        revealedSlots: clicksRaw.filter((c) => c.revealed).map((c) => c.slot).sort((a, b) => a - b),
+        unrevealed: clicksRaw.filter((c) => !c.revealed).length,
+        seatWon: !!mySeat,
+        seatClaimable: !!mySeat && !mySeat.claimed,
+        spinsClaimable: !!mySpins && !mySpins.claimed,
+      };
+      delete (promo.modalContent as Record<string, unknown>).vaultClicks;
+      delete (promo.modalContent as Record<string, unknown>).vaultSeenDraftIds;
+      promo.progressCurrent = clicksRaw.filter((c) => c.revealed).length;
     }
     // First-purchase 24h window (Boris 2026-08-07): once the clock is running
     // the card carries a live countdown; past the deadline it reads done (the

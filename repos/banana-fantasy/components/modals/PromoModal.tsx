@@ -46,6 +46,12 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
   const dropMe = useDropMe(user?.walletAddress);
+  // 🔒 Banana Vault modal state — reveal animation + claim feedback.
+  const [vaultJustRevealed, setVaultJustRevealed] = useState<number[]>([]);
+  const [vaultShaking, setVaultShaking] = useState(false);
+  const [vaultMsg, setVaultMsg] = useState<string | null>(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [vaultClaimedKinds, setVaultClaimedKinds] = useState<{ spins?: boolean; seat?: boolean }>({});
   // ⛔ Client-side Pick-slot LADDER REMOVED 2026-07-26. It read the SSE's
   // legacy per-100 counters (jackpotRemaining/hofRemaining), which don't know
   // the rolling-lane era retired the ladder on 2026-07-20 — so a batch's 5th
@@ -826,6 +832,139 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     </div>
   );
 
+  // 🔒 The Banana Vault — interactive tumblers: tap to reveal clicks landed at
+  // fill time, then CLAIM buttons deliver locked prizes (reveal → claim = the
+  // two dopamine hits; prizes were already won at fill, Boris 2026-08-15).
+  const renderVaultContent = () => {
+    type VaultPayload = {
+      open?: boolean; seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number;
+      seatWon?: boolean; seatClaimable?: boolean; spinsClaimable?: boolean;
+    };
+    const bv = (promo.modalContent as { bananaVault?: VaultPayload } | undefined)?.bananaVault;
+    if (!bv) return null;
+    const revealedAll = [...new Set([...(bv.revealedSlots ?? []), ...vaultJustRevealed])].sort((a, b) => a - b);
+    const pendingCount = Math.max(0, (bv.unrevealed ?? 0) - vaultJustRevealed.length);
+    const wallet = user?.walletAddress?.toLowerCase();
+
+    const tapVault = async () => {
+      if (!wallet || vaultBusy) return;
+      setVaultBusy(true);
+      setVaultShaking(true);
+      try {
+        const res = await fetch('/api/vault/reveal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: wallet }),
+        });
+        const data = await res.json();
+        const slots: number[] = (data.revealed ?? []).map((c: { slot: number }) => c.slot);
+        setTimeout(() => {
+          setVaultShaking(false);
+          if (slots.length === 0) {
+            setVaultMsg('…nothing new. Your next draft could click one.');
+          } else {
+            // stagger the clicks open one at a time
+            slots.forEach((sl, i) => setTimeout(() => {
+              setVaultJustRevealed((prev) => (prev.includes(sl) ? prev : [...prev, sl]));
+            }, i * 600));
+            setVaultMsg(slots.length === 1 ? '🔓 CLICK! A tumbler opened.' : `🔓 ${slots.length} tumblers clicked open!`);
+          }
+          setVaultBusy(false);
+        }, 600);
+      } catch {
+        setVaultShaking(false);
+        setVaultBusy(false);
+      }
+    };
+
+    const claim = async (kind: 'spins' | 'seat') => {
+      if (!wallet || vaultBusy) return;
+      setVaultBusy(true);
+      try {
+        const res = await fetch('/api/vault/claim', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: wallet, kind }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setVaultClaimedKinds((prev) => ({ ...prev, [kind]: true }));
+          setVaultMsg(kind === 'spins'
+            ? '🎰 2 Free Spins added to your wheel!'
+            : '💥 VAULT OPEN — your Jackpot seat is locked in. Only Vault winners share that lobby.');
+        }
+      } finally {
+        setVaultBusy(false);
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* tumblers */}
+        <div className="flex justify-center gap-3">
+          {Array.from({ length: 4 }, (_, i) => {
+            const num = revealedAll[i];
+            const isRevealed = num !== undefined;
+            const isPending = !isRevealed && i < revealedAll.length + pendingCount;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={isPending ? tapVault : undefined}
+                disabled={!isPending || vaultBusy}
+                className={`w-16 h-20 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                  isRevealed
+                    ? 'border-green-500/70 bg-green-500/10'
+                    : isPending
+                      ? `border-banana bg-banana/10 cursor-pointer ${vaultShaking ? 'animate-bounce' : 'animate-pulse'}`
+                      : 'border-white/15 bg-white/[0.03]'
+                }`}
+              >
+                <span className={`text-3xl font-black tabular-nums ${
+                  isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/20'
+                }`}>
+                  {isRevealed ? num : '?'}
+                </span>
+                <span className={`text-[8px] font-bold tracking-wider mt-1 ${
+                  isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/30'
+                }`}>
+                  {isRevealed ? 'CLICKED' : isPending ? 'TAP' : 'SEALED'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {pendingCount > 0 && !vaultMsg && (
+          <p className="text-center text-banana text-sm font-bold animate-pulse">
+            👆 A draft filled — tap to check your tumblers
+          </p>
+        )}
+        {vaultMsg && <p className="text-center text-sm font-bold text-white">{vaultMsg}</p>}
+        <p className="text-center text-xs text-text-secondary">
+          <span className="font-bold text-red-400">{bv.seatsLeft ?? 0} Jackpot seats left</span> in this vault
+        </p>
+        {bv.spinsClaimable && !vaultClaimedKinds.spins && (
+          <button
+            type="button"
+            onClick={() => claim('spins')}
+            disabled={vaultBusy}
+            className="w-full py-3 rounded-xl bg-banana text-black font-extrabold text-sm"
+          >
+            🎰 CLAIM 2 FREE SPINS
+          </button>
+        )}
+        {bv.seatClaimable && !vaultClaimedKinds.seat && (
+          <button
+            type="button"
+            onClick={() => claim('seat')}
+            disabled={vaultBusy}
+            className="w-full py-3 rounded-xl bg-red-500 text-white font-extrabold text-sm"
+          >
+            🏆 CLAIM YOUR JACKPOT SEAT
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderBananaDrawContent = () => {
     const bd = promo.modalContent.bananaDraw;
     if (!bd) return null;
@@ -1444,6 +1583,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderTweetEngagementContent();
       case 'pick-chase':
         return renderChaseContent();
+      case 'banana-vault':
+        return renderVaultContent();
       case 'banana-draw':
         return renderBananaDrawContent();
       case 'eliminator':

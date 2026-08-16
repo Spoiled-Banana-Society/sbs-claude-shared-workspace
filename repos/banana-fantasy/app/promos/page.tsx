@@ -51,6 +51,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'drop':               { accent: '#6366f1', label: 'The Drop' },
   // Jackpot red — the prize is a Jackpot seat, so the card wears jackpot's color.
   'around-the-banana':  { accent: '#ef4444', label: 'Around' },
+  'banana-vault':  { accent: '#fbbf24', label: 'Vault' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
@@ -537,9 +538,16 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
   const isAtb = promo.type === 'around-the-banana';
   const atb = isAtb ? promo.modalContent.aroundTheBanana : undefined;
 
+  // 🔒 The Banana Vault — four tumblers instead of a bar: green = revealed
+  // click, gold pulse = face-down click waiting for the tap, gray = sealed.
+  const isVault = promo.type === 'banana-vault';
+  const bv = isVault
+    ? (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean } }).bananaVault
+    : undefined;
+
   // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
   // so it's excluded from the generic progress bar below.
-  const showProgress = !isChase && !isBanana && !isAtb && progressMax > 0;
+  const showProgress = !isChase && !isBanana && !isAtb && !isVault && progressMax > 0;
   // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
   const timeRemaining = promo.timerEndTime
     ? formatTimeRemaining(promo.timerEndTime)
@@ -638,7 +646,47 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
           </div>
         )}
 
-        {/* Around The Banana — the 10-slot lap grid: one cell per pick slot,
+        {/* 🔒 The Banana Vault — the four tumblers + live seats-left + clock. */}
+        {isVault && (() => {
+          const revealed = bv?.revealedSlots ?? [];
+          const pending = bv?.unrevealed ?? 0;
+          const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
+          return (
+            <div className="mt-auto mb-4">
+              <div className="flex gap-2 mb-2">
+                {Array.from({ length: 4 }, (_, i) => {
+                  const num = revealed[i];
+                  const isRevealed = num !== undefined;
+                  const isPending = !isRevealed && i < revealed.length + pending;
+                  return (
+                    <div key={i} className={`w-10 h-11 rounded-lg flex items-center justify-center text-[16px] font-black tabular-nums ${isPending ? 'animate-pulse' : ''}`}
+                      style={isRevealed
+                        ? { background: 'rgba(34,197,94,0.9)', color: '#fff' }
+                        : isPending
+                          ? { background: '#fbbf24', color: '#000' }
+                          : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                      {isRevealed ? num : '?'}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                {claimable ? (
+                  <span className="text-[13px] font-bold text-banana animate-pulse">🏆 Prize waiting — tap to claim</span>
+                ) : pending > 0 ? (
+                  <span className="text-[13px] font-bold text-banana animate-pulse">👆 Tap to check your tumblers</span>
+                ) : (
+                  <span className="text-[13px] text-white/70">
+                    <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} Jackpot seats left</span>
+                  </span>
+                )}
+                <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
+              </div>
+            </div>
+          );
+        })()}
+
+                {/* Around The Banana — the 10-slot lap grid: one cell per pick slot,
             filled cells are slots this user has drafted from. Under it, the
             live seats-left line (or the user's own finish). */}
         {isAtb && (

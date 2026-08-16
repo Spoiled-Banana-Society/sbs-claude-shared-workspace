@@ -489,7 +489,51 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       )}
 
                       
-                      {/* Around The Banana (Boris 2026-08-12): the covered pick
+                      {/* 🔒 The Banana Vault (Boris 2026-08-15): the four tumblers —
+                          green = revealed click, pulsing gold = clicked at fill but
+                          face-down (tap the card → modal to reveal), gray = sealed. */}
+                      {promo.type === 'banana-vault' && (() => {
+                        const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean } } | undefined)?.bananaVault;
+                        const revealed = bv?.revealedSlots ?? [];
+                        const pending = bv?.unrevealed ?? 0;
+                        const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
+                        return (
+                          <div className="-mt-2">
+                            <div className="flex justify-center gap-1.5 mb-1">
+                              {Array.from({ length: 4 }, (_, i) => {
+                                const num = revealed[i];
+                                const isRevealed = num !== undefined;
+                                const isPending = !isRevealed && i < revealed.length + pending;
+                                return (
+                                  <div key={i} className={`w-8 h-9 rounded-md flex items-center justify-center text-[13px] font-black tabular-nums ${isPending ? 'animate-pulse' : ''}`}
+                                    style={isRevealed
+                                      ? { background: '#22c55e', color: '#fff' }
+                                      : isPending
+                                        ? { background: '#fbbf24', color: '#000' }
+                                        : { background: '#e8e8ed', color: '#9a9a9a' }}>
+                                    {isRevealed ? num : '?'}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] mb-1 whitespace-nowrap">
+                              {claimable ? (
+                                <span className="font-bold text-[#ef4444] animate-pulse">🏆 Prize waiting — tap to claim</span>
+                              ) : pending > 0 ? (
+                                <span className="font-bold text-[#b45309] animate-pulse">👆 Tap to check your tumblers</span>
+                              ) : (
+                                <>
+                                  <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} seats left</span>
+                                  <span className="text-[#c4c4c8]">·</span>
+                                  <span className="font-semibold">any order counts</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                                            {/* Around The Banana (Boris 2026-08-12): the covered pick
                           slots + live seats-left — same payload the /promos card
                           reads, restamped on every promos refresh. */}
                       {promo.type === 'around-the-banana' && (() => {

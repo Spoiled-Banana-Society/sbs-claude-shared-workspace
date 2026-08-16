@@ -10,6 +10,7 @@ import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated } from '@/lib/db';
 import { recordAroundTheBanana } from '@/lib/aroundTheBanana';
+import { recordBananaVault } from '@/lib/bananaVault';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { waitUntil } from '@vercel/functions';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
@@ -356,6 +357,9 @@ export async function POST(
           // reveal still credits the slot at close. Idempotent per (user,
           // draft) via its seen-ledger; dormant until launch.
           await recordAroundTheBanana(owner, draftId, draftName, pos + 1);
+          // Banana Vault: same seat/slot can click one of the user's secret
+          // tumblers. No-ops when no vault is open; idempotent per (user, draft).
+          await recordBananaVault(owner, draftId, draftName, pos + 1);
         }
       }
       // Tier live this batch → one bell + push per TIER per batch. Backgrounded
