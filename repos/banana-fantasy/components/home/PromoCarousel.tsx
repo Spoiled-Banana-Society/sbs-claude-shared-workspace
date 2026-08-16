@@ -10,6 +10,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { VaultInline } from '@/components/promos/VaultInline';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 
@@ -494,43 +495,16 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                           face-down (tap the card → modal to reveal), gray = sealed. */}
                       {promo.type === 'banana-vault' && (() => {
                         const bv = (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number; paidClicks?: number } } | undefined)?.bananaVault;
-                        const revealed = bv?.revealedSlots ?? [];
-                        const pending = bv?.unrevealed ?? 0;
-                        const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
                         return (
                           <div className="-mt-1">
                             <p className="mb-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a]">
-                              Your secret 4-slot combo — click all 4 tumblers, any order.
+                              Every draft you finish can click a tumbler — open all 4, any order.
                             </p>
-                            <div className="flex justify-center gap-1.5 mb-1">
-                              {Array.from({ length: 4 }, (_, i) => {
-                                const num = revealed[i];
-                                const isRevealed = num !== undefined;
-                                const isPending = !isRevealed && i < revealed.length + pending;
-                                return (
-                                  <div key={i} className={`w-8 h-9 rounded-md flex items-center justify-center text-[13px] font-black tabular-nums ${isPending ? 'animate-pulse' : ''}`}
-                                    style={isRevealed
-                                      ? { background: '#22c55e', color: '#fff' }
-                                      : isPending
-                                        ? { background: '#fbbf24', color: '#000' }
-                                        : { background: '#e8e8ed', color: '#9a9a9a' }}>
-                                    {isRevealed ? num : '?'}
-                                  </div>
-                                );
-                              })}
-                            </div>
+                            <VaultInline bv={bv} wallet={user?.walletAddress} theme="light" size="sm" />
                             <div className="flex justify-center items-center gap-1 text-[11px] text-[#4a4a4a] mb-1 whitespace-nowrap">
-                              {claimable ? (
-                                <span className="font-bold text-[#ef4444] animate-pulse">🏆 Prize waiting — tap to claim</span>
-                              ) : pending > 0 ? (
-                                <span className="font-bold text-[#b45309] animate-pulse">👆 Tap to check your tumblers</span>
-                              ) : (
-                                <>
-                                  <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} seats left</span>
-                                  <span className="text-[#c4c4c8]">·</span>
-                                  <span className="font-semibold">any order counts</span>
-                                </>
-                              )}
+                              <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} seats left</span>
+                              <span className="text-[#c4c4c8]">·</span>
+                              <span className="font-semibold">any order counts</span>
                             </div>
                             {promo.timerEndTime && (
                               <div className="flex justify-center items-center mb-1">
@@ -539,7 +513,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                             )}
                             <p className="text-center text-[9px] leading-snug font-semibold text-[#b45309] px-1">
                               {(bv?.bountiesLeft ?? 5) > 0
-                                ? `🎰 Bounty: ${bv?.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins (${bv?.bountiesLeft ?? 5} left)`
+                                ? `🎰 First 5 to click 2 tumblers with paid drafts win 2 Free Spins — you're ${bv?.paidClicks ?? 0}/2 (${bv?.bountiesLeft ?? 5} left)`
                                 : 'Spin bounties all claimed — seats still live'}
                             </p>
                             <p className="text-center text-[9px] leading-snug text-[#7a7a7e] px-1">

@@ -12,6 +12,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { VaultInline } from '@/components/promos/VaultInline';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { DropCountdown } from '@/components/promos/DropCountdown';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
@@ -648,43 +649,18 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
 
         {/* 🔒 The Banana Vault — the four tumblers + live seats-left + clock. */}
         {isVault && (() => {
-          const revealed = bv?.revealedSlots ?? [];
-          const pending = bv?.unrevealed ?? 0;
-          const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
           return (
             <div className="mt-auto mb-4">
-              <div className="flex gap-2 mb-2">
-                {Array.from({ length: 4 }, (_, i) => {
-                  const num = revealed[i];
-                  const isRevealed = num !== undefined;
-                  const isPending = !isRevealed && i < revealed.length + pending;
-                  return (
-                    <div key={i} className={`w-10 h-11 rounded-lg flex items-center justify-center text-[16px] font-black tabular-nums ${isPending ? 'animate-pulse' : ''}`}
-                      style={isRevealed
-                        ? { background: 'rgba(34,197,94,0.9)', color: '#fff' }
-                        : isPending
-                          ? { background: '#fbbf24', color: '#000' }
-                          : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-                      {isRevealed ? num : '?'}
-                    </div>
-                  );
-                })}
-              </div>
+              <VaultInline bv={bv} wallet={wallet} theme="dark" size="lg" />
               <div className="flex items-center justify-between gap-2">
-                {claimable ? (
-                  <span className="text-[13px] font-bold text-banana animate-pulse">🏆 Prize waiting — tap to claim</span>
-                ) : pending > 0 ? (
-                  <span className="text-[13px] font-bold text-banana animate-pulse">👆 Tap to check your tumblers</span>
-                ) : (
-                  <span className="text-[13px] text-white/70">
-                    <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} Jackpot seats left</span>
-                  </span>
-                )}
+                <span className="text-[13px] text-white/70">
+                  <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} Jackpot seats left</span>
+                </span>
                 <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed font-semibold text-banana/80">
                 {(bv?.bountiesLeft ?? 5) > 0
-                  ? `🎰 Bounty: ${bv?.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins (${bv?.bountiesLeft ?? 5} left)`
+                  ? `🎰 First 5 to click 2 tumblers with paid drafts win 2 Free Spins — you're ${bv?.paidClicks ?? 0}/2 (${bv?.bountiesLeft ?? 5} left)`
                   : 'Spin bounties all claimed — seats still live'}
               </p>
               <p className="mt-1 text-[11px] leading-relaxed text-white/40">

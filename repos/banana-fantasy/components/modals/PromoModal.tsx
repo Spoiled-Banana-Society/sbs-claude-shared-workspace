@@ -1035,7 +1035,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             is live and they haven't already won it. */}
         {(bv.bountiesLeft ?? 0) > 0 && !bv.spinsClaimable && (bv.paidClicks ?? 0) < 2 && (
           <p className="text-center text-xs text-banana font-semibold">
-            🎰 Bounty: {bv.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins ({bv.bountiesLeft} left)
+            🎰 First 5 to click 2 tumblers with paid drafts win 2 Free Spins — you&apos;re {bv.paidClicks ?? 0}/2 ({bv.bountiesLeft} left)
           </p>
         )}
         {/* YOUR SLOT MAP (Boris 8/15): earned info only — green = your revealed
