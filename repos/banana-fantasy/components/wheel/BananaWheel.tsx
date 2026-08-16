@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import confetti from 'canvas-confetti';
 import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
 import { useWheelSegments } from '@/hooks/useWheelSegments';
@@ -17,6 +18,25 @@ interface BananaWheelProps {
    *  queue poll): lobby fill count + a direct Join-the-Lobby URL. Null until
    *  the seat resolves server-side (a few seconds after the wheel stops). */
   specialDraftStatus?: { count: number; draftRoomUrl: string | null } | null;
+  /** Overrides the button label so it can name WHICH stack is about to be
+   *  spent ("Spin Promo Spin (3 left)"). Promo and Bonus spins pay differently,
+   *  so a bare "Spin" would hide which one the click consumes. */
+  spinButtonText?: string;
+}
+
+/** A Bonus Spin that landed on the draft the user already bought credited
+ *  nothing — confetti and win sounds on that result would celebrate "you won
+ *  nothing", which reads as mockery. Legacy outcomes (no spinSource) are promo
+ *  spins and always celebrate. */
+function isNoBonusResult(outcome: WheelSpinOutcome, segment: WheelSegment | null): boolean {
+  if (outcome.spinSource !== 'purchase') return false;
+  // Specials (Jackpot/HOF/JackHOF) pay a seat, not drafts — their bonusDrafts
+  // is 0 by definition, but they are the BIGGEST wins on the wheel and always
+  // celebrate. Caught live 7/27: Vertig0's HOF hit on a Bonus Spin landed with
+  // no confetti or win sound because this treated drafts-credited=0 as a loss.
+  if (segment?.prizeType === 'custom') return false;
+  if (typeof outcome.bonusDrafts === 'number') return outcome.bonusDrafts <= 0;
+  return typeof segment?.prizeValue === 'number' && segment.prizeValue <= 1 && segment.prizeType === 'draft_pass';
 }
 
 function fireCelebration(segment: WheelSegment) {
@@ -124,10 +144,24 @@ function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: numbe
   );
 }
 
-function getPrizeMessage(segment: WheelSegment): string {
+function getPrizeMessage(segment: WheelSegment, source: 'promo' | 'purchase', bonusDrafts: number): string {
   if (segment.id === 'jackpot') return 'You hit the JACKPOT!';
   if (segment.id === 'hof') return 'You won a Hall of Fame draft!';
   if (segment.id === 'jackhof') return 'You hit the JACKPOT and the Hall of Fame — one draft, both prizes!';
+  // A Bonus Spin pays only what the wheel lands on ABOVE the draft already
+  // bought. Landing on 1 Draft therefore credits nothing — and must never be
+  // phrased as a win, because that draft was purchased, not won. Saying "you
+  // won your draft" would recast the purchase itself as a wager.
+  if (source === 'purchase') {
+    if (bonusDrafts <= 0) return "That's the draft you bought — no bonus this spin.";
+    // Every bonus win explains the minus-one, or "5 Drafts → +4" reads like the
+    // wheel shorted them. The wedge counts the draft they bought; the payout is
+    // everything above it.
+    const explain = `1 of these is the draft you bought — +${bonusDrafts} bonus draft${bonusDrafts !== 1 ? 's' : ''} added to your balance.`;
+    if (bonusDrafts >= 19) return `Massive win! ${explain}`;
+    if (bonusDrafts >= 9) return `Big win! ${explain}`;
+    return explain;
+  }
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win!';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'Big win!';
   return 'Added to your balance';
@@ -185,8 +219,13 @@ export const SPIN_DURATION_MS = 3600;
 // speed the instant the user taps, while the RNG request is in flight, so
 // it never sits frozen waiting on the network. Linear so we can estimate
 // its live angle when the result lands and decelerate forward onto it.
-const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
-const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
+// Safety cap on the free spin; the result almost always lands within ~1s.
+// Sized to outlast the spin request's timeout + one retry (useSpin:
+// 10s + 1s + 10s) so a slow/lost response never leaves the wheel frozen
+// mid-air while the retry is still working — it keeps turning until the
+// result lands or the spin gives up and resets.
+const FREE_SPIN_MS = 24000;
+const FREE_SPIN_TURNS = 60;  // ~2.5 rev/s — fast and energetic (same speed as before)
 // Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
 const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
 // Landing easing — ease-out-QUART: a STRONG ease-out so the wheel slows early
@@ -205,7 +244,7 @@ interface PendingSpin {
   rotation: number;
 }
 
-export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus }: BananaWheelProps) {
+export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus, spinButtonText }: BananaWheelProps) {
   const [isSpinning, setIsSpinning] = useState(false);
   // 'free' = constant-speed spin while waiting on RNG; 'landing' = decel onto
   // the result; 'idle' = stopped (no transition). Drives the CSS transition.
@@ -214,15 +253,21 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const freeSpinStartRotationRef = useRef(0);
   const [rotation, setRotation] = useState(0);
   const [wonSegment, setWonSegment] = useState<WheelSegment | null>(null);
+  const [wonSource, setWonSource] = useState<'promo' | 'purchase'>('promo');
+  const [wonBonusDrafts, setWonBonusDrafts] = useState<number>(0);
   // Value binding dropped — it was only read by the removed "Share on X" button.
   // The setter stays so the surrounding spin logic is untouched.
   const [, setWonSpinId] = useState<string | null>(null);
   // 'verifying' = proof is being fetched in the background after landing (the
   // spin response no longer carries it — see the lazy fetch below).
   const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verifying' | 'verified' | 'failed'>('unverified');
-  const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string } | null>(null);
+  const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string; globalSpinNumber?: number | null } | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
+  // 0-spin state: the (visually muted) Spin button stays interactive enough to
+  // explain itself — tap/click toggles, hover shows, a small "how to get
+  // spins" popover with a /promos link. Never rendered while spins > 0.
+  const [showNoSpinsTip, setShowNoSpinsTip] = useState(false);
   const wheelRef = useRef<HTMLDivElement>(null);
   const resumedRef = useRef(false);
 
@@ -255,9 +300,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           setIsSpinning(false);
           setWonSegment(segment);
           setWonSpinId(pending.outcome.spinId);
+          setWonSource(pending.outcome.spinSource ?? 'promo');
+          setWonBonusDrafts(
+            typeof pending.outcome.bonusDrafts === 'number'
+              ? pending.outcome.bonusDrafts
+              : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+          );
           setShowResult(true);
           localStorage.removeItem(PENDING_SPIN_KEY);
-          if (segment) {
+          if (segment && !isNoBonusResult(pending.outcome, segment)) {
             fireCelebration(segment);
             playWinSound(getWinTier(segment));
             if (isBigWin(segment)) rainPrizes(segment);
@@ -272,9 +323,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         setRotation(pending.rotation);
         setWonSegment(segment);
         setWonSpinId(pending.outcome.spinId);
+        setWonSource(pending.outcome.spinSource ?? 'promo');
+        setWonBonusDrafts(
+          typeof pending.outcome.bonusDrafts === 'number'
+            ? pending.outcome.bonusDrafts
+            : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+        );
         setShowResult(true);
         localStorage.removeItem(PENDING_SPIN_KEY);
-        if (segment) {
+        if (segment && !isNoBonusResult(pending.outcome, segment)) {
           fireCelebration(segment);
         }
         if (onSpinComplete) onSpinComplete(pending.outcome, segment);
@@ -307,6 +364,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         verifiable?: boolean;
         periodNumber?: number;
         spinIndex?: number;
+        globalSpinNumber?: number | null;
         proof?: { leaf: string; path: Array<`0x${string}`>; root: `0x${string}` } | null;
       };
       if (!data?.verifiable || !data.proof || typeof data.spinIndex !== 'number' || typeof data.periodNumber !== 'number') {
@@ -321,7 +379,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         root: data.proof.root,
       });
       setWonProofStatus(ok ? 'verified' : 'failed');
-      setWonProofMeta({ periodNumber: data.periodNumber, spinIndex: data.spinIndex, root: data.proof.root });
+      setWonProofMeta({ periodNumber: data.periodNumber, spinIndex: data.spinIndex, root: data.proof.root, globalSpinNumber: data.globalSpinNumber ?? null });
     } catch {
       setWonProofStatus('unverified');
     }
@@ -359,8 +417,17 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       outcome = await onSpin();
     } catch (err) {
       console.error('[BananaWheel] spin error:', err);
-      const msg = err instanceof Error ? err.message : 'Spin failed';
-      setSpinError(msg);
+      const raw = err instanceof Error ? err.message : '';
+      // Safari reports a dead network request as the bare string "Load
+      // failed" — which is exactly what a user screenshotted, reading it as
+      // a broken wheel that ate a spin (AceJohn, 2026-07-27). Translate
+      // network-shaped errors into what actually matters: nothing happened.
+      const looksNetwork = /load failed|failed to fetch|network|timeout|abort/i.test(raw);
+      setSpinError(
+        looksNetwork
+          ? 'Connection hiccup — no spin happened and nothing was used. Your spin count has been refreshed; tap to spin again.'
+          : raw || 'Spin failed — nothing was used. Please try again.',
+      );
     }
 
     if (!outcome) {
@@ -454,9 +521,17 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       setIsSpinning(false);
       setWonSegment(segment);
       setWonSpinId(outcome.spinId);
+      // Legacy responses carry neither field → 'promo' + wedge value, i.e. the
+      // pre-SPIN_ON_PURCHASE behaviour.
+      setWonSource(outcome.spinSource ?? 'promo');
+      setWonBonusDrafts(
+        typeof outcome.bonusDrafts === 'number'
+          ? outcome.bonusDrafts
+          : (typeof segment?.prizeValue === 'number' ? segment.prizeValue : 0),
+      );
       setShowResult(true);
       localStorage.removeItem(PENDING_SPIN_KEY);
-      if (segment) {
+      if (segment && !isNoBonusResult(outcome, segment)) {
         fireCelebration(segment);
         playWinSound(getWinTier(segment));
         // Big four (jackpot / HOF / 10 / 20): rain the prize down the screen.
@@ -667,31 +742,55 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           <span className="ml-2">spin{spinsAvailable !== 1 ? 's' : ''} available</span>
         </p>
 
-        <button
-          onClick={spin}
-          disabled={spinsAvailable <= 0 || isSpinning}
-          className={`
-            relative px-16 py-3.5 text-lg sm:px-20 sm:py-4 sm:text-xl font-semibold tracking-wide rounded-full
-            transition-all duration-300 ease-out
-            ${spinsAvailable <= 0 || isSpinning
-              ? 'bg-[#2a2a35] text-[#666] cursor-not-allowed'
-              : 'bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.3)] hover:from-[#fcd34d] hover:to-[#fbbf24] hover:shadow-[0_4px_16px_rgba(251,191,36,0.4)] hover:scale-[1.02] active:scale-[0.98]'
-            }
-          `}
-          style={{
-            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif'
-          }}
-        >
-          {isSpinning ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Spinning...
-            </span>
-          ) : 'Spin'}
-        </button>
+        {/* At 0 spins the button is NOT disabled — it explains itself instead:
+            tap/click (mobile) or hover (desktop) opens the "how to get spins"
+            popover. Behavior with spins > 0 is unchanged. */}
+        <div className="relative inline-block">
+          {showNoSpinsTip && spinsAvailable <= 0 && !isSpinning && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 rounded-xl border border-white/10 bg-[#1c1c1e] px-4 py-3 text-center shadow-2xl z-20">
+              <p className="text-white/80 text-sm leading-snug">Get spins by completing promos or buying passes</p>
+              <Link href="/promos" className="mt-1.5 inline-block text-banana text-sm font-semibold hover:underline">
+                See promos →
+              </Link>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              if (isSpinning) return;
+              if (spinsAvailable <= 0) {
+                setShowNoSpinsTip((v) => !v);
+                return;
+              }
+              void spin();
+            }}
+            onMouseEnter={() => { if (spinsAvailable <= 0 && !isSpinning) setShowNoSpinsTip(true); }}
+            onMouseLeave={() => setShowNoSpinsTip(false)}
+            disabled={isSpinning}
+            className={`
+              relative px-16 py-3.5 text-lg sm:px-20 sm:py-4 sm:text-xl font-semibold tracking-wide rounded-full
+              transition-all duration-300 ease-out
+              ${isSpinning
+                ? 'bg-[#2a2a35] text-[#666] cursor-not-allowed'
+                : spinsAvailable <= 0
+                  ? 'bg-[#2a2a35] text-[#666] cursor-pointer'
+                  : 'bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.3)] hover:from-[#fcd34d] hover:to-[#fbbf24] hover:shadow-[0_4px_16px_rgba(251,191,36,0.4)] hover:scale-[1.02] active:scale-[0.98]'
+              }
+            `}
+            style={{
+              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif'
+            }}
+          >
+            {isSpinning ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Spinning...
+              </span>
+            ) : (spinButtonText ?? 'Spin')}
+          </button>
+        </div>
 
         {spinError && (
           <p className="mt-3 text-red-400 text-sm">{spinError}</p>
@@ -757,8 +856,16 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 <PrizeIcon segment={wonSegment} size={68} />
               </div>
 
-              <p className="text-[#32d74b] text-sm font-semibold tracking-wide uppercase mb-2">
-                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof' ? 'LEGENDARY WIN!' : 'You Won!'}
+              <p
+                className={`text-sm font-semibold tracking-wide uppercase mb-2 ${
+                  wonSource === 'purchase' && wonBonusDrafts <= 0 ? 'text-[#86868b]' : 'text-[#32d74b]'
+                }`}
+              >
+                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' || wonSegment.id === 'jackhof'
+                  ? 'LEGENDARY WIN!'
+                  : wonSource === 'purchase' && wonBonusDrafts <= 0
+                    ? 'No Bonus'
+                    : 'You Won!'}
               </p>
 
               <h3
@@ -772,21 +879,29 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 className="text-[#86868b] text-sm mb-6"
                 style={{ animation: 'fadeIn 0.6s ease-out 0.4s both' }}
               >
-                {getPrizeMessage(wonSegment)}
+                {getPrizeMessage(wonSegment, wonSource, wonBonusDrafts)}
               </p>
 
-              {wonProofStatus === 'verified' && wonProofMeta && (
-                <div
-                  className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
-                  style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
-                  title={`Verified by Chainlink VRF · Round ${wonProofMeta.periodNumber} · spin #${wonProofMeta.spinIndex + 1}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Verified by Chainlink VRF · spin #{wonProofMeta.spinIndex + 1}
-                </div>
-              )}
+              {wonProofStatus === 'verified' && wonProofMeta && (() => {
+                // Show the ALL-TIME spin number (matches the Live Activity feed,
+                // never resets across rounds). Fall back to the period-relative
+                // index for legacy/inline-proof spins that lack the global count.
+                const spinNo = typeof wonProofMeta.globalSpinNumber === 'number'
+                  ? wonProofMeta.globalSpinNumber
+                  : wonProofMeta.spinIndex + 1;
+                return (
+                  <div
+                    className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
+                    style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
+                    title={`Verified by Chainlink VRF · Round ${wonProofMeta.periodNumber} · spin #${spinNo}`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Verified by Chainlink VRF · spin #{spinNo}
+                  </div>
+                );
+              })()}
               {wonProofStatus === 'verifying' && (
                 <div
                   className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[#86868b] text-[12px] font-semibold"
@@ -846,7 +961,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                             : <><span className="text-white/90 font-semibold">{remaining} more</span> {label} winner{remaining !== 1 ? 's' : ''} to go <span className="text-white/90 font-semibold">({count}/10)</span>.</>}</p>
                       <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — 8 hours per pick).</p>
                       <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJackHof ? 'you skip straight to the season Finals AND enter the Hall of Fame playoff bracket — both perks on this one draft' : isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
-                      <p className="text-white/40 pt-1">Your seat is locked — but until the draft fills, you can sell this pass on the Marketplace and the buyer takes your spot.</p>
+                      <p className="text-white/40 pt-1">Your seat is locked — before the draft fills you can sell this pass on the Marketplace and the buyer takes your spot, and after the draft you can sell your team. You just can&apos;t sell mid-draft.</p>
                     </div>
                     <a
                       href={specialDraftStatus?.draftRoomUrl || '/drafting'}

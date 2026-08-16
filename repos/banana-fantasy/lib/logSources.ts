@@ -174,6 +174,9 @@ export const LOG_SOURCES = {
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',
+    // The spin request timed out / died on the network and was retried once
+    // with the same clientSpinId (server replays if the first one settled).
+    SPIN_RETRIED: 'wheel.spin_retried',
     QUEUE_FETCH_FAILED: 'wheel.queue_fetch_failed',
     SPIN_REVEAL_CONFIRM_FAILED: 'wheel.spin_reveal_confirm_failed',
     BALANCE_REFRESH_TIMEOUT: 'wheel.balance_refresh_timeout',

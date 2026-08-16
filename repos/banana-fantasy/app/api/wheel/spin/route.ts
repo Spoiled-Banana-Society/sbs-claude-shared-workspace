@@ -17,6 +17,13 @@ import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
+import {
+  PROMO_SPINS_FIELD,
+  PURCHASE_SPINS_FIELD,
+  bonusDraftsFor,
+  nextSpinSource,
+  type SpinSource,
+} from '@/lib/spinTypes';
 import { recountFromInventory } from '@/lib/passLedger';
 import { unlockBadge } from '@/lib/db';
 import { claimSpinIndex, getCurrentPeriod, periodSegments } from '@/lib/wheelPeriod';
@@ -25,6 +32,37 @@ import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
+
+// Client-supplied spin id (idempotency key). Strict v4-shaped UUID so it can be
+// used verbatim as a Firestore doc id — anything else is ignored and the server
+// mints its own id exactly as before.
+const CLIENT_SPIN_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Idempotent replay. When the client retries a spin (its first request timed
+ * out or died on the network) it re-sends the SAME clientSpinId. If that spin
+ * already settled we hand back the stored outcome instead of spinning again —
+ * so a retry can never consume a second spin, pay twice, or land on a
+ * different wedge than the one the first request already recorded.
+ */
+function replayResponse(data: FirebaseFirestore.DocumentData) {
+  const bonusDrafts = typeof data.bonusDrafts === 'number' ? data.bonusDrafts : 0;
+  return json(
+    {
+      spinId: data.spinId,
+      result: data.result,
+      prize: data.prize,
+      angle: typeof data.angle === 'number' ? data.angle : 0,
+      mintOnChain: typeof data.mintOnChain === 'boolean' ? data.mintOnChain : bonusDrafts > 0,
+      periodNumber: data.periodNumber ?? null,
+      spinIndex: data.spinIndexInPeriod ?? null,
+      spinSource: data.spinSource ?? 'promo',
+      bonusDrafts,
+      replayed: true,
+    },
+    200,
+  );
+}
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const jwksCache: {
@@ -188,6 +226,23 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
 
+    // Idempotency key from the client (see replayResponse). Fast path: if this
+    // exact spin already settled, replay it before touching the RNG/period.
+    const clientSpinId =
+      typeof body.clientSpinId === 'string' && CLIENT_SPIN_ID_REGEX.test(body.clientSpinId.trim())
+        ? body.clientSpinId.trim().toLowerCase()
+        : null;
+    const spinId = clientSpinId ?? crypto.randomUUID();
+    const userRef = db.collection(USERS_COLLECTION).doc(userId);
+    const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
+    if (clientSpinId) {
+      const existing = await spinRef.get();
+      if (existing.exists) {
+        logger.info('wheel.spin.replayed', { spinId, userId, phase: 'pre-tx' });
+        return replayResponse(existing.data()!);
+      }
+    }
+
     const seed = generateSeed();
     const nonce = generateNonce();
 
@@ -260,7 +315,6 @@ export async function POST(req: Request) {
 
     const segmentCenter = index * segmentAngle + segmentAngle / 2;
     const angle = (360 - segmentCenter + 360) % 360;
-    const spinId = crypto.randomUUID();
 
     const prize = {
       type: segment.prizeType,
@@ -268,13 +322,25 @@ export async function POST(req: Request) {
     };
     const timestamp = nowIso();
 
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
-    const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
+    // Which stack this spin comes out of decides what it pays. Promo spins pay
+    // the wedge in full; purchase spins pay wedge-minus-one because the buyer
+    // already owns the first draft. Resolved pre-tx because the prize, the
+    // activity doc and the mint decision below are all built from the credited
+    // amount — the transaction re-reads the counters and asserts the same
+    // source is still available (same fail-safe as the spin-index claim).
+    const preSpinSnap = await userRef.get();
+    const preSpinData = preSpinSnap.data();
+    const spinSource: SpinSource =
+      nextSpinSource(
+        Math.max(0, (preSpinData?.[PROMO_SPINS_FIELD] as number | undefined) ?? 0),
+        Math.max(0, (preSpinData?.[PURCHASE_SPINS_FIELD] as number | undefined) ?? 0),
+      ) ?? 'promo';
 
-    const draftPassCount =
+    const wedgeDrafts =
       segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number'
         ? segment.prizeValue
         : 0;
+    const draftPassCount = bonusDraftsFor(spinSource, wedgeDrafts);
     const mintOnChain = isAdminMintConfigured() && draftPassCount > 0;
 
     // A Jackpot/HOF wheel win. When the feature flag is ON we mint a REAL pass
@@ -308,12 +374,34 @@ export async function POST(req: Request) {
       },
     });
 
+    // Set when a concurrent request with the same clientSpinId won the race
+    // inside the transaction — we then replay ITS stored outcome.
+    let replayData = null as FirebaseFirestore.DocumentData | null;
+
     await db.runTransaction(async (tx) => {
+      if (clientSpinId) {
+        // Read the spin doc INSIDE the tx: if a duplicate request already
+        // settled this id, do NOT claim/decrement again — replay it. Firestore
+        // serializes the two txs on this doc, so exactly one creates it.
+        const dup = await tx.get(spinRef);
+        if (dup.exists) {
+          replayData = dup.data()!;
+          return;
+        }
+      }
       const userDoc = await tx.get(userRef);
       const userData = userDoc.data();
-      const spinsLeft = userData?.wheelSpins ?? 0;
-      if (spinsLeft <= 0) {
+      const promoLeft = Math.max(0, (userData?.[PROMO_SPINS_FIELD] as number | undefined) ?? 0);
+      const purchaseLeft = Math.max(0, (userData?.[PURCHASE_SPINS_FIELD] as number | undefined) ?? 0);
+      const txSpinSource = nextSpinSource(promoLeft, purchaseLeft);
+      if (txSpinSource === null) {
         throw new ApiError(429, 'No spins remaining');
+      }
+      // The pre-tx read decided what this spin pays. If a concurrent grant or
+      // spin changed which stack is next, the credited amount above is stale —
+      // roll back rather than pay the wrong number.
+      if (txSpinSource !== spinSource) {
+        throw new ApiError(409, 'Spin balance changed — please spin again.');
       }
 
       // Period-aware path: atomically claim the next index in the active
@@ -362,18 +450,29 @@ export async function POST(req: Request) {
         nonce,
         periodNumber,
         spinIndexInPeriod,
+        // `prize.value` stays the WEDGE the wheel landed on (that's the provable
+        // outcome). `bonusDrafts` is what was actually credited — they differ by
+        // one on purchase spins. History and result copy read these, never the
+        // wedge alone, or a 5-Draft hit reads as "5 free drafts" when 4 landed.
+        spinSource,
+        bonusDrafts: draftPassCount,
+        // Stored so an idempotent replay returns the identical landing angle
+        // and mint flag the first response carried.
+        angle,
+        mintOnChain,
       });
 
       // Atomic counter update with floor-of-0 on every counter so legacy
       // bad data can't cascade. Spin decrement, optional pass / entry
       // increments — all in one transaction.
-      const currentSpins = Math.max(0, (userData?.wheelSpins as number | undefined) ?? 0);
       const currentFree = Math.max(0, (userData?.freeDrafts as number | undefined) ?? 0);
       const currentJp = Math.max(0, (userData?.jackpotEntries as number | undefined) ?? 0);
       const currentHof = Math.max(0, (userData?.hofEntries as number | undefined) ?? 0);
 
       const balanceUpdate: Record<string, number | boolean> = {
-        wheelSpins: Math.max(0, currentSpins - 1),
+        // Decrement the stack this spin actually came out of.
+        [spinSource === 'purchase' ? PURCHASE_SPINS_FIELD : PROMO_SPINS_FIELD]:
+          Math.max(0, (spinSource === 'purchase' ? purchaseLeft : promoLeft) - 1),
         // Mark that the user has now spun at least once — hides the first-time
         // "what's a spin?" explainer on promo cards going forward.
         hasSpunWheel: true,
@@ -413,6 +512,11 @@ export async function POST(req: Request) {
       addActivityEventToTx(tx, spinActivityDoc);
     });
 
+    if (replayData) {
+      logger.info('wheel.spin.replayed', { spinId, userId, phase: 'in-tx' });
+      return replayResponse(replayData);
+    }
+
     // Everything below runs AFTER the response is sent. The Firestore tx
     // above already credited freeDrafts/jackpotEntries/hofEntries — the
     // user has their prize. The on-chain mint just delivers the NFT, and
@@ -438,9 +542,16 @@ export async function POST(req: Request) {
       } else if (jphofKind === 'hof') {
         await unlockBadge(userId, 'hof-club', { source: 'wheel-hof', spinId }).catch(() => {});
       } else if (jphofKind === 'jackhof') {
-        // JackHOF = both perks on one draft → both club badges.
+        // JackHOF = both perks on one draft → both club badges, PLUS the
+        // JackHOF club itself. The jackhof-club unlock was missing here
+        // (roarstone, 2026-07-30): a 0.1%-wedge winner sat with JackHOF
+        // LOCKED while every Banana-draw grantee got it instantly (the draw
+        // cron unlocks it at grant time). The queue-draft-filled unlock in
+        // notifications/draft-filled is the ONLY other path, and a jackhof
+        // round can take weeks to fill — far too late for "you landed it".
         await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
         await unlockBadge(userId, 'hof-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
+        await unlockBadge(userId, 'jackhof-club', { source: 'wheel-jackhof', spinId }).catch(() => {});
       }
 
       let mintTxHash: string | undefined;
@@ -535,7 +646,8 @@ export async function POST(req: Request) {
           if (jphofTokenId) {
             try {
               const { joinQueueWithToken } = await import('@/lib/db');
-              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+              // 'wheel' — never seat a wedge winner into a promo giveaway round.
+              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId, 'wheel');
               if (joinedRoundId !== null) {
                 const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
                 await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);
@@ -654,8 +766,35 @@ export async function POST(req: Request) {
     // the client now fetches lazily AFTER the wheel lands via
     // GET /api/wheel/proof/{spinId} — off the critical path. periodNumber +
     // spinIndex are returned so the client knows the spin is verifiable.
+    // Cost telemetry. Every settled spin logs the stack it came from, the wedge
+    // it landed on and the seats actually credited, so realized $/spin can be
+    // measured from logs rather than assumed from the config's expected value.
+    // Query: jsonPayload.event="wheel.spin.settled" → sum seatsCredited / count.
+    logger.info('wheel.spin.settled', {
+      spinId,
+      userId,
+      spinSource,
+      segmentId: segment.id,
+      wedgeDrafts,
+      seatsCredited: draftPassCount,
+      special: jphofKind,
+    });
+
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain, periodNumber, spinIndex: spinIndexInPeriod },
+      {
+        spinId,
+        result: segment.id,
+        prize,
+        angle,
+        mintOnChain,
+        periodNumber,
+        spinIndex: spinIndexInPeriod,
+        // `prize.value` is the wedge; `bonusDrafts` is what was credited. They
+        // differ by one on purchase spins, so result copy must read these two
+        // rather than inferring the award from the wedge label.
+        spinSource,
+        bonusDrafts: draftPassCount,
+      },
       200,
     );
   } catch (err) {
