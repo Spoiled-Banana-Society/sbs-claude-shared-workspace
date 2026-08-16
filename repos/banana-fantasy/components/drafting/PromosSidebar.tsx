@@ -251,6 +251,9 @@ export function PromosSidebar({
                           </>
                         )}
                       </div>
+                      <p className="mt-1 text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
+                        Free + paid count · First 5 to click 2 with paid drafts: 2 Free Spins
+                      </p>
                     </div>
                   );
                 })()}

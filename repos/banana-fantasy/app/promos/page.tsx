@@ -601,7 +601,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
           </div>
         )}
         <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-xs leading-relaxed text-banana/80 mb-2" />
-        <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
+        <p className={`text-white/45 text-sm leading-relaxed mb-4 ${isVault ? '' : 'line-clamp-2'}`}>
           {promo.description}
         </p>
 
@@ -682,6 +682,9 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
                 )}
                 <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
               </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
+                <span className="text-white/60 font-semibold">Free + paid drafts</span> count toward the seat · First 5 to click 2 tumblers <span className="text-white/60 font-semibold">with paid drafts</span> win 2 Free Spins each · any order
+              </p>
             </div>
           );
         })()}

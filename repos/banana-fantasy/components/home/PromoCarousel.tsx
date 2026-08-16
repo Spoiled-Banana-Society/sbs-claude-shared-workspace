@@ -529,6 +529,14 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                                 </>
                               )}
                             </div>
+                            {promo.timerEndTime && (
+                              <div className="flex justify-center items-center mb-1">
+                                <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatTimeRemaining(promo.timerEndTime)}</span>
+                              </div>
+                            )}
+                            <p className="text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
+                              Free + paid count · First 5 to click 2 with paid drafts: 2 Free Spins
+                            </p>
                           </div>
                         );
                       })()}
