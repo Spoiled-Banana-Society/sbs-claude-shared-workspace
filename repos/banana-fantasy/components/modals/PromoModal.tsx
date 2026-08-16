@@ -48,6 +48,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const dropMe = useDropMe(user?.walletAddress);
   // 🔒 Banana Vault modal state — reveal animation + claim feedback.
   const [vaultJustRevealed, setVaultJustRevealed] = useState<number[]>([]);
+  const [vaultJustMissed, setVaultJustMissed] = useState<number[]>([]);
   const [vaultShaking, setVaultShaking] = useState(false);
   const [vaultMsg, setVaultMsg] = useState<string | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
@@ -839,7 +840,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     type VaultPayload = {
       open?: boolean; seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number;
       seatWon?: boolean; seatClaimable?: boolean; spinsClaimable?: boolean;
-      paidClicks?: number; bountiesLeft?: number;
+      paidClicks?: number; bountiesLeft?: number; missedSlots?: number[];
     };
     const bv = (promo.modalContent as { bananaVault?: VaultPayload } | undefined)?.bananaVault;
     if (!bv) return null;
@@ -858,10 +859,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         });
         const data = await res.json();
         const slots: number[] = (data.revealed ?? []).map((c: { slot: number }) => c.slot);
+        const missed: number[] = data.missedSlots ?? [];
         setTimeout(() => {
           setVaultShaking(false);
+          if (missed.length > 0) setVaultJustMissed((prev) => [...new Set([...prev, ...missed])]);
           if (slots.length === 0) {
-            setVaultMsg('…nothing new. Your next draft could click one.');
+            setVaultMsg(missed.length > 0
+              ? `…no click. Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} ${missed.length > 1 ? 'are' : 'is'} not in your combo — crossed off your map.`
+              : '…nothing new. Your next draft could click one.');
           } else {
             // stagger the clicks open one at a time
             slots.forEach((sl, i) => setTimeout(() => {
@@ -942,6 +947,34 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <p className="text-center text-xs text-text-secondary">
           <span className="font-bold text-red-400">{bv.seatsLeft ?? 0} Jackpot seats left</span> in this vault
         </p>
+        {/* YOUR SLOT MAP (Boris 8/15): earned info only — green = your revealed
+            clicks, ✕ = slots you tried that aren't in your combo, ? = untried.
+            Misses only mark AFTER a tap so the reveal suspense stays intact. */}
+        {(() => {
+          const missedAll = [...new Set([...(bv.missedSlots ?? []), ...vaultJustMissed])];
+          if (revealedAll.length === 0 && missedAll.length === 0) return null;
+          return (
+            <div>
+              <p className="text-center text-[9px] font-bold tracking-widest text-white/30 mb-1">YOUR SLOT MAP</p>
+              <div className="flex justify-center gap-1">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((sl) => {
+                  const hit = revealedAll.includes(sl);
+                  const dead = missedAll.includes(sl);
+                  return (
+                    <div key={sl} className={`w-6 h-7 rounded flex items-center justify-center text-[10px] font-bold tabular-nums ${
+                      hit ? 'bg-green-500/80 text-white' : dead ? 'bg-white/[0.06] text-red-400/80' : 'bg-white/[0.06] text-white/30'
+                    }`}>
+                      {hit ? sl : dead ? '✕' : sl}
+                    </div>
+                  );
+                })}
+              </div>
+              {missedAll.length > 0 && (
+                <p className="mt-1 text-center text-[10px] text-white/35">✕ = not in your combo — hitting it again does nothing</p>
+              )}
+            </div>
+          );
+        })()}
         {/* Personal bounty status (Boris 8/15): users can't otherwise tell
             which of their clicks were paid — show the meter while the race
             is live and they haven't already won it. */}

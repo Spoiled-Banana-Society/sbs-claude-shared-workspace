@@ -697,12 +697,19 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         bountiesLeft: Math.max(0, 5 - spinWinners.filter((w) => w.vaultNumber === vaultNumber).length),
         seatsLeft: Math.max(0, seatsCap - seatWinners.filter((w) => w.vaultNumber === vaultNumber).length),
         revealedSlots: clicksRaw.filter((c) => c.revealed).map((c) => c.slot).sort((a, b) => a - b),
-        unrevealed: clicksRaw.filter((c) => !c.revealed).length,
+        missedSlots: ((mc.vaultNumber as number | undefined) === vaultNumber
+          ? ((mc.vaultMisses as Array<{ slot: number; revealed: boolean }> | undefined) || []) : [])
+          .filter((m) => m.revealed).map((m) => m.slot).sort((a, b) => a - b),
+        unrevealed: clicksRaw.filter((c) => !c.revealed).length
+          + (((mc.vaultNumber as number | undefined) === vaultNumber
+            ? ((mc.vaultMisses as Array<{ slot: number; revealed: boolean }> | undefined) || []) : [])
+            .filter((m) => !m.revealed).length),
         seatWon: !!mySeat,
         seatClaimable: !!mySeat && !mySeat.claimed,
         spinsClaimable: !!mySpins && !mySpins.claimed,
       };
       delete (promo.modalContent as Record<string, unknown>).vaultClicks;
+      delete (promo.modalContent as Record<string, unknown>).vaultMisses;
       delete (promo.modalContent as Record<string, unknown>).vaultSeenDraftIds;
       promo.progressCurrent = clicksRaw.filter((c) => c.revealed).length;
     }

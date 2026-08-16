@@ -188,12 +188,24 @@ export async function recordBananaVault(
       clicks = [...clicks, { slot, at: nowIso, paid: isPaid, revealed: false }];
     }
 
+    // Dead-slot map (Boris 8/15): slots the user LANDED that aren't in their
+    // combo get remembered — once revealed by a tap, the card can mark them ✕
+    // so they know ahead of time nothing good lives there. Earned info only —
+    // never reveals untried slots.
+    let misses = docVault === st.vaultNumber
+      ? (((mc.vaultMisses as Array<{ slot: number; revealed: boolean }> | undefined)) || [])
+      : [];
+    if (!inCombo && !misses.some((m) => m.slot === slot)) {
+      misses = [...misses, { slot, revealed: false }];
+    }
+
     const update: Record<string, unknown> = {
       progressCurrent: clicks.length,
       updatedAt: nowIso,
       modalContent: {
         vaultNumber: st.vaultNumber,
         vaultClicks: clicks,
+        vaultMisses: misses,
         vaultSeenDraftIds: [...seen, draftId].slice(-VAULT_SEEN_LEDGER_MAX),
       },
     };
@@ -252,21 +264,26 @@ export async function recordBananaVault(
 }
 
 /** Tap: flip all unrevealed clicks face-up and return them. */
-export async function revealVaultClicks(userId: string): Promise<VaultClick[]> {
+export async function revealVaultClicks(userId: string): Promise<{ clicks: VaultClick[]; missedSlots: number[] }> {
   const db = getAdminFirestore();
   const promoRef = db.collection('v2_users').doc(userId)
     .collection('promos').doc(VAULT_PROMO_ID);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(promoRef);
-    if (!snap.exists) return [];
+    if (!snap.exists) return { clicks: [], missedSlots: [] };
     const mc = (snap.data()?.modalContent || {}) as Record<string, unknown>;
     const clicks = ((mc.vaultClicks as VaultClick[] | undefined) || []);
-    const fresh = clicks.filter((c) => !c.revealed);
-    if (fresh.length === 0) return [];
+    const misses = ((mc.vaultMisses as Array<{ slot: number; revealed: boolean }> | undefined) || []);
+    const freshClicks = clicks.filter((c) => !c.revealed);
+    const freshMisses = misses.filter((m) => !m.revealed).map((m) => m.slot);
+    if (freshClicks.length === 0 && freshMisses.length === 0) return { clicks: [], missedSlots: [] };
     tx.set(promoRef, {
-      modalContent: { vaultClicks: clicks.map((c) => ({ ...c, revealed: true })) },
+      modalContent: {
+        vaultClicks: clicks.map((c) => ({ ...c, revealed: true })),
+        vaultMisses: misses.map((m) => ({ ...m, revealed: true })),
+      },
     }, { merge: true });
-    return fresh;
+    return { clicks: freshClicks, missedSlots: freshMisses };
   });
 }
 
@@ -408,13 +425,17 @@ export async function getVaultCardState(wallet: string | null): Promise<Record<s
   const docVault = (mc.vaultNumber as number | undefined) ?? state.vaultNumber;
   const clicks = docVault === state.vaultNumber
     ? (((mc.vaultClicks as VaultClick[] | undefined)) || []) : [];
+  const misses = docVault === state.vaultNumber
+    ? (((mc.vaultMisses as Array<{ slot: number; revealed: boolean }> | undefined)) || []) : [];
   const revealed = clicks.filter((c) => c.revealed).map((c) => ({ slot: c.slot, paid: c.paid }));
-  const unrevealedCount = clicks.filter((c) => !c.revealed).length;
+  const missedSlots = misses.filter((m) => m.revealed).map((m) => m.slot).sort((a, b) => a - b);
+  const unrevealedCount = clicks.filter((c) => !c.revealed).length + misses.filter((m) => !m.revealed).length;
   const mySeat = (state.seatWinners || []).find((w) => w.userId === wallet);
   const mySpins = (state.spinWinners || []).find((w) => w.userId === wallet && w.vaultNumber === state.vaultNumber);
   return {
     ...base,
     revealed,
+    missedSlots,
     unrevealedCount,
     clickedCount: clicks.length,
     seatWon: !!mySeat,

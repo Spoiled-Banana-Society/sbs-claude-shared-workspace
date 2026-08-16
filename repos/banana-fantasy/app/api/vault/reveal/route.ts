@@ -11,8 +11,8 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId').toLowerCase();
-    const revealed = await revealVaultClicks(userId);
-    return json({ revealed }, 200);
+    const { clicks, missedSlots } = await revealVaultClicks(userId);
+    return json({ revealed: clicks, missedSlots }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error(err);
