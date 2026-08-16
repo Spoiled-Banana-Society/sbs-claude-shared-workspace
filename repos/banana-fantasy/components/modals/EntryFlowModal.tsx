@@ -198,7 +198,7 @@ export function EntryFlowModal({
                     🔒 Joining <span className="text-[#fbbf24]">{privLeague.name}</span> — your private league
                   </p>
                   <p className="text-white/50 text-xs mt-0.5">
-                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick'} · paid Draft Pass only
+                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick'} · paid or free Draft Pass
                   </p>
                   <button
                     onClick={() => { if (!isSubmitting) setJoinPublic(true); }}
@@ -264,10 +264,9 @@ export function EntryFlowModal({
               </button>
 
               {/* Free Draft Pass — only shown when the user actually HAS one; a
-                  greyed "0" card is noise (Boris 2026-07-22). Hidden while a
-                  private league is the target: those take paid passes only, so
-                  offering the free row would just set up a rejection. */}
-              {hasFree && !privateMode && (
+                  greyed "0" card is noise (Boris 2026-07-22). Private leagues
+                  take free passes too (Richard 2026-08-15). */}
+              {hasFree && (
                 <button
                   onClick={() => handlePassSelect('free')}
                   disabled={isSubmitting}

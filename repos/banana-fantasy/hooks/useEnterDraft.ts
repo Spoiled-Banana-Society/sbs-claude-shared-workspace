@@ -83,15 +83,15 @@ export function useEnterDraft() {
     // unlocked /private/[id] expects EVERY "Enter Draft" to be their group's
     // draft — before this, those clicks went to the public matchmaker and
     // burned passes on strangers' lobbies (AceJohn). So without an explicit
-    // target: route into the remembered league, on its fixed lane, with a
-    // paid pass (private leagues never take free passes). EntryFlowModal
-    // names the league and offers the public escape (opts.forcePublic).
+    // target: route into the remembered league, on its fixed lane, with
+    // whichever pass the user picked (paid or free both work — Richard 8/15,
+    // the password is the gate, not the pass type). EntryFlowModal names the
+    // league and offers the public escape (opts.forcePublic).
     let autoPrivate = false;
     if (!privateLeague && !opts?.forcePublic) {
       const active = getActivePrivateLeague();
       if (active) {
         privateLeague = { id: active.id, password: active.password };
-        passType = 'paid';
         speed = active.draftType;
         autoPrivate = true;
       }
@@ -263,7 +263,7 @@ export function useEnterDraft() {
       void refreshBalance();
       if (rejectionMsg && /not enough/i.test(rejectionMsg)) {
         setJoinError(autoPrivate
-          ? 'Your private league takes paid Draft Passes and you have none available. Get a pass, then tap Enter Draft again.'
+          ? 'No Draft Passes available for your private league. Get a pass (paid or free both work), then tap Enter Draft again.'
           : 'No draft passes available. Your balance has been refreshed.');
       } else if (rejectionMsg && /incorrect password/i.test(rejectionMsg)) {
         if (autoPrivate) {

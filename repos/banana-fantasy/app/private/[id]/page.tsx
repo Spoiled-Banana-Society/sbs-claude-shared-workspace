@@ -121,13 +121,15 @@ export default function PrivateLeaguePage() {
   };
 
   const paidPasses = user?.draftPasses ?? 0;
+  const freePasses = user?.freeDrafts ?? 0;
   const speed = (info?.draftType === 'slow' ? 'slow' : 'fast') as 'fast' | 'slow';
   const seats = info?.currentDraft?.numPlayers ?? 0;
   const alreadySeated = false; // server rejects a dupe seat with a clear message
 
-  const handleJoin = () => {
+  // Paid or free both seat you — the password is the gate (Richard 8/15).
+  const handleJoin = (passType: 'paid' | 'free') => {
     if (!info || !authedPassword) return;
-    void enterDraftWithPassType('paid', speed, { id: privateId, password: authedPassword });
+    void enterDraftWithPassType(passType, speed, { id: privateId, password: authedPassword });
   };
 
   const copyHash = (hash: string) => {
@@ -199,14 +201,31 @@ export default function PrivateLeaguePage() {
           </div>
           {!user?.walletAddress ? (
             <p className="text-white/50 text-sm text-center">Log in to take a seat.</p>
-          ) : paidPasses > 0 ? (
-            <button
-              onClick={handleJoin}
-              disabled={joiningLobby || alreadySeated}
-              className="w-full rounded-xl bg-[#fbbf24] text-black font-semibold py-3 disabled:opacity-40 transition-opacity"
-            >
-              Enter with a Draft Pass · {paidPasses} available
-            </button>
+          ) : paidPasses > 0 || freePasses > 0 ? (
+            <div className="space-y-2">
+              {paidPasses > 0 && (
+                <button
+                  onClick={() => handleJoin('paid')}
+                  disabled={joiningLobby || alreadySeated}
+                  className="w-full rounded-xl bg-[#fbbf24] text-black font-semibold py-3 disabled:opacity-40 transition-opacity"
+                >
+                  Enter with a Draft Pass · {paidPasses} available
+                </button>
+              )}
+              {freePasses > 0 && (
+                <button
+                  onClick={() => handleJoin('free')}
+                  disabled={joiningLobby || alreadySeated}
+                  className={`w-full rounded-xl font-semibold py-3 disabled:opacity-40 transition-opacity ${
+                    paidPasses > 0
+                      ? 'border border-green-500/50 text-green-400'
+                      : 'bg-[#fbbf24] text-black'
+                  }`}
+                >
+                  Enter with a Free Draft Pass · {freePasses} available
+                </button>
+              )}
+            </div>
           ) : (
             <Link
               href="/buy-drafts"
