@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrivy } from '@privy-io/react-auth';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { getPrivateLeagueInfo, type PrivateLeagueInfo } from '@/lib/api/leagues';
@@ -45,7 +46,13 @@ export default function PrivateLeaguePage() {
   const privateId = String(params?.id ?? '').toLowerCase();
 
   const { user } = useAuth();
+  const { ready: privyReady, authenticated: privyAuthed, getAccessToken } = usePrivy();
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
+  // Commissioner? (league AdminWallets or SBS site admin) → show the admin
+  // link. Tjbonitz "lost" the admin page 8/15 because it was linked nowhere.
+  const [isCommissioner, setIsCommissioner] = useState(false);
 
   // '' = not yet authed. Only a password the server ACCEPTED lands here.
   const [authedPassword, setAuthedPassword] = useState('');
@@ -93,6 +100,25 @@ export default function PrivateLeaguePage() {
   }, [privateId]);
   const tryPasswordRef = useRef(tryPassword);
   useEffect(() => { tryPasswordRef.current = tryPassword; }, [tryPassword]);
+
+  // One cheap auth-only probe per (login, league). Scalar deps only (Rule #0);
+  // the token getter lives in a ref. A 401/403 is the normal "not you" answer.
+  useEffect(() => {
+    if (!privyReady || !privyAuthed || !privateId) { setIsCommissioner(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current();
+        if (!token) return;
+        const res = await fetch(`/api/private-league/${privateId}/admin?probe=1`, {
+          cache: 'no-store',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelled) setIsCommissioner(res.ok);
+      } catch { /* not a commissioner as far as this page can tell */ }
+    })();
+    return () => { cancelled = true; };
+  }, [privyReady, privyAuthed, privateId]);
 
   // Auto-unlock with a stored password.
   useEffect(() => {
@@ -188,6 +214,14 @@ export default function PrivateLeaguePage() {
             {speed === 'fast' ? 'Fast drafts · 30s per pick · ~30 min' : 'Slow drafts · 8h per pick'} · 10 seats
             {info ? ` · ${info.draftsFilled} drafted` : ''}
           </p>
+          {isCommissioner && (
+            <Link
+              href={`/private/${privateId}/admin`}
+              className="inline-flex items-center gap-1.5 mt-3 rounded-lg border border-[#fbbf24]/40 bg-[#fbbf24]/10 px-3 py-1.5 text-[#fbbf24] text-xs font-semibold hover:bg-[#fbbf24]/20 transition-colors"
+            >
+              Commissioner tools →
+            </Link>
+          )}
         </header>
 
         {/* Current draft + join */}
