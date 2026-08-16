@@ -228,6 +228,11 @@ func noteDbResult(err error) {
 	}
 }
 
+// OnFirestoreClientRecycled, when set (main.go), receives every replacement
+// client so long-lived holders (the batchproof manager) stay on a live
+// connection. Nil until wired.
+var OnFirestoreClientRecycled func(*firestore.Client)
+
 // recycleFirestoreClient swaps in a fresh Firestore client over a new gRPC
 // channel. Failure to build the replacement is logged and the old client kept
 // — worse than healing, better than crashing.
@@ -250,6 +255,13 @@ func recycleFirestoreClient() {
 	}
 	old := Db.Client
 	Db.Client = newClient
+	// Keep the batchproof/lane manager on the LIVE client — it captured the
+	// old pointer at boot and would otherwise hold a closed connection forever
+	// (the Aug 2026 lane-rollover incidents). Late import via hook to avoid a
+	// package cycle; set in main.go after manager init.
+	if OnFirestoreClientRecycled != nil {
+		OnFirestoreClientRecycled(newClient)
+	}
 	lastRecycle = time.Now()
 	fmt.Printf(`{"severity":"WARNING","event":"firestore_client_recycled","failsInWindow":%d}`+"\n", recycleFailsInWindow)
 	go func(c *firestore.Client) {
