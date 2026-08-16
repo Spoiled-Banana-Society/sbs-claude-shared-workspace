@@ -29,7 +29,10 @@ export type AdminAction =
   | 'admin-bulk-grant'
   | 'import-winners'
   | 'mark-paid-batch'
-  | 'withdraw-contract-usdc';
+  | 'withdraw-contract-usdc'
+  | 'private-league-bump'
+  | 'private-league-password'
+  | 'private-league-api-grant';
 
 export interface AdminActionRecord {
   actor: string;          // wallet address of admin who performed action
