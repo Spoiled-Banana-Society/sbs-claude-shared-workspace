@@ -398,8 +398,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                     {/* Full front info everywhere (Boris 2026-08-09): every card
                         carries the same description the /promos page card shows.
                         First-purchase keeps its bespoke fixed lines above. */}
-                    {promo.type !== 'first-purchase' && promo.description && (
-                      <p className={`mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] ${promo.type === 'banana-vault' ? '' : 'line-clamp-2'}`}>
+                    {promo.type !== 'first-purchase' && promo.type !== 'banana-vault' && promo.description && (
+                      <p className="mt-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a] line-clamp-2">
                         {promo.description}
                       </p>
                     )}
@@ -498,7 +498,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         const pending = bv?.unrevealed ?? 0;
                         const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
                         return (
-                          <div className="-mt-2">
+                          <div className="-mt-1">
+                            <p className="mb-1.5 px-1 text-center text-[10px] leading-snug text-[#4a4a4a]">
+                              Your secret 4-slot combo — click all 4 tumblers, any order.
+                            </p>
                             <div className="flex justify-center gap-1.5 mb-1">
                               {Array.from({ length: 4 }, (_, i) => {
                                 const num = revealed[i];
@@ -535,7 +538,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               </div>
                             )}
                             <p className="text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
-                              Free + paid count · First 5 to click 2 with paid drafts: 2 Free Spins
+                              Free + paid count · First 5 to click 2 with paid: 2 Free Spins
                             </p>
                           </div>
                         );

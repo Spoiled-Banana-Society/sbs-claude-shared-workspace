@@ -136,8 +136,8 @@ export function PromosSidebar({
               {/* Full front info everywhere (Boris 2026-08-09): the sidebar card
                   carries the SAME description the /promos page card shows — not
                   title-only. First-purchase keeps its bespoke fixed lines above. */}
-              {promo.type !== 'first-purchase' && promo.description && (
-                <p className={`mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] ${promo.type === 'banana-vault' ? '' : 'line-clamp-2'}`}>
+              {promo.type !== 'first-purchase' && promo.type !== 'banana-vault' && promo.description && (
+                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-2">
                   {promo.description}
                 </p>
               )}
@@ -183,7 +183,7 @@ export function PromosSidebar({
                     ONE standard size (15px bold, Boris 2026-08-09: countdowns
                     same size + clearly visible on every surface). Chase/Banana
                     Draw render theirs above with the same style. */}
-                {!isChase && promo.type !== 'banana-draw' && promo.timerEndTime && (
+                {!isChase && promo.type !== 'banana-draw' && promo.type !== 'banana-vault' && promo.timerEndTime && (
                   <div className="mt-3 mb-2 flex justify-center">
                     <span className="text-[15px] font-bold tabular-nums text-[#1d1d1f]">{formatChaseTime(promo.timerEndTime)}</span>
                   </div>
@@ -220,7 +220,10 @@ export function PromosSidebar({
                   const pending = bv?.unrevealed ?? 0;
                   const claimable = !!bv?.seatClaimable || !!bv?.spinsClaimable;
                   return (
-                    <div className="mt-3 mb-2">
+                    <div className="mt-2 mb-2">
+                      <p className="mb-1.5 text-center text-[11px] leading-snug text-[#4a4a4a]">
+                        Your secret 4-slot combo — click all 4 tumblers, any order.
+                      </p>
                       <div className="flex justify-center gap-1.5 mb-1.5">
                         {Array.from({ length: 4 }, (_, i) => {
                           const num = revealed[i];
@@ -251,8 +254,13 @@ export function PromosSidebar({
                           </>
                         )}
                       </div>
+                      {promo.timerEndTime && (
+                        <div className="mt-1 flex justify-center text-[15px] font-bold tabular-nums text-[#1d1d1f]">
+                          {formatChaseTime(promo.timerEndTime)}
+                        </div>
+                      )}
                       <p className="mt-1 text-center text-[9px] leading-snug text-[#7a7a7e] px-1">
-                        Free + paid count · First 5 to click 2 with paid drafts: 2 Free Spins
+                        Free + paid count · First 5 to click 2 with paid: 2 Free Spins
                       </p>
                     </div>
                   );
