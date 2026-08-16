@@ -31,7 +31,8 @@ export type AdminAction =
   | 'mark-paid-batch'
   | 'withdraw-contract-usdc'
   | 'private-league-bump'
-  | 'private-league-password';
+  | 'private-league-password'
+  | 'private-league-api-grant';
 
 export interface AdminActionRecord {
   actor: string;          // wallet address of admin who performed action

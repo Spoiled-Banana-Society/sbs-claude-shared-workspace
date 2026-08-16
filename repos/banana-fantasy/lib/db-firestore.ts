@@ -692,6 +692,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       (promo.modalContent as Record<string, unknown>).bananaVault = {
         open,
         vaultNumber,
+        paidClicks: ((mc.vaultNumber as number | undefined) === vaultNumber
+          ? ((mc.vaultClicks as Array<{ paid?: boolean }> | undefined) || []) : []).filter((c) => c.paid).length,
+        bountiesLeft: Math.max(0, 5 - spinWinners.filter((w) => w.vaultNumber === vaultNumber).length),
         seatsLeft: Math.max(0, seatsCap - seatWinners.filter((w) => w.vaultNumber === vaultNumber).length),
         revealedSlots: clicksRaw.filter((c) => c.revealed).map((c) => c.slot).sort((a, b) => a - b),
         unrevealed: clicksRaw.filter((c) => !c.revealed).length,

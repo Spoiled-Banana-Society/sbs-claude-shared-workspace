@@ -839,6 +839,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     type VaultPayload = {
       open?: boolean; seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number;
       seatWon?: boolean; seatClaimable?: boolean; spinsClaimable?: boolean;
+      paidClicks?: number; bountiesLeft?: number;
     };
     const bv = (promo.modalContent as { bananaVault?: VaultPayload } | undefined)?.bananaVault;
     if (!bv) return null;
@@ -941,6 +942,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <p className="text-center text-xs text-text-secondary">
           <span className="font-bold text-red-400">{bv.seatsLeft ?? 0} Jackpot seats left</span> in this vault
         </p>
+        {/* Personal bounty status (Boris 8/15): users can't otherwise tell
+            which of their clicks were paid — show the meter while the race
+            is live and they haven't already won it. */}
+        {(bv.bountiesLeft ?? 0) > 0 && !bv.spinsClaimable && (bv.paidClicks ?? 0) < 2 && (
+          <p className="text-center text-xs text-banana font-semibold">
+            🎰 Bounty: {bv.paidClicks ?? 0}/2 paid clicks — first 5 win 2 Free Spins ({bv.bountiesLeft} left)
+          </p>
+        )}
         {bv.spinsClaimable && !vaultClaimedKinds.spins && (
           <button
             type="button"
