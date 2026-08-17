@@ -62,9 +62,14 @@ async function rerankToFollowAdp({ db, dryRun = false } = {}) {
   if (universe.length === 0) {
     return { skipped: "no seed rankings; rerank not run" };
   }
+  // Prefer ADPExact (float, written by updateADP alongside the rounded ADP)
+  // so fringe players that round to the same integer still order by how
+  // often / how high they're actually taken; fall back to ADP.
   const adpOf = (pid) => {
     const p = players[pid];
-    const a = p && (p.ADP != null ? p.ADP : p.adp);
+    if (!p) return 1e9;
+    if (typeof p.ADPExact === "number") return p.ADPExact;
+    const a = p.ADP != null ? p.ADP : p.adp;
     return typeof a === "number" ? a : 1e9;
   };
   const adpOrder = [...universe].sort((a, b) =>
@@ -119,7 +124,18 @@ async function rerankToFollowAdp({ db, dryRun = false } = {}) {
         // First encounter: decide by timestamp.
         const cT = snap.createTime ? snap.createTime.toMillis() : 0;
         const uT = snap.updateTime ? snap.updateTime.toMillis() : 0;
-        if ((uT - cT) > EDIT_EPS_MS) { // human saved after auto-create → customized
+        if ((uT - cT) > EDIT_EPS_MS) { // human saved after auto-create...
+          // ...but a save whose order is EXACTLY current live ADP is the user
+          // hitting Save on the displayed default, not a customization (the
+          // rankings page shows ADP order for untracked users, so a no-op save
+          // persists it verbatim). Freezing them breaks "default follows ADP"
+          // forever with no visible cause. Only a save that DIFFERS from
+          // current ADP is treated as a real edit.
+          if (curKey === adpKey) {
+            rep.noopSaveRetracked = (rep.noopSaveRetracked || 0) + 1;
+            if (!dryRun) { batch.set(ref, { Ranking: adpRanking, _lastWrittenOrder: adpKey }, { merge: true }); bc++; }
+            continue;
+          }
           rep.markedCustomized++;
           if (!dryRun) { batch.set(ref, { _customized: true }, { merge: true }); bc++; }
           continue;
@@ -131,7 +147,16 @@ async function rerankToFollowAdp({ db, dryRun = false } = {}) {
       }
 
       // Managed before (tracking): detect edits via our own marker, not timestamps.
-      if (curKey !== data._lastWrittenOrder) { // user edited since we last wrote
+      if (curKey !== data._lastWrittenOrder) { // doc changed since we last wrote...
+        // Same no-op-save guard as first encounter: if the changed order equals
+        // CURRENT live ADP, the user just saved the displayed default (ADP had
+        // moved since our last write, so it differs from _lastWrittenOrder
+        // without being an edit). Keep them tracking instead of freezing.
+        if (curKey === adpKey) {
+          rep.noopSaveRetracked = (rep.noopSaveRetracked || 0) + 1;
+          if (!dryRun) { batch.set(ref, { Ranking: adpRanking, _lastWrittenOrder: adpKey }, { merge: true }); bc++; }
+          continue;
+        }
         rep.markedCustomized++;
         if (!dryRun) { batch.set(ref, { _customized: true }, { merge: true }); bc++; }
         continue;
