@@ -12,8 +12,11 @@ const admin = require("firebase-admin");
  *      made picks in its playerState (staging never sets the IsLocked flag).
  *   3. Read `drafts/{id}/state/playerState` — a map playerId -> { PickNum }.
  *      Skip PickNum === 0 (player wasn't drafted).
- *   4. Average each `${team}-${position}` pick number, round it, and write into
- *      the `playerStats2024/playerMap` doc at `.Players[playerId].ADP`.
+ *   4. Average each `${team}-${position}` pick number over ALL counted drafts
+ *      (undrafted in a draft = UNDRAFTED_PICK_VALUE), round it, and write into
+ *      the season `playerMap` doc at `.Players[playerId].ADP` (+ ADPExact
+ *      float for ordering, ADPDrafted / ADPDrafts counts).
+ *   Drafts in EXCLUDED_DRAFT_IDS / adpConfig/exclusions never count.
  *
  * Only difference from prod: prod's season collection is `playerStats2025`;
  * staging's is `playerStats2024` (SEASON_DOC below). The Go draft API reads
@@ -48,6 +51,24 @@ const DRAFT_PICK_COUNT = 150;
 // shape it. Richard's call — count from the very next draft onward.
 const ADP_CUTOFF = new Date("2026-06-23T12:10:00Z");
 
+// Drafts whose picks must NEVER shape ADP (bad-faith / troll drafting).
+// 2026-08-16: BBB #419 (2026-slow-draft-40) — one owner (0xed3edfd8…,
+// Banana10783) took a slate of RB2/WR2 backups 60-100 picks early, dragging
+// once-drafted players' ADP way up. Richard: exclude the whole draft.
+// Additional ids can be added WITHOUT a redeploy via Firestore doc
+// `adpConfig/exclusions` → { draftIds: string[] } (merged with this list).
+const EXCLUDED_DRAFT_IDS = [
+  "2026-slow-draft-40",
+];
+const EXCLUSIONS_DOC = { collection: "adpConfig", doc: "exclusions" };
+
+// A player who was NOT drafted in a counted draft went "after the last pick".
+// Every counted draft contributes one data point per player: the pick number
+// if drafted, else this. That way a player drafted once at pick 56 across 700
+// drafts lands at ~151, not 56 (Richard, 2026-08-16: fringe players picked
+// once or twice were getting bumped way up the board).
+const UNDRAFTED_PICK_VALUE = DRAFT_PICK_COUNT + 1;
+
 // Same team / position keys prod uses (stat.js).
 const TEAMS = [
   "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
@@ -62,9 +83,22 @@ async function updateADP({ db } = {}) {
 
   // 1. Every draft doc id, minus the tracker.
   const draftDocs = await db.collection("drafts").listDocuments();
+  const excluded = new Set(EXCLUDED_DRAFT_IDS);
+  try {
+    const exSnap = await db.collection(EXCLUSIONS_DOC.collection).doc(EXCLUSIONS_DOC.doc).get();
+    const ids = exSnap.exists ? (exSnap.data() || {}).draftIds : null;
+    if (Array.isArray(ids)) ids.forEach((id) => { if (typeof id === "string" && id) excluded.add(id); });
+  } catch (err) {
+    console.error("[updateADP] could not read exclusions doc (using code list only):", err);
+  }
+  let draftsExcluded = 0;
   const leagueIds = draftDocs
       .map((d) => d.id)
-      .filter((id) => id !== "draftTracker");
+      .filter((id) => id !== "draftTracker")
+      .filter((id) => {
+        if (excluded.has(id)) { draftsExcluded += 1; return false; }
+        return true;
+      });
 
   // 2 + 3. Collect pick numbers per player from each COMPLETED draft. A draft
   // is completed when it has the full 150 made picks (see DRAFT_PICK_COUNT) —
@@ -128,18 +162,29 @@ async function updateADP({ db } = {}) {
   let playersUpdated = 0;
   let playersMissing = 0;
 
-  for (const team of TEAMS) {
-    for (const position of POSITIONS) {
-      const playerId = `${team}-${position}`;
-      const picks = pickMap[playerId];
-      if (!picks || picks.length === 0) continue; // never drafted → leave as-is
-      if (!statsMap.Players[playerId]) {
-        playersMissing += 1; // computed key not in the season map; skip safely
-        continue;
+  // No counted drafts yet → nothing to say; leave the seed untouched.
+  if (draftsCounted > 0) {
+    for (const team of TEAMS) {
+      for (const position of POSITIONS) {
+        const playerId = `${team}-${position}`;
+        if (!statsMap.Players[playerId]) {
+          playersMissing += 1; // computed key not in the season map; skip safely
+          continue;
+        }
+        const picks = pickMap[playerId] || [];
+        // Every counted draft is a data point: real pick number when drafted,
+        // UNDRAFTED_PICK_VALUE when not. Never-drafted players therefore sit at
+        // UNDRAFTED_PICK_VALUE instead of a stale seed number.
+        const sum = picks.reduce((a, b) => a + b, 0) +
+          (draftsCounted - picks.length) * UNDRAFTED_PICK_VALUE;
+        const exact = sum / draftsCounted;
+        const p = statsMap.Players[playerId];
+        p.ADP = Math.round(exact); // integer: the UI renders this raw
+        p.ADPExact = Math.round(exact * 1000) / 1000; // ordering / tie-break
+        p.ADPDrafted = picks.length; // times drafted in counted drafts
+        p.ADPDrafts = draftsCounted; // counted drafts (denominator)
+        playersUpdated += 1;
       }
-      const sum = picks.reduce((a, b) => a + b, 0);
-      statsMap.Players[playerId].ADP = Math.round(sum / picks.length);
-      playersUpdated += 1;
     }
   }
 
@@ -157,7 +202,7 @@ async function updateADP({ db } = {}) {
     rerank = { error: String(err && err.message ? err.message : err) };
   }
 
-  return { playersUpdated, draftsCounted, draftsSkipped, draftsBeforeCutoff, playersMissing, rerank };
+  return { playersUpdated, draftsCounted, draftsSkipped, draftsBeforeCutoff, draftsExcluded, playersMissing, rerank };
 }
 
 module.exports = { updateADP };

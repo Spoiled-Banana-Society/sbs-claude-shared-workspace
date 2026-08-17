@@ -1,0 +1,10 @@
+import admin from 'firebase-admin';import {readFileSync} from 'fs';
+const sa=JSON.parse(readFileSync(process.env.SA_PATH,'utf8'));
+admin.initializeApp({credential:admin.credential.cert(sa)});const db=admin.firestore();
+const P=(await db.doc('playerStats2026/playerMap').get()).data().Players;
+for(const id of ['LV-WR2','CIN-RB2','MIA-WR2','IND-RB2','TEN-RB2','NYJ-WR2','GB-RB2','NE-RB2','LAR-WR1','DET-RB1']) console.log(id, JSON.stringify({ADP:P[id].ADP,ADPExact:P[id].ADPExact,ADPDrafted:P[id].ADPDrafted,ADPDrafts:P[id].ADPDrafts}));
+const R=(await db.doc('playerStats2026/rankings').get()).data().Ranking.sort((a,b)=>a.rank-b.rank);
+console.log('rank of', ['LV-WR2','CIN-RB2','MIA-WR2','IND-RB2','NYJ-WR2'].map(id=>id+'='+R.find(r=>r.playerId===id)?.rank).join(' '));
+console.log('bottom 10:', R.slice(-10).map(r=>r.playerId+'#'+r.rank).join(' '));
+console.log('ranks 140-150:', R.slice(139,150).map(r=>r.playerId+'#'+r.rank+'('+P[r.playerId].ADPExact+')').join(' '));
+process.exit(0);

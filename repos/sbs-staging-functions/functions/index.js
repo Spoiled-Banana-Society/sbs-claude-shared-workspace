@@ -912,3 +912,23 @@ exports.scheduledUpdateRosters = functions
     console.log("[scheduledUpdateRosters] complete", JSON.stringify(res));
     return null;
   });
+
+/**
+ * scheduledUpdateADP — hourly ADP recompute + rerank-to-follow-ADP sweep.
+ * Export restored 2026-07-27 (same drift pattern as scheduledUpdateRosters
+ * above: the deployed cron ran a 6/28 bundle whose export this index.js had
+ * since lost — a filtered deploy therefore couldn't match it). Restored so
+ * the deployed cron picks up the no-op-save guard in rerankRankings.js
+ * (a save identical to current live ADP order no longer freezes the user
+ * as _customized). Block copied verbatim from the deployed 6/28 bundle.
+ */
+const { updateADP } = require("./updateADP");
+exports.scheduledUpdateADP = functions
+  .runWith({ timeoutSeconds: 500, memory: "512MB" })
+  .pubsub.schedule("every 60 minutes")
+  .timeZone("America/New_York")
+  .onRun(async () => {
+    const res = await updateADP({ db: admin.firestore() });
+    console.log("[scheduledUpdateADP] complete", JSON.stringify(res));
+    return null;
+  });
