@@ -91,6 +91,12 @@ function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 
 const FINAL_PICK_RECHECK_MS = 30_000;
 const finalPickCache = new Map<string, { at: number; pending: boolean }>();
 
+// 3s sync sweep shape (see syncLiveDrafts): rows in flight at once, and when
+// each row was last swept so the next sweep starts from the stalest one.
+// Module-level so the order survives effect re-runs (wallet/user changes).
+const SYNC_CONCURRENCY = 3;
+const lastSyncedAt = new Map<string, number>();
+
 async function finalPickStillPending(draftId: string, totalPicks: number): Promise<boolean> {
   const hit = finalPickCache.get(draftId);
   const now = Date.now();
@@ -909,10 +915,31 @@ export function useDraftingPageState() {
         if (!existing) return;
 
         // Reject a STALE reused-id node: trust this snapshot only if its start
-        // time matches the row's known draftStartTime. Without a known start we
-        // can't verify it, so skip (the poll still drives the row).
+        // time matches the row's known draftStartTime.
         const snapStartMs = typeof info.draftStartTime === 'number' ? info.draftStartTime * 1000 : 0;
-        if (!existing.draftStartTimeMs || !snapStartMs || Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+        if (!snapStartMs) return;
+        let adoptStartMs: number | undefined;
+        if (existing.draftStartTimeMs) {
+          if (Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+        } else {
+          // The row never learned its server start (it was added AFTER the fill:
+          // server hydration, the token poll on a fresh device, a store wipe…).
+          // Until 2026-08-17 we bailed here forever, so such a row was driven
+          // ONLY by the sequential 3s poll below — which on a 50-row mobile
+          // lobby rarely reached it during a 10-20s visit. The row sat on a
+          // stale "N picks away" and never flipped to "Pick", buried mid-list
+          // for hours (vertig0, BBB #611: on the clock 1h25m across four visits
+          // without ever seeing it; another draft surfaced at the 5-hour mark).
+          // Adopt the snapshot's start when the row is already confirmed
+          // drafting and the start is in the past; the monotonic pick guard
+          // below still rejects anything behind what we show. A reused-slot
+          // node for a NEW filling draft never reaches here (pickNumber < 1
+          // returns above), and the token poll's leave-sync drops rows whose
+          // league the wallet no longer holds.
+          const confirmedDrafting = existing.status === 'drafting' || existing.phase === 'drafting';
+          if (!confirmedDrafting || snapStartMs > Date.now()) return;
+          adoptStartMs = snapStartMs;
+        }
 
         // Monotonic: ignore a snapshot that's behind what we already show.
         if (typeof existing.enginePickNumber === 'number' && pickNumber < existing.enginePickNumber) return;
@@ -932,6 +959,7 @@ export function useDraftingPageState() {
         const patch: Partial<DraftState> = {
           enginePickNumber: pickNumber,
           isYourTurn,
+          ...(adoptStartMs ? { draftStartTimeMs: adoptStartMs } : {}),
         };
         // Only set "N picks away" when we can compute it (your turn → 0, or a
         // known seat). If the seat hasn't been cached by the poll yet, leave
@@ -1007,7 +1035,9 @@ export function useDraftingPageState() {
           && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
       );
 
-      for (const draft of liveDraftsToSync) {
+      // One row per call so the sweep can run a few rows at a time. Every
+      // `return` here used to be a `continue` in the old sequential for-loop.
+      const syncOne = async (draft: Draft): Promise<void> => {
         if (cancelled) return;
 
         // Always fetch state — completion detection must NEVER be skipped.
@@ -1020,7 +1050,7 @@ export function useDraftingPageState() {
           info = await draftApi.getDraftInfo(draft.id);
         } catch (err) {
           console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
-          continue;
+          return;
         }
         if (cancelled) return;
 
@@ -1058,12 +1088,12 @@ export function useDraftingPageState() {
               try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
               return next;
             });
-            continue;
+            return;
           }
         }
 
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) return;
 
         try {
           const fresh = draftStore.getDraft(draft.id) || draft;
@@ -1117,12 +1147,14 @@ export function useDraftingPageState() {
             const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
               computeTurnsFromServer(info, draft.liveWalletAddress!);
 
-            const totalPicks = (info.draftOrder?.length || 10) * 15;
-            const isCompleted = info.pickNumber >= totalPicks;
-            if (isCompleted) {
-              draftStore.removeDraft(draft.id);
-              continue;
-            }
+            // Completion removal lives ONLY in the early exit above, which
+            // consults finalPickStillPending() and writes the completed-drafts
+            // ledger. A second unguarded `pickNumber >= totalPicks` removal here
+            // defeated that guard for the person on the clock for the FINAL
+            // pick (Go clamps pickNumber at totalPicks): the early exit kept
+            // the row, this removed it, the active-token un-heal re-added it —
+            // a 1-3s add/remove flicker of the "Pick Now" row for the whole
+            // 8-hour window (FC, R15 P150, 2026-08-10). Don't re-add it.
 
             // /state/info doesn't carry the current pick's absolute
             // end-timestamp, so fetch it from league-players which proxies
@@ -1172,6 +1204,11 @@ export function useDraftingPageState() {
               // Cache the user's seat so the realtime push can compute "N picks
               // away" instantly without re-fetching the draft order.
               ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
+              // Heal the server start on rows that were added after the fill —
+              // the RTDB push above verifies its snapshot against this and,
+              // before 2026-08-17, a row without it was never push-driven.
+              ...(!fresh.draftStartTimeMs && info.draftStartTime
+                ? { draftStartTimeMs: info.draftStartTime * 1000 } : {}),
               ...(pollPickStale ? {} : {
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
@@ -1256,16 +1293,44 @@ export function useDraftingPageState() {
         } catch (err) {
           console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
         }
-      }
+      };
+
+      // Sweep order + shape (2026-08-17): the old loop walked the store in
+      // insertion order, strictly one row at a time (2 round-trips each), and
+      // a fresh sweep started every 3s with no overlap guard. On a 50-row
+      // lobby (vertig0: 51 live slow drafts) a full pass took 25-50s on
+      // mobile, so a 10-20s visit only ever refreshed the head of the list —
+      // the tail rows never learned they were on the clock. Now: stalest row
+      // first (so every visit makes progress across the whole list), a few
+      // rows in flight at once, and at most one sweep running.
+      const ordered = [...liveDraftsToSync].sort(
+        (a, b) => (lastSyncedAt.get(a.id) ?? 0) - (lastSyncedAt.get(b.id) ?? 0),
+      );
+      let cursor = 0;
+      const worker = async () => {
+        while (!cancelled && cursor < ordered.length) {
+          const draft = ordered[cursor++];
+          lastSyncedAt.set(draft.id, Date.now());
+          await syncOne(draft);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(SYNC_CONCURRENCY, ordered.length) }, worker));
     };
 
-    void syncLiveDrafts();
+    let sweepInFlight = false;
+    const runSweep = () => {
+      if (sweepInFlight) return;
+      sweepInFlight = true;
+      void syncLiveDrafts().finally(() => { sweepInFlight = false; });
+    };
+
+    runSweep();
 
     let focusTimeout: ReturnType<typeof setTimeout> | null = null;
     const onFocus = () => {
       if (focusTimeout) clearTimeout(focusTimeout);
       focusTimeout = setTimeout(() => {
-        void syncLiveDrafts();
+        runSweep();
       }, 500);
     };
 
@@ -1275,7 +1340,7 @@ export function useDraftingPageState() {
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
     intervalId = setInterval(() => {
-      void syncLiveDrafts();
+      runSweep();
     }, 3000);
 
     return () => {
