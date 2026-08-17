@@ -583,10 +583,15 @@ export function useDraftingPageState() {
         // Fetch current player count + drafting-state for each active draft.
         // numPlayers === 10 means the backend has created the draft state
         // (via /state/info fallback), so the draft has actually started.
+        // `wallet` makes the route also return the SERVER auto-pick flag for
+        // drafting rows (Firestore sortOrders.AutoDraft) so the ✈️ badge on
+        // My Drafts reflects toggles made on other devices and the server's
+        // own missed-picks promotion — not just this device's draftStore.
+        const walletQ = `&wallet=${encodeURIComponent(user!.walletAddress!.toLowerCase())}`;
         const stateResults = await Promise.all(
-          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number }> => {
+          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number; autoDraft?: boolean }> => {
             try {
-              const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}`);
+              const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}${walletQ}`);
               if (!res.ok) return { players: 1, isDrafting: false };
               const data = await res.json();
               const numPlayers = Number(data.numPlayers) || 0;
@@ -595,7 +600,8 @@ export function useDraftingPageState() {
               // very first load, even on a device that never witnessed the fill.
               const dst = typeof data.draftStartTime === 'number' && data.draftStartTime > 0
                 ? data.draftStartTime * 1000 : undefined;
-              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst };
+              const autoDraft = typeof data.autoDraft === 'boolean' ? data.autoDraft : undefined;
+              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst, autoDraft };
             } catch {
               return { players: 1, isDrafting: false };
             }
@@ -604,7 +610,7 @@ export function useDraftingPageState() {
         if (cancelled) return;
 
         const mapped: Draft[] = activeTokens.map((t, i) => {
-          const { players, isDrafting, draftStartTimeMs } = stateResults[i];
+          const { players, isDrafting, draftStartTimeMs, autoDraft } = stateResults[i];
           const draftSpeed: 'fast' | 'slow' = t.leagueId.includes('-slow-') ? 'slow' : 'fast';
           // Type value is set once the draft is full; the DISPLAY gating ("show
           // the type vs 'Revealing…'") is owned by getLiveState's phase + DraftRow
@@ -631,6 +637,9 @@ export function useDraftingPageState() {
             maxPlayers: 10,
             lastUpdated: Date.now(),
             cardId: t.cardId,
+            // Server-authoritative; undefined (filling / read failed) leaves
+            // whatever the draft room wrote locally untouched.
+            ...(autoDraft !== undefined ? { airplaneMode: autoDraft } : {}),
           };
         });
 
@@ -697,6 +706,9 @@ export function useDraftingPageState() {
           // Go API leave endpoint can't match (it requires ownerId AND
           // tokenId) and silently 500s — phantom drafts that won't leave.
           const needsCardId = !existing.cardId && !!d.cardId;
+          // Server auto-pick flag wins over the local (room-written) one when
+          // they disagree — the server is what actually makes the pick.
+          const needsAirplane = d.airplaneMode !== undefined && d.airplaneMode !== !!existing.airplaneMode;
           if (!isConfirmedDrafting) {
             draftStore.updateDraft(d.id, {
               status: d.status,
@@ -710,6 +722,7 @@ export function useDraftingPageState() {
               ...(d.draftStartTimeMs != null ? { draftStartTimeMs: d.draftStartTimeMs } : {}),
               ...(needsWalletStamp ? { liveWalletAddress: currentWallet } : {}),
               ...(needsCardId ? { cardId: d.cardId } : {}),
+              ...(needsAirplane ? { airplaneMode: d.airplaneMode } : {}),
             });
           } else {
             // For rows already drafting, we still heal speed/type if unset
@@ -719,6 +732,7 @@ export function useDraftingPageState() {
             if (existing.type == null && d.type != null) patch.type = d.type;
             if (needsWalletStamp) patch.liveWalletAddress = currentWallet;
             if (needsCardId) patch.cardId = d.cardId;
+            if (needsAirplane) patch.airplaneMode = d.airplaneMode;
             if (Object.keys(patch).length > 0) draftStore.updateDraft(d.id, patch);
           }
         }
@@ -1561,7 +1575,8 @@ export function useDraftingPageState() {
             type: qd.type,
             draftSpeed: qd.draftSpeed,
             players: Math.max(storeEntry.players || 0, qd.players || 0),
-            airplaneMode: undefined,
+            // Keep the store entry's airplaneMode (spread above) — DraftRow
+            // already limits the ✈️ on wheel rows to status === 'drafting'.
           };
         }
       }

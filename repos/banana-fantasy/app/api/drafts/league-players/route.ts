@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminApp } from '@/lib/firebaseAdmin';
+import { getAdminApp, getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 
 const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -23,7 +23,7 @@ function normalizeDraftType(v: unknown): 'pro' | 'hof' | 'jackpot' | undefined {
 }
 
 /**
- * GET /api/drafts/league-players?draftId=xxx
+ * GET /api/drafts/league-players?draftId=xxx[&wallet=0x…]
  *
  * Returns the current player count + real-time pick timer info for a draft.
  * Primary source is Firebase RTDB `drafts/{draftId}/realTimeDraftInfo` which
@@ -40,7 +40,19 @@ function normalizeDraftType(v: unknown): 'pro' | 'hof' | 'jackpot' | undefined {
  *
  * Response:
  *   { numPlayers: number, pickEndTime?: number, pickLength?: number,
- *     currentDrafter?: string, currentPickNumber?: number }
+ *     currentDrafter?: string, currentPickNumber?: number,
+ *     autoDraft?: boolean }
+ *
+ * `autoDraft` (only when `wallet` is passed AND the draft is drafting) is the
+ * SERVER's auto-pick flag for that wallet — Firestore
+ * `drafts/{id}/state/sortOrders/{wallet}/sort.AutoDraft`, the same field the
+ * draft room's GET /preferences reads. The My Drafts ✈️ badge used to come
+ * only from this device's draftStore (written by the draft room), so it never
+ * showed for a toggle made on another device, nor for the server's own
+ * 2-missed-picks promotion — the one case a user most needs to notice
+ * (MrMcNasty, Discord 2026-08-17: "would be cool if you can see on this
+ * screen if any of your drafts are on auto"). Gated to drafting so filling
+ * rows don't burn a Firestore read every poll.
  *
  * Returns 502 only when all sources fail with no usable signal.
  */
@@ -49,6 +61,7 @@ export async function GET(req: NextRequest) {
   if (!draftId) {
     return NextResponse.json({ error: 'Missing draftId' }, { status: 400 });
   }
+  const wallet = (req.nextUrl.searchParams.get('wallet') ?? '').trim().toLowerCase();
 
   let rtdbPlayers = 0;
   let rtdbOk = false;
@@ -140,6 +153,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read draft state' }, { status: 502 });
   }
 
+  // Step 3 — server auto-pick flag for this wallet (drafting rows only).
+  // Missing doc → undefined (client keeps whatever it has), never false, so a
+  // wallet that isn't actually seated here can't clear a real local flag.
+  let autoDraft: boolean | undefined;
+  if (wallet && /^0x[0-9a-f]{40}$/.test(wallet) && numPlayers >= 10 && isFirestoreConfigured()) {
+    try {
+      const snap = await getAdminFirestore()
+        .doc(`drafts/${draftId}/state/sortOrders/${wallet}/sort`)
+        .get();
+      const v = snap.exists ? (snap.data() as { AutoDraft?: unknown } | undefined)?.AutoDraft : undefined;
+      if (typeof v === 'boolean') autoDraft = v;
+    } catch (fsErr) {
+      console.warn('[league-players] sortOrders read failed:', fsErr);
+    }
+  }
+
   return NextResponse.json({
     numPlayers,
     players: [],
@@ -149,5 +178,6 @@ export async function GET(req: NextRequest) {
     currentPickNumber,
     draftStartTime,
     type: draftType,
+    ...(autoDraft !== undefined ? { autoDraft } : {}),
   });
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { FounderTag } from '@/components/drafting/FounderTag';
@@ -104,7 +105,7 @@ export function DraftRow({
   // the tier (JACKPOT / HOF / JACKHOF wordmark + verified badge), and these
   // rows only render under the "From the Wheel" section header, so repeating
   // the tier here printed it twice on one row (ticket-2661, 2026-08-06).
-  const wheelLabel = isSpecial ? 'Wheel Draft' : null;
+  const wheelLabel: React.ReactNode = isSpecial ? 'Wheel Draft' : null;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
     ? { ...live, displayPhase: 'draft-starting' as const, countdown: live.countdown != null ? live.countdown + 45 : null }
     : live;
@@ -117,19 +118,38 @@ export function DraftRow({
       }`}
     >
       {/* gap keeps the unfixed-width mobile columns from colliding into one
-          unreadable run ("JACKHOF Draft8hJACKHOF…") on narrow viewports. */}
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-3 sm:px-5 py-3">
-        <div className="sm:w-28 flex-shrink-0 flex items-center gap-1">
+          unreadable run ("JACKHOF Draft8hJACKHOF…") on narrow viewports.
+          gap-1 (was 1.5) on phones: 5 gaps × 2px = 10px of row width handed
+          back to the Enter button on 375px screens (ticket-2661). */}
+      <div className="flex items-center justify-between gap-1 sm:gap-2 px-3 sm:px-5 py-3">
+        {/* Mobile: this is the ONE column allowed to shrink (min-w-0 + truncate).
+            Every other column is shrink-0 and the row is overflow-hidden, so on a
+            375px phone a JACKHOF row ("Wheel Draft · 8h · JACKHOF ✓ · R14 P133 ·
+            17 picks away · Enter") ran ~15px past the edge and the ENTER button
+            was the thing that got clipped — "can barely click the jackhoff enter
+            button on app" (ticket-2661, Fantasy Couch 2026-08-16). Letting the
+            name give way keeps the button fully inside every time. */}
+        <div className="min-w-0 flex-shrink sm:w-28 sm:flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
-            <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
+            <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`} className="min-w-0">
+              <span className="block text-white/80 font-medium cursor-default whitespace-nowrap truncate text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
+            <span className="min-w-0 text-white/80 font-medium whitespace-nowrap truncate text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
           )}
+          {/* Auto-pick marker. A small monochrome plane (not the color emoji —
+              the row is already 6 columns on phones, so this must read as a
+              quiet status tick, not another badge). Server-authoritative via
+              the league-players poll (sortOrders.AutoDraft), so it shows for
+              toggles made on other devices and for the server's own
+              missed-picks promotion — MrMcNasty, Discord 2026-08-17. */}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
-            <Tooltip content="Auto-pick enabled">
-              <span className="text-xs sm:text-sm">✈️</span>
+            <Tooltip content="Auto-pick on">
+              <span className="inline-flex flex-shrink-0 text-banana/70" aria-label="Auto-pick on">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 sm:w-3.5 sm:h-3.5">
+                  <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
+                </svg>
+              </span>
             </Tooltip>
           )}
         </div>
@@ -166,10 +186,25 @@ export function DraftRow({
             // Founder row). On mobile we make room for the FOUNDER tag by hiding
             // the round/pick column instead (see below).
             <span className="flex items-center gap-1 sm:gap-1.5">
+              {resolvedType === 'jackhof' ? (
+                // The locked two-tone (JACK red / HOF gold) — a single
+                // accentColor painted the whole word Jackpot-red (Boris
+                // 2026-07-27).
+                <span className="whitespace-nowrap">
+                  {/* Phones: STACKED (JACK over HOF, 10px) — the inline 7-letter
+                      black-weight wordmark was ~40px wider than "JP"/"HOF", the
+                      exact overrun that pushed the Enter button off the right
+                      edge of a 375px row (ticket-2661). Stacked is HOF-label
+                      width and still reads both tiers in both colors. */}
+                  <span className="sm:hidden"><JackHofWordmark size={10} variant="stacked" /></span>
+                  <span className="hidden sm:inline"><JackHofWordmark size={14} /></span>
+                </span>
+              ) : (
               <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
-                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
-                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : resolvedType === 'jackhof' ? 'JACKHOF' : 'PRO'}</span>
+                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
+                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
               </span>
+              )}
               {/* Prefer the live-resolved global league number for the
                   badge URL. Falls back to the slot id (which the proof
                   page itself can resolve) while the API call is in
