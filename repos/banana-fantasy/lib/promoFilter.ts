@@ -227,6 +227,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       const midLap = (p.progressCurrent || 0) >= 1;
       const owed = (p.claimCount || 0) > 0 || p.claimable === true;
       if (!midLap && !owed) return false;
+      // Admin view (Boris 2026-08-17): retired promos regular users no longer
+      // get must not linger on the admin's own cards — no final-lap grace for
+      // admins (an owed spin still shows so nothing earned is hidden).
+      if (opts.isAdminPreview && !owed) return false;
     }
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
@@ -266,7 +270,9 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // Same survive-if-owed shape as the mint retirement above. Admin preview
     // keeps it visible for post-window inspection. (The no-stack gate vs the
     // conversion cards is a cross-promo rule — applied after this pass.)
-    if (p.type === 'buy-bonus' && !opts.isAdminPreview && !isBuyBonusActive()) {
+    // (Admin bypass removed 2026-08-17 — Boris: admins see exactly what
+    // regular users see here; the post-window inspection view is gone.)
+    if (p.type === 'buy-bonus' && !isBuyBonusActive()) {
       const owed = (p.claimCount || 0) > 0 || p.claimable === true;
       if (!owed) return false;
     }
@@ -283,7 +289,7 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // preview exempt so we can inspect the card regardless.
   const conversionCardShowing = filtered.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
   const gated = filtered.filter((p) => {
-    if (p.type !== 'buy-bonus' || opts.isAdminPreview) return true;
+    if (p.type !== 'buy-bonus') return true;
     const owed = (p.claimCount || 0) > 0 || p.claimable === true;
     if (owed) return true;
     if (conversionCardShowing) return false;

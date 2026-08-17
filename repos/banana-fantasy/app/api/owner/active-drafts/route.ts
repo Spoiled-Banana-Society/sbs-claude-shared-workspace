@@ -42,7 +42,13 @@ import { logger } from '@/lib/logger';
 
 const LEAGUE_ID_RE = /^\d{4}-(fast|slow)-draft-(\d+)$/;
 const TOTAL_PICKS = 150; // 10 players × 15 rounds — a draft at pick 150 is done.
-const RECENT_SLOTS = 30; // per speed; any live draft is within this of the frontier.
+// Per speed. Tokens whose Roster already holds all 15 picks are dropped first
+// (that draft is finished — no Go call needed), so this only bounds the
+// not-yet-finished set. Was 30 with no roster pre-filter: a whale with 37 live
+// slow drafts across 55 slots (vertig0, 2026-08-16) had his 7 oldest live
+// drafts silently outside the window.
+const RECENT_SLOTS = 60;
+const ROSTER_SLOTS = 15; // 15 rounds → a token with 15 rostered players is done.
 const GO_VERIFY_CONCURRENCY = 8;
 
 const GO_API = (
@@ -57,6 +63,7 @@ const GO_API = (
 // variants are kept only as defensive fallbacks (see passLedger.ts:47).
 interface UsedToken {
   LeagueId?: string;
+  Roster?: Record<string, unknown[] | null | undefined>;
   PassType?: string;
   CardId?: string;
   _leagueId?: string;
@@ -162,6 +169,13 @@ export async function GET(req: Request) {
       const t = (doc.data() ?? {}) as UsedToken;
       const leagueId = (t.LeagueId ?? t._leagueId ?? '').trim();
       if (!leagueId || !LEAGUE_ID_RE.test(leagueId)) continue;
+      // Finished draft: Go writes the full 15-player roster onto the token
+      // when the draft completes. Skip without a read (same test the client's
+      // token poll uses to hide completed rows).
+      const rosterCount = Object.values(t.Roster ?? {}).reduce<number>(
+        (n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0,
+      );
+      if (rosterCount >= ROSTER_SLOTS) continue;
       if (!byLeague.has(leagueId)) byLeague.set(leagueId, t);
     }
     if (byLeague.size === 0) return json({ drafts: [] });

@@ -95,11 +95,14 @@ export function PromosSidebar({
           return (
             <div
               onClick={() => onSelectPromo(promo)}
-              // min-height (not fixed h-44): the Match Your Pick card carries an
-              // extra offer line + a tall countdown + CLAIM, which overran a rigid
-              // 176px box and jammed the clock onto "guaranteed at least 1". Letting
-              // it grow keeps the mt-auto bottom-pin intact for the shorter promos.
-              className="relative rounded-[20px] p-5 h-[15.5rem] bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
+              // min-height, NOT a fixed height: the sidebar shows ONE card at a
+              // time, so a uniform floor (15.5rem, matching the carousel) keeps the
+              // short promos the same size while a copy-heavy card (Vault/ATB
+              // with tumblers + seats + timer + fine print) grows instead of
+              // spilling its last lines past the bottom edge (ticket-2661,
+              // Fantasy Couch 2026-08-16: "text is overflowing on the /draft
+              // page for the new promo"). mt-auto bottom-pin still holds.
+              className="relative rounded-[20px] p-5 min-h-[15.5rem] bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
             >
               {promo.isNew && (
                 <span className="absolute top-2 right-2 px-2 py-0.5 bg-banana text-[#1d1d1f] text-[10px] font-bold rounded-full tracking-wide">

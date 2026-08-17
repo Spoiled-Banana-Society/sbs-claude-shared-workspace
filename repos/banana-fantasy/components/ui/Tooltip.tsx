@@ -8,9 +8,12 @@ interface TooltipProps {
   children: React.ReactNode;
   position?: 'top' | 'bottom' | 'left' | 'right';
   delay?: number;
+  /** Extra classes on the trigger wrapper (e.g. `min-w-0` so a flex parent
+   *  can shrink/truncate the wrapped label instead of overflowing the row). */
+  className?: string;
 }
 
-export function Tooltip({ content, children, position = 'bottom', delay = 200 }: TooltipProps) {
+export function Tooltip({ content, children, position = 'bottom', delay = 200, className = '' }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   // null until measured — the tooltip renders invisibly for one frame so we
   // can read its real size, then snaps to place. Prevents the old "flash at
@@ -105,7 +108,7 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
         onMouseEnter={showTooltip}
         onMouseLeave={hideTooltip}
         onTouchStart={showOnTouch}
-        className="inline-block"
+        className={`inline-block ${className}`.trim()}
       >
         {children}
       </div>

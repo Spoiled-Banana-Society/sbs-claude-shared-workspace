@@ -91,6 +91,12 @@ function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 
 const FINAL_PICK_RECHECK_MS = 30_000;
 const finalPickCache = new Map<string, { at: number; pending: boolean }>();
 
+// 3s sync sweep shape (see syncLiveDrafts): rows in flight at once, and when
+// each row was last swept so the next sweep starts from the stalest one.
+// Module-level so the order survives effect re-runs (wallet/user changes).
+const SYNC_CONCURRENCY = 3;
+const lastSyncedAt = new Map<string, number>();
+
 async function finalPickStillPending(draftId: string, totalPicks: number): Promise<boolean> {
   const hit = finalPickCache.get(draftId);
   const now = Date.now();
@@ -577,10 +583,15 @@ export function useDraftingPageState() {
         // Fetch current player count + drafting-state for each active draft.
         // numPlayers === 10 means the backend has created the draft state
         // (via /state/info fallback), so the draft has actually started.
+        // `wallet` makes the route also return the SERVER auto-pick flag for
+        // drafting rows (Firestore sortOrders.AutoDraft) so the ✈️ badge on
+        // My Drafts reflects toggles made on other devices and the server's
+        // own missed-picks promotion — not just this device's draftStore.
+        const walletQ = `&wallet=${encodeURIComponent(user!.walletAddress!.toLowerCase())}`;
         const stateResults = await Promise.all(
-          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number }> => {
+          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number; autoDraft?: boolean }> => {
             try {
-              const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}`);
+              const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}${walletQ}`);
               if (!res.ok) return { players: 1, isDrafting: false };
               const data = await res.json();
               const numPlayers = Number(data.numPlayers) || 0;
@@ -589,7 +600,8 @@ export function useDraftingPageState() {
               // very first load, even on a device that never witnessed the fill.
               const dst = typeof data.draftStartTime === 'number' && data.draftStartTime > 0
                 ? data.draftStartTime * 1000 : undefined;
-              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst };
+              const autoDraft = typeof data.autoDraft === 'boolean' ? data.autoDraft : undefined;
+              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst, autoDraft };
             } catch {
               return { players: 1, isDrafting: false };
             }
@@ -598,7 +610,7 @@ export function useDraftingPageState() {
         if (cancelled) return;
 
         const mapped: Draft[] = activeTokens.map((t, i) => {
-          const { players, isDrafting, draftStartTimeMs } = stateResults[i];
+          const { players, isDrafting, draftStartTimeMs, autoDraft } = stateResults[i];
           const draftSpeed: 'fast' | 'slow' = t.leagueId.includes('-slow-') ? 'slow' : 'fast';
           // Type value is set once the draft is full; the DISPLAY gating ("show
           // the type vs 'Revealing…'") is owned by getLiveState's phase + DraftRow
@@ -625,6 +637,9 @@ export function useDraftingPageState() {
             maxPlayers: 10,
             lastUpdated: Date.now(),
             cardId: t.cardId,
+            // Server-authoritative; undefined (filling / read failed) leaves
+            // whatever the draft room wrote locally untouched.
+            ...(autoDraft !== undefined ? { airplaneMode: autoDraft } : {}),
           };
         });
 
@@ -691,6 +706,9 @@ export function useDraftingPageState() {
           // Go API leave endpoint can't match (it requires ownerId AND
           // tokenId) and silently 500s — phantom drafts that won't leave.
           const needsCardId = !existing.cardId && !!d.cardId;
+          // Server auto-pick flag wins over the local (room-written) one when
+          // they disagree — the server is what actually makes the pick.
+          const needsAirplane = d.airplaneMode !== undefined && d.airplaneMode !== !!existing.airplaneMode;
           if (!isConfirmedDrafting) {
             draftStore.updateDraft(d.id, {
               status: d.status,
@@ -704,6 +722,7 @@ export function useDraftingPageState() {
               ...(d.draftStartTimeMs != null ? { draftStartTimeMs: d.draftStartTimeMs } : {}),
               ...(needsWalletStamp ? { liveWalletAddress: currentWallet } : {}),
               ...(needsCardId ? { cardId: d.cardId } : {}),
+              ...(needsAirplane ? { airplaneMode: d.airplaneMode } : {}),
             });
           } else {
             // For rows already drafting, we still heal speed/type if unset
@@ -713,6 +732,7 @@ export function useDraftingPageState() {
             if (existing.type == null && d.type != null) patch.type = d.type;
             if (needsWalletStamp) patch.liveWalletAddress = currentWallet;
             if (needsCardId) patch.cardId = d.cardId;
+            if (needsAirplane) patch.airplaneMode = d.airplaneMode;
             if (Object.keys(patch).length > 0) draftStore.updateDraft(d.id, patch);
           }
         }
@@ -909,10 +929,31 @@ export function useDraftingPageState() {
         if (!existing) return;
 
         // Reject a STALE reused-id node: trust this snapshot only if its start
-        // time matches the row's known draftStartTime. Without a known start we
-        // can't verify it, so skip (the poll still drives the row).
+        // time matches the row's known draftStartTime.
         const snapStartMs = typeof info.draftStartTime === 'number' ? info.draftStartTime * 1000 : 0;
-        if (!existing.draftStartTimeMs || !snapStartMs || Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+        if (!snapStartMs) return;
+        let adoptStartMs: number | undefined;
+        if (existing.draftStartTimeMs) {
+          if (Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+        } else {
+          // The row never learned its server start (it was added AFTER the fill:
+          // server hydration, the token poll on a fresh device, a store wipe…).
+          // Until 2026-08-17 we bailed here forever, so such a row was driven
+          // ONLY by the sequential 3s poll below — which on a 50-row mobile
+          // lobby rarely reached it during a 10-20s visit. The row sat on a
+          // stale "N picks away" and never flipped to "Pick", buried mid-list
+          // for hours (vertig0, BBB #611: on the clock 1h25m across four visits
+          // without ever seeing it; another draft surfaced at the 5-hour mark).
+          // Adopt the snapshot's start when the row is already confirmed
+          // drafting and the start is in the past; the monotonic pick guard
+          // below still rejects anything behind what we show. A reused-slot
+          // node for a NEW filling draft never reaches here (pickNumber < 1
+          // returns above), and the token poll's leave-sync drops rows whose
+          // league the wallet no longer holds.
+          const confirmedDrafting = existing.status === 'drafting' || existing.phase === 'drafting';
+          if (!confirmedDrafting || snapStartMs > Date.now()) return;
+          adoptStartMs = snapStartMs;
+        }
 
         // Monotonic: ignore a snapshot that's behind what we already show.
         if (typeof existing.enginePickNumber === 'number' && pickNumber < existing.enginePickNumber) return;
@@ -932,6 +973,7 @@ export function useDraftingPageState() {
         const patch: Partial<DraftState> = {
           enginePickNumber: pickNumber,
           isYourTurn,
+          ...(adoptStartMs ? { draftStartTimeMs: adoptStartMs } : {}),
         };
         // Only set "N picks away" when we can compute it (your turn → 0, or a
         // known seat). If the seat hasn't been cached by the poll yet, leave
@@ -1007,7 +1049,9 @@ export function useDraftingPageState() {
           && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
       );
 
-      for (const draft of liveDraftsToSync) {
+      // One row per call so the sweep can run a few rows at a time. Every
+      // `return` here used to be a `continue` in the old sequential for-loop.
+      const syncOne = async (draft: Draft): Promise<void> => {
         if (cancelled) return;
 
         // Always fetch state — completion detection must NEVER be skipped.
@@ -1020,7 +1064,7 @@ export function useDraftingPageState() {
           info = await draftApi.getDraftInfo(draft.id);
         } catch (err) {
           console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
-          continue;
+          return;
         }
         if (cancelled) return;
 
@@ -1058,12 +1102,12 @@ export function useDraftingPageState() {
               try { safeSetItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
               return next;
             });
-            continue;
+            return;
           }
         }
 
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) return;
 
         try {
           const fresh = draftStore.getDraft(draft.id) || draft;
@@ -1174,6 +1218,11 @@ export function useDraftingPageState() {
               // Cache the user's seat so the realtime push can compute "N picks
               // away" instantly without re-fetching the draft order.
               ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
+              // Heal the server start on rows that were added after the fill —
+              // the RTDB push above verifies its snapshot against this and,
+              // before 2026-08-17, a row without it was never push-driven.
+              ...(!fresh.draftStartTimeMs && info.draftStartTime
+                ? { draftStartTimeMs: info.draftStartTime * 1000 } : {}),
               ...(pollPickStale ? {} : {
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
@@ -1258,16 +1307,44 @@ export function useDraftingPageState() {
         } catch (err) {
           console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
         }
-      }
+      };
+
+      // Sweep order + shape (2026-08-17): the old loop walked the store in
+      // insertion order, strictly one row at a time (2 round-trips each), and
+      // a fresh sweep started every 3s with no overlap guard. On a 50-row
+      // lobby (vertig0: 51 live slow drafts) a full pass took 25-50s on
+      // mobile, so a 10-20s visit only ever refreshed the head of the list —
+      // the tail rows never learned they were on the clock. Now: stalest row
+      // first (so every visit makes progress across the whole list), a few
+      // rows in flight at once, and at most one sweep running.
+      const ordered = [...liveDraftsToSync].sort(
+        (a, b) => (lastSyncedAt.get(a.id) ?? 0) - (lastSyncedAt.get(b.id) ?? 0),
+      );
+      let cursor = 0;
+      const worker = async () => {
+        while (!cancelled && cursor < ordered.length) {
+          const draft = ordered[cursor++];
+          lastSyncedAt.set(draft.id, Date.now());
+          await syncOne(draft);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(SYNC_CONCURRENCY, ordered.length) }, worker));
     };
 
-    void syncLiveDrafts();
+    let sweepInFlight = false;
+    const runSweep = () => {
+      if (sweepInFlight) return;
+      sweepInFlight = true;
+      void syncLiveDrafts().finally(() => { sweepInFlight = false; });
+    };
+
+    runSweep();
 
     let focusTimeout: ReturnType<typeof setTimeout> | null = null;
     const onFocus = () => {
       if (focusTimeout) clearTimeout(focusTimeout);
       focusTimeout = setTimeout(() => {
-        void syncLiveDrafts();
+        runSweep();
       }, 500);
     };
 
@@ -1277,7 +1354,7 @@ export function useDraftingPageState() {
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
     intervalId = setInterval(() => {
-      void syncLiveDrafts();
+      runSweep();
     }, 3000);
 
     return () => {
@@ -1498,7 +1575,8 @@ export function useDraftingPageState() {
             type: qd.type,
             draftSpeed: qd.draftSpeed,
             players: Math.max(storeEntry.players || 0, qd.players || 0),
-            airplaneMode: undefined,
+            // Keep the store entry's airplaneMode (spread above) — DraftRow
+            // already limits the ✈️ on wheel rows to status === 'drafting'.
           };
         }
       }

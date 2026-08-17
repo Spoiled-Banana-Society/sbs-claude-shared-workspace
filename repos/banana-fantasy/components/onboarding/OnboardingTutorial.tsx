@@ -43,6 +43,9 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // The raw file the user picked, held until save so we can upload it to
+  // Storage and persist a real URL (never the base64 preview — see below).
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,7 +91,8 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         }, 150);
       }, 200);
     } else {
-      completeOnboarding({ displayName, avatar: avatarPreview });
+      // Never hand a base64 preview to the server — only an uploaded URL.
+      completeOnboarding({ displayName, avatar: avatarPreview?.startsWith('data:') ? undefined : avatarPreview });
       onComplete?.();
     }
   }, [sectionIndex, onComplete, isTransitioning, completeOnboarding, displayName, avatarPreview]);
@@ -187,10 +191,48 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   // hit POST/PUT /api/owners → /owner/create and PUT /owner/{id}, routes the Go
   // API does not implement. The PUT failed with a raw "Owner update failed"
   // JSON shown to the user. Returns true on success, false if the name is taken.
-  const persistProfile = async (trimmed: string): Promise<boolean> => {
+  //
+  // The avatar MUST be uploaded to Storage first and saved as a URL. The old
+  // code passed the FileReader base64 preview straight through — that "saved"
+  // only in localStorage (so it looked fine on this browser), while the Go
+  // pfpImage endpoint rejected the multi-hundred-KB body. Next login / other
+  // device re-hydrated from the server → default banana. (Optreal, 8/17.)
+  // Mirrors EditProfileModal's upload path exactly.
+  const uploadPendingAvatar = async (): Promise<string | null | undefined> => {
+    if (!pendingFile) return avatarPreview?.startsWith('data:') ? undefined : avatarPreview;
+    try {
+      const formData = new FormData();
+      formData.append('file', pendingFile);
+      let uploadToken = '';
+      try { uploadToken = (await privy.getAccessToken()) || ''; } catch { /* token not ready */ }
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: uploadToken ? { Authorization: `Bearer ${uploadToken}` } : undefined,
+        body: formData,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { url?: string };
+        if (data.url) {
+          setPendingFile(null);
+          setAvatarPreview(data.url);
+          return data.url;
+        }
+      }
+    } catch { /* fall through */ }
+    return null; // upload failed
+  };
+
+  // Returns the persisted avatar URL (or undefined) on success, false if the
+  // name is taken or the upload failed (nameError set either way).
+  const persistProfile = async (trimmed: string): Promise<string | undefined | false> => {
     if (!(await reserveUsername(trimmed))) return false; // nameError set
-    updateUser({ username: trimmed, profilePicture: avatarPreview || undefined });
-    return true;
+    const pic = await uploadPendingAvatar();
+    if (pic === null) {
+      setNameError('Couldn’t upload your image — please try again.');
+      return false;
+    }
+    updateUser({ username: trimmed, profilePicture: pic || undefined });
+    return pic || undefined;
   };
 
   const handleProfileSubmit = async () => {
@@ -202,7 +244,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     setNameError(null);
     setSavingProfile(true);
     try {
-      if (!(await persistProfile(trimmed))) return;
+      if ((await persistProfile(trimmed)) === false) return;
       advanceSection();
     } finally {
       setSavingProfile(false);
@@ -212,16 +254,21 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const handleSkip = async () => {
     if (savingProfile) return;
     const trimmed = displayName.trim();
+    let avatar: string | undefined;
     setSavingProfile(true);
     try {
       // Persist any name/avatar the user entered before skipping, so the edit
       // isn't silently lost. Skipped only if the chosen name is taken;
       // reserveUsername no-ops when the name is unchanged from their current one.
-      if (trimmed) await persistProfile(trimmed);
+      if (trimmed) {
+        const saved = await persistProfile(trimmed);
+        if (saved !== false) avatar = saved;
+      }
     } finally {
       setSavingProfile(false);
     }
-    await completeOnboarding({ displayName, avatar: avatarPreview });
+    // Only ever hand the server an uploaded URL, never the base64 preview.
+    await completeOnboarding({ displayName, avatar });
     onComplete?.();
   };
 
@@ -236,9 +283,10 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPendingFile(file);
     const reader = new FileReader();
     reader.onloadend = () => {
-      setAvatarPreview(reader.result as string);
+      setAvatarPreview(reader.result as string); // preview only — uploaded on save
     };
     reader.readAsDataURL(file);
   };
@@ -855,7 +903,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   </button>
                   {avatarPreview && (
                     <button
-                      onClick={() => setAvatarPreview(null)}
+                      onClick={() => { setAvatarPreview(null); setPendingFile(null); }}
                       className="px-3 py-2 text-white/50 hover:text-white/80"
                     >
                       Remove
