@@ -54,7 +54,11 @@ export const ATB_SEATS_TOTAL = 10;
  *  cap — prior-round winners can win AGAIN (Richard 2026-08-14); the repeat
  *  guard in recordAroundTheBanana is round-scoped. Rounds are ATB_SEATS_TOTAL
  *  seats each: round N = winners (N-1)*10+1 .. N*10. */
-export const ATB_TOTAL_WINNER_CAP = 30;
+export const ATB_TOTAL_WINNER_CAP = Number.POSITIVE_INFINITY;
+// ↑ Boris 2026-08-17: the promo LOOPS — when a round's 10th seat is won the
+// lobby fills (Go starts the slow draft), every lap resets to 0/10 and the next
+// round opens with a fresh ATB-only lobby at its first win. Set a finite number
+// here to end the campaign at that seat (e.g. 40 = stop after round four).
 /**
  * Drafts revealed before this never count — the race starts fresh at launch,
  * it is NOT a lookup of who already happens to hold all 10 slots historically.
@@ -97,26 +101,27 @@ export async function getAtbSeatCount(): Promise<{ claimed: number; total: numbe
 }
 
 /**
- * Lobby-two reset (Boris 2026-08-12): when winner #10 takes seat 1 of the
- * second lobby, everyone else starts from scratch. Clears each racer's
- * atbSlotsHit / progressCurrent / completed-without-seat stamps. Deliberately
- * KEEPS atbSeenDraftIds (old drafts must never re-credit slots into the new
- * race) and every winner's atbWonAt/atbSeatNumber (their card keeps showing
- * the seat they won). Marker-guarded on the state doc — runs once, ever.
- *
- * NOTE 2026-08-14: this reset (ran 8/13) also KEPT round-one winners'
- * atbCompletedAt, which silently blocked them from re-completing — wrong per
- * Richard (winners CAN win again in round two). Backfilled by
- * scripts/_backfill-atb-winners-round2.mjs: completedAt cleared for seats
- * 1-10 so their next 10/10 credit re-triggers the win branch.
+ * Round rollover reset: the moment a round's 10th seat is taken (winner
+ * #10, #20, #30, …) EVERY racer's lap goes back to 0/10 — the next round is a
+ * fresh race. Clears atbSlotsHit / progressCurrent and atbCompletedAt /
+ * atbCompletedDraftName for everyone INCLUDING the round's winners (winners
+ * CAN win again next round — Richard 2026-08-14; the 8/13 lobby-two reset
+ * kept winners' completedAt and silently blocked them, fixed by backfill).
+ * Deliberately KEEPS atbSeenDraftIds (old drafts must never re-credit slots
+ * into the new race) and every winner's atbWonAt/atbSeatNumber (their card
+ * keeps "Won Seat N" beside the fresh lap). Marker-guarded per completed seat
+ * on the state doc (`lapResetAtSeat_30` …) — runs once per rollover.
+ * History: seat 10 → `lobbyTwoResetAt` (8/13); seat 20 → `lobbyThreeResetAt`
+ * (scripts/_reset-atb-round3.mjs, 8/17 relaunch); seat 30+ → this, automatic.
  */
-export async function resetAllLapsForLobbyTwo(): Promise<void> {
+export async function resetAllLapsForNextRound(completedSeat: number): Promise<void> {
   const db = getAdminFirestore();
   const stateRef = db.collection(STATE_COLLECTION).doc(STATE_DOC);
+  const marker = `lapResetAtSeat_${completedSeat}`;
   const claimed = await db.runTransaction(async (tx) => {
     const s = (await tx.get(stateRef)).data() ?? {};
-    if (s.lobbyTwoResetAt) return false;
-    tx.set(stateRef, { lobbyTwoResetAt: new Date().toISOString() }, { merge: true });
+    if (s[marker]) return false;
+    tx.set(stateRef, { [marker]: new Date().toISOString() }, { merge: true });
     return true;
   });
   if (!claimed) return;
@@ -125,23 +130,20 @@ export async function resetAllLapsForLobbyTwo(): Promise<void> {
   let cleared = 0;
   for (const d of snap.docs) {
     if (d.id !== ATB_PROMO_ID) continue;
-    const mc = (d.data().modalContent ?? {}) as Record<string, unknown>;
+    const data = d.data();
+    const mc = (data.modalContent ?? {}) as Record<string, unknown>;
     const hasProgress = Array.isArray(mc.atbSlotsHit) && (mc.atbSlotsHit as number[]).length > 0;
-    if (!hasProgress && !mc.atbCompletedAt) continue;
-    const update: Record<string, unknown> = {
+    if (!hasProgress && !mc.atbCompletedAt && !(Number(data.progressCurrent) > 0)) continue;
+    await d.ref.update({
       progressCurrent: 0,
       'modalContent.atbSlotsHit': [],
-    };
-    if (!mc.atbWonAt) {
-      // Completed-but-seatless racers rejoin from zero like everyone else.
-      update['modalContent.atbCompletedAt'] = FieldValue.delete();
-      update['modalContent.atbCompletedDraftName'] = FieldValue.delete();
-    }
-    await d.ref.update(update).catch((err) =>
-      logger.warn('atb.lobby2_reset_doc_failed', { doc: d.ref.path, err: String(err) }));
+      'modalContent.atbCompletedAt': FieldValue.delete(),
+      'modalContent.atbCompletedDraftName': FieldValue.delete(),
+    }).catch((err) =>
+      logger.warn('atb.round_reset_doc_failed', { doc: d.ref.path, err: String(err) }));
     cleared++;
   }
-  logger.info('atb.lobby2_reset_done', { cleared });
+  logger.info('atb.round_reset_done', { completedSeat, cleared });
 }
 
 export async function getAtbWinners(): Promise<AtbWinner[]> {
@@ -239,12 +241,15 @@ export async function recordAroundTheBanana(
     // already durably recorded in winners[] for a hand re-run.
     await awardAtbSeat(userId, result.wonSeat)
       .catch((err) => logger.error('atb.seat_failed', { userId, seat: result.wonSeat, err: String(err) }));
-    // Winner #10 opens lobby two (Boris 2026-08-12): the very moment they're
-    // seated, EVERY racer's lap resets to 0/10 — fresh race for the last 9
-    // chairs. Awaited + marker-guarded (once ever).
-    if (result.wonSeat === 10) {
-      await resetAllLapsForLobbyTwo()
-        .catch((err) => logger.error('atb.lobby2_reset_failed', { err: String(err) }));
+    // A round's 10th seat (winner #10, #20, #30, …) fills the ATB-only lobby
+    // (Go starts the slow draft at 10/10) — the very moment they're seated,
+    // EVERY racer's lap resets to 0/10 and the next round is on (Boris
+    // 2026-08-17: the promo loops). Awaited + marker-guarded per rollover.
+    // Seats 10 and 20 were already handled (markers lobbyTwoResetAt /
+    // lobbyThreeResetAt) — the guard below only fires for seat 30 onward.
+    if (result.wonSeat % ATB_SEATS_TOTAL === 0 && result.wonSeat > 20) {
+      await resetAllLapsForNextRound(result.wonSeat)
+        .catch((err) => logger.error('atb.round_reset_failed', { seat: result.wonSeat, err: String(err) }));
     }
     pushStreamEventBg(userId, 'promo-around-the-banana', {
       draftId, slot, seatNumber: result.wonSeat, source: 'around-the-banana',
