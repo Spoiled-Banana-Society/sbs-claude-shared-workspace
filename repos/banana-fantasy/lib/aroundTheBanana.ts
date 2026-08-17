@@ -20,7 +20,13 @@
  *                                             simultaneously can never both
  *                                             take seat #10.
  *
- * ⚠️ NOT LAUNCHED. Two switches must BOTH flip to go live (Richard's call):
+ * ROUND THREE relaunched 2026-08-17 (Boris): 'around-the-banana' back in
+ * VISIBLE_PROMO_TYPES_ORDER + featured, cap 30, every racer reset to 0/10 by
+ * scripts/_reset-atb-round3.mjs (winners' atbWonAt/atbSeatNumber kept, seen
+ * ledger kept). Round-three seats fill queue round 14 (source 'atb', the
+ * repurposed ex-vault lobby 2025-slow-draft-50, Go Source flipped to 'promo').
+ *
+ * ⚠️ Two switches must BOTH be on for the promo to be live:
  *   1. Set ATB_START_MS below to the launch timestamp.
  *   2. Move 'around-the-banana' from ADMIN_PREVIEW_PROMO_TYPES into
  *      VISIBLE_PROMO_TYPES_ORDER (lib/promoFilter.ts).
@@ -40,13 +46,15 @@ import type { Promo } from '@/types';
 export const ATB_PROMO_ID = 'around-the-banana';
 /** First N players to cover all 10 slots win. Richard's opener: 10. */
 export const ATB_SEATS_TOTAL = 10;
-/** Total seat cap across both rounds (Boris 2026-08-12, rev 2): round
- *  one = winners 1-10 (nine drafted in Jackpot #41, MobySlick's seat honored
- *  in the wheel lobby); round two = winners 11-20 filling the ATB-only lobby
- *  from scratch. At 20 the promo is done. NOT a lifetime per-user cap —
- *  round-one winners can win AGAIN in round two (Richard 2026-08-14); the
- *  repeat guard in recordAroundTheBanana is round-scoped. */
-export const ATB_TOTAL_WINNER_CAP = 20;
+/** Total seat cap across ALL rounds. Round one = winners 1-10 (nine drafted
+ *  in Jackpot #41, MobySlick's seat honored in the wheel lobby); round two =
+ *  winners 11-20 (ATB-only lobby, Jackpot #47); round THREE = winners 21-30
+ *  (Boris 2026-08-17 relaunch: same promo, fresh 0/10 lap for everyone, one
+ *  more ATB-only lobby). At the cap the promo is done. NOT a lifetime per-user
+ *  cap — prior-round winners can win AGAIN (Richard 2026-08-14); the repeat
+ *  guard in recordAroundTheBanana is round-scoped. Rounds are ATB_SEATS_TOTAL
+ *  seats each: round N = winners (N-1)*10+1 .. N*10. */
+export const ATB_TOTAL_WINNER_CAP = 30;
 /**
  * Drafts revealed before this never count — the race starts fresh at launch,
  * it is NOT a lookup of who already happens to hold all 10 slots historically.
@@ -80,10 +88,11 @@ export async function getAtbSeatCount(): Promise<{ claimed: number; total: numbe
   if (!isFirestoreConfigured()) return { claimed: 0, total: ATB_SEATS_TOTAL };
   const snap = await getAdminFirestore().collection(STATE_COLLECTION).doc(STATE_DOC).get();
   const winners = (snap.data()?.winners ?? []) as AtbWinner[];
-  // Round-relative counter (Boris 2026-08-12, rev 2): round one was winners
-  // 1-10; round two starts from a CLEAN 0/10 — winners 11-20 fill the
-  // ATB-only lobby.
-  const claimed = winners.length >= 10 ? winners.length - 10 : winners.length;
+  // Round-relative counter (Boris 2026-08-12, rev 2): every round starts from
+  // a CLEAN 0/10 — 20 winners = round three at 0/10, 30 = done at 10/10.
+  const claimed = winners.length >= ATB_TOTAL_WINNER_CAP
+    ? ATB_SEATS_TOTAL
+    : winners.length % ATB_SEATS_TOTAL;
   return { claimed, total: ATB_SEATS_TOTAL };
 }
 
@@ -200,16 +209,17 @@ export async function recordAroundTheBanana(
       (update.modalContent as Record<string, unknown>).atbCompletedAt = nowIso;
       (update.modalContent as Record<string, unknown>).atbCompletedDraftName = draftName;
       const winners = (stateSnap.data()?.winners ?? []) as AtbWinner[];
-      // Repeat guard is ROUND-scoped (Richard 2026-08-14): a round-one winner
-      // (seats 1-10) CAN take a round-two seat — only a seat already won in
-      // the CURRENT round blocks. Round two = winners 11+.
-      const roundFloorSeat = winners.length >= 10 ? 11 : 1;
+      // Repeat guard is ROUND-scoped (Richard 2026-08-14): a prior-round
+      // winner CAN take a seat in the current round — only a seat already won
+      // in the CURRENT round blocks. Round N floor = (N-1)*10 + 1.
+      const roundFloorSeat = Math.floor(winners.length / ATB_SEATS_TOTAL) * ATB_SEATS_TOTAL + 1;
       const alreadyWon = winners.some((w) => w.userId === userId && w.seat >= roundFloorSeat);
       if (!alreadyWon && winners.length < ATB_TOTAL_WINNER_CAP) {
         wonSeat = winners.length + 1;
         (update.modalContent as Record<string, unknown>).atbWonAt = nowIso;
-        // Display seat is lobby-relative: winner #10 = seat 1 of lobby two.
-        (update.modalContent as Record<string, unknown>).atbSeatNumber = wonSeat >= 11 ? wonSeat - 10 : wonSeat;
+        // Display seat is lobby-relative: winner #11 = seat 1 of lobby two,
+        // winner #21 = seat 1 of lobby three.
+        (update.modalContent as Record<string, unknown>).atbSeatNumber = ((wonSeat - 1) % ATB_SEATS_TOTAL) + 1;
         tx.set(stateRef, {
           winners: FieldValue.arrayUnion({
             userId, seat: wonSeat, at: nowIso, seatGranted: false,

@@ -82,6 +82,20 @@ export async function GET() {
       }
     }));
 
+    // DOUBLE-POST DEDUPE (Boris 8/16: the "700 drafts" tweet appeared twice —
+    // a delete-and-repost left the dead twin in our store, differing by one
+    // character). Same author + NORMALIZED text (case/punctuation/whitespace
+    // stripped) keeps only the strongest copy (most views).
+    const byContent = new Map<string, FeedTweet>();
+    for (const t of byId.values()) {
+      const norm = t.text.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 120);
+      const key = `${t.handle.toLowerCase()}|${norm}`;
+      const prev = byContent.get(key);
+      if (!prev || t.views > prev.views) byContent.set(key, t);
+    }
+    byId.clear();
+    for (const t of byContent.values()) byId.set(t.id, t);
+
     // House + bot content ALWAYS survives the cap (Boris 8/14: the SBS pill
     // vanished because 50 fresh replies + bot posts crowded our older posts
     // out of a newest-80 slice) — only community tweets get truncated.

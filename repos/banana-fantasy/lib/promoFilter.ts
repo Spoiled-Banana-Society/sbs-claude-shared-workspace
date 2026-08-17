@@ -36,9 +36,12 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
   'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
   'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
-  // 🍌 'around-the-banana' RETIRED 2026-08-15 — all 20 seats claimed, the exclusive
-  // ATB Jackpot lobby is drafting. Card removed per Boris (no sold-out post).
-  'banana-vault',   // 🔒 THE BANANA VAULT — LAUNCHED 2026-08-15, ATB's successor
+  // 🍌 Around The Banana — LAUNCHED 2026-08-11, RETIRED 2026-08-15 at 20/20 seats,
+  // RELAUNCHED 2026-08-17 (Boris) for round three: seats 21-30, a fresh 0/10 lap for
+  // everyone, one more ATB-only Jackpot lobby. Same card, same rules, same slot.
+  'around-the-banana',
+  // 🔒 'banana-vault' RETIRED 2026-08-17 (Boris) after Vault 1 — its 3 seat winners
+  // were moved into an open WHEEL Jackpot lobby; card removed, crediting off.
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
   'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
@@ -97,7 +100,7 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
  * DROP pin and everyone's in-progress bars). When its 10 seats are claimed,
  * hand the pin back to 'drop'.
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = 'banana-vault';
+export const FEATURED_PROMO_TYPE: PromoType | null = 'around-the-banana';
 
 /**
  * FEATURED_PROMO_TYPE resolved against time windows. (The Kickoff buy-bonus
@@ -128,7 +131,7 @@ function adminPreviewOrder(): PromoType[] {
  * the novelty fades.
  */
 export const NEW_PROMO_TYPES = new Set<PromoType>([
-  'banana-vault', // launched 2026-08-15
+  // 'banana-vault' retired 2026-08-17.
   // 'eliminator' removed 2026-08-01 — the promo retired with its final burn.
   'banana-draw', // launches 2026-07-26 — drop this once the novelty fades
 ]);
