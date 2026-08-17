@@ -602,7 +602,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet
           </div>
         )}
         <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-xs leading-relaxed text-banana/80 mb-2" />
-        <p className={`text-white/45 text-sm leading-relaxed mb-4 ${isVault ? '' : 'line-clamp-2'}`}>
+        <p className={`text-white/45 text-sm leading-relaxed mb-4 whitespace-pre-line ${isVault ? '' : 'line-clamp-2'}`}>
           {promo.description}
         </p>
 

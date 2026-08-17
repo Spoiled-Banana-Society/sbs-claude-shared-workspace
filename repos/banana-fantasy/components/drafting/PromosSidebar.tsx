@@ -138,7 +138,7 @@ export function PromosSidebar({
                   carries the SAME description the /promos page card shows — not
                   title-only. First-purchase keeps its bespoke fixed lines above. */}
               {promo.type !== 'first-purchase' && promo.type !== 'banana-vault' && promo.description && (
-                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-2">
+                <p className="mt-1.5 text-center text-[11px] leading-relaxed text-[#4a4a4a] line-clamp-2 whitespace-pre-line">
                   {promo.description}
                 </p>
               )}

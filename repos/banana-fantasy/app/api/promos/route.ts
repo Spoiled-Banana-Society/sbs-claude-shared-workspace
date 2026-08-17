@@ -95,7 +95,7 @@ export async function GET(req: Request) {
         // 2-line card clamp truncated ("...and win a…") — keep every user's
         // card on the current copy (Boris 2026-08-17). Same string on the
         // carousel, sidebar and /promos card.
-        atb.description = 'Every draft counts, paid or free. First 10 to hit all 10 slots win.';
+        atb.description = 'Every draft counts, paid or free.\nFirst 10 to hit all 10 slots win.';
         const { getAtbSeatCount } = await import('@/lib/aroundTheBanana');
         const seats = await getAtbSeatCount();
         const mc = atb.modalContent as unknown as Record<string, unknown>;
