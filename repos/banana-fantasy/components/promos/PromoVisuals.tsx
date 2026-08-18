@@ -154,7 +154,7 @@ function Packs({ n, ready, size }: { n: number; ready: boolean; size: Size }) {
           </div>
         )}
       </div>
-      <Big n={n} label={ready ? 'READY TO OPEN' : n === 1 ? 'PACK SEALED' : 'PACKS SEALED'} size={size} />
+      <Big n={n} label={ready ? 'READY TO OPEN' : n === 1 ? 'PACK EARNED' : 'PACKS EARNED'} size={size} />
     </div>
   );
 }
