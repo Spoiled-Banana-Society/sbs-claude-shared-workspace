@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { promoWeekendActive } from '@/lib/promoWindow';
 import { Modal } from '../ui/Modal';
+import { PromoModalHeader } from '@/components/promos/PromoModalHeader';
 import { Button } from '../ui/Button';
 import { Promo } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -1741,7 +1742,22 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={modalTitle}
+      size="lg"
+      sheetOnMobile
+      header={(
+        <PromoModalHeader
+          promo={promo}
+          wallet={user?.walletAddress ?? null}
+          onClose={onClose}
+          hasVisibleClaim={baseCanClaim}
+          isClaimed={isPromoClaimed}
+        />
+      )}
+    >
       <div className="space-y-5">
         {/* Explanation */}
         <div className="text-text-secondary leading-relaxed">

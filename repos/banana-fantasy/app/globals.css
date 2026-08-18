@@ -732,3 +732,65 @@ body {
   .elim-ignite, .elim-rise, .elim-plus, .elim-heat { animation: none; }
   .elim-ignite { opacity: 0; }
 }
+
+/* ─── Promo visual system (2026-08-18, Boris) ─────────────────────────────
+   Per-promo hue on --pa/--pb (lib/promoTheme.ts). One gradient recipe for
+   every surface: a dark scrim over the hue pair, drifting slowly. The
+   spotlight + /promos long cards add the light sweep; carousel + sidebar
+   stay drift-only; the modal header is still. */
+.promo-grad {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.42)),
+    linear-gradient(160deg, var(--pa), var(--pb), var(--pa));
+  background-size: 100% 100%, 220% 220%;
+  animation: promo-drift 18s ease-in-out infinite;
+}
+@keyframes promo-drift { 50% { background-position: 0 0, 100% 100%; } }
+.promo-sweep::after {
+  content: "";
+  position: absolute;
+  top: -60%; left: -40%;
+  width: 60%; height: 220%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.09), transparent);
+  transform: rotate(18deg) translateX(-140%);
+  animation: promo-sweep 16s ease-in-out infinite;
+  animation-delay: var(--pd, 0s);
+  pointer-events: none;
+}
+@keyframes promo-sweep {
+  0%, 72% { transform: rotate(18deg) translateX(-140%); }
+  92%, 100% { transform: rotate(18deg) translateX(420%); }
+}
+.promo-tx { text-shadow: 0 1px 2px rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.35); }
+@keyframes promo-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(251,191,36,.5); }
+  50%  { box-shadow: 0 0 0 9px rgba(251,191,36,0); }
+  100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+}
+.promo-glow { animation: promo-glow 2.4s ease-in-out infinite; }
+@keyframes promo-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+.promo-rise { animation: promo-rise .7s cubic-bezier(.16,1.1,.3,1) both; animation-delay: var(--pi, 0s); }
+@keyframes promo-pop { from { transform: scale(.6); opacity: 0; } }
+.promo-pop { animation: promo-pop .5s cubic-bezier(.2,1.4,.4,1) both; animation-delay: var(--pi, 0s); }
+@keyframes promo-ping { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.7); } 100% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
+.promo-ping { animation: promo-ping 1.6s ease-out infinite; }
+@keyframes promo-sec { from { transform: translateY(-5px); opacity: .2; } }
+.promo-sec { animation: promo-sec .38s ease-out; }
+@keyframes promo-urgent { 50% { box-shadow: 0 0 0 4px rgba(251,191,36,.15); } }
+.promo-urgent { animation: promo-urgent 1s ease-in-out infinite; }
+/* Inline "how it works" — grid-rows trick so height animates without JS. */
+.promo-how { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s cubic-bezier(.16,1,.3,1); }
+.promo-how.open { grid-template-rows: 1fr; }
+.promo-how > div { overflow: hidden; }
+@keyframes promo-li { from { opacity: 0; transform: translateX(-6px); } }
+.promo-how.open li { animation: promo-li .4s ease both; animation-delay: calc(var(--n, 0) * 45ms); }
+/* Pointer highlight for the /promos long cards (position set from JS). */
+.promo-spec { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; z-index: 2;
+  background: radial-gradient(260px 260px at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,.12), transparent 60%); }
+.promo-tilt:hover .promo-spec { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .promo-grad, .promo-sweep::after, .promo-glow, .promo-rise, .promo-pop, .promo-ping, .promo-sec, .promo-urgent { animation: none !important; }
+  .promo-rise { opacity: 1; }
+}

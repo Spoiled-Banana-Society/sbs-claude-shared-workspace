@@ -8,6 +8,12 @@ interface ModalProps {
   children: React.ReactNode;
   title?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Custom header (replaces the plain title bar). Receives nothing — render
+   *  your own close button or rely on Escape / backdrop. */
+  header?: React.ReactNode;
+  /** Slide up as a bottom sheet on phones (rounded top, pinned to the bottom
+   *  edge) instead of a centered dialog. Desktop is unchanged. */
+  sheetOnMobile?: boolean;
 }
 
 const sizeStyles = {
@@ -17,7 +23,7 @@ const sizeStyles = {
   xl: 'max-w-2xl',
 };
 
-export function Modal({ isOpen, onClose, children, title, size = 'md' }: ModalProps) {
+export function Modal({ isOpen, onClose, children, title, size = 'md', header, sheetOnMobile = false }: ModalProps) {
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -44,13 +50,14 @@ export function Modal({ isOpen, onClose, children, title, size = 'md' }: ModalPr
     <>
       {/* Backdrop + Container */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-fade-in flex items-center justify-center p-4"
+        className={`fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-fade-in flex justify-center ${sheetOnMobile ? 'items-end sm:items-center p-0 sm:p-4' : 'items-center p-4'}`}
         onClick={onClose}
       >
         {/* Modal */}
         <div
           className={`
-            bg-bg-secondary border border-bg-tertiary rounded-2xl
+            bg-bg-secondary border border-bg-tertiary
+            ${sheetOnMobile ? 'rounded-t-[22px] rounded-b-none sm:rounded-2xl' : 'rounded-2xl'}
             shadow-2xl w-full ${sizeStyles[size]}
             max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain scrollbar-hide
             animate-fade-in
@@ -62,7 +69,7 @@ export function Modal({ isOpen, onClose, children, title, size = 'md' }: ModalPr
           style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
         >
         {/* Header */}
-        {title && (
+        {header ? header : title && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-bg-tertiary">
             <h2 className="text-xl font-semibold text-text-primary">{title}</h2>
             <button
@@ -88,7 +95,7 @@ export function Modal({ isOpen, onClose, children, title, size = 'md' }: ModalPr
         )}
 
         {/* Content */}
-        <div className={title ? 'p-6' : 'p-6'}>{children}</div>
+        <div className="p-6">{children}</div>
         </div>
       </div>
     </>

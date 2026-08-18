@@ -24,31 +24,47 @@ import { isBuyBonusActive } from '@/lib/api/config';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  // Boris's revenue-funnel order (2026-07-06): first-timer's welcome spin →
-  // convert to a first paid buy → drive bulk buys (Buy 10) → repeat paid
-  // drafting (4-in-24h) → engagement reward (Pick 6 & 10) → growth (referral)
-  // → excitement (jackpot). Claim-ready / near-complete promos still bubble
-  // above this fixed order, and new-user stays pinned #1 for first-timers.
+  // Boris's order (2026-08-18, with the promo redesign): conversion cards
+  // first for first-timers, then the FEATURED pin (ATB, spotlight on /promos),
+  // then the repeat-drafting drivers up top — 4-in-24h and THE DROP — then
+  // Jackpot Hit WHILE a spin window is open (see jackpotRank below: it drops
+  // to the very bottom once the 10/5-spin windows are closed), Match Your
+  // Pick, Buy 10, referral, and the passive Pick 10 last. Claim-ready /
+  // near-complete promos still bubble above this fixed order in real time.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
   'buy-bonus',      // 🏈 Kickoff Weekend "Buy 2 → FREE SPIN" — time-gated
                     // below; auto-hides after endsAtMs (unclaimed spins keep it)
-  'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
-  'eliminator',     // 🔥 THE ELIMINATOR — LAUNCHED 2026-07-31 4pm PT
-  'banana-draw',    // "Collect Bananas → JACKHOF SEAT" — LAUNCHED 2026-07-26
   // 🍌 Around The Banana — LAUNCHED 2026-08-11, RETIRED 2026-08-15 at 20/20 seats,
   // RELAUNCHED 2026-08-17 (Boris) for round three: seats 21-30, a fresh 0/10 lap for
-  // everyone, one more ATB-only Jackpot lobby. Same card, same rules, same slot.
+  // everyone, one more ATB-only Jackpot lobby. Loops every 10 seats.
   'around-the-banana',
+  'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev (moved up 2026-08-18)
+  'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
+  'jackpot',        // Jackpot Hit — HERE while a 10/5-spin window is open (jackpotRank)
+  'eliminator',     // 🔥 THE ELIMINATOR — retired 2026-08-01 (window-gated below)
+  'banana-draw',    // retired 2026-07-31 (window-gated below)
   // 🔒 'banana-vault' RETIRED 2026-08-17 (Boris) after Vault 1 — its 3 seat winners
   // were moved into an open WHEEL Jackpot lobby; card removed, crediting off.
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
   'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
-  'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
-  'pick-10',        // "Pick 10 → FREE SPIN" — engagement reward
   'referral',       // "Refer a friend" — top-of-funnel growth
-  'jackpot',        // excitement, least direct on revenue
+  'pick-10',        // "Pick 10 → FREE SPIN" — passive engagement reward
 ];
+
+/**
+ * Jackpot Hit's slot is LIVE (Boris 2026-08-18): while the cycle is inside a
+ * spin window (a hit right now pays 10 or 5 spins) it sits at its place in the
+ * order above, near the top; once both windows are closed (nothing to win
+ * until the lane resets) it drops to the very bottom, under Pick 10. The
+ * window comes from modalContent.cycle.reward, restamped on every /api/promos
+ * read, so the card moves on its own as drafts fill.
+ */
+function jackpotRank(p: Promo, order: PromoType[]): number {
+  if (p.type !== 'jackpot') return order.indexOf(p.type);
+  const reward = p.modalContent?.cycle?.reward ?? 0;
+  return reward > 0 ? order.indexOf('jackpot') : order.length + 1;
+}
 
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
 
@@ -330,8 +346,8 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     if (bProgress !== aProgress) return bProgress - aProgress;
     // 3. Then the fixed display order (admin preview types spliced in
     //    when unlocked).
-    const aIdx = typeOrder.indexOf(a.type);
-    const bIdx = typeOrder.indexOf(b.type);
+    const aIdx = jackpotRank(a, typeOrder);
+    const bIdx = jackpotRank(b, typeOrder);
     return aIdx - bIdx;
   });
 

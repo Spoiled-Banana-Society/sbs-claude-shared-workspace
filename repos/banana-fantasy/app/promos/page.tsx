@@ -11,61 +11,12 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
-import { SpinExplainer } from '@/components/promos/SpinExplainer';
-import { VaultInline } from '@/components/promos/VaultInline';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
-import { DropCountdown } from '@/components/promos/DropCountdown';
+import { PromoSpotlight, PromoLongCard } from '@/components/promos/PromoCards';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
-import { deriveChaseState } from '@/lib/chasePromo';
-import type { Promo, PromoType } from '@/types';
-
-// ─── Type → visual treatment ─────────────────────────────────────────
-// Restrained Apple-style treatment: a single accent color per type used
-// only as a small dot in the corner of the card. No gradients, no
-// emoji glows, no pulsing. The card itself is a clean glass panel.
-interface TypeStyle {
-  accent: string;
-  label: string;
-}
-
-const TYPE_STYLES: Record<PromoType, TypeStyle> = {
-  'daily-drafts':       { accent: '#fbbf24', label: 'Daily' },
-  'pick-10':            { accent: '#22c55e', label: 'Pick 10' },
-  'referral':           { accent: '#3b82f6', label: 'Referral' },
-  'jackpot':            { accent: '#ef4444', label: 'Jackpot' },
-  'hof':                { accent: '#D4AF37', label: 'HOF' },
-  'mint':               { accent: '#a855f7', label: 'Buy' },
-  'new-user':           { accent: '#ec4899', label: 'New User' },
-  'buy-bonus':          { accent: '#22c55e', label: 'Kickoff' },
-  'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
-  'spin-share':         { accent: '#8b5cf6', label: 'Share' },
-  'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
-  'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
-  'pick-chase':         { accent: '#f97316', label: 'Match' },
-  // JackHOF orange — the dual-tier accent, same as the wheel's JackHOF wedge.
-  'banana-draw':        { accent: '#ef6c37', label: 'Bananas' },
-  // Same JackHOF orange: the Eliminator gives out the same seat, so it reads as
-  // the successor to the Banana Draw rather than an unrelated promo.
-  'eliminator':         { accent: '#ef6c37', label: 'Eliminator' },
-  // Deep night-blue — THE DROP is the 8pm promo, and the colour keeps it
-  // visually distinct from the JackHOF-orange promos that came before it.
-  'drop':               { accent: '#6366f1', label: 'The Drop' },
-  // Jackpot red — the prize is a Jackpot seat, so the card wears jackpot's color.
-  'around-the-banana':  { accent: '#ef4444', label: 'Around' },
-  'banana-vault':  { accent: '#fbbf24', label: 'Vault' },
-};
+import type { Promo } from '@/types';
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
-
-function formatTimeRemaining(endTime?: string): string {
-  if (!endTime) return '';
-  const diff = new Date(endTime).getTime() - Date.now();
-  if (diff <= 0) return '0:00:00';
-  const hours = Math.floor(diff / 3_600_000);
-  const minutes = Math.floor((diff % 3_600_000) / 60_000);
-  const seconds = Math.floor((diff % 60_000) / 1000);
-  return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
 
 export default function PromosPage() {
   const router = useRouter();
@@ -87,6 +38,9 @@ export default function PromosPage() {
   // getPick10DisplayTier already puts the right copy on promo.title, so the
   // card must just render what the server sends.
   const promos = promosQuery.promos;
+  // First-purchase copy variant (server-computed) — same rule as the carousel.
+  const fpVariant: 'new' | 'returning' = user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new';
+  const fpShowNewPlayerTag = !isLoggedIn || user?.firstPurchaseVariant == null;
 
   const [filter, setFilter] = useState<FilterKey>('all');
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
@@ -395,10 +349,13 @@ export default function PromosPage() {
 
       {/* ── Loading state ──────────────────────────────────────────────── */}
       {filter !== 'activity' && promosQuery.isLoading && visiblePromos.length === 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-52 rounded-2xl bg-white/[0.02] animate-pulse" />
-          ))}
+        <div>
+          <div className="h-56 rounded-[24px] bg-white/[0.03] animate-pulse" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mt-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-[168px] rounded-[20px] bg-white/[0.02] animate-pulse" />
+            ))}
+          </div>
         </div>
       )}
 
@@ -425,22 +382,49 @@ export default function PromosPage() {
         />
       )}
 
-      {/* ── Promo grid ─────────────────────────────────────────────────── */}
-      {filter !== 'activity' && filteredPromos.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {filteredPromos.map(promo => (
-            <PromoCard
-              key={promo.id}
-              promo={promo}
-              isClaimed={isClaimed(promo)}
-              hasVisibleClaim={hasVisibleClaim(promo)}
-              onClick={() => setSelectedPromo(promo)}
-              onClaim={() => void handleClaim(promo)}
-              wallet={user?.walletAddress ?? null}
-            />
-          ))}
-        </div>
-      )}
+      {/* ── Promo cards — SPOTLIGHT (whatever the shared sort puts first:
+          conversion card for new players, otherwise the featured pin, or a
+          claimable one) + LONG cards under it. Two columns on desktop, one on
+          phones. Tap a card → inline "How it works"; "Full details" → modal. */}
+      {filter !== 'activity' && filteredPromos.length > 0 && (() => {
+        const [spot, ...rest] = filteredPromos;
+        const showSpot = filter === 'all';
+        const longs = showSpot ? rest : filteredPromos;
+        return (
+          <>
+            {showSpot && (
+              <PromoSpotlight
+                promo={spot}
+                wallet={user?.walletAddress ?? null}
+                isClaimed={isClaimed(spot)}
+                hasVisibleClaim={hasVisibleClaim(spot)}
+                onOpenModal={() => setSelectedPromo(spot)}
+                onClaim={() => void handleClaim(spot)}
+                fpVariant={fpVariant}
+                fpShowNewPlayerTag={fpShowNewPlayerTag}
+              />
+            )}
+            {longs.length > 0 && (
+              <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3.5 ${showSpot ? 'mt-4' : ''}`}>
+                {longs.map((promo, i) => (
+                  <PromoLongCard
+                    key={promo.id}
+                    promo={promo}
+                    index={i}
+                    wallet={user?.walletAddress ?? null}
+                    isClaimed={isClaimed(promo)}
+                    hasVisibleClaim={hasVisibleClaim(promo)}
+                    onOpenModal={() => setSelectedPromo(promo)}
+                    onClaim={() => void handleClaim(promo)}
+                    fpVariant={fpVariant}
+                    fpShowNewPlayerTag={fpShowNewPlayerTag}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* ── Footer ─────────────────────────────────────────────────────── */}
       {filteredPromos.length > 0 && (
@@ -492,289 +476,5 @@ function StatTile({ label, value, sublabel, highlight }: {
       </p>
       {sublabel && <p className="text-white/30 text-[11px] mt-1.5">{sublabel}</p>}
     </div>
-  );
-}
-
-// ─── Promo card — clean glass surface, single accent dot, no emoji ────
-interface PromoCardProps {
-  promo: Promo;
-  isClaimed: boolean;
-  hasVisibleClaim: boolean;
-  onClick: () => void;
-  onClaim: () => void;
-  /** THE DROP card shows this wallet's pack count next to the countdown. */
-  wallet: string | null;
-}
-
-function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, wallet }: PromoCardProps) {
-  const style = TYPE_STYLES[promo.type];
-  const progressMax = promo.progressMax || 0;
-  // Stacking promos (Buy-10 spin, buy-bonus) repeat: after claiming, the bar
-  // keeps showing the real rolled-over progress (0/10), never a full bar or a
-  // persistent "Claimed" — both read as "done, can't earn again".
-  const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
-  const progressCurrent = isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0);
-  const progressPercent = progressMax > 0 ? Math.min(100, (progressCurrent / progressMax) * 100) : 0;
-
-  // Chase Your Pick: live state (pick slot, next-hit spins, 24h countdown) —
-  // the meter (x/5) and the always-on clock read the same on every surface.
-  const isChase = promo.type === 'pick-chase';
-  const chase = isChase ? deriveChaseState(promo) : null;
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!isChase && !promo.timerEndTime) return;
-    const i = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(i);
-  }, [isChase, promo.timerEndTime]);
-
-  // Banana Draw draws its own inline row too (bananas · odds · countdown).
-  // Live numbers come from the promo payload, restamped on every /api/promos
-  // read, so the card updates without its own fetch.
-  const isBanana = promo.type === 'banana-draw';
-  const bd = isBanana ? promo.modalContent.bananaDraw : undefined;
-
-  // Around The Banana renders a 10-cell slot grid instead of a bare bar —
-  // WHICH slots are covered matters, not just how many. Live race numbers
-  // (seats left) come restamped on every /api/promos read, same as banana-draw.
-  const isAtb = promo.type === 'around-the-banana';
-  const atb = isAtb ? promo.modalContent.aroundTheBanana : undefined;
-
-  // 🔒 The Banana Vault — four tumblers instead of a bar: green = revealed
-  // click, gold pulse = face-down click waiting for the tap, gray = sealed.
-  const isVault = promo.type === 'banana-vault';
-  const bv = isVault
-    ? (promo.modalContent as { bananaVault?: { seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number; seatClaimable?: boolean; spinsClaimable?: boolean; bountiesLeft?: number; paidClicks?: number } }).bananaVault
-    : undefined;
-
-  // Chase draws its own inline row (pick · attempt · countdown) — no x/5 meter,
-  // so it's excluded from the generic progress bar below.
-  const showProgress = !isChase && !isBanana && !isAtb && !isVault && progressMax > 0;
-  // Chase always shows the clock — dormant reads a full 24:00:00 that hasn't started.
-  const timeRemaining = promo.timerEndTime
-    ? formatTimeRemaining(promo.timerEndTime)
-    : (isChase ? '24:00:00' : '');
-
-  // Single status indicator. Restrained — small dot + label, no pulsing.
-  const isClaimedPersistent =
-    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10' && !isStacking;
-
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        relative group w-full text-left rounded-2xl border bg-white/[0.02] backdrop-blur-xl
-        transition-all duration-200 ease-out
-        ${hasVisibleClaim || promo.featured
-          ? 'border-banana/40 hover:border-banana/60'
-          : 'border-white/[0.06] hover:border-white/[0.12]'}
-        hover:bg-white/[0.04]
-      `}
-    >
-      {/* NEW indicator — big banana pill for the featured promo, subtle text otherwise */}
-      {promo.isNew && (promo.featured ? (
-        <span className="absolute -top-3 right-4 z-10 inline-flex items-center rounded-full bg-banana px-3.5 py-1.5 text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_24px_rgba(251,191,36,0.5)]">
-          New
-        </span>
-      ) : (
-        <span className="absolute top-4 right-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-banana font-medium">
-          <span className="w-1.5 h-1.5 rounded-full bg-banana" />
-          New
-        </span>
-      ))}
-
-      <div className="p-5 sm:p-6 flex flex-col h-full min-h-[13rem]">
-        {/* Type label — small dot + plain text, color-restrained */}
-        <div className="flex items-center gap-1.5 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.accent }} />
-          <span className="text-[11px] uppercase tracking-wider text-white/40 font-medium">
-            {style.label}
-          </span>
-        </div>
-
-        {/* Title + description — Apple-style typographic hierarchy */}
-        <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
-          {promo.title}
-        </h3>
-        {/* THE DROP: how close 8pm is, on the card itself. */}
-        {promo.type === 'drop' && (
-          <div className="mb-2 text-[15px] font-bold text-white/85">
-            <DropCountdown wallet={wallet} />
-          </div>
-        )}
-        <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-xs leading-relaxed text-banana/80 mb-2" />
-        <p className={`text-white/45 text-sm leading-relaxed mb-4 whitespace-pre-line ${isVault ? '' : 'line-clamp-2'}`}>
-          {promo.description}
-        </p>
-
-        {/* Chase Your Pick — bottom row: live countdown, plus (once a draft locks
-            a pick) the slot, attempts, and next-hit Spins. No x/5 meter. */}
-        {isChase && (
-          <div className="mt-auto mb-4">
-            {chase?.active ? (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] whitespace-nowrap text-white/70">
-                  <span className="font-bold text-[#f97316]">Pick {chase.slot}</span>
-                  <span className="text-white/25"> · </span>Att {chase.attempt}
-                  <span className="text-white/25"> → </span>
-                  <span className="font-bold text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
-                </span>
-                <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] text-white/45">Draft to lock your pick</span>
-                <span className="text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
-              </div>
-            )}
-          </div>
-        )}
-        {/* Banana Draw — live: what you hold and the 24h clock. Mirrors the
-            Match Your Pick row so the cards read the same. Share % is
-            deliberately NOT shown anywhere (Boris 2026-07-26). */}
-        {isBanana && (
-          <div className="mt-auto mb-4">
-            <div className="flex items-center justify-between gap-2">
-              {bd && bd.bananas > 0 ? (
-                <span className="text-[13px] whitespace-nowrap text-white/70">
-                  <span className="font-bold text-[#ef6c37]">🍌 {bd.bananas}</span>
-                  {bd.pending > 0 && <><span className="text-white/25"> · </span>{bd.pending} filling</>}
-                </span>
-              ) : (
-                <span className="text-[13px] text-white/45">Fill a draft to earn Bananas</span>
-              )}
-              <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining || '24:00:00'}</span>
-            </div>
-          </div>
-        )}
-
-        {/* 🔒 The Banana Vault — the four tumblers + live seats-left + clock. */}
-        {isVault && (() => {
-          return (
-            <div className="mt-auto mb-4">
-              <VaultInline bv={bv} wallet={wallet} theme="dark" size="lg" />
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] text-white/70">
-                  <span className="font-bold text-[#ef4444]">{bv?.seatsLeft ?? 3} Jackpot seats left</span>
-                </span>
-                <span className="shrink-0 text-[15px] font-bold tabular-nums text-white/85">{timeRemaining}</span>
-              </div>
-              <p className="mt-2 text-[11px] leading-relaxed font-semibold text-banana/80">
-                {(bv?.bountiesLeft ?? 5) > 0
-                  ? `🎰 First 5 to click 2 tumblers with paid drafts win 2 Free Spins — you're ${bv?.paidClicks ?? 0}/2 (${bv?.bountiesLeft ?? 5} left)`
-                  : 'Spin bounties all claimed — seats still live'}
-              </p>
-              <p className="mt-1 text-[11px] leading-relaxed text-white/40">
-                <span className="text-white/60 font-semibold">Free + paid drafts</span> count toward the seat · any order
-              </p>
-            </div>
-          );
-        })()}
-
-                {/* Around The Banana — the 10-slot lap grid: one cell per pick slot,
-            filled cells are slots this user has drafted from. Under it, the
-            live seats-left line (or the user's own finish). */}
-        {isAtb && (
-          <div className="mt-auto mb-4">
-            <div className="grid grid-cols-10 gap-1 mb-2">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((s) => {
-                const hit = (atb?.slotsHit ?? []).includes(s);
-                return (
-                  <div
-                    key={s}
-                    className="h-6 rounded-md flex items-center justify-center text-[10px] font-semibold tabular-nums"
-                    style={hit
-                      ? { background: 'rgba(239,68,68,0.9)', color: '#fff' }
-                      : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}
-                  >
-                    {s}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-white/70">
-                {/* Winners keep their seat line AND the live race — they can
-                    win again next round (Richard 2026-08-14), so hiding the
-                    slots/seats-left read as "didn't reset" (AceJohn 8/14). */}
-                {atb?.won ? (
-                  <>
-                    <span className="font-bold text-[#ef4444]">Won Seat {atb.seatNumber}</span>
-                    <span className="text-white/25"> · </span>
-                    <span className="font-bold text-[#ef4444]">{(atb?.slotsHit ?? []).length}/10 slots</span>
-                    <span className="text-white/25"> · </span>
-                    {Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0))} seats left
-                  </>
-                ) : atb?.completed ? (
-                  <span className="text-white/45">All 10 covered — seats were taken</span>
-                ) : (
-                  <>
-                    <span className="font-bold text-[#ef4444]">{(atb?.slotsHit ?? []).length}/10 slots</span>
-                    <span className="text-white/25"> · </span>
-                    {Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0))} seats left
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Progress — hairline, banana fill on claimable, neutral otherwise.
-            Kickoff buy-bonus also prints lifetime drafts counted toward its
-            20-draft cap (modalContent.totalMinted) next to the pair meter. */}
-        {showProgress && (
-          <div className="mt-auto mb-4">
-            <div className="flex justify-between items-baseline mb-1.5">
-              <span className="text-white/55 text-xs tabular-nums">
-                {promo.type === 'buy-bonus'
-                  ? `${progressCurrent}/${progressMax} · ${Math.min(promo.modalContent?.totalMinted || 0, API_CONFIG.promos.buyBonus.maxPassesCounted)}/${API_CONFIG.promos.buyBonus.maxPassesCounted} drafts · Max ${API_CONFIG.promos.buyBonus.maxPassesCounted}`
-                  : `${progressCurrent} / ${progressMax}`}
-              </span>
-              {timeRemaining && (
-                <span className="text-white/85 text-[15px] font-bold tabular-nums">{timeRemaining}</span>
-              )}
-            </div>
-            <div className="h-[3px] rounded-full bg-white/[0.06] overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${progressPercent}%`,
-                  background: hasVisibleClaim ? '#fbbf24' : 'rgba(255,255,255,0.45)',
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Bottom row: status + action */}
-        <div className={`flex items-center justify-between gap-3 ${showProgress ? '' : 'mt-auto'}`}>
-          {/* Status indicator — minimal */}
-          <div className="flex-1 min-w-0">
-            {hasVisibleClaim ? (
-              <span className="text-banana text-xs font-medium">Ready to claim</span>
-            ) : isClaimedPersistent ? (
-              <span className="inline-flex items-center gap-1 text-white/45 text-xs">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Claimed
-              </span>
-            ) : showProgress ? (
-              <span className="text-white/35 text-xs">In progress</span>
-            ) : (
-              <span className="text-white/35 text-xs">Tap for details</span>
-            )}
-          </div>
-
-          {hasVisibleClaim && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onClaim(); }}
-              className="shrink-0 px-4 py-1.5 bg-banana text-black text-xs font-semibold rounded-full hover:bg-banana/90 active:scale-[0.97] transition-all"
-            >
-              {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
-            </button>
-          )}
-        </div>
-      </div>
-    </button>
   );
 }
