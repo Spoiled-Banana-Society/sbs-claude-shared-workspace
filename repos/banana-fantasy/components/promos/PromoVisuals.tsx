@@ -326,9 +326,11 @@ export function PromoLive({
   const t = size === 'lg' ? 'text-[13px]' : size === 'md' ? 'text-[12px]' : 'text-[11px]';
   const sm = size === 'lg' ? 'text-[10px] tracking-[1.6px]' : 'text-[8.5px] tracking-[0.9px]';
   const Stat = ({ v, l, ready }: { v: React.ReactNode; l?: string; ready?: boolean }) => (
-    <span className={`${t} font-extrabold tabular-nums whitespace-nowrap ${ready ? 'text-banana' : 'text-white'} ${className}`}>
-      {v}
-      {l && !hideLabel && <small className={`${sm} font-extrabold text-white/45 ml-1.5`}>{l}</small>}
+    // Value + label wrap as WHOLE units (label drops to its own line when
+    // tight) — never clip mid-word (Boris 2026-08-18: "RESETS ONCE…" cut off).
+    <span className={`${t} font-extrabold tabular-nums inline-flex flex-wrap items-baseline gap-x-1.5 leading-tight ${ready ? 'text-banana' : 'text-white'} ${className}`}>
+      <span className="whitespace-nowrap">{v}</span>
+      {l && !hideLabel && <small className={`${sm} font-extrabold text-white/45 whitespace-nowrap`}>{l}</small>}
     </span>
   );
   if (hasVisibleClaim) return <Stat v="Ready to claim" ready />;
@@ -367,7 +369,7 @@ export function PromoLive({
       if (!cyc) return <Stat v="1 in 100" l="DRAFTS" />;
       if (cyc.reward >= 10) return <Stat v={<span style={{ color: accent }}>10-spin window</span>} l={`${cyc.tenLeft} ${cyc.tenLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       if (cyc.reward >= 5) return <Stat v={<span style={{ color: accent }}>5-spin window</span>} l={`${cyc.fiveLeft} ${cyc.fiveLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      return <Stat v="Windows closed" l="RESETS ONCE THE JACKPOT HITS" />;
+      return <Stat v="Windows closed" l="RESETS ONCE JP HITS" />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="FIRST BUY ONLY" />;

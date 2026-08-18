@@ -73,12 +73,12 @@ export function PromoMiniCard({
       <div className="flex flex-col gap-1.5 flex-1 min-h-0 px-3.5 pt-3 pb-3.5">
         <h4 className="text-[14.5px] font-extrabold text-white leading-tight tracking-[-.2px]">{promoName(promo)}</h4>
         {isFp ? (
-          <div className="text-[11px] leading-snug text-[#c9c9d2]">
+          <div className="text-[11px] leading-snug text-[#c9c9d2] line-clamp-4">
             {fpShowNewPlayerTag && (
               <span className="block text-[9px] font-extrabold uppercase tracking-[1.4px] text-white/80 mb-0.5">New players</span>
             )}
             {firstPurchaseCardLines(fpVariant, promo.description).slice(0, 2).map((line) => (
-              <span key={line} className="block truncate">{line}</span>
+              <span key={line} className="block">{line}</span>
             ))}
           </div>
         ) : (
@@ -88,7 +88,7 @@ export function PromoMiniCard({
           </>
         )}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 min-h-[30px]">
-          <div className="min-w-0 overflow-hidden">
+          <div className="min-w-0">
             <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim} />
           </div>
           {hasVisibleClaim ? (
