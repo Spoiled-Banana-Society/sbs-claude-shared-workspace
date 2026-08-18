@@ -333,12 +333,10 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
             <button
               type="button"
               onClick={() => setHow((h) => !h)}
+              aria-expanded={how}
               className="rounded-full border border-white/40 bg-white/[0.14] px-4 py-2.5 text-[12px] font-extrabold text-white hover:bg-white/[0.2] transition-colors"
             >
-              {how ? 'Hide details' : 'How it works'}
-            </button>
-            <button type="button" onClick={onOpenModal} className="text-[12px] font-extrabold text-white/80 underline-offset-4 hover:underline px-1">
-              Full details
+              Details {how ? '▴' : '▾'}
             </button>
           </div>
         </div>
@@ -376,6 +374,13 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
               </li>
             ))}
           </ul>
+          <button
+            type="button"
+            onClick={onOpenModal}
+            className="mt-4 rounded-full border border-white/40 bg-white/[0.08] px-3.5 py-2 text-[11px] font-extrabold text-white hover:bg-white/[0.14] transition-colors"
+          >
+            Full details & history
+          </button>
         </div>
       </div>
     </section>

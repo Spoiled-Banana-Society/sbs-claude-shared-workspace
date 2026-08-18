@@ -29,7 +29,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // then the repeat-drafting drivers up top — 4-in-24h and THE DROP — then
   // Jackpot Hit WHILE a spin window is open (see jackpotRank below: it drops
   // to the very bottom once the 10/5-spin windows are closed), Match Your
-  // Pick, Buy 10, referral, and the passive Pick 10 last. Claim-ready /
+  // Pick, Pick 10, then referral. Claim-ready /
   // near-complete promos still bubble above this fixed order in real time.
   'new-user',       // first-timers only — outranks even the featured pin
   'first-purchase', // biggest conversion lever: free user → paying user
