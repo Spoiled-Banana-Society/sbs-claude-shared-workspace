@@ -34,7 +34,7 @@ export const mockPromos: Promo[] = [
     id: '3',
     type: 'referral',
     title: 'Refer Friend → FREE SPIN',
-    description: 'Invite friends both get a spin',
+    description: 'Your friend buys passes → you get Free Spins: at their 1st, 4th and 10th pass.',
     ctaText: 'Invite Now',
     ctaLink: '#',
     backgroundColor: '#2a2a35',

@@ -50,7 +50,7 @@ function ChaseLadder({ promo }: { promo: Promo }) {
 function ReferralMilestones({ promo }: { promo: Promo }) {
   const hist = promo.modalContent?.referralHistory || [];
   const best = (k: 'bought1' | 'bought4' | 'bought10') => hist.some((e) => e.rewards?.[k] === 'claimed' || e.rewards?.[k] === 'claim');
-  const cells: [string, string, boolean][] = [['1st pass', '1 SPIN', best('bought1')], ['4 passes', '1 SPIN', best('bought4')], ['10 passes', '1 SPIN', best('bought10')]];
+  const cells: [string, string, boolean][] = [['Buys 1 pass', '+1 SPIN', best('bought1')], ['Buys 4', '+1 SPIN', best('bought4')], ['Buys 10', '+1 SPIN', best('bought10')]];
   return (
     <div className="flex gap-[5px] mt-1">
       {cells.map(([l, r, on]) => (

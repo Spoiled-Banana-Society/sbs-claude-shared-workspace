@@ -55,10 +55,10 @@ export function promoAccent(type: PromoType): string {
 export function promoKicker(promo: Promo): string {
   switch (promo.type) {
     case 'around-the-banana': return 'JACKPOT SEAT · LIVE RACE';
-    case 'drop': return 'JACKHOF SEAT · NIGHTLY';
+    case 'drop': return 'JACKHOF SEAT · 9 PM PT';
     case 'daily-drafts': return 'FREE SPIN · EVERY 4';
     case 'pick-chase': return 'UP TO 5 SPINS';
-    case 'referral': return 'FREE SPINS · BOTH OF YOU';
+    case 'referral': return 'FREE SPINS · WHEN FRIENDS BUY';
     case 'pick-10': return 'FREE SPIN · PASSIVE';
     case 'jackpot': return 'FREE SPINS · PASSIVE';
     case 'first-purchase': return 'FIRST BUY';
