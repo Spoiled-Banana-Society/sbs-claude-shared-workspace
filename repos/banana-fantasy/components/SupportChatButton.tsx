@@ -12,6 +12,16 @@ import { useAuth } from '@/hooks/useAuth';
 export function SupportChatButton() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  // Session-level block (CrispChat found this visitor session on the
+  // blocklist) — hide the launcher even when logged out.
+  const [sessionBlocked, setSessionBlocked] = useState(false);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (document.documentElement.classList.contains('crisp-blocked')) setSessionBlocked(true);
+    const on = () => setSessionBlocked(true);
+    window.addEventListener('sbs:crisp-blocked', on);
+    return () => window.removeEventListener('sbs:crisp-blocked', on);
+  }, []);
   // Pixels to lift the button when the footer enters view so it sits
   // above the "Terms · FAQ · Support" links instead of covering them.
   // Tracked as state so we can animate the shift smoothly.
@@ -84,7 +94,7 @@ export function SupportChatButton() {
   };
 
   // Admin support block — no launcher at all (hooks above must still run).
-  if (user?.supportBlocked) return null;
+  if (user?.supportBlocked || sessionBlocked) return null;
 
   return (
     <div

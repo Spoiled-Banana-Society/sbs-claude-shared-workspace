@@ -104,6 +104,8 @@ export function CrispChat() {
     const existing = document.getElementById(id);
     if (!blocked) { existing?.remove(); return; }
     document.documentElement.classList.remove('crisp-open');
+    document.documentElement.classList.add('crisp-blocked');
+    window.dispatchEvent(new CustomEvent('sbs:crisp-blocked'));
     if (!existing) {
       const st = document.createElement('style');
       st.id = id;
@@ -145,6 +147,9 @@ export function CrispChat() {
               document.head.appendChild(st);
             }
             try { w.$crisp?.push(['do', 'chat:close']); w.$crisp?.push(['do', 'chat:hide']); } catch {}
+            // Tell the launcher (SupportChatButton) to disappear as well.
+            document.documentElement.classList.add('crisp-blocked');
+            window.dispatchEvent(new CustomEvent('sbs:crisp-blocked'));
           }
         } catch { /* fail open */ }
       } else if (tries > 40) {
