@@ -168,9 +168,7 @@ export default function NotificationsPage() {
                     onClick={() => { if (!notif.read) markAsRead(notif.id); }}
                     className={`group/row flex gap-3 sm:gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
                       notif.pinned
-                        ? (!notif.read
-                          ? 'bg-gradient-to-b from-banana/[0.07] to-banana/[0.02] border-banana/25 hover:from-banana/[0.09]'
-                          : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]')
+                        ? `border-banana/60 ${!notif.read ? 'bg-banana/[0.05] hover:bg-banana/[0.07]' : 'bg-white/[0.02] hover:bg-white/[0.04]'}`
                         : (!notif.read
                           ? 'bg-banana/[0.04] border-banana/10 hover:bg-banana/[0.06]'
                           : 'bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.04]')
@@ -185,10 +183,7 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       {notif.pinned && (
                         <div className="flex items-center justify-between mb-1">
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.16em] ${!notif.read ? 'text-banana' : 'text-white/40'}`}>
-                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M16 4v2l-2 2v5l3 3v2H7v-2l3-3V8L8 6V4z" /></svg>
-                            PINNED
-                          </span>
+                          <span className="text-[9px] font-bold tracking-[0.16em] text-banana">PINNED</span>
                           <button
                             type="button"
                             aria-label="Dismiss pinned notification"

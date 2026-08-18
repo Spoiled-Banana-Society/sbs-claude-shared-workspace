@@ -704,9 +704,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                     }}
                     className={`group/row flex gap-3 px-4 py-3 hover:bg-bg-tertiary/40 transition-colors cursor-pointer ${
                       notif.pinned
-                        ? (!notif.read
-                          ? 'bg-gradient-to-b from-banana/[0.06] to-banana/[0.02] border-b border-banana/20'
-                          : 'bg-white/[0.02] border-b border-white/10')
+                        ? `mx-2 my-1.5 rounded-xl ring-1 ring-banana/60 ${!notif.read ? 'bg-banana/[0.04]' : ''}`
                         : (!notif.read ? 'bg-banana/[0.03]' : '')
                     }`}
                   >
@@ -719,10 +717,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                     <div className="flex-1 min-w-0">
                       {notif.pinned && (
                         <div className="flex items-center justify-between mb-1">
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.16em] ${!notif.read ? 'text-banana' : 'text-text-muted'}`}>
-                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M16 4v2l-2 2v5l3 3v2H7v-2l3-3V8L8 6V4z" /></svg>
-                            PINNED
-                          </span>
+                          <span className="text-[9px] font-bold tracking-[0.16em] text-banana">PINNED</span>
                           {onUnpin && (
                             <button
                               type="button"
