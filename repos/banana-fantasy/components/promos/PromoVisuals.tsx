@@ -367,7 +367,7 @@ export function PromoLive({
       if (!cyc) return <Stat v="1 in 100" l="DRAFTS" />;
       if (cyc.reward >= 10) return <Stat v={<span style={{ color: accent }}>10-spin window</span>} l={`${cyc.tenLeft} ${cyc.tenLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       if (cyc.reward >= 5) return <Stat v={<span style={{ color: accent }}>5-spin window</span>} l={`${cyc.fiveLeft} ${cyc.fiveLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      return <Stat v="Windows closed" l="RESETS ON A HIT" />;
+      return <Stat v="Windows closed" l="RESETS ONCE THE JACKPOT HITS" />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="FIRST BUY ONLY" />;
