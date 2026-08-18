@@ -61,7 +61,7 @@ const fadeIn = {
 type FilterKey = 'all' | 'unread';
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, markAsRead, markAllRead, hasLoaded } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllRead, unpin, hasLoaded } = useNotifications();
   const [filter, setFilter] = useState<FilterKey>('all');
 
   const filtered = useMemo(
@@ -166,10 +166,14 @@ export default function NotificationsPage() {
                     exit={{ opacity: 0, x: -20, transition: { duration: 0.15 } }}
                     layout
                     onClick={() => { if (!notif.read) markAsRead(notif.id); }}
-                    className={`flex gap-3 sm:gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
-                      !notif.read
-                        ? 'bg-banana/[0.04] border-banana/10 hover:bg-banana/[0.06]'
-                        : 'bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.04]'
+                    className={`group/row flex gap-3 sm:gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
+                      notif.pinned
+                        ? (!notif.read
+                          ? 'bg-gradient-to-b from-banana/[0.07] to-banana/[0.02] border-banana/25 hover:from-banana/[0.09]'
+                          : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]')
+                        : (!notif.read
+                          ? 'bg-banana/[0.04] border-banana/10 hover:bg-banana/[0.06]'
+                          : 'bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.04]')
                     }`}
                   >
                     {/* Icon — quiet grey, no tile, so the message text leads */}
@@ -179,6 +183,22 @@ export default function NotificationsPage() {
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
+                      {notif.pinned && (
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.16em] ${!notif.read ? 'text-banana' : 'text-white/40'}`}>
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M16 4v2l-2 2v5l3 3v2H7v-2l3-3V8L8 6V4z" /></svg>
+                            PINNED
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Dismiss pinned notification"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); unpin(notif.id); }}
+                            className="-mr-1 -mt-1 w-7 h-7 rounded-md flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                          </button>
+                        </div>
+                      )}
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">

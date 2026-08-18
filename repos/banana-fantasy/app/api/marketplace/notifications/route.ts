@@ -93,13 +93,25 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { wallet, ids, all } = body;
+    const { wallet, ids, all, unpin } = body;
 
     if (!wallet) {
       return NextResponse.json({ error: 'wallet required' }, { status: 400 });
     }
 
     const db = getAdminFirestore();
+
+    // × on a pinned row: unpin THIS user's copy only. Ownership-checked (the
+    // doc must belong to the caller's wallet) — nothing is deleted or read.
+    if (typeof unpin === 'string' && unpin) {
+      const ref = db.collection(COLLECTION).doc(unpin);
+      const snap = await ref.get();
+      if (snap.exists && String(snap.data()?.wallet || '').toLowerCase() === wallet.toLowerCase()) {
+        await ref.update({ pinned: false, unpinnedAt: new Date().toISOString(), unpinnedBy: 'user' });
+      }
+      pushStreamEventBg(wallet, 'notification', { source: 'unpin' });
+      return NextResponse.json({ ok: true });
+    }
 
     if (all) {
       const snapshot = await db

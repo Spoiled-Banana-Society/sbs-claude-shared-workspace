@@ -23,6 +23,10 @@ export interface Notification {
   link?: string;
   /** Per-notification icon (emoji/glyph). Falls back to the type emoji when absent. */
   icon?: string;
+  /** Pinned (Boris 2026-08-18): sorts to the top of the bell + /notifications
+   *  even after read, until the user dismisses it (× → their copy only) or the
+   *  team unpins it globally (flag flipped on every copy). */
+  pinned?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -304,6 +308,7 @@ export function useNotifications() {
           createdAt,
           link: (n.link as string) || undefined,
           icon: (n.icon as string) || undefined,
+          pinned: n.pinned === true,
         };
       });
       // Re-merge optimistic local entries the server hasn't returned yet
@@ -491,7 +496,14 @@ export function useNotifications() {
   useEffect(() => { setPrefs(getNotificationPrefs()); }, []);
 
   const visible = useMemo(
-    () => notifications.filter(n => isCategoryEnabled(n.type)),
+    () => {
+      const list = notifications.filter(n => isCategoryEnabled(n.type));
+      // Pinned rows float to the top (stable — everything else keeps its
+      // newest-first order). Sort is a pure display concern; read-state and
+      // the unread badge are untouched.
+      const pinned = list.filter(n => n.pinned);
+      return pinned.length ? [...pinned, ...list.filter(n => !n.pinned)] : list;
+    },
     // prefs in deps so the filter recomputes when a category is toggled.
     [notifications, prefs],
   );
@@ -506,6 +518,19 @@ export function useNotifications() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet: w, ids: [id] }),
+    }).catch(() => refetchRef.current());
+  }, []);
+
+  // × on a pinned row: unpin for THIS user only (their doc's flag flips; the
+  // row falls into normal history, nothing is deleted or marked read).
+  const unpin = useCallback((id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, pinned: false } : n)); // optimistic
+    const w = walletRef.current;
+    if (!w) return;
+    void fetch('/api/marketplace/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: w, unpin: id }),
     }).catch(() => refetchRef.current());
   }, []);
 
@@ -552,7 +577,7 @@ export function useNotifications() {
     });
   }, []);
 
-  return { notifications: visible, unreadCount, markAsRead, markAllRead, addNotification, clearAll, prefs, toggleCategory, hasLoaded };
+  return { notifications: visible, unreadCount, markAsRead, markAllRead, unpin, addNotification, clearAll, prefs, toggleCategory, hasLoaded };
 }
 
 // ─── Bell Icon Button ────────────────────────────────────────────────────
@@ -591,9 +616,10 @@ interface NotificationPanelProps {
   unreadCount: number;
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
+  onUnpin?: (id: string) => void;
 }
 
-export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead }: NotificationPanelProps) {
+export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -676,8 +702,12 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       if (!notif.read) onMarkRead(notif.id);
                       if (notif.link) onClose();
                     }}
-                    className={`flex gap-3 px-4 py-3 hover:bg-bg-tertiary/40 transition-colors cursor-pointer ${
-                      !notif.read ? 'bg-banana/[0.03]' : ''
+                    className={`group/row flex gap-3 px-4 py-3 hover:bg-bg-tertiary/40 transition-colors cursor-pointer ${
+                      notif.pinned
+                        ? (!notif.read
+                          ? 'bg-gradient-to-b from-banana/[0.06] to-banana/[0.02] border-b border-banana/20'
+                          : 'bg-white/[0.02] border-b border-white/10')
+                        : (!notif.read ? 'bg-banana/[0.03]' : '')
                     }`}
                   >
                     {/* Icon — quiet grey, no tile, so the message text leads */}
@@ -687,6 +717,24 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
+                      {notif.pinned && (
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.16em] ${!notif.read ? 'text-banana' : 'text-text-muted'}`}>
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M16 4v2l-2 2v5l3 3v2H7v-2l3-3V8L8 6V4z" /></svg>
+                            PINNED
+                          </span>
+                          {onUnpin && (
+                            <button
+                              type="button"
+                              aria-label="Dismiss pinned notification"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUnpin(notif.id); }}
+                              className="-mr-1 -mt-1 w-6 h-6 rounded-md flex items-center justify-center text-text-muted/60 hover:text-text-primary hover:bg-bg-tertiary transition-colors sm:opacity-0 sm:group-hover/row:opacity-100 focus-visible:opacity-100"
+                            >
+                              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-xs font-semibold leading-tight ${!notif.read ? 'text-text-primary' : 'text-text-secondary'}`}>
                           {notif.title}
@@ -744,7 +792,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
 
 export function NotificationWidget() {
   // Single server-backed source of truth (synced across devices).
-  const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllRead, unpin } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -760,6 +808,7 @@ export function NotificationWidget() {
         unreadCount={unreadCount}
         onMarkRead={markAsRead}
         onMarkAllRead={markAllRead}
+        onUnpin={unpin}
       />
     </div>
   );
