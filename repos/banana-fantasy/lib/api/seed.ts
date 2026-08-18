@@ -598,7 +598,7 @@ const seedPromos: Promo[] = [
     ctaText: 'View Drafts',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
-    isNew: true,
+    isNew: false, // NEW ribbon retired 2026-08-18 (round 3) — see promoFilter force-clear
     progressCurrent: 0,
     // x/10 meter = distinct pick slots covered — a real, bounded target
     // (unlike Bananas), so the bar earns its place here.

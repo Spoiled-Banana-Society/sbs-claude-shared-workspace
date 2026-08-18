@@ -366,6 +366,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // seeded during launch stored isNew:true, and the getPromos overlay does
     // not copy isNew; without this those users keep the badge forever.
     if (p.type === 'pick-chase') return { ...p, isNew: false };
+    // Around The Banana is on its third round now (Boris 2026-08-18) — the NEW
+    // ribbon from the 2026-08-11 launch is stale. Force-cleared for the same
+    // reason as pick-chase: launch-seeded docs store isNew:true forever.
+    if (p.type === 'around-the-banana') return { ...p, isNew: false };
     // Featured promo pins to position 1 but no longer forces the NEW ribbon —
     // THE DROP is established now (Boris 2026-08-05); the server's isNew flows
     // through instead of being clobbered here. Resolved via activeFeaturedType
