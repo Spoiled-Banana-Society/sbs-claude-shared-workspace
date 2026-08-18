@@ -86,7 +86,13 @@ export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow
   }, []);
 
   const pick = (lobbies: OpenLobby[]): LobbyFill | null => {
-    const next = lobbies.filter((l) => !joinedIds.has(l.id)).sort((a, b) => a.slot - b.slot)[0];
+    // FULLEST open lobby you're not already in, ties → lowest slot. The old
+    // "lowest slot" rule showed fast-680 at 1/10 while four players had just
+    // landed in fast-681 at 5/10 (Boris 2026-08-18) — the engine keeps
+    // filling the fuller lobby, so that's the one that starts next.
+    const next = lobbies
+      .filter((l) => !joinedIds.has(l.id))
+      .sort((a, b) => (b.seats - a.seats) || (a.slot - b.slot))[0];
     if (!next || next.seats < MIN_SEATS_TO_SHOW) return null;
     return { seats: next.seats, maxSeats: next.maxSeats };
   };
