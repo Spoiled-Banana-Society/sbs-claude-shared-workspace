@@ -8,9 +8,9 @@ import { json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, getAdminDatabase, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, laneDraftsLeft, lanePct } from '@/lib/rollingLanes';
+import { getLiveActivityCached } from '@/lib/liveActivityServer';
 import {
   LIVE_ACTIVITY_ENABLED,
-  LIVE_ACTIVITY_RTDB_PATH,
   LIVE_ACTIVITY_STALE_MS,
   formatLiveActivity,
 } from '@/lib/liveActivity';
@@ -217,16 +217,13 @@ interface ActivitySnapshot {
 async function loadActivitySnapshot(): Promise<ActivitySnapshot | null> {
   if (!LIVE_ACTIVITY_ENABLED) return null;
   try {
-    const snap = await getAdminDatabase().ref(LIVE_ACTIVITY_RTDB_PATH).get();
-    const v = snap.val() as { count?: unknown; round?: unknown; updatedAt?: unknown } | null;
-    if (!v || typeof v !== 'object') return null;
-    const count = Number(v.count) || 0;
-    const round = Number(v.round) || 0;
-    const updatedAt = Number(v.updatedAt) || 0;
-    if (count < 1 || round < 1) return null;
-    // Fail-closed: a stalled/dead aggregator appends nothing, not a frozen line.
-    if (Date.now() - updatedAt > LIVE_ACTIVITY_STALE_MS) return null;
-    return { count, round, updatedAt };
+    // OUR computed count (lib/liveActivityServer) — same source the in-app line
+    // reads now. The Go aggregator node it used to read stuck at count:0 while a
+    // fast draft was live (2026-08-18) and silently dropped this suffix.
+    const v = await getLiveActivityCached();
+    if (v.count < 1 || v.round < 1) return null;
+    if (Date.now() - v.updatedAt > LIVE_ACTIVITY_STALE_MS) return null;
+    return { count: v.count, round: v.round, updatedAt: v.updatedAt };
   } catch (err) {
     // A bad read must never take the feed down — just append nothing.
     logger.error('[api/bot/league] live-activity read failed', err);

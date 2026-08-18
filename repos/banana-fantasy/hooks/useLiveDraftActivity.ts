@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { isFirebaseAvailable, subscribeLiveDraftActivity } from '@/lib/api/firebase';
 import {
   LIVE_ACTIVITY_ENABLED,
   LIVE_ACTIVITY_STALE_MS,
@@ -50,9 +49,12 @@ export function useLiveDraftActivity(): { count: number; round: number } | null 
 
   useEffect(() => {
     if (!LIVE_ACTIVITY_ENABLED) return;
-    if (!isFirebaseAvailable()) return;
-
-    const unsub = subscribeLiveDraftActivity((v) => {
+    // Source switched 2026-08-18 from the Go aggregator's RTDB node (which
+    // stuck at count:0 while a fast draft was live) to our own computed
+    // endpoint /api/drafts/live-activity (RecentFills → per-draft RTDB state).
+    // Same freshness / zero-linger semantics as before.
+    let cancelled = false;
+    const apply = (v: { count: number; round: number; updatedAt: number } | null) => {
       const now = Date.now();
       if (!v) {
         lastStampRef.current = 0;
@@ -60,29 +62,34 @@ export function useLiveDraftActivity(): { count: number; round: number } | null 
         setValue(null);
         return;
       }
-      const isFirst = lastStampRef.current === 0;
-      const moved = !isFirst && v.updatedAt !== lastStampRef.current;
-      if (moved || (isFirst && now - v.updatedAt <= LIVE_ACTIVITY_STALE_MS)) {
-        freshAtRef.current = now;
-      }
+      freshAtRef.current = now;
       lastStampRef.current = v.updatedAt || -1;
       if (v.count >= 1 && v.round >= 1) {
         zeroSinceRef.current = 0;
         setValue({ count: v.count, round: v.round });
       } else {
-        // Don't drop the line on the first zero — start the linger clock and
-        // let the render-time check hide it only if the zero persists.
         if (!zeroSinceRef.current) zeroSinceRef.current = now;
         setTick((n) => n + 1);
       }
-    });
-
+    };
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/drafts/live-activity', { cache: 'no-store' });
+        if (!res.ok) return;
+        const j = (await res.json()) as { count?: number; round?: number; updatedAt?: number };
+        if (cancelled) return;
+        apply({ count: Number(j.count ?? 0), round: Number(j.round ?? 0), updatedAt: Number(j.updatedAt ?? Date.now()) });
+      } catch { /* keep last value; staleness check hides it if this persists */ }
+    };
+    void poll();
+    const pollTimer = setInterval(() => { void poll(); }, 10_000);
     const staleTimer = setInterval(() => {
       setTick((n) => n + 1);
     }, LIVE_ACTIVITY_STALE_CHECK_MS);
 
     return () => {
-      unsub();
+      cancelled = true;
+      clearInterval(pollTimer);
       clearInterval(staleTimer);
     };
   }, []);
