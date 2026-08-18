@@ -34,6 +34,7 @@ export function CountdownChip({
   label,
   size = 'md',
   className = '',
+  dormantSeconds,
 }: {
   /** Absolute epoch ms the clock counts to. */
   endMs: number;
@@ -41,9 +42,16 @@ export function CountdownChip({
   label?: string;
   size?: 'lg' | 'md' | 'sm';
   className?: string;
+  /**
+   * Show the clock parked at this many seconds (e.g. 24h) and NOT ticking —
+   * for promos whose window hasn't started yet (Boris 2026-08-18: the 24h
+   * clocks should be visible before the first draft, just not running).
+   */
+  dormantSeconds?: number;
 }) {
-  useTick(true);
-  const d = Math.max(0, Math.floor((endMs - Date.now()) / 1000));
+  useTick(dormantSeconds == null);
+  const dormant = dormantSeconds != null;
+  const d = dormant ? dormantSeconds : Math.max(0, Math.floor((endMs - Date.now()) / 1000));
   const h = Math.floor(d / 3600);
   const m = Math.floor((d % 3600) / 60);
   const s = d % 60;
@@ -66,7 +74,7 @@ export function CountdownChip({
   const colon = <span className={`text-white/30 font-extrabold text-[12px] ${size === 'sm' ? '' : '-mt-2'}`}>:</span>;
   return (
     <span
-      className={`inline-flex items-center rounded-[10px] border ${padc} border-white/[0.16] bg-white/[0.04] ${className}`}
+      className={`inline-flex items-center rounded-[10px] border ${padc} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
     >
       {label && size !== 'sm' && (
         <span className="text-[8px] font-extrabold tracking-[1.6px] text-white/50 mr-0.5 whitespace-nowrap">{label}</span>
@@ -75,7 +83,7 @@ export function CountdownChip({
       {colon}
       {seg(m, 'MIN')}
       {colon}
-      {seg(s, 'SEC', true)}
+      {seg(s, 'SEC', !dormant)}
     </span>
   );
 }
@@ -347,13 +355,13 @@ export function PromoLive({
     case 'drop':
       return <DropLive size={size} wallet={wallet} />;
     case 'daily-drafts':
-      return live
-        ? <CountdownChip endMs={endMs} label="LEFT" size={size} className={className} />
-        : <Stat v={isClaimed ? '✓ Claimed' : 'Paid draft'} l={isClaimed ? '' : 'STARTS THE CLOCK'} />;
+      if (live) return <CountdownChip endMs={endMs} label="LEFT" size={size} className={className} />;
+      if (isClaimed) return <Stat v="✓ Claimed" />;
+      return <CountdownChip endMs={0} dormantSeconds={24 * 3600} label="STARTS ON 1ST DRAFT" size={size} className={className} />;
     case 'pick-chase': {
       const c = deriveChaseState(promo);
       if (c.active) return <CountdownChip endMs={endMs} label="TO MATCH" size={size} className={className} />;
-      return <Stat v="First draft" l="LOCKS YOUR PICK · STARTS 24H" />;
+      return <CountdownChip endMs={0} dormantSeconds={24 * 3600} label="STARTS ON 1ST DRAFT" size={size} className={className} />;
     }
     case 'referral': {
       const spins = (mc.referralHistory || []).reduce((s, e) => {
@@ -411,7 +419,7 @@ function DropLive({ size, wallet }: { size: Size; wallet: string | null }) {
 
 /** True when the promo has a live countdown chip (used to size card feet). */
 export function promoHasChip(promo: Promo): boolean {
-  if (promo.type === 'drop') return true;
+  if (promo.type === 'drop' || promo.type === 'pick-chase' || promo.type === 'daily-drafts') return true;
   const endMs = promo.timerEndTime ? new Date(promo.timerEndTime).getTime() : 0;
   return endMs > Date.now();
 }
