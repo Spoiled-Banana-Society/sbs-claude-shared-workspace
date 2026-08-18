@@ -17,31 +17,38 @@ import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 // ─── Per-promo secondary indicators (under the one-liner) ───────────────────
 
 function ChaseLadder({ promo }: { promo: Promo }) {
+  // Attempts are UNLIMITED inside the 24h — only the SPINS cap at 5 (Boris
+  // 2026-08-18). So the rungs are the payout per attempt: 1st hit pays 1,
+  // 2nd 2 … 5th-and-later pays 5. `next` = what the NEXT filled draft pays.
   const c = deriveChaseState(promo);
   const won = !!promo.claimable;
+  const wonSpins = Math.min(Math.max(promo.claimCount || 1, 1), 5);
   return (
-    <div className="flex items-center gap-[5px] mt-1">
-      {[1, 2, 3, 4, 5].map((n) => {
-        const next = c.active && !won && n === Math.min(c.nextHit, 5);
-        const used = c.active && !won && n < Math.min(c.nextHit, 5);
-        const win = won && n === Math.min(Math.max(promo.claimCount || 1, 1), 5);
-        return (
-          <div
-            key={n}
-            className={`flex-1 text-center text-[10px] font-extrabold py-[5px] rounded-lg border transition-all ${
-              win ? 'bg-banana text-black border-transparent'
-                : next ? 'bg-white/[0.12] text-white border-white/35'
-                : used ? 'text-white/35 line-through border-transparent bg-white/[0.06]'
-                : 'bg-white/[0.06] text-white/45 border-transparent'
-            }`}
-          >
-            {n}
-            <small className="block text-[8px] tracking-[1px] opacity-80 leading-none mt-[2px]">
-              {win ? 'WON' : next ? 'NEXT' : n === 5 ? 'MAX' : ' '}
-            </small>
-          </div>
-        );
-      })}
+    <div className="mt-1">
+      <div className="text-[8.5px] font-extrabold tracking-[1.6px] text-white/40 mb-1">SPINS PER ATTEMPT · NO LIMIT ON TRIES</div>
+      <div className="flex items-center gap-[5px]">
+        {[1, 2, 3, 4, 5].map((n) => {
+          const isNext = c.active && !won && n === Math.min(c.nextHit, 5);
+          const passed = c.active && !won && n < Math.min(c.nextHit, 5);
+          const isWin = won && n === wonSpins;
+          return (
+            <div
+              key={n}
+              className={`flex-1 text-center py-[5px] rounded-lg border transition-all ${
+                isWin ? 'bg-banana text-black border-transparent'
+                  : isNext ? 'bg-white/[0.12] text-white border-white/35'
+                  : passed ? 'text-white/35 border-transparent bg-white/[0.06]'
+                  : 'bg-white/[0.06] text-white/45 border-transparent'
+              }`}
+            >
+              <div className="text-[12px] font-extrabold leading-none tabular-nums">{n}<span className="text-[8px] ml-[1px]">{n === 1 ? ' SPIN' : ' SPINS'}</span></div>
+              <small className="block text-[7.5px] tracking-[1px] opacity-80 leading-none mt-[3px]">
+                {isWin ? 'WON' : isNext ? 'NEXT' : n === 5 ? '5TH+ TRY' : `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'} TRY`}
+              </small>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
