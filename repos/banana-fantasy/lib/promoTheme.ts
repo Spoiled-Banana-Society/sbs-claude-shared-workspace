@@ -102,7 +102,7 @@ export function promoRules(promo: Promo): string[] {
 export function promoCta(promo: Promo, opts: { canOpenPacks?: boolean } = {}): { label: string; href: string } | null {
   switch (promo.type) {
     case 'around-the-banana': return { label: 'Enter a draft', href: '/draft' };
-    case 'drop': return opts.canOpenPacks ? { label: 'Open packs', href: '/drop' } : { label: 'Fill a draft', href: '/draft' };
+    case 'drop': return opts.canOpenPacks ? { label: 'Open packs', href: '/drop' } : { label: 'Draft', href: '/draft' };
     case 'daily-drafts': return { label: 'Draft', href: '/draft' };
     case 'pick-chase': return { label: 'Draft', href: '/draft' };
     case 'first-purchase': return { label: 'Buy a pass', href: '/buy-drafts' };

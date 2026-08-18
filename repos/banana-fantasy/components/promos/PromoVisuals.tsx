@@ -347,7 +347,7 @@ export function PromoLive({
     case 'daily-drafts':
       return live
         ? <CountdownChip endMs={endMs} label="LEFT" size={size} className={className} />
-        : <Stat v={isClaimed ? '✓ Claimed' : 'Fill a paid draft'} l={isClaimed ? '' : 'STARTS THE CLOCK'} />;
+        : <Stat v={isClaimed ? '✓ Claimed' : 'Paid draft'} l={isClaimed ? '' : 'STARTS THE CLOCK'} />;
     case 'pick-chase': {
       const c = deriveChaseState(promo);
       if (c.active) return <CountdownChip endMs={endMs} label="TO MATCH" size={size} className={className} />;
