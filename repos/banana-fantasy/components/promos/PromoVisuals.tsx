@@ -47,8 +47,8 @@ export function CountdownChip({
   const h = Math.floor(d / 3600);
   const m = Math.floor((d % 3600) / 60);
   const s = d % 60;
-  const hot = d < 3600;
-  const urgent = d < 600;
+  // Always white — yellow is reserved for claim/ready states site-wide, so a
+  // clock must never turn banana (Boris 2026-08-18). No urgency color either.
   const digit = size === 'lg' ? 'text-[15px]' : size === 'md' ? 'text-[13px]' : 'text-[12px]';
   const unit = size === 'sm' ? 'hidden' : size === 'lg' ? 'text-[7.5px]' : 'text-[7px]';
   const padc = size === 'lg' ? 'px-2.5 py-1.5 gap-[7px]' : size === 'md' ? 'px-2 py-1 gap-1.5' : 'px-1.5 py-[3px] gap-1';
@@ -56,7 +56,7 @@ export function CountdownChip({
     <span className="flex flex-col items-center min-w-[18px]">
       <b
         key={tick ? v : undefined}
-        className={`${digit} font-extrabold leading-none tabular-nums ${hot ? 'text-banana' : 'text-white'} ${tick ? 'promo-sec' : ''}`}
+        className={`${digit} font-extrabold leading-none tabular-nums text-white ${tick ? 'promo-sec' : ''}`}
       >
         {pad(v)}
       </b>
@@ -66,9 +66,7 @@ export function CountdownChip({
   const colon = <span className={`text-white/30 font-extrabold text-[12px] ${size === 'sm' ? '' : '-mt-2'}`}>:</span>;
   return (
     <span
-      className={`inline-flex items-center rounded-[10px] border ${padc} ${
-        hot ? 'border-banana/50 bg-banana/[0.07]' : 'border-white/[0.16] bg-white/[0.04]'
-      } ${urgent ? 'promo-urgent' : ''} ${className}`}
+      className={`inline-flex items-center rounded-[10px] border ${padc} border-white/[0.16] bg-white/[0.04] ${className}`}
     >
       {label && size !== 'sm' && (
         <span className="text-[8px] font-extrabold tracking-[1.6px] text-white/50 mr-0.5 whitespace-nowrap">{label}</span>

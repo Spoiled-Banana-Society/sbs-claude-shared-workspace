@@ -717,7 +717,7 @@ const seedPromos: Promo[] = [
     id: '4',
     type: 'jackpot',
     title: 'Jackpot Hit → FREE SPIN',
-    description: 'Win a Jackpot draft for a bonus',
+    description: 'Jackpot hits early? One of its 10 drafters wins 10 or 5 Free Spins.',
     ctaText: 'View Drafts',
     ctaLink: '/my-teams',
     backgroundColor: '#2a2a35',
