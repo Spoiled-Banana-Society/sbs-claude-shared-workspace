@@ -13,7 +13,12 @@ interface ContestCardProps {
   onDetails: () => void;
 }
 
+import { useAuth } from '@/hooks/useAuth';
+
 export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
+  // Admin drafting block: no Enter/Buy CTA at all for this account.
+  const { user } = useAuth();
+  const draftBlocked = user?.draftBlocked === true;
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -83,6 +88,9 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             CTA (Richard 2026-07-21): it consumes a pass, one-taps $25 from
             balance, or prompts Add Funds at $0. The Buy button only exists in
             the pre-deposit world (flag off). */}
+        {draftBlocked ? (
+          <p className="mt-6 sm:mt-10 text-center text-sm text-white/45">Drafting is disabled on this account.</p>
+        ) : (
         <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-6 sm:mt-10">
           {/* Sizing (Boris 2026-07-26): mobile was `w-full py-4 text-xl` — a
               full-bleed slab that dominated the card. Now an auto-width pill
@@ -103,6 +111,7 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             </Link>
           )}
         </div>
+        )}
       </div>
     </div>
   );

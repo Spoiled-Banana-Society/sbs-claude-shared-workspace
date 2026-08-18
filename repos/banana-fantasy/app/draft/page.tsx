@@ -208,7 +208,7 @@ export default function DraftingPage() {
             </button>
           )}
         </div>
-        {activeDrafts.length > 0 && (
+        {activeDrafts.length > 0 && !user?.draftBlocked && (
           <div className="flex items-center gap-2.5">
             <button
               onClick={handleEnterDraft}
@@ -289,6 +289,9 @@ export default function DraftingPage() {
                       <span className="font-semibold text-white/70">$25K</span>
                       <span className="text-white/30 font-medium"> 1st Place</span>
                     </p>
+                    {user?.draftBlocked ? (
+                      <p className="mt-6 text-center text-sm text-white/45">Drafting is disabled on this account. You can still view your teams.</p>
+                    ) : (
                     <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                       <button
                         onClick={handleEnterDraft}
@@ -305,6 +308,7 @@ export default function DraftingPage() {
                         </button>
                       )}
                     </div>
+                    )}
                   </div>
 
                   <div>

@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic';
 // generous to cover the rare swept-below-cost refund-bridge (waitUntil) edge.
 export const maxDuration = 300;
 
+import { isWalletDraftBlocked } from '@/lib/draftBlockServer';
+import { DRAFT_BLOCKED_MESSAGE } from '@/lib/draftBlock';
 import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { base } from 'viem/chains';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -58,6 +60,8 @@ export async function POST(req: Request) {
     } catch {
       return jsonError('Unauthorized', 401);
     }
+    // Admin drafting block — no buying passes / funding for drafts either.
+    if (await isWalletDraftBlocked(user)) return jsonError(DRAFT_BLOCKED_MESSAGE, 403);
 
     // Hard gate: NY buyer + flag on, else refuse (this route only exists for NY).
     if (!isNyOnrampEnabled()) return jsonError('NY on-ramp disabled', 403);

@@ -34,6 +34,9 @@ export default function BuyDraftsPage() {
   useEffect(() => {
     if (isLoading) return;
     if (!isLoggedIn) { setShowLoginModal(true); return; }
+    // Admin drafting block: no buy / entry flow opens for this account — the
+    // page renders its notice instead (see below).
+    if (user?.draftBlocked) { setMode('none'); return; }
     // Mid-flow guard: the deposit mint bumps the pass count, which re-runs
     // this effect — don't yank the user back while they're paying or buying.
     if (mode === 'add-funds' || mode === 'buy' || mode === 'buy-balance') return;
@@ -50,7 +53,7 @@ export default function BuyDraftsPage() {
       if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
       setMode('buy');
     }
-  }, [isLoading, isLoggedIn, mode, setShowLoginModal]);
+  }, [isLoading, isLoggedIn, mode, setShowLoginModal, user?.draftBlocked]);
 
   // Closing returns the user to where they came from — not a bare hub screen.
   const leave = useCallback(() => {
@@ -86,7 +89,15 @@ export default function BuyDraftsPage() {
     <div className="min-h-screen bg-bg-primary">
       {/* Fallback hero — only if no flow is open (e.g. logged-out user dismissed
           the login prompt). The logged-in flows open immediately. */}
-      {mode === 'none' && !isLoading && (
+      {user?.draftBlocked && (
+        <div className="min-h-screen flex items-center justify-center px-4">
+          <div className="text-center space-y-3">
+            <h1 className="text-2xl font-bold text-text-primary">Drafting is disabled on this account</h1>
+            <p className="text-text-muted">You can still view your teams. Contact support if you think this is a mistake.</p>
+          </div>
+        </div>
+      )}
+      {mode === 'none' && !isLoading && !user?.draftBlocked && (
         <div className="min-h-screen flex items-center justify-center px-4">
           <div className="text-center space-y-6">
             <h1 className="text-4xl font-bold text-text-primary">Buy Draft Passes</h1>

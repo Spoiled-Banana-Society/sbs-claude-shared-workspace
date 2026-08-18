@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { assertWalletCanDraft } from '@/lib/draftBlockServer';
 import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -85,6 +86,8 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId').toLowerCase();
+    // Admin drafting block — no buying passes / funding for drafts either.
+    await assertWalletCanDraft(userId);
     if (!WALLET_REGEX.test(userId)) {
       return jsonError('userId must be a wallet address', 400);
     }

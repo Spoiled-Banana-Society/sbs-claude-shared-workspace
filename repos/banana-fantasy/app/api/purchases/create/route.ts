@@ -1,3 +1,4 @@
+import { assertWalletCanDraft } from '@/lib/draftBlockServer';
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
@@ -13,6 +14,8 @@ export async function POST(req: Request) {
     await getPrivyUser(req);
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
+    // Admin drafting block — no buying passes / funding for drafts either.
+    await assertWalletCanDraft(userId);
 
     const quantityRaw = body.quantity;
     const quantity = typeof quantityRaw === 'number' ? quantityRaw : Number(quantityRaw);

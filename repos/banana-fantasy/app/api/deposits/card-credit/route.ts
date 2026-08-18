@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { assertWalletCanDraft } from '@/lib/draftBlockServer';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
@@ -47,6 +48,8 @@ export async function POST(req: Request) {
       const linked = privyUser ? linkedWalletsOf(privyUser) : [];
       wallet = linked[0] || null;
     }
+    // Admin drafting block — no buying passes / funding for drafts either.
+    await assertWalletCanDraft(wallet);
     if (!wallet) throw new ApiError(401, 'No wallet linked to this account');
 
     // WEB2 ONLY (Richard 2026-07-21): the card-fee credit models MoonPay fees

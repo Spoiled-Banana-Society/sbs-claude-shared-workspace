@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic';
 // mid-flight.
 export const maxDuration = 300;
 
+import { isWalletDraftBlocked } from '@/lib/draftBlockServer';
+import { DRAFT_BLOCKED_MESSAGE } from '@/lib/draftBlock';
 import type { Address, Hex } from 'viem';
 import { FieldValue } from 'firebase-admin/firestore';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
@@ -54,6 +56,8 @@ export async function POST(req: Request) {
     } catch {
       return jsonError('Unauthorized', 401);
     }
+    // Admin drafting block — no buying passes / funding for drafts either.
+    if (await isWalletDraftBlocked(user)) return jsonError(DRAFT_BLOCKED_MESSAGE, 403);
 
     // Hard gate: NY buyer + flag on (this route only exists for NY).
     if (!isNyOnrampEnabled()) return jsonError('NY on-ramp disabled', 403);

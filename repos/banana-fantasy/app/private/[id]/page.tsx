@@ -247,6 +247,8 @@ export default function PrivateLeaguePage() {
               </div>
               {!user?.walletAddress ? (
                 <p className="text-white/50 text-sm text-center">Log in to take a seat.</p>
+              ) : user.draftBlocked ? (
+                <p className="text-white/50 text-sm text-center">Drafting is disabled on this account.</p>
               ) : paidPasses > 0 || freePasses > 0 ? (
                 <div className="space-y-2">
                   {paidPasses > 0 && (

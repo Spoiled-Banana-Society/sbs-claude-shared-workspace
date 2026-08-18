@@ -239,7 +239,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     a banana pill so adding funds is the one thing that pops.
                     Whole dollars only (Richard 7/21 — cents pushed the avatar
                     off-screen on iPhone). */}
-                {DEPOSITS_ENABLED && isLoggedIn && user && (
+                {DEPOSITS_ENABLED && isLoggedIn && user && !user.draftBlocked && (
                   <button
                     onClick={() => setShowAddFunds(true)}
                     aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
@@ -277,7 +277,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   {/* Deposit chip — DESKTOP. Right of the passes (Boris
                       2026-07-22), banana pill treatment so it reads as THE
                       money action on a busy header. */}
-                  {DEPOSITS_ENABLED && isLoggedIn && user && (
+                  {DEPOSITS_ENABLED && isLoggedIn && user && !user.draftBlocked && (
                     <Tooltip
                       content={
                         <div className="text-center">
