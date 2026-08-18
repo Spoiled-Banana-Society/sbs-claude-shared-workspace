@@ -130,4 +130,13 @@ export default withSentryConfig(nextConfig, {
   // Tunnel Sentry client-side traffic through a Next route to bypass
   // ad blockers (no-op if Sentry isn't loaded by the user).
   tunnelRoute: '/api/sentry-tunnel',
+  // Sentry's API is not part of our deploy: a 504 from `releases finalize`
+  // FAILED a Vercel build (2026-08-18) after the app had compiled and linted
+  // clean. Log upload/finalize errors and keep going — worst case that
+  // release has less-pretty stack traces.
+  unstable_sentryWebpackPluginOptions: {
+    errorHandler: (err) => {
+      console.warn('[sentry] source-map/release step failed (non-fatal):', err?.message ?? err);
+    },
+  },
 });
