@@ -400,7 +400,7 @@ const seedPromos: Promo[] = [
     id: 'pick-chase',
     type: 'pick-chase',
     title: 'Match Your Pick → up to 5 Spins',
-    description: 'Land your pick slot again to win Free Spins — the longer it takes, the bigger the payout',
+    description: 'Land your pick slot again in a paid draft to win Free Spins — the longer it takes, the bigger the payout.',
     ctaText: 'Start Drafting',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
