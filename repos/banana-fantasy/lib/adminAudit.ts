@@ -5,6 +5,8 @@ export type AdminAction =
   | 'grant-drafts'
   | 'ban-user'
   | 'unban-user'
+  | 'draft-block-user'
+  | 'draft-unblock-user'
   | 'approve-withdrawal'
   | 'deny-withdrawal'
   | 'mark-paid-withdrawal'

@@ -9,6 +9,7 @@ import type { DraftRoom, LeaderboardEntry } from '@/types';
 import { ApiError, createHttpClient, normalizeWalletAddress } from './client';
 import type { ApiDraftToken, ApiDraftTokenLevel } from './owner';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { assertClientCanDraft } from '@/lib/draftBlock';
 
 function draftsApi() {
   return createHttpClient({
@@ -38,6 +39,7 @@ export async function joinDraft(
   numLeaguesToJoin: number = 1,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
+  assertClientCanDraft(); // admin drafting block — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeoutMs = 20_000;
@@ -80,6 +82,7 @@ export async function joinPrivateDraft(
   speed: DraftSpeed,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
+  assertClientCanDraft(); // admin drafting block — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);

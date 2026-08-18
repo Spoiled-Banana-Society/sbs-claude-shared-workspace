@@ -38,6 +38,7 @@ interface BalancePayload {
   // client copy always matches the grant the server would actually pay.
   firstPurchaseVariant: FirstPurchaseVariant;
   hasSpunWheel: boolean;
+  draftBlocked: boolean;
 }
 
 function buildPayload(data: Record<string, unknown> | undefined, userId: string): BalancePayload {
@@ -61,6 +62,7 @@ function buildPayload(data: Record<string, unknown> | undefined, userId: string)
       d.isReturningPlayer === true || isReturningWalletSync(userId),
     ),
     hasSpunWheel: !!d.hasSpunWheel,
+    draftBlocked: d.draftBlocked === true,
   };
 }
 
@@ -90,7 +92,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
-      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false,
+      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false, draftBlocked: false,
     };
     const stream = new ReadableStream({
       start(controller) {

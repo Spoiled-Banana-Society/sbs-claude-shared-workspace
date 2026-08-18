@@ -24,8 +24,25 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const { id } = params;
     if (!id) throw new ApiError(400, 'Missing user id');
 
-    const body = await parseBody<{ banned?: boolean }>(req);
-    if (typeof body.banned !== 'boolean') throw new ApiError(400, 'Expected { banned: boolean }');
+    const body = await parseBody<{ banned?: boolean; draftBlocked?: boolean }>(req);
+
+    // Drafting-only block (Boris 2026-08-18): { draftBlocked: boolean } — the
+    // account keeps working (teams, winnings, login) but every draft-entry
+    // path on the site refuses. Softer than banned; see lib/draftBlock.ts.
+    if (typeof body.draftBlocked === 'boolean' && typeof body.banned !== 'boolean') {
+      if (body.draftBlocked && isWalletAdmin(id)) throw new ApiError(400, 'Cannot draft-block an admin wallet');
+      const db = getAdminFirestore();
+      const ref = db.collection('v2_users').doc(id);
+      const doc = await ref.get();
+      if (!doc.exists) throw new ApiError(404, 'User not found');
+      const before = doc.data()?.draftBlocked === true;
+      await ref.set({ draftBlocked: body.draftBlocked, draftBlockedAt: body.draftBlocked ? new Date().toISOString() : null, updatedAt: new Date().toISOString() }, { merge: true });
+      await logAdminAction({ actor, action: body.draftBlocked ? 'draft-block-user' : 'draft-unblock-user', target: id, before: { draftBlocked: before }, after: { draftBlocked: body.draftBlocked }, requestId });
+      logger.info('admin.user_draft_block.ok', { requestId, actor, target: id, draftBlocked: body.draftBlocked });
+      return json({ ok: true, id, draftBlocked: body.draftBlocked });
+    }
+
+    if (typeof body.banned !== 'boolean') throw new ApiError(400, 'Expected { banned: boolean } or { draftBlocked: boolean }');
 
     // Safety: admin wallets can't be banned — prevents accidental self/peer lockout.
     if (body.banned && isWalletAdmin(id)) {

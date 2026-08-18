@@ -1,3 +1,4 @@
+import { assertWalletCanDraft } from '@/lib/draftBlockServer';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
@@ -97,6 +98,8 @@ export async function POST(req: Request) {
     if (queueType !== 'jackpot' && queueType !== 'hof' && queueType !== 'jackhof') {
       return jsonError('Invalid queue type', 400);
     }
+    // Admin drafting block — special lobbies count as drafts too.
+    await assertWalletCanDraft(userId);
 
     // Defaults to the 'wheel' round source. The entries counters carry no origin
     // of their own, and every path that credits them is a wheel win except the

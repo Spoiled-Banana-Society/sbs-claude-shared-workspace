@@ -8,6 +8,7 @@ import { bananaDefaultName } from '@/utils/helpers';
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
+import { setClientDraftBlocked } from '@/lib/draftBlock';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -239,6 +240,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
+  // Mirror the admin drafting block into the module flag lib/api/leagues
+  // asserts before any Go join — so EVERY join caller is gated, not just the
+  // ones that hold the user object.
+  useEffect(() => { setClientDraftBlocked(!!user?.draftBlocked); }, [user?.draftBlocked]);
   // Live mirror of `user` for the desync self-heal interval (no dep churn).
   const userStateRef = useRef<User | null>(MOCK_USER);
   useEffect(() => { userStateRef.current = user; }, [user]);
@@ -1059,6 +1064,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Spin-explainer gating — so the "a spin wins up to 20" text hides
           // once they've actually spun.
           hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
+          // Admin drafting block — live, so an Enter button dies mid-session.
+          draftBlocked: typeof d.draftBlocked === 'boolean' ? d.draftBlocked : prev.draftBlocked,
         };
       });
       setIsBalanceLoaded(true);

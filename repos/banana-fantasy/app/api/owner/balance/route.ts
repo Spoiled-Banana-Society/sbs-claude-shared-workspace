@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false });
+      return json({ wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false, draftBlocked: false });
     }
 
     const db = getAdminFirestore();
@@ -109,6 +109,7 @@ export async function GET(req: Request) {
       // Drives the spin-explainer text — must reach the client or the "a spin
       // wins up to 20…" line never disappears after a new user spins.
       hasSpunWheel: !!data.hasSpunWheel,
+      draftBlocked: data.draftBlocked === true,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

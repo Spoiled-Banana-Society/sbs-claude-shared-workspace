@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
+import { DRAFT_BLOCKED_MESSAGE } from '@/lib/draftBlock';
 import { joinDraft, joinPrivateDraft } from '@/lib/api/leagues';
 import { getActivePrivateLeague, clearActivePrivateLeague } from '@/lib/privateLeagueSession';
 import { logger } from '@/lib/logger';
@@ -97,6 +98,13 @@ export function useEnterDraft() {
         if (active.draftType !== 'both') speed = active.draftType;
         autoPrivate = true;
       }
+    }
+
+    // Admin drafting block (v2_users.draftBlocked): account is usable, but no
+    // draft entry anywhere. Stop BEFORE the overlay / optimistic pass decrement.
+    if (user.draftBlocked) {
+      setJoinError(DRAFT_BLOCKED_MESSAGE);
+      return;
     }
 
     inFlightRef.current = true;

@@ -60,6 +60,14 @@ export interface User {
    * Absent (logged-out / not yet loaded) → surfaces render the 'new' copy.
    */
   firstPurchaseVariant?: 'new' | 'returning' | 'done';
+  /**
+   * Admin drafting block (Boris 2026-08-18): the account stays fully usable —
+   * login, teams, winnings, marketplace — but every draft-entry path refuses
+   * with "Drafting is disabled on this account". Softer than `banned`, which
+   * 403s the whole API. Set on v2_users.draftBlocked; delivered on the
+   * balance payload + stream so the client can gate Enter buttons live.
+   */
+  draftBlocked?: boolean;
   // True once the user has spun the Banana Wheel at least once. Drives the
   // first-time "what's a spin?" explainer on promo cards — shown until their
   // first spin, then hidden everywhere.
