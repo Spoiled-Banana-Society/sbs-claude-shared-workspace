@@ -7,10 +7,9 @@
 // highlight; mobile stacks to one column and keeps the same block-left shape.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import type { Promo } from '@/types';
 import { deriveChaseState } from '@/lib/chasePromo';
-import { promoAccent, promoCta, promoHueStyle, promoKicker, promoName, promoRules } from '@/lib/promoTheme';
+import { promoAccent, promoHueStyle, promoKicker, promoName, promoRules } from '@/lib/promoTheme';
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
@@ -128,11 +127,9 @@ export function PromoLongCard({
   promo, index, wallet, isClaimed, hasVisibleClaim, onOpenModal, onClaim,
   fpVariant = 'new', fpShowNewPlayerTag = false, defaultOpen = false,
 }: PromoLongCardProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLDivElement>(null);
   const accent = promoAccent(promo.type);
-  const cta = promoCta(promo);
   const passive = promo.type === 'pick-10' || promo.type === 'jackpot';
   const rules = promoRules(promo);
   const isFp = promo.type === 'first-purchase';
@@ -150,8 +147,6 @@ export function PromoLongCard({
   };
   const onLeave = () => { if (ref.current) ref.current.style.transform = ''; };
   useEffect(() => { if (open && ref.current) ref.current.style.transform = ''; }, [open]);
-
-  const go = (e: React.MouseEvent, href: string) => { e.stopPropagation(); router.push(href); };
 
   return (
     <div
@@ -205,14 +200,6 @@ export function PromoLongCard({
               >
                 {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
               </button>
-            ) : cta ? (
-              <button
-                type="button"
-                onClick={(e) => go(e, cta.href)}
-                className="shrink-0 rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-black hover:-translate-y-px hover:shadow-[0_8px_20px_rgba(0,0,0,.35)] active:scale-[.97] transition-all"
-              >
-                {cta.label}
-              </button>
             ) : null}
           </div>
         </div>
@@ -232,11 +219,6 @@ export function PromoLongCard({
               ))}
             </ul>
             <div className="mt-3.5 flex items-center gap-2.5 flex-wrap">
-              {cta && (
-                <button type="button" onClick={(e) => go(e, cta.href)} className="rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-black hover:-translate-y-px transition-transform">
-                  {cta.label}
-                </button>
-              )}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onOpenModal(); }}
@@ -267,9 +249,7 @@ export interface PromoSpotlightProps {
 }
 
 export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOpenModal, onClaim, fpVariant = 'new', fpShowNewPlayerTag = false }: PromoSpotlightProps) {
-  const router = useRouter();
   const [how, setHow] = useState(false);
-  const cta = promoCta(promo);
   const rules = promoRules(promo);
   const isAtb = promo.type === 'around-the-banana';
   const atb = promo.modalContent?.aroundTheBanana;
@@ -279,11 +259,9 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
 
   let kicker = promoKicker(promo);
   let line: React.ReactNode = promo.description;
-  let primary: { label: string; href: string } | null = cta;
   if (isAtb && atb?.won) {
     kicker = 'YOU MADE IT AROUND · JACKPOT SEAT';
     line = `All 10 slots hit — you won seat ${atb.seatNumber}. Your Jackpot pass is in your passes; this round keeps running, and you can win another seat.`;
-    primary = { label: 'View your seat', href: '/my-teams' };
   }
 
   return (
@@ -326,10 +304,6 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
             {hasVisibleClaim ? (
               <button type="button" onClick={onClaim} className="promo-glow rounded-full bg-banana px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform">
                 {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
-              </button>
-            ) : primary ? (
-              <button type="button" onClick={() => router.push(primary!.href)} className="rounded-full bg-white px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px hover:shadow-[0_8px_20px_rgba(0,0,0,.35)] active:scale-[.97] transition-all">
-                {primary.label}
               </button>
             ) : null}
             <button

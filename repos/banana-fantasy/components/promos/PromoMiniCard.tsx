@@ -8,8 +8,8 @@
 
 import React from 'react';
 import type { Promo } from '@/types';
-import { PromoSwatch, PromoLive, promoHasChip } from '@/components/promos/PromoVisuals';
-import { promoAccent, promoCta, promoKicker, promoName } from '@/lib/promoTheme';
+import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
+import { promoKicker, promoName } from '@/lib/promoTheme';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 
@@ -40,8 +40,6 @@ export function PromoMiniCard({
   fixed = true,
   className = '',
 }: PromoMiniCardProps) {
-  const accent = promoAccent(promo.type);
-  const cta = promoCta(promo);
   const passive = promo.type === 'pick-10' || promo.type === 'jackpot';
   const isFp = promo.type === 'first-purchase';
   return (
@@ -91,7 +89,7 @@ export function PromoMiniCard({
         )}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 min-h-[30px]">
           <div className="min-w-0 overflow-hidden">
-            <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim || (!!cta && !promoHasChip(promo))} />
+            <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim} />
           </div>
           {hasVisibleClaim ? (
             <button
@@ -101,13 +99,6 @@ export function PromoMiniCard({
             >
               {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
             </button>
-          ) : cta && !promoHasChip(promo) ? (
-            <span
-              className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10.5px] font-extrabold text-black opacity-90 group-hover:opacity-100 transition-opacity"
-              style={{ boxShadow: `0 0 0 1px ${accent}22` }}
-            >
-              {cta.label}
-            </span>
           ) : null}
         </div>
       </div>
