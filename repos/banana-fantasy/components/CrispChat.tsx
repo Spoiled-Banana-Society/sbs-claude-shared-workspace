@@ -111,12 +111,48 @@ export function CrispChat() {
       document.head.appendChild(st);
     }
     try {
-      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void; get?: (k: string) => unknown } };
       w.$crisp?.push(['do', 'chat:close']);
       w.$crisp?.push(['do', 'chat:hide']);
-      w.$crisp?.push(['do', 'session:reset']);
+      // NOTE: no session:reset — keeping the Crisp session id lets the
+      // blocklist below keep the widget hidden even after they log out.
     } catch {}
   }, [user?.supportBlocked]);
+
+  // Session-level block: once Crisp is up, ask our API whether THIS visitor
+  // session is blocklisted (crisp_blocked_sessions — pinned by the webhook
+  // for support-blocked accounts). Covers the logged-out case: the Crisp
+  // cookie survives our logout, so the same person stays hidden.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    let tries = 0;
+    const tick = setInterval(async () => {
+      tries += 1;
+      const w = window as Window & { $crisp?: { get?: (k: string) => unknown; push: (cmd: unknown[]) => void } };
+      const sid = typeof w.$crisp?.get === 'function' ? w.$crisp.get('session:identifier') : null;
+      if (typeof sid === 'string' && sid.startsWith('session_')) {
+        clearInterval(tick);
+        try {
+          const res = await fetch(`/api/crisp/blocked-session?sid=${encodeURIComponent(sid)}`, { cache: 'no-store' });
+          const j = (await res.json().catch(() => null)) as { blocked?: boolean } | null;
+          if (!cancelled && j?.blocked) {
+            document.documentElement.classList.remove('crisp-open');
+            if (!document.getElementById('crisp-blocked')) {
+              const st = document.createElement('style');
+              st.id = 'crisp-blocked';
+              st.textContent = `#crisp-chatbox, .crisp-client { display:none !important; visibility:hidden !important; pointer-events:none !important; }`;
+              document.head.appendChild(st);
+            }
+            try { w.$crisp?.push(['do', 'chat:close']); w.$crisp?.push(['do', 'chat:hide']); } catch {}
+          }
+        } catch { /* fail open */ }
+      } else if (tries > 40) {
+        clearInterval(tick);
+      }
+    }, 750);
+    return () => { cancelled = true; clearInterval(tick); };
+  }, []);
 
   // Open the chat from a bell noti ("SBS Team Replied" links /?support=open)
   // — both on a fresh page load carrying the query AND via the in-app event

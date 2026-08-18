@@ -54,6 +54,38 @@ function textOf(content: unknown): string {
   return '[attachment]';
 }
 
+/**
+ * Is this Crisp sender someone we've cut off from support? Any of:
+ *  - v2_users/{wallet}.supportBlocked === true (wallet from the session stamp)
+ *  - crisp_blocked_sessions/{sessionId} exists (session pinned by admin)
+ *  - usernames/{nickname_lower} → wallet whose v2_users.supportBlocked is true
+ */
+async function isSupportBlockedSender(p: { wallet: string | null; sessionId: string; nickname: string | null }): Promise<boolean> {
+  try {
+    const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+    const db = getAdminFirestore();
+    if (p.sessionId) {
+      const s = await db.collection('crisp_blocked_sessions').doc(p.sessionId).get();
+      if (s.exists) return true;
+    }
+    let wallet = p.wallet?.toLowerCase() ?? null;
+    if (!wallet && p.nickname) {
+      const u = await db.collection('usernames').doc(p.nickname.trim().toLowerCase()).get();
+      const w = u.data()?.walletAddress;
+      if (typeof w === 'string') wallet = w.toLowerCase();
+    }
+    if (wallet) {
+      const u = await db.collection('v2_users').doc(wallet).get();
+      if (u.data()?.supportBlocked === true) {
+        // Pin the session too so future messages skip the lookups.
+        if (p.sessionId) await db.collection('crisp_blocked_sessions').doc(p.sessionId).set({ wallet, at: new Date().toISOString() }, { merge: true }).catch(() => {});
+        return true;
+      }
+    }
+  } catch { /* fail open — a lookup error must never drop real support bells */ }
+  return false;
+}
+
 export async function POST(req: Request) {
   const raw = await req.text();
 
@@ -99,6 +131,14 @@ export async function POST(req: Request) {
       const wallet = parseStampedWallet(meta?.data?.wallet);
       const who = d.user?.nickname || meta?.nickname || (wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'A user');
       const text = textOf(d.content);
+      // Support-blocked sender (v2_users.supportBlocked, or a session /
+      // nickname we've blocklisted): NO admin bells. Crisp's own visitor
+      // block is a paid feature we don't have, so this is our side of the
+      // wall — the message may sit in the Crisp inbox, but nobody gets pinged.
+      if (await isSupportBlockedSender({ wallet, sessionId, nickname: d.user?.nickname || meta?.nickname || null })) {
+        logger.info('crisp.webhook.visitor_message_blocked', { context: { sessionId, who } });
+        return NextResponse.json({ ok: true, blocked: true });
+      }
       await Promise.all(getAdminWalletAllowlist().map((admin) =>
         createNotification(admin, {
           type: 'system',
