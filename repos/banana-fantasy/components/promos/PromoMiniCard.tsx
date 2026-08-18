@@ -52,7 +52,7 @@ export function PromoMiniCard({
         transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_16px_36px_rgba(0,0,0,.45)] active:scale-[.985]
         ${hasVisibleClaim ? 'border-banana/70 shadow-[0_0_0_1px_rgba(251,191,36,.3)]' : 'border-white/[0.08]'}
         ${passive && !hasVisibleClaim ? 'opacity-80' : ''}
-        ${fixed ? 'w-52 h-[256px] shrink-0' : 'w-full min-h-[16rem]'} ${className}`}
+        ${fixed ? 'w-52 h-[272px] shrink-0' : 'w-full min-h-[17rem]'} ${className}`}
     >
       {/* Colored block: kicker left, indicator right */}
       <div className="relative shrink-0 h-[96px]">
@@ -70,7 +70,7 @@ export function PromoMiniCard({
       </div>
 
       {/* Body */}
-      <div className="flex flex-col gap-1.5 flex-1 min-h-0 px-3.5 pt-3 pb-3.5">
+      <div className="flex flex-col gap-1.5 flex-1 min-h-0 px-3.5 pt-3 pb-3.5 overflow-hidden">
         <h4 className="text-[14.5px] font-extrabold text-white leading-tight tracking-[-.2px]">{promoName(promo)}</h4>
         {isFp ? (
           <div className="text-[11px] leading-snug text-[#c9c9d2] line-clamp-4">
@@ -83,7 +83,7 @@ export function PromoMiniCard({
           </div>
         ) : (
           <>
-            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-4 whitespace-pre-line">{promo.description}</p>
+            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-4 whitespace-pre-line overflow-hidden">{promo.description}</p>
             <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-[10px] leading-snug text-banana/80" />
           </>
         )}

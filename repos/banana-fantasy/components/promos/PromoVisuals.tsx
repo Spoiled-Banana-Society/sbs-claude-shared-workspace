@@ -72,18 +72,25 @@ export function CountdownChip({
     </span>
   );
   const colon = <span className={`text-white/30 font-extrabold text-[12px] ${size === 'sm' ? '' : '-mt-2'}`}>:</span>;
+  // md (mini cards, 208px wide): label sits ABOVE the digits so the chip is
+  // never wider than the digit row — long labels were clipping (Boris
+  // 2026-08-18). lg keeps the inline label; sm has no label.
+  const stacked = size === 'md' && !!label;
+  const rowGap = size === 'lg' ? 'gap-[7px]' : size === 'md' ? 'gap-1.5' : 'gap-1';
   return (
     <span
-      className={`inline-flex items-center rounded-[10px] border ${padc} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
+      className={`inline-flex ${stacked ? 'flex-col items-start gap-[3px]' : `items-center ${rowGap}`} max-w-full rounded-[10px] border ${padc.replace(/gap-\S+/, '')} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
     >
       {label && size !== 'sm' && (
-        <span className="text-[8px] font-extrabold tracking-[1.6px] text-white/50 mr-0.5 whitespace-nowrap">{label}</span>
+        <span className={`text-[8px] font-extrabold tracking-[1.6px] text-white/50 whitespace-nowrap ${stacked ? '' : 'mr-0.5'}`}>{label}</span>
       )}
-      {seg(h, 'HRS')}
-      {colon}
-      {seg(m, 'MIN')}
-      {colon}
-      {seg(s, 'SEC', !dormant)}
+      <span className={`inline-flex items-center ${rowGap}`}>
+        {seg(h, 'HRS')}
+        {colon}
+        {seg(m, 'MIN')}
+        {colon}
+        {seg(s, 'SEC', !dormant)}
+      </span>
     </span>
   );
 }
