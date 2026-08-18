@@ -72,9 +72,9 @@ function JackpotCycle({ promo }: { promo: Promo }) {
   return (
     <div className="relative h-2 rounded-full bg-white/[0.08] mt-2.5 mb-[18px]">
       <div className="absolute left-0 top-0 bottom-0 rounded-full bg-white transition-[width] duration-700" style={{ width: `${pct}%` }} />
-      {[[m10, '25 · 10 SP'], [m5, '50 · 5 SP']].map(([x, l]) => (
+      {[[m10, '25 · 10 SPINS'], [m5, '50 · 5 SPINS']].map(([x, l]) => (
         <div key={String(l)} className="absolute -top-[3px] w-[2px] h-[14px] bg-white/50" style={{ left: `${x}%` }}>
-          <span className="absolute top-4 -left-4 w-11 text-center text-[8px] tracking-[1px] font-extrabold text-white/45 whitespace-nowrap">{l}</span>
+          <span className="absolute top-4 -left-8 w-16 text-center text-[8px] tracking-[1px] font-extrabold text-white/45 whitespace-nowrap">{l}</span>
         </div>
       ))}
       <div className="absolute -top-[5px] w-[3px] h-[18px] rounded-sm bg-banana transition-[left] duration-700" style={{ left: `${pct}%` }} />

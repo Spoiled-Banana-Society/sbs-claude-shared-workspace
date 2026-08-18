@@ -174,7 +174,7 @@ function Pips({ n, max, size }: { n: number; max: number; size: Size }) {
           />
         ))}
       </div>
-      <Big n={n} label={`OF ${max} PAID`} size={size} />
+      <Big n={n} label={`OF ${max} PAID DRAFTS`} size={size} />
     </div>
   );
 }
@@ -268,7 +268,7 @@ export function PromoSwatch({
       inner = <Big n="×2" label="FREE DRAFTS / PASS" size={size} />;
       break;
     case 'new-user':
-      inner = <Big n="1" label="FREE DRAFT · MIN" size={size} />;
+      inner = <Big n="1" label="FREE DRAFT · GUARANTEED" size={size} />;
       break;
     case 'mint':
     case 'buy-bonus': {
@@ -367,8 +367,8 @@ export function PromoLive({
     case 'jackpot': {
       const cyc = mc.cycle;
       if (!cyc) return <Stat v="1 in 100" l="DRAFTS" />;
-      if (cyc.reward >= 10) return <Stat v={<span style={{ color: accent }}>10-spin window</span>} l={`${cyc.tenLeft} DRAFTS LEFT`} />;
-      if (cyc.reward >= 5) return <Stat v={<span style={{ color: accent }}>5-spin window</span>} l={`${cyc.fiveLeft} DRAFTS LEFT`} />;
+      if (cyc.reward >= 10) return <Stat v={<span style={{ color: accent }}>10-spin window</span>} l={`${cyc.tenLeft} ${cyc.tenLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (cyc.reward >= 5) return <Stat v={<span style={{ color: accent }}>5-spin window</span>} l={`${cyc.fiveLeft} ${cyc.fiveLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       return <Stat v="Windows closed" l="RESETS ON A HIT" />;
     }
     case 'first-purchase':
