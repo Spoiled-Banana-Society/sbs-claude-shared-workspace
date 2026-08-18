@@ -94,6 +94,30 @@ export function CrispChat() {
     };
   }, []);
 
+  // Admin support block (v2_users.supportBlocked): keep the whole Crisp
+  // container hidden even when the html.crisp-open gate is set, close any
+  // open window, and drop the session so nothing reaches the inbox.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const blocked = user?.supportBlocked === true;
+    const id = 'crisp-blocked';
+    const existing = document.getElementById(id);
+    if (!blocked) { existing?.remove(); return; }
+    document.documentElement.classList.remove('crisp-open');
+    if (!existing) {
+      const st = document.createElement('style');
+      st.id = id;
+      st.textContent = `#crisp-chatbox, .crisp-client { display:none !important; visibility:hidden !important; pointer-events:none !important; }`;
+      document.head.appendChild(st);
+    }
+    try {
+      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+      w.$crisp?.push(['do', 'chat:close']);
+      w.$crisp?.push(['do', 'chat:hide']);
+      w.$crisp?.push(['do', 'session:reset']);
+    } catch {}
+  }, [user?.supportBlocked]);
+
   // Open the chat from a bell noti ("SBS Team Replied" links /?support=open)
   // — both on a fresh page load carrying the query AND via the in-app event
   // NotificationCenter dispatches for SPA navigations.

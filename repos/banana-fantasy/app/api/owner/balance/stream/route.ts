@@ -39,6 +39,7 @@ interface BalancePayload {
   firstPurchaseVariant: FirstPurchaseVariant;
   hasSpunWheel: boolean;
   draftBlocked: boolean;
+  supportBlocked: boolean;
 }
 
 function buildPayload(data: Record<string, unknown> | undefined, userId: string): BalancePayload {
@@ -63,6 +64,7 @@ function buildPayload(data: Record<string, unknown> | undefined, userId: string)
     ),
     hasSpunWheel: !!d.hasSpunWheel,
     draftBlocked: d.draftBlocked === true,
+    supportBlocked: d.supportBlocked === true,
   };
 }
 
@@ -92,7 +94,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, purchaseSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
-      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false, draftBlocked: false,
+      cardFeeFrontGranted: false, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, firstPurchaseVariant: 'new', hasSpunWheel: false, draftBlocked: false, supportBlocked: false,
     };
     const stream = new ReadableStream({
       start(controller) {

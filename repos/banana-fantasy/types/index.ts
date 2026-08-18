@@ -68,6 +68,8 @@ export interface User {
    * balance payload + stream so the client can gate Enter buttons live.
    */
   draftBlocked?: boolean;
+  /** Admin support block: Crisp never mounts/opens for this account (Boris 2026-08-18). */
+  supportBlocked?: boolean;
   // True once the user has spun the Banana Wheel at least once. Drives the
   // first-time "what's a spin?" explainer on promo cards — shown until their
   // first spin, then hidden everywhere.

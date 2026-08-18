@@ -1066,6 +1066,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
           // Admin drafting block — live, so an Enter button dies mid-session.
           draftBlocked: typeof d.draftBlocked === 'boolean' ? d.draftBlocked : prev.draftBlocked,
+          supportBlocked: typeof d.supportBlocked === 'boolean' ? d.supportBlocked : prev.supportBlocked,
         };
       });
       setIsBalanceLoaded(true);

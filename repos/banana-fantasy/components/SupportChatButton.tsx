@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 
 // Floating SBS-logo button (desktop, bottom-right) that opens Crisp.
 // Underdog-style: brand logo on a yellow circle, fixed to viewport.
@@ -9,6 +10,7 @@ import { useEffect, useState } from 'react';
 // in the profile dropdown instead.
 
 export function SupportChatButton() {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   // Pixels to lift the button when the footer enters view so it sits
   // above the "Terms · FAQ · Support" links instead of covering them.
@@ -80,6 +82,9 @@ export function SupportChatButton() {
       w.$crisp.push(['do', 'chat:open']);
     }
   };
+
+  // Admin support block — no launcher at all (hooks above must still run).
+  if (user?.supportBlocked) return null;
 
   return (
     <div
