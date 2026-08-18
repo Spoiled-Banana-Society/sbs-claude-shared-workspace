@@ -47,9 +47,10 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // 🔒 'banana-vault' RETIRED 2026-08-17 (Boris) after Vault 1 — its 3 seat winners
   // were moved into an open WHEEL Jackpot lobby; card removed, crediting off.
   'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
-  'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
+  'pick-10',        // "Pick 10 → FREE SPIN" — right after Match Your Pick (Boris 2026-08-18)
   'referral',       // "Refer a friend" — top-of-funnel growth
-  'pick-10',        // "Pick 10 → FREE SPIN" — passive engagement reward
+  'mint',           // "Buy 10 → FREE SPIN" — RETIRED (MINT_PROMO_END_MS); survives only
+                    // for users still owed a spin, so it sits last
 ];
 
 /**
