@@ -85,7 +85,7 @@ export function PromoMiniCard({
           </div>
         ) : (
           <>
-            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-2 whitespace-pre-line">{promo.description}</p>
+            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-3 whitespace-pre-line">{promo.description}</p>
             <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-[10px] leading-snug text-banana/80" />
           </>
         )}
