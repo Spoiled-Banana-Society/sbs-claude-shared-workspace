@@ -52,7 +52,7 @@ export function PromoMiniCard({
         transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_16px_36px_rgba(0,0,0,.45)] active:scale-[.985]
         ${hasVisibleClaim ? 'border-banana/70 shadow-[0_0_0_1px_rgba(251,191,36,.3)]' : 'border-white/[0.08]'}
         ${passive && !hasVisibleClaim ? 'opacity-80' : ''}
-        ${fixed ? 'w-52 h-60 shrink-0' : 'w-full min-h-[15.5rem]'} ${className}`}
+        ${fixed ? 'w-52 h-[256px] shrink-0' : 'w-full min-h-[16rem]'} ${className}`}
     >
       {/* Colored block: kicker left, indicator right */}
       <div className="relative shrink-0 h-[96px]">
@@ -83,7 +83,7 @@ export function PromoMiniCard({
           </div>
         ) : (
           <>
-            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-3 whitespace-pre-line">{promo.description}</p>
+            <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-4 whitespace-pre-line">{promo.description}</p>
             <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-[10px] leading-snug text-banana/80" />
           </>
         )}
