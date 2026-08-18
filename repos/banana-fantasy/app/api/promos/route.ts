@@ -130,7 +130,7 @@ export async function GET(req: Request) {
           .map((r) => `${r.count} ${r.kind === 'jackhof' ? 'JackHOF' : r.kind === 'hof' ? 'HOF' : 'Jackpot'} seat${r.count === 1 ? '' : 's'}`);
         const spins = spinsForNight(nightId);
         const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
-        drop.description = `Fill drafts, earn packs. Open them at 9 PM.\nTonight: ${prizeLine}.`;
+        drop.description = `Fill drafts, earn packs. Open them at 9 PM.\nDaily prizes: ${prizeLine}.`;
         drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
       }
     } catch { /* copy refresh is decoration — promos still return */ }
