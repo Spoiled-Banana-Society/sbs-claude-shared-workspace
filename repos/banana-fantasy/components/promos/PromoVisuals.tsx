@@ -243,7 +243,7 @@ export function PromoSwatch({
       const c = deriveChaseState(promo);
       inner = c.active
         ? <Tile v={c.slot} gold={!!promo.claimable} label={promo.claimable ? 'MATCHED' : 'YOUR PICK'} size={size} />
-        : <Tile v="?" dim label="NEXT DRAFT LOCKS" size={size} />;
+        : <Tile v="?" dim label="FIRST DRAFT LOCKS" size={size} />;
       break;
     }
     case 'referral': {
@@ -353,7 +353,7 @@ export function PromoLive({
     case 'pick-chase': {
       const c = deriveChaseState(promo);
       if (c.active) return <CountdownChip endMs={endMs} label="TO MATCH" size={size} className={className} />;
-      return <Stat v="Next draft" l="LOCKS YOUR PICK" />;
+      return <Stat v="First draft" l="LOCKS YOUR PICK · STARTS 24H" />;
     }
     case 'referral': {
       const spins = (mc.referralHistory || []).reduce((s, e) => {
