@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import * as draftStore from '@/lib/draftStore';
 
 export interface LobbyFill {
   seats: number;
@@ -47,7 +46,6 @@ const MIN_SEATS_TO_SHOW = 1;
 export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow: LobbyFill | null } {
   const [open, setOpen] = useState<{ fast: OpenLobby[]; slow: OpenLobby[] }>({ fast: [], slow: [] });
   // Slot ids this device is already sitting in — the matchmaker skips them.
-  const [joinedIds, setJoinedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!enabled) return;
@@ -73,26 +71,19 @@ export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow
     };
   }, [enabled]);
 
-  useEffect(() => {
-    const read = () => {
-      try {
-        setJoinedIds(new Set(draftStore.getActiveDrafts().map((d) => d.id)));
-      } catch {
-        setJoinedIds(new Set());
-      }
-    };
-    read();
-    return draftStore.subscribe(read);
-  }, []);
 
   const pick = (lobbies: OpenLobby[]): LobbyFill | null => {
     // FULLEST open lobby you're not already in, ties → lowest slot. The old
     // "lowest slot" rule showed fast-680 at 1/10 while four players had just
     // landed in fast-681 at 5/10 (Boris 2026-08-18) — the engine keeps
     // filling the fuller lobby, so that's the one that starts next.
-    const next = lobbies
-      .filter((l) => !joinedIds.has(l.id))
-      .sort((a, b) => (b.seats - a.seats) || (a.slot - b.slot))[0];
+    // GLOBAL view (Boris 2026-08-18): the fullest open lobby per speed, the
+    // same number for everyone. It used to skip lobbies YOU were already
+    // seated in, so the heaviest drafters (in the most lobbies) saw the
+    // emptiest numbers — Fantasy Couch saw Slow 2/10 while everyone else saw
+    // 5/10 and read it as a glitch. The engine may still seat a double-entrant
+    // elsewhere; the bar's job is "how full is the lobby that's filling".
+    const next = [...lobbies].sort((a, b) => (b.seats - a.seats) || (a.slot - b.slot))[0];
     if (!next || next.seats < MIN_SEATS_TO_SHOW) return null;
     return { seats: next.seats, maxSeats: next.maxSeats };
   };
