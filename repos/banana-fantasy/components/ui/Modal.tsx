@@ -50,7 +50,7 @@ export function Modal({ isOpen, onClose, children, title, size = 'md', header, s
     <>
       {/* Backdrop + Container */}
       <div
-        className={`fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-fade-in flex justify-center ${sheetOnMobile ? 'items-end sm:items-center p-0 sm:p-4' : 'items-center p-4'}`}
+        className={`fixed inset-0 bg-black/70 backdrop-blur-sm animate-fade-in flex justify-center ${sheetOnMobile ? 'z-50 items-end sm:items-center p-0 sm:p-4' : 'z-40 items-center p-4'}`}
         onClick={onClose}
       >
         {/* Modal */}
@@ -60,7 +60,7 @@ export function Modal({ isOpen, onClose, children, title, size = 'md', header, s
             ${sheetOnMobile ? 'rounded-t-[22px] rounded-b-none sm:rounded-2xl' : 'rounded-2xl'}
             shadow-2xl w-full ${sizeStyles[size]}
             max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain scrollbar-hide
-            animate-fade-in
+            animate-fade-in ${sheetOnMobile ? 'pb-[env(safe-area-inset-bottom)] sm:pb-0' : ''}
           `}
           onClick={(e) => e.stopPropagation()}
           // 92dvh (not vh) so mobile browser chrome doesn't eat the bottom of

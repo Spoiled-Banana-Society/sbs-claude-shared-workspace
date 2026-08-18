@@ -58,9 +58,9 @@ export function PromoMiniCard({
     >
       {/* Colored block: kicker left, indicator right */}
       <div className="relative shrink-0 h-[96px]">
-        <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="absolute inset-0" />
+        <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="h-full w-full" />
         <div className="absolute inset-0 z-[1] flex items-center justify-between px-3.5 pointer-events-none">
-          <span className="promo-tx text-[9px] font-extrabold tracking-[1.7px] text-white leading-tight max-w-[86px]">
+          <span className="promo-tx text-[9px] font-extrabold tracking-[1.3px] text-white leading-[1.35] max-w-[92px]">
             {promoKicker(promo)}
           </span>
         </div>
@@ -90,7 +90,9 @@ export function PromoMiniCard({
           </>
         )}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 min-h-[30px]">
-          <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} />
+          <div className="min-w-0 overflow-hidden">
+            <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim || (!!cta && !promoHasChip(promo))} />
+          </div>
           {hasVisibleClaim ? (
             <button
               type="button"

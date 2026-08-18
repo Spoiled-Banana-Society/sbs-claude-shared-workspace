@@ -172,9 +172,9 @@ export function PromoLongCard({
         <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
         <div className="flex flex-col gap-1.5 min-w-0 px-4 sm:px-[18px] pt-3.5 pb-4">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-extrabold tracking-[2px]" style={{ color: accent }}>{promoKicker(promo)}</span>
-            <span className={`text-[10px] font-extrabold tracking-[1px] text-white/45 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
-              {open ? '▴' : 'DETAILS ▾'}
+            <span className="text-[10px] font-extrabold tracking-[2px] truncate min-w-0" style={{ color: accent }}>{promoKicker(promo)}</span>
+            <span className="text-[10px] font-extrabold tracking-[1px] text-white/45 shrink-0 whitespace-nowrap">
+              {open ? 'CLOSE ▴' : 'DETAILS ▾'}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -358,7 +358,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
             })}
           </div>
         ) : (
-          <div className="md:justify-self-end w-full max-w-[300px] rounded-[20px] bg-black/25 border border-white/15 p-6 grid place-items-center min-h-[150px]">
+          <div className="md:justify-self-end w-full max-w-[220px] md:max-w-[300px] rounded-[20px] bg-black/25 border border-white/15 p-4 md:p-6 grid place-items-center min-h-[110px] md:min-h-[150px]">
             <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} className="!bg-none !animate-none w-full" />
           </div>
         )}

@@ -71,7 +71,7 @@ export function CountdownChip({
       } ${urgent ? 'promo-urgent' : ''} ${className}`}
     >
       {label && size !== 'sm' && (
-        <span className="text-[8px] font-extrabold tracking-[1.6px] text-white/50 mr-0.5">{label}</span>
+        <span className="text-[8px] font-extrabold tracking-[1.6px] text-white/50 mr-0.5 whitespace-nowrap">{label}</span>
       )}
       {seg(h, 'HRS')}
       {colon}
@@ -293,7 +293,7 @@ export function PromoSwatch({
       className={`promo-grad ${sweep ? 'promo-sweep' : ''} flex items-center ${align === 'right' ? 'justify-end' : 'justify-center'} text-white ${className}`}
       style={promoHueStyle(promo.type, sweepDelayS)}
     >
-      <div className={`relative z-[1] ${align === 'right' ? 'pr-3.5 pl-[92px] w-full flex justify-end' : 'w-full px-2'}`}>{inner}</div>
+      <div className={`relative z-[1] ${align === 'right' ? 'pr-3.5 pl-[100px] w-full flex justify-end' : 'w-full px-2'}`}>{inner}</div>
     </div>
   );
 }
@@ -311,6 +311,7 @@ export function PromoLive({
   hasVisibleClaim = false,
   isClaimed = false,
   className = '',
+  hideLabel = false,
 }: {
   promo: Promo;
   size?: Size;
@@ -318,16 +319,18 @@ export function PromoLive({
   hasVisibleClaim?: boolean;
   isClaimed?: boolean;
   className?: string;
+  /** Drop the small-caps label when the row is tight (mini card + button). */
+  hideLabel?: boolean;
 }) {
   useTick(true);
   const mc = promo.modalContent || ({} as Promo['modalContent']);
   const accent = promoAccent(promo.type);
   const t = size === 'lg' ? 'text-[13px]' : size === 'md' ? 'text-[12px]' : 'text-[11px]';
-  const sm = size === 'lg' ? 'text-[10px] tracking-[1.6px]' : 'text-[9px] tracking-[1.3px]';
+  const sm = size === 'lg' ? 'text-[10px] tracking-[1.6px]' : 'text-[8.5px] tracking-[0.9px]';
   const Stat = ({ v, l, ready }: { v: React.ReactNode; l?: string; ready?: boolean }) => (
-    <span className={`${t} font-extrabold tabular-nums ${ready ? 'text-banana' : 'text-white'} ${className}`}>
+    <span className={`${t} font-extrabold tabular-nums whitespace-nowrap ${ready ? 'text-banana' : 'text-white'} ${className}`}>
       {v}
-      {l && <small className={`${sm} font-extrabold text-white/45 ml-1.5`}>{l}</small>}
+      {l && !hideLabel && <small className={`${sm} font-extrabold text-white/45 ml-1.5`}>{l}</small>}
     </span>
   );
   if (hasVisibleClaim) return <Stat v="Ready to claim" ready />;
