@@ -4,7 +4,7 @@ import { runInBackground } from '@/lib/serverBackground';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
-import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
+import { isAdminMintConfigured, reserveTokensToWallet, transferParkedTokensToWallet, ParkedTokensError } from '@/lib/onchain/adminMint';
 import { withAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
@@ -99,10 +99,18 @@ export async function GET(req: Request) {
     if (!claimed) continue;
 
     processed++;
+    // Tokens already minted to the ADMIN wallet for this record (the 7702 /
+    // smart-wallet fallback minted but the hand-off failed) — deliver THOSE
+    // instead of minting again, so nothing gets minted twice.
+    const parked: string[] = Array.isArray(data.parkedTokenIds)
+      ? (data.parkedTokenIds as unknown[]).map(String).filter((t) => /^\d+$/.test(t))
+      : [];
     try {
       // Hold the admin-wallet lock so this re-mint can't race a live purchase.
       const mintResult = await withAdminWalletLock('fulfill-failed-mints', () =>
-        reserveTokensToWallet({ to: userId, count: quantity }),
+        parked.length > 0
+          ? transferParkedTokensToWallet({ to: userId, tokenIds: parked })
+          : reserveTokensToWallet({ to: userId, count: quantity }),
       );
       // Wheel passes need their on-chain origin recorded (and the JP/HOF Level
       // trait) so the marketplace classifies them correctly — the spin route
@@ -169,12 +177,16 @@ export async function GET(req: Request) {
       // Mint still failing — release the claim so the next run retries, unless
       // we've hit the attempt ceiling, in which case flag for a human.
       const exhausted = attempts + 1 >= MAX_ATTEMPTS;
+      // Fallback minted to the admin wallet but couldn't hand over: remember
+      // the parked ids so the NEXT run transfers them instead of re-minting.
+      const parkedNow = err instanceof ParkedTokensError ? err.parked : undefined;
       await doc.ref.set(
         {
           resolved: false,
           needsManual: exhausted,
           lastError: (err as Error).message?.slice(0, 300) ?? 'unknown',
           lastTriedAt: FieldValue.serverTimestamp(),
+          ...(parkedNow ? { parkedTokenIds: parkedNow, parkedAt: FieldValue.serverTimestamp() } : {}),
         },
         { merge: true },
       );

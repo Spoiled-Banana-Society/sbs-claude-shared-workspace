@@ -245,12 +245,103 @@ const ERC721_TRANSFER_FROM_ABI = [
   },
 ] as const;
 
+const ERC721_OWNER_OF_ABI = [
+  { type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ name: '', type: 'address' }] },
+] as const;
+
+/**
+ * Thrown when tokens were minted to the admin wallet but could not all be
+ * handed to the recipient. `parked` = tokenIds still sitting in the admin
+ * wallet (recover with transferParkedTokensToWallet); `delivered` = tokenIds
+ * that DID reach the recipient before the failure (already theirs on-chain —
+ * callers must still register/origin-stamp those).
+ */
+export class ParkedTokensError extends Error {
+  constructor(
+    message: string,
+    public readonly parked: string[],
+    public readonly delivered: string[],
+    public readonly lastTxHash: Hex,
+  ) {
+    super(message);
+    this.name = 'ParkedTokensError';
+  }
+}
+
+function adminClients() {
+  const key = loadPrivateKey();
+  if (!key) throw new ApiError(503, 'Admin mint is not configured (missing BBB4_OWNER_PRIVATE_KEY)');
+  const account = privateKeyToAccount(key);
+  const walletClient = createWalletClient({ account, chain: BASE, transport: http(BASE_RPC_URL) });
+  const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+  return { account, walletClient, publicClient };
+}
+
+/**
+ * Plain ERC721 transferFrom(admin → to) for each tokenId — the delivery step
+ * that skips the receiver hook. Waits (up to ~15s) for the RPC to agree the
+ * admin owns each token first: the first live run of the fallback lost a
+ * token to "ERC721NonexistentToken" because the node that estimated the
+ * transfer hadn't seen the mint block yet (2026-08-18). Throws
+ * ParkedTokensError if any token can't be moved, so callers can persist the
+ * parked ids and a later run (or the admin) can finish the hand-off.
+ */
+export async function transferParkedTokensToWallet(opts: { to: string; tokenIds: Array<string | bigint> }): Promise<ReserveTokensResult> {
+  const { account, walletClient, publicClient } = adminClients();
+  const admin = account.address.toLowerCase() as Address;
+  const recipient = opts.to.toLowerCase() as Address;
+  const ids = opts.tokenIds.map((t) => BigInt(t));
+  const delivered: string[] = [];
+  let lastHash: Hex = '0x' as Hex;
+  for (let i = 0; i < ids.length; i++) {
+    const tokenId = ids[i];
+    // Confirm the admin wallet owns it as seen by THIS RPC before writing.
+    let owner: string | null = null;
+    for (let tries = 0; tries < 15; tries++) {
+      owner = await publicClient
+        .readContract({ address: BBB4_CONTRACT_ADDRESS, abi: ERC721_OWNER_OF_ABI, functionName: 'ownerOf', args: [tokenId] })
+        .then((o) => String(o).toLowerCase())
+        .catch(() => null);
+      if (owner === admin) break;
+      if (owner === recipient) break; // already delivered by an earlier run
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (owner === recipient) { delivered.push(tokenId.toString()); continue; }
+    if (owner !== admin) {
+      throw new ParkedTokensError(`token ${tokenId} not owned by admin (owner=${owner ?? 'unknown'})`, ids.slice(i).map(String), delivered, lastHash);
+    }
+    try {
+      const h = await sendAdminWriteWithRetry(publicClient, account, `transferFrom(${tokenId})`, (ov) =>
+        walletClient.writeContract({
+          address: BBB4_CONTRACT_ADDRESS,
+          abi: ERC721_TRANSFER_FROM_ABI,
+          functionName: 'transferFrom',
+          args: [admin, recipient, tokenId],
+          account,
+          chain: BASE,
+          ...ov,
+        }),
+      );
+      const r = await publicClient.waitForTransactionReceipt({ hash: h, timeout: RECEIPT_TIMEOUT_MS });
+      if (r.status !== 'success') throw new Error(`transferFrom(${tokenId}) reverted (tx ${h})`);
+      delivered.push(tokenId.toString());
+      lastHash = h;
+    } catch (err) {
+      throw new ParkedTokensError((err as Error).message, ids.slice(i).map(String), delivered, lastHash);
+    }
+  }
+  logger.info('adminMint.parked.delivered', { to: recipient, tokenIds: delivered, txHash: lastHash });
+  return { txHash: lastHash, tokenIds: delivered };
+}
+
 /**
  * Fallback delivery for recipients that can't take a _safeMint (see the catch
  * in reserveTokensToWallet): reserveTokens(admin, count) then one plain
  * transferFrom(admin → recipient) per token. Returns the LAST tx hash (the
  * transfer that put the final token in the user's wallet) plus every tokenId
  * delivered, so callers register/origin-stamp exactly as on the direct path.
+ * Throws ParkedTokensError (with the parked ids) if the hand-off fails after
+ * the mint — the tokens are then sitting in the admin wallet, NOT lost.
  */
 async function mintViaAdminThenTransfer(p: {
   publicClient: ReturnType<typeof createPublicClient>;
@@ -277,30 +368,11 @@ async function mintViaAdminThenTransfer(p: {
   if (mintReceipt.status !== 'success') throw new ApiError(500, `reserveTokens(admin) reverted (tx ${mintHash})`);
   const minted = parseEventLogs({ abi: BBB4_ABI, eventName: 'Transfer', logs: mintReceipt.logs })
     .filter((e) => e.args.to.toLowerCase() === admin)
-    .map((e) => e.args.tokenId);
-  logger.info('adminMint.fallback.minted_to_admin', { count, tokenIds: minted.map(String), mintHash });
+    .map((e) => e.args.tokenId.toString());
+  logger.info('adminMint.fallback.minted_to_admin', { count, tokenIds: minted, mintHash });
 
-  let lastHash: Hex = mintHash;
-  const delivered: string[] = [];
-  for (const tokenId of minted) {
-    const h = await sendAdminWriteWithRetry(publicClient, account, `transferFrom(${tokenId})`, (ov) =>
-      walletClient.writeContract({
-        address: BBB4_CONTRACT_ADDRESS,
-        abi: ERC721_TRANSFER_FROM_ABI,
-        functionName: 'transferFrom',
-        args: [admin, recipient, tokenId],
-        account,
-        chain: BASE,
-        ...ov,
-      }),
-    );
-    const r = await publicClient.waitForTransactionReceipt({ hash: h, timeout: RECEIPT_TIMEOUT_MS });
-    if (r.status !== 'success') throw new ApiError(500, `transferFrom(${tokenId}) reverted (tx ${h}) — token is parked in the admin wallet`);
-    delivered.push(tokenId.toString());
-    lastHash = h;
-  }
-  logger.info('adminMint.fallback.delivered', { to: recipient, tokenIds: delivered, txHash: lastHash });
-  return { txHash: lastHash, tokenIds: delivered };
+  const res = await transferParkedTokensToWallet({ to: recipient, tokenIds: minted });
+  return { txHash: res.txHash === '0x' ? mintHash : res.txHash, tokenIds: res.tokenIds };
 }
 
 /**
