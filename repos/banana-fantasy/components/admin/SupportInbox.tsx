@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSupportInbox, AdminApiError, type CrispConversationEntry } from '@/hooks/admin/useAdminApi';
+import { useSupportInbox, useBlockSupportVisitor, AdminApiError, type CrispConversationEntry } from '@/hooks/admin/useAdminApi';
 
 function ago(ms: number): string {
   const diff = Date.now() - ms;
@@ -19,6 +19,8 @@ function unreadCount(u: CrispConversationEntry['unread']): number {
 export function SupportInbox({ enabled }: { enabled: boolean }) {
   const [filter, setFilter] = useState<'all' | 'unread' | 'open'>('unread');
   const query = useSupportInbox(enabled, filter);
+  const block = useBlockSupportVisitor();
+  const [blockedLocal, setBlockedLocal] = useState<Record<string, boolean>>({});
   const data = query.data;
   const conversations = data?.conversations ?? [];
   const configured = data?.configured ?? true;
@@ -103,8 +105,29 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
               // flaky per-operator unread counter. Fall back for safety.
               const needsReply = c.needsReply ?? (unreadCount(c.unread) > 0);
               const name = c.displayName || c.nickname || c.email || 'Anonymous';
+              const isBlocked = blockedLocal[c.session_id] === true;
               return (
-                <li key={c.session_id}>
+                <li key={c.session_id} className="relative">
+                  {/* Crisp "Block user" — stops this visitor on every channel. */}
+                  <button
+                    type="button"
+                    title={isBlocked ? 'Unblock this visitor in Crisp' : 'Block this visitor in Crisp (no messages from them, any channel)'}
+                    disabled={block.isPending}
+                    onClick={(e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      const next = !isBlocked;
+                      if (next && !window.confirm(`Block ${name} in Crisp? They will not be able to message support on any channel.`)) return;
+                      block.mutate({ sessionId: c.session_id, blocked: next }, {
+                        onSuccess: () => setBlockedLocal((m) => ({ ...m, [c.session_id]: next })),
+                        onError: (err) => window.alert(err.message || 'Block failed'),
+                      });
+                    }}
+                    className={`absolute right-3 top-3 z-10 rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      isBlocked ? 'border-red-500/60 text-red-400 bg-red-500/10' : 'border-white/15 text-white/45 hover:border-red-500/60 hover:text-red-400'
+                    } disabled:opacity-50`}
+                  >
+                    {isBlocked ? 'Blocked' : 'Block'}
+                  </button>
                   <a
                     href={c.url}
                     target="_blank"

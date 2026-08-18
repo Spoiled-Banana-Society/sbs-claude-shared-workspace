@@ -122,3 +122,29 @@ export async function getConversationMeta(sessionId: string): Promise<{ nickname
   }
 }
 // env-bump 1781219734 — fresh deploy to load new CRISP_* env
+
+/**
+ * Block / unblock the VISITOR behind a conversation (Crisp "Block user").
+ * Blocked visitors can't send messages through the widget, email or any
+ * other channel into this conversation — the definitive kill for a user we
+ * don't want reaching support (Boris 2026-08-18, first target Wp34).
+ * Crisp: PATCH /website/{wid}/conversation/{sid}/block { blocked }.
+ */
+export async function setConversationBlocked(sessionId: string, blocked: boolean): Promise<{ ok: boolean; status: number; body?: string }> {
+  const creds = getCrispCredentials();
+  if (!creds) return { ok: false, status: 0, body: 'not configured' };
+  const tier = (process.env.CRISP_TIER ?? 'website').trim();
+  try {
+    const res = await fetch(`${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversation/${encodeURIComponent(sessionId)}/block`, {
+      method: 'PATCH',
+      headers: { Authorization: authHeader(creds), 'X-Crisp-Tier': tier, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocked }),
+    });
+    const body = await res.text().catch(() => '');
+    if (!res.ok) logger.error('crisp.block.http_error', { sessionId, blocked, status: res.status, body: body.slice(0, 200) });
+    return { ok: res.ok, status: res.status, body: body.slice(0, 200) };
+  } catch (err) {
+    logger.error('crisp.block.failed', { sessionId, err: err instanceof Error ? err.message : String(err) });
+    return { ok: false, status: 0, body: err instanceof Error ? err.message : String(err) };
+  }
+}

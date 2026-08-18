@@ -7,6 +7,8 @@ export type AdminAction =
   | 'unban-user'
   | 'draft-block-user'
   | 'draft-unblock-user'
+  | 'crisp-block-user'
+  | 'crisp-unblock-user'
   | 'approve-withdrawal'
   | 'deny-withdrawal'
   | 'mark-paid-withdrawal'

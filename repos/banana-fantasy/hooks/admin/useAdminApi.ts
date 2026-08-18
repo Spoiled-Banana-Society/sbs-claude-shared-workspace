@@ -934,6 +934,17 @@ export function useSupportInbox(enabled: boolean, filter: 'all' | 'unread' | 'op
 
 /* ────────── Mutations ────────── */
 
+/** Crisp "Block user" for a conversation's visitor (admin Support tab). */
+export function useBlockSupportVisitor() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; sessionId: string; blocked: boolean }, AdminApiError, { sessionId: string; blocked: boolean }>({
+    mutationFn: async ({ sessionId, blocked }) =>
+      adminFetch('/api/admin/support/block', getHeaders, { method: 'POST', body: JSON.stringify({ sessionId, blocked }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'support'] }); },
+  });
+}
+
 export interface GrantDraftsInput {
   identifier: string;
   count: number;
