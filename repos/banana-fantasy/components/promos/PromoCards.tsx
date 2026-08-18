@@ -25,26 +25,28 @@ function ChaseLadder({ promo }: { promo: Promo }) {
   const wonSpins = Math.min(Math.max(promo.claimCount || 1, 1), 5);
   return (
     <div className="mt-1">
-      <div className="text-[8.5px] font-extrabold tracking-[1.6px] text-white/40 mb-1">SPINS PER ATTEMPT · NO LIMIT ON TRIES</div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[8.5px] font-extrabold tracking-[1.6px] text-white/45">SPINS BY TRY</span>
+        <span className="text-[8.5px] font-extrabold tracking-[1.2px] text-white/30">UNLIMITED TRIES · 24H</span>
+      </div>
       <div className="flex items-center gap-[5px]">
         {[1, 2, 3, 4, 5].map((n) => {
           const isNext = c.active && !won && n === Math.min(c.nextHit, 5);
           const passed = c.active && !won && n < Math.min(c.nextHit, 5);
           const isWin = won && n === wonSpins;
+          const tryLabel = n === 5 ? '5TH+' : `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`;
           return (
             <div
               key={n}
-              className={`flex-1 text-center py-[5px] rounded-lg border transition-all ${
+              className={`flex-1 text-center py-[6px] rounded-lg border transition-all ${
                 isWin ? 'bg-banana text-black border-transparent'
                   : isNext ? 'bg-white/[0.12] text-white border-white/35'
                   : passed ? 'text-white/35 border-transparent bg-white/[0.06]'
-                  : 'bg-white/[0.06] text-white/45 border-transparent'
+                  : 'bg-white/[0.06] text-white/50 border-transparent'
               }`}
             >
-              <div className="text-[12px] font-extrabold leading-none tabular-nums">{n}<span className="text-[8px] ml-[1px]">{n === 1 ? ' SPIN' : ' SPINS'}</span></div>
-              <small className="block text-[7.5px] tracking-[1px] opacity-80 leading-none mt-[3px]">
-                {isWin ? 'WON' : isNext ? 'NEXT' : n === 5 ? '5TH+ TRY' : `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'} TRY`}
-              </small>
+              <small className="block text-[7.5px] tracking-[1.2px] font-extrabold opacity-75 leading-none">{isWin ? 'WON' : isNext ? 'NEXT' : tryLabel + ' TRY'}</small>
+              <div className="text-[14px] font-extrabold leading-none tabular-nums mt-[3px]">{n}</div>
             </div>
           );
         })}
