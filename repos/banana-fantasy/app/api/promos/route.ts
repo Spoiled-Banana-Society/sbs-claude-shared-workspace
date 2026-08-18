@@ -116,12 +116,21 @@ export async function GET(req: Request) {
     try {
       const drop = promos.find((p) => p.type === 'drop');
       if (drop) {
-        const { dropExplanationFor, revealNightIdFor } = await import('@/lib/dropRates');
-        drop.modalContent.explanation = dropExplanationFor(revealNightIdFor(Date.now()));
+        const { dropExplanationFor, revealNightIdFor, nightlyPrizesFor, spinsForNight } = await import('@/lib/dropRates');
+        const nightId = revealNightIdFor(Date.now());
+        drop.modalContent.explanation = dropExplanationFor(nightId);
         // Seeded per-user docs carry the old CTA + 8PM description — keep both
         // live-synced with the current schedule/wording (9PM, 2026-08-05).
         drop.ctaText = 'Open your packs';
-        drop.description = 'Fill drafts, earn packs. Open them at 9PM.';
+        // Card line names tonight's prizes (Boris 2026-08-18) — seats from the
+        // live prize table (so a one-night override shows), spins summed.
+        const rows = nightlyPrizesFor(nightId);
+        const seatWords = rows
+          .filter((r) => r.kind === 'jackhof' || r.kind === 'hof' || r.kind === 'jackpot')
+          .map((r) => `${r.count} ${r.kind === 'jackhof' ? 'JackHOF' : r.kind === 'hof' ? 'HOF' : 'Jackpot'} seat${r.count === 1 ? '' : 's'}`);
+        const spins = spinsForNight(nightId);
+        const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
+        drop.description = `Fill drafts, earn packs. Open them at 9 PM.\nTonight: ${prizeLine}.`;
         drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
       }
     } catch { /* copy refresh is decoration — promos still return */ }
