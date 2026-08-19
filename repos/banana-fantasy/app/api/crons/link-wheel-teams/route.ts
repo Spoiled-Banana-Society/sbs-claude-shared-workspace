@@ -148,7 +148,10 @@ export async function GET(req: Request) {
           );
           await upsertMarketplaceIndex(tokenId, {
             status: 'team',
-            level: normalizeLevel(type === 'jackpot' ? 'Jackpot' : 'Hall of Fame'),
+            // 'jackhof' rounds are BOTH — stamp the dual label or the card
+            // rebuilds as plain HOF (JackHOF #30, 2026-08-19).
+            level: normalizeLevel(type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'Hall of Fame'),
+            levelRaw: type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'Hall of Fame',
           });
           // LAST write = idempotence marker (see step 5 in the header comment).
           await db.collection('nft_league_map').doc(tokenId).set({

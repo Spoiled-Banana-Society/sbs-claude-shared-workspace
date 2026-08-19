@@ -130,6 +130,7 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   // JP/HOF + League # marketplace filters.
   await upsertMarketplaceIndex(tokenId, {
     level: normalizeLevel(card.level),
+    levelRaw: card.level,
     leagueNumber,
     status: 'team',
     image: card.image,

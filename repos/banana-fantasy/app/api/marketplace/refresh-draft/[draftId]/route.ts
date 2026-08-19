@@ -27,6 +27,9 @@ const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
 
 function tierFromLevel(level: string): CardTier {
   const l = (level || '').toLowerCase();
+  // 'jackhof' contains 'hof' but not 'jackpot' — must be checked FIRST or a
+  // JackHOF team gets the plain HOF frame (JackHOF #30, 2026-08-19).
+  if (l.includes('jackhof')) return 'jackhof';
   if (l.includes('jackpot')) return 'jackpot';
   if (l.includes('hof') || l.includes('hall of fame')) return 'hof';
   return 'pro';
@@ -155,6 +158,7 @@ async function writeFullDataImages(
         // (upsert itself rejects non-real ids, so this is safe either way.)
         await upsertMarketplaceIndex(realId, {
           level: normalizeLevel(level),
+          levelRaw: level,
           leagueNumber: leagueNo ? Number(leagueNo) : null,
           status: 'team',
           image,

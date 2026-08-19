@@ -9,6 +9,7 @@ import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import type { TeamData } from '@/lib/marketplace/teamData';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 import { classifyToken } from '@/lib/nftPassClassify';
+import { levelLabelFromIndex } from '@/lib/marketplaceIndex';
 
 const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
 
@@ -196,6 +197,9 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
   let indexSaysTeam = false;
   let indexImage: string | null = null;
   let indexLevel: string | null = null;
+  /** Canonical label from the index (`levelRaw` → 'JackHOF' survives the
+   *  'jackpot' filter bucket). Null when the doc predates levelRaw. */
+  let indexLabel: string | null = null;
   let indexPlayers: CardPlayer[] | null = null;
   if (isFirestoreConfigured() && /^\d+$/.test(id)) {
     try {
@@ -213,6 +217,7 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           indexSaysTeam = true;
           indexImage = (d.image as string) || null;
           indexLevel = (d.level as string) || null;
+          indexLabel = levelLabelFromIndex(d);
           // Durable stored pick list (incl. pickNum) — lets us rebuild the card
           // from OUR Firestore with NO Go dependency once it's been captured.
           const ps = Array.isArray(d.players) ? (d.players as CardPlayer[]) : null;
@@ -246,9 +251,14 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           // draftTokens._level) when present — the finalize-doc LEVEL attribute
           // can be stale/wrong (e.g. a prior-era Jackpot doc on a token the
           // backend now says is Pro). Only fall back to the attr on index-miss.
+          const attrLevel = attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro';
+          // levelRaw beats the bucket; a 'jackpot' bucket with a JackHOF
+          // finalize attr is JackHOF (the bucket can't say so).
           const level = (indexSaysTeam && indexLevel)
-            ? (indexLevel === 'jackpot' ? 'Jackpot' : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro')
-            : (attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro');
+            ? (indexLabel && indexLabel !== 'Pro'
+                ? (indexLabel === 'Jackpot' && /jackhof/i.test(attrLevel) ? 'JackHOF' : indexLabel)
+                : (indexLevel === 'jackpot' ? (/jackhof/i.test(attrLevel) ? 'JackHOF' : 'Jackpot') : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro'))
+            : attrLevel;
           const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
           const useStored = isOgImage(stored) && !isPreRevealOg(stored);
@@ -297,7 +307,7 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
   // at the index's level when none is stored. This keeps the team stable (the
   // metadata-route self-heal won't flip it back to a pass) and the level correct.
   if (indexSaysTeam) {
-    const level = indexLevel === 'jackpot' ? 'Jackpot' : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro';
+    const level = indexLabel ?? (indexLevel === 'jackpot' ? 'Jackpot' : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro');
     const image = indexImage || buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, players: [] });
     return { image, drafted: true, level, players: [] };
   }

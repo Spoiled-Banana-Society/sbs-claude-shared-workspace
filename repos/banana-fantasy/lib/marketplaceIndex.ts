@@ -43,8 +43,33 @@ export interface IndexPlayer {
   playerId?: string;
 }
 
+/** Canonical Go level label. The index `level` key BUCKETS JackHOF under
+ *  'jackpot' for the marketplace filter, which loses the dual identity — so
+ *  card rebuilds read `levelRaw` first. Added 2026-08-19 after JackHOF #30's
+ *  teams rendered as HOF (link-wheel-teams stamped 'Hall of Fame' for a
+ *  jackhof round, and every rebuild trusted that index level). */
+export type LevelLabel = 'Jackpot' | 'Hall of Fame' | 'JackHOF' | 'Pro';
+
+export function levelLabel(raw: string | null | undefined): LevelLabel {
+  const v = String(raw ?? '').toLowerCase();
+  if (v.includes('jackhof')) return 'JackHOF';
+  if (v.includes('jackpot')) return 'Jackpot';
+  if (v.includes('hall of fame') || v === 'hof') return 'Hall of Fame';
+  return 'Pro';
+}
+
+/** Level label for an index doc: `levelRaw` when stamped, else the bucket. */
+export function levelLabelFromIndex(d: { level?: unknown; levelRaw?: unknown } | null | undefined): LevelLabel | null {
+  if (!d) return null;
+  if (typeof d.levelRaw === 'string' && d.levelRaw) return levelLabel(d.levelRaw);
+  if (typeof d.level === 'string' && d.level) return levelLabel(d.level);
+  return null;
+}
+
 export interface MarketplaceIndexEntry {
   level: IndexLevel;
+  /** Canonical label ('JackHOF' keeps the dual identity the bucket drops). */
+  levelRaw?: LevelLabel | string | null;
   leagueNumber?: number | null;
   status: 'team' | 'pass';
   /** Display bits so the marketplace can render a team straight from the index
@@ -75,6 +100,7 @@ export async function upsertMarketplaceIndex(tokenId: string, entry: Marketplace
       {
         tokenId: id,
         level: entry.level,
+        ...(entry.levelRaw ? { levelRaw: levelLabel(entry.levelRaw) } : {}),
         leagueNumber: entry.leagueNumber ?? null,
         status: entry.status,
         image: entry.image ?? null,
