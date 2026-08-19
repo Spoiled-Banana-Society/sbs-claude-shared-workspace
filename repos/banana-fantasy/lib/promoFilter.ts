@@ -39,16 +39,18 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   // RELAUNCHED 2026-08-17 (Boris) for round three: seats 21-30, a fresh 0/10 lap for
   // everyone, one more ATB-only Jackpot lobby. Loops every 10 seats.
   'around-the-banana',
-  'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev (moved up 2026-08-18)
-  'drop',           // 🌙 THE DROP — LAUNCHED 2026-08-02
-  'jackpot',        // Jackpot Hit — HERE while a 10/5-spin window is open (jackpotRank)
+  // Rows on /promos pair by height (Boris 2026-08-18): compact + compact,
+  // then medium + tall, then tall + tall — so no card sits half-empty.
+  'daily-drafts',   // "4 drafts in 24h" — compact (chip)         ┐ row 1
+  'pick-10',        // "Pick 10 → FREE SPIN" — compact, passive   ┘
+  'drop',           // 🌙 THE DROP — medium                        ┐ row 2
+  'jackpot',        // Jackpot Hit — cycle bar; HERE while a 10/5-spin window is open (jackpotRank) ┘
   'eliminator',     // 🔥 THE ELIMINATOR — retired 2026-08-01 (window-gated below)
   'banana-draw',    // retired 2026-07-31 (window-gated below)
   // 🔒 'banana-vault' RETIRED 2026-08-17 (Boris) after Vault 1 — its 3 seat winners
   // were moved into an open WHEEL Jackpot lobby; card removed, crediting off.
-  'pick-chase',     // "Match Your Pick" limited-time promo — LAUNCHED 2026-07-23
-  'pick-10',        // "Pick 10 → FREE SPIN" — right after Match Your Pick (Boris 2026-08-18)
-  'referral',       // "Refer a friend" — top-of-funnel growth
+  'pick-chase',     // "Match Your Pick" — tall (ladder)          ┐ row 3
+  'referral',       // "Refer a friend" — tall (milestones)       ┘
   'mint',           // "Buy 10 → FREE SPIN" — RETIRED (MINT_PROMO_END_MS); survives only
                     // for users still owed a spin, so it sits last
 ];

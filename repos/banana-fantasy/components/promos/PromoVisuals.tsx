@@ -76,13 +76,21 @@ export function CountdownChip({
   // never wider than the digit row — long labels were clipping (Boris
   // 2026-08-18). lg keeps the inline label; sm has no label.
   const stacked = size === 'md' && !!label;
+  // lg (long cards / spotlight): inline on desktop, stacked on phones (<640px)
+  // where the card body is ~200px wide.
+  const lgResponsive = size === 'lg' && !!label;
   const rowGap = size === 'lg' ? 'gap-[7px]' : size === 'md' ? 'gap-1.5' : 'gap-1';
+  const layout = stacked
+    ? 'flex-col items-start gap-[3px]'
+    : lgResponsive
+      ? 'flex-col items-start gap-[3px] sm:flex-row sm:items-center sm:gap-[7px]'
+      : `items-center ${rowGap}`;
   return (
     <span
-      className={`inline-flex ${stacked ? 'flex-col items-start gap-[3px]' : `items-center ${rowGap}`} max-w-full rounded-[10px] border ${padc.replace(/gap-\S+/, '')} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
+      className={`inline-flex ${layout} max-w-full rounded-[10px] border ${padc.replace(/gap-\S+/, '')} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
     >
       {label && size !== 'sm' && (
-        <span className={`text-[8px] font-extrabold tracking-[1.6px] text-white/50 whitespace-nowrap ${stacked ? '' : 'mr-0.5'}`}>{label}</span>
+        <span className={`text-[8px] font-extrabold tracking-[1.6px] text-white/50 whitespace-nowrap ${stacked ? '' : lgResponsive ? 'sm:mr-0.5' : 'mr-0.5'}`}>{label}</span>
       )}
       <span className={`inline-flex items-center ${rowGap}`}>
         {seg(h, 'HRS')}
@@ -377,8 +385,12 @@ export function PromoLive({
       }, 0);
       return <Stat v={spins} l={spins === 1 ? 'SPIN EARNED' : 'SPINS EARNED'} />;
     }
-    case 'pick-10':
-      return <Stat v="Nothing to do" l="LANDS ON ITS OWN" />;
+    case 'pick-10': {
+      // Passive — no call-to-action line (Boris 2026-08-18). Hits once there
+      // are any; otherwise the foot stays empty.
+      const hits = mc.totalPick10s ?? 0;
+      return hits > 0 ? <Stat v={`${hits} hit${hits === 1 ? '' : 's'}`} l="THIS SEASON" /> : null;
+    }
     case 'jackpot': {
       const cyc = mc.cycle;
       if (!cyc) return <Stat v="1 in 100" l="DRAFTS" />;
