@@ -594,7 +594,7 @@ const seedPromos: Promo[] = [
     // Card copy (Boris 2026-08-17): 2-line clamp on every surface — sentence two
     // must measure ≤ "Cover all 10 pick slots and win a" in Inter or it clips.
     // Existing per-user docs are re-stamped live in app/api/promos/route.ts.
-    description: 'First 10 people to hit all 10 slots win a Jackpot seat.\nEvery draft counts, paid or free.',
+    description: 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid and free drafts count.',
     ctaText: 'View Drafts',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
