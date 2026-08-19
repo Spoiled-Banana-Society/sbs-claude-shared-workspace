@@ -81,7 +81,7 @@ export function CountdownChip({
   const lgResponsive = size === 'lg' && !!label;
   const rowGap = size === 'lg' ? 'gap-[7px]' : size === 'md' ? 'gap-1.5' : 'gap-1';
   const layout = stacked
-    ? 'flex-col items-start gap-[3px]'
+    ? 'flex-col items-stretch gap-[3px] w-full'
     : lgResponsive
       ? 'flex-col items-start gap-[3px] sm:flex-row sm:items-center sm:gap-[7px]'
       : `items-center ${rowGap}`;
@@ -92,7 +92,7 @@ export function CountdownChip({
       {label && size !== 'sm' && (
         <span className={`text-[8px] font-extrabold tracking-[1.6px] text-white/50 whitespace-nowrap ${stacked ? '' : lgResponsive ? 'sm:mr-0.5' : 'mr-0.5'}`}>{label}</span>
       )}
-      <span className={`inline-flex items-center ${rowGap}`}>
+      <span className={`inline-flex items-center ${stacked ? 'w-full justify-around px-1' : rowGap}`}>
         {seg(h, 'HRS')}
         {colon}
         {seg(m, 'MIN')}
