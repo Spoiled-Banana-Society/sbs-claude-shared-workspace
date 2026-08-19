@@ -279,12 +279,28 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
       style={promoHueStyle(promo.type, 0)}
       aria-label={`${promoName(promo)} — featured promo`}
     >
+      <button
+        type="button"
+        onClick={() => setHow((h) => !h)}
+        aria-expanded={how}
+        className="promo-tx hidden md:block absolute top-6 right-8 z-[2] text-[10px] font-extrabold tracking-[1px] text-white/70 hover:text-white whitespace-nowrap"
+      >
+        {how ? 'CLOSE ▴' : 'DETAILS ▾'}
+      </button>
       <div className="relative z-[1] grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-6 md:gap-8 items-center">
         <div className="promo-tx min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-extrabold tracking-[2.4px]">
             <i className="promo-ping w-[7px] h-[7px] rounded-full bg-white" />
             <span>{kicker}</span>
             {promo.isNew && <span className="ml-1 rounded-full bg-banana px-2 py-[2px] text-[9px] font-black tracking-[1.4px] text-black">NEW</span>}
+            <button
+              type="button"
+              onClick={() => setHow((h) => !h)}
+              aria-expanded={how}
+              className="ml-auto md:hidden text-[10px] font-extrabold tracking-[1px] text-white/70 hover:text-white whitespace-nowrap"
+            >
+              {how ? 'CLOSE ▴' : 'DETAILS ▾'}
+            </button>
           </div>
           <h3 className="mt-3 text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px]" style={{ textWrap: 'balance' } as React.CSSProperties}>
             {promoName(promo)}
@@ -309,21 +325,13 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
               <PromoLive promo={promo} size="lg" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} />
             </div>
           )}
-          <div className="mt-5 flex items-center gap-2.5 flex-wrap">
-            {hasVisibleClaim ? (
+          {hasVisibleClaim ? (
+            <div className="mt-5 flex items-center gap-2.5 flex-wrap">
               <button type="button" onClick={onClaim} className="promo-glow rounded-full bg-banana px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform">
                 {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setHow((h) => !h)}
-              aria-expanded={how}
-              className="rounded-full border border-white/40 bg-white/[0.14] px-4 py-2.5 text-[12px] font-extrabold text-white hover:bg-white/[0.2] transition-colors"
-            >
-              Details {how ? '▴' : '▾'}
-            </button>
-          </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Right: the big indicator */}
