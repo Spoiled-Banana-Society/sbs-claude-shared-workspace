@@ -314,7 +314,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
             <p className="mt-3 text-[15px] leading-[1.5] max-w-[44ch] whitespace-pre-line">{line}</p>
           )}
           {isAtb && (
-            <div className="mt-4 flex gap-6">
+            <div className="mt-7 flex gap-6">
               <div><b className="block text-[22px] font-extrabold tabular-nums leading-none">{hits.length}/10</b><span className="text-[10px] tracking-[1.8px] font-extrabold">YOUR SLOTS</span></div>
               <div><b className="block text-[22px] font-extrabold tabular-nums leading-none">{seatsLeft}</b><span className="text-[10px] tracking-[1.8px] font-extrabold">SEATS LEFT</span></div>
               {atb?.won && <div><b className="block text-[22px] font-extrabold tabular-nums leading-none">#{atb.seatNumber}</b><span className="text-[10px] tracking-[1.8px] font-extrabold">YOUR SEAT</span></div>}
