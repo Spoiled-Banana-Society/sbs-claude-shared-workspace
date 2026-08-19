@@ -95,7 +95,12 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
       )}
 
       {/* Data */}
-      {wallet && lookup.data && (
+      {wallet && lookup.data && (() => {
+        // Returning = BBB3 snapshot/past-player set OR the live on-chain flag
+        // stamped on the user doc at login — same OR the product itself uses.
+        const ident = isSectionFail(lookup.data.identity) ? null : lookup.data.identity;
+        const isReturning = returningSet.has(wallet.toLowerCase()) || ident?.isReturningPlayer === true;
+        return (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
           {/* Reading order: who → what they've done → where money went →
               admin support context → admin audit trail.
@@ -119,11 +124,11 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
                 isSectionFail(lookup.data.identity) ? null : lookup.data.identity
               }
               walletShort={lookup.data.walletShort}
-              returning={returningSet.has(wallet.toLowerCase())}
+              returning={isReturning}
             />
             <FirstPurchaseFlowCard
               identity={isSectionFail(lookup.data.identity) ? null : lookup.data.identity}
-              returning={returningSet.has(wallet.toLowerCase())}
+              returning={isReturning}
             />
             <ActivitySection
               activity={lookup.data.activity}
@@ -161,7 +166,8 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
             />
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

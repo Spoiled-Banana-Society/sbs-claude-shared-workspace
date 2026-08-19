@@ -233,6 +233,11 @@ async function readIdentity(wallet: string) {
       null,
     blueCheckVerified: d.blueCheckVerified === true || d.isBlueCheckVerified === true,
     banned: d.banned === true,
+    // Live returning flag — set at login by the client's on-chain BBB3 check.
+    // The admin chip used to read ONLY the stored snapshot/past-player set, so
+    // a genuine BBB3 holder the snapshot missed showed "New user" while the
+    // whole product treated them as returning (ArtyIce963, 2026-08-19).
+    isReturningPlayer: d.isReturningPlayer === true,
     kycStatus: typeof d.kycStatus === 'string' ? d.kycStatus : null,
     kycTier: typeof d.kycTier === 'number' ? d.kycTier : null,
     createdAt: toIsoDate(d.createdAt),
