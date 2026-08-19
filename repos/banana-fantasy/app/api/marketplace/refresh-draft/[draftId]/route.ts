@@ -275,16 +275,24 @@ export async function POST(
     // Each card doc id is the BBB4 token id (written by the WS server as
     // drafts/{leagueId}/cards/{CardId}). Keep numeric ids only — OpenSea's
     // refresh endpoint takes a numeric token identifier.
-    const tokenIds = Array.from(
-      new Set(
-        cardsSnap.docs
-          .map((d) => {
-            const data = d.data() as Record<string, unknown>;
-            return String(data?.CardId ?? data?.cardId ?? d.id);
-          })
-          .filter((id) => /^\d+$/.test(id)),
-      ),
-    );
+    // Special (wheel/promo JP/HOF/JackHOF) drafts use synthetic card ids
+    // ('special-<ts>-<wallet6>'); their real on-chain id lives on the
+    // draftTokens doc (RealTokenId, stamped by link-wheel-teams). Resolve it
+    // so those drafts get the same close capture as regular ones — before
+    // this they silently hit the empty-return below (JackHOF #30, 2026-08-19).
+    const rawCardIds = cardsSnap.docs.map((d) => {
+      const data = d.data() as Record<string, unknown>;
+      return String(data?.CardId ?? data?.cardId ?? d.id);
+    });
+    const resolvedIds = await Promise.all(rawCardIds.map(async (id) => {
+      if (/^\d+$/.test(id)) return id;
+      try {
+        const tok = await db.collection('draftTokens').doc(id).get();
+        const real = String(tok.get('RealTokenId') ?? tok.get('realTokenId') ?? '').trim();
+        return /^\d{1,7}$/.test(real) ? id : null; // keep the synthetic id — writeFullDataImages maps it to RealTokenId
+      } catch { return null; }
+    }));
+    const tokenIds = Array.from(new Set(resolvedIds.filter((id): id is string => !!id)));
 
     if (tokenIds.length === 0) {
       logger.info('marketplace.refresh_draft_empty', { draftId });

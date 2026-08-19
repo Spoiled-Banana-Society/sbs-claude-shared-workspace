@@ -123,6 +123,18 @@ function ogRosterKey(url: string): string | null {
   } catch { return null; }
 }
 
+/** The tier baked into an og team-card image URL (null if undecodable). A
+ *  stored image whose tier disagrees with the token's resolved level is stale
+ *  (e.g. JackHOF #30 captured as 'hof') and must be rebuilt, roster match or not. */
+function ogTier(url: string): string | null {
+  try {
+    const d = new URL(url).searchParams.get('d');
+    if (!d) return null;
+    const parsed = JSON.parse(Buffer.from(d, 'base64url').toString('utf8'));
+    return typeof parsed.tier === 'string' ? parsed.tier : null;
+  } catch { return null; }
+}
+
 function playersFromTeamData(team: TeamData): CardPlayer[] {
   return team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
 }
@@ -292,7 +304,7 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           // matches cardPlayers; otherwise rebuild from truth. This is what stops
           // the card art from silently dropping a 2nd TE / 2nd DST while the roster
           // detail (built from the same cardPlayers) shows them correctly.
-          const image = (useStored && ogRosterKey(stored) === rosterKey(cardPlayers))
+          const image = (useStored && ogRosterKey(stored) === rosterKey(cardPlayers) && ogTier(stored) === tierFromLevel(level))
             ? stored
             : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
           return { image, drafted: true, level, players: cardPlayers };
