@@ -104,8 +104,12 @@ export async function GET(req: Request) {
           seatsClaimed: seats.claimed,
           seatsTotal: seats.total,
           completed: !!mc.atbCompletedAt,
-          won: !!mc.atbWonAt,
-          seatNumber: mc.atbSeatNumber as number | undefined,
+          // "won" = won THIS round. The round reset clears atbCompletedAt but
+          // keeps atbWonAt/atbSeatNumber as history — surfacing that history
+          // as a live seat made round-3 cards read "Seat 2" for last round's
+          // winners (Fantasy Couch, 2026-08-18: "I have 3 banana seats").
+          won: !!mc.atbWonAt && !!mc.atbCompletedAt,
+          seatNumber: (!!mc.atbWonAt && !!mc.atbCompletedAt) ? (mc.atbSeatNumber as number | undefined) : undefined,
         };
       }
     } catch { /* live stats are decoration — promos still return */ }
