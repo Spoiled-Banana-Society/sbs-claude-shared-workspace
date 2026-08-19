@@ -102,6 +102,8 @@ export interface UserLookupIdentity {
   email: string | null;
   blueCheckVerified: boolean;
   banned: boolean;
+  /** Live on-chain BBB3 flag stamped at login (returning player). */
+  isReturningPlayer?: boolean;
   kycStatus: string | null;
   kycTier: number | null;
   createdAt: string | null;
