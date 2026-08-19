@@ -1,7 +1,7 @@
 import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
+import { listFreeOriginTokenIds, filterFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
@@ -368,7 +368,12 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   //    everything else is a PAID purchase. This is the source of truth the
   //    backend uses to honor the user's free/paid choice at entry and to keep
   //    free drafts out of promos.
-  const freeOriginSet = new Set((await listFreeOriginTokenIds(w)).map((id) => String(id)));
+  // By TOKEN, not by minted-to wallet: a free pass transferred in from another
+  // wallet is still a free pass (never earns paid-only promos).
+  const freeOriginSet = new Set([
+    ...(await listFreeOriginTokenIds(w)).map((id) => String(id)),
+    ...(await filterFreeOriginTokenIds(missingFromGo.map(String))),
+  ]);
   const freeMissing = missingFromGo.filter((n) => freeOriginSet.has(String(n)));
   const paidMissing = missingFromGo.filter((n) => !freeOriginSet.has(String(n)));
   const registered =

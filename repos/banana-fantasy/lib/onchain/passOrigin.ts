@@ -80,3 +80,23 @@ export async function listFreeOriginTokenIds(wallet: string): Promise<string[]> 
     .get();
   return snap.docs.map((d) => d.get('tokenId') as string);
 }
+
+/**
+ * Free-origin check by TOKEN, independent of who holds it now. A free pass
+ * (wheel / admin grant) stays free when it's transferred wallet-to-wallet —
+ * the reconciler used to classify by `ownerAtMint === recipient`, which
+ * relabelled a transferred free pass as PAID on the recipient (token 3356,
+ * 2026-08-19) and would have let it earn paid-only promos.
+ */
+export async function filterFreeOriginTokenIds(tokenIds: Array<string | number>): Promise<Set<string>> {
+  const free = new Set<string>();
+  if (tokenIds.length === 0) return free;
+  const db = getAdminFirestore();
+  const ids = Array.from(new Set(tokenIds.map((t) => String(t))));
+  for (let i = 0; i < ids.length; i += 30) {
+    const chunk = ids.slice(i, i + 30);
+    const snap = await db.collection(COLLECTION).where('tokenId', 'in', chunk).get();
+    snap.forEach((d) => free.add(String(d.get('tokenId'))));
+  }
+  return free;
+}
