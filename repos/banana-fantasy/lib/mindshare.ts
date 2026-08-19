@@ -113,6 +113,8 @@ export interface MindshareState {
   startsAtMs: number;
   endsAtMs: number;
   lastScanMs?: number;
+  lastMetricsRefreshMs?: number;
+  lastRtPassMs?: number;
   newestTweetId?: string;
 }
 
@@ -267,13 +269,23 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   // RT-credit pass only cares about posts that actually have retweets.
   const rtCandidates = ourTweets.filter((t) => t.retweets > 0).slice(0, 10);
   let credited = 0;
+  // Skip retweeter-list pulls whose RT count hasn't moved since the last pull
+  // — the list can't have changed, and these calls were the single biggest
+  // credit sink (10 list pulls x 288 scans/day for mostly-static lists).
+  const seenSnaps = rtCandidates.length
+    ? await db.getAll(...rtCandidates.map((t) => db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id)))
+    : [];
+  const rtSeen = new Map(seenSnaps.map((d) => [d.id, Number(d.data()?.rtSeenCount) || 0]));
   for (const ours of rtCandidates) {
+    if ((rtSeen.get(ours.id) ?? 0) >= ours.retweets) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let users: any[] = [];
     try {
       const r = await apiGet(`/twitter/tweet/retweeters?tweetId=${ours.id}`);
       users = Array.isArray(r.users) ? r.users : (Array.isArray(r.retweeters) ? r.retweeters : []);
     } catch { continue; }
+    await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(ours.id)
+      .set({ rtSeenCount: ours.retweets }, { merge: true });
     for (const u of users) {
       const handle = String(u?.userName ?? '').trim();
       if (!handle || EXCLUDED_HANDLES.has(handle.toLowerCase())) continue;
@@ -305,7 +317,6 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
  *  docs never healed. The cursor walks the whole week batch-by-batch and
  *  wraps, so every doc cycles through roughly every half hour. */
 async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<number> {
-  void nowMs;
   const db = getAdminFirestore();
   const weekRef = db.collection(WEEKS_COLLECTION).doc(weekId);
   const cursor = Number((await weekRef.get()).data()?.refreshCursorMs) || 0;
@@ -313,9 +324,12 @@ async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<numb
   let snap = await tweetsCol.where('createdAtMs', '>', cursor)
     .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
   if (snap.empty && cursor > 0) {
-    // End of the week's docs — wrap to the start for the next lap.
-    await weekRef.set({ refreshCursorMs: 0 }, { merge: true });
-    snap = await tweetsCol.where('createdAtMs', '>', 0)
+    // End of the week's docs — wrap for the next lap. Floor at 4 days back:
+    // engagement on older tweets is effectively frozen, so re-pulling them
+    // every lap was pure credit burn (Boris 2026-08-19).
+    const floorMs = nowMs - 4 * MS_DAY;
+    await weekRef.set({ refreshCursorMs: floorMs }, { merge: true });
+    snap = await tweetsCol.where('createdAtMs', '>', floorMs)
       .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
   }
   if (snap.empty) return 0;
@@ -520,8 +534,23 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
       pulled += 1;
     }
     await batch.commit();
-    refreshed = await refreshRecentMetrics(state.weekId, nowMs);
-    rtCredits = await creditRetweeters(state.weekId, nowMs);
+    // CREDIT BUDGET (Boris 2026-08-19, after twitterapi ran dry): the mention
+    // ingest stays every scan (it's 2-4 cheap calls and is the "real-time"
+    // part users see). The two heavy passes are time-gated:
+    //  - metrics refresh: every 15 min (a lap of the week still completes in
+    //    hours; engagement counts don't move minute-to-minute)
+    //  - house-posts + retweeter credit: every 30 min (RT credit can lag)
+    const sLive = (await getAdminFirestore().doc(STATE_DOC).get()).data() ?? {};
+    const lastRefresh = Number(sLive.lastMetricsRefreshMs) || 0;
+    const lastRt = Number(sLive.lastRtPassMs) || 0;
+    if (nowMs - lastRefresh >= 15 * 60_000) {
+      refreshed = await refreshRecentMetrics(state.weekId, nowMs);
+      await getAdminFirestore().doc(STATE_DOC).set({ lastMetricsRefreshMs: nowMs }, { merge: true });
+    }
+    if (nowMs - lastRt >= 30 * 60_000) {
+      rtCredits = await creditRetweeters(state.weekId, nowMs);
+      await getAdminFirestore().doc(STATE_DOC).set({ lastRtPassMs: nowMs }, { merge: true });
+    }
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
     apiError = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
