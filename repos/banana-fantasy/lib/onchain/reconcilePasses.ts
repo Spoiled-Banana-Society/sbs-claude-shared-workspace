@@ -44,10 +44,25 @@ interface AlchemyNftsResponse {
  * iteration through contract reads. Source of truth for reconciliation.
  */
 async function fetchOwnedBbb4TokenIds(wallet: string): Promise<string[]> {
+  const { owned } = await fetchOwnedBbb4TokenIdsWithTotal(wallet);
+  return owned;
+}
+
+/**
+ * Same lookup, plus Alchemy's own `totalCount` and whether the page chain
+ * ended short of it. 2026-08-19: for a 389-token wallet Alchemy returned 3
+ * pages (300 ids) and then NO pageKey — the reconciler treated the missing
+ * 89 as "transferred out" and deleted every pass row the wallet had. A
+ * truncated list must never be used to delete anything.
+ */
+async function fetchOwnedBbb4TokenIdsWithTotal(
+  wallet: string,
+): Promise<{ owned: string[]; totalCount: number | null; complete: boolean }> {
   const base = alchemyNftBase();
   if (!base) throw new Error('Alchemy NFT API URL not configured');
 
   const owned: string[] = [];
+  let totalCount: number | null = null;
   let pageKey: string | undefined;
   // Paginate just in case a wallet owns many — usually one call is enough.
   for (let i = 0; i < 10; i++) {
@@ -70,13 +85,15 @@ async function fetchOwnedBbb4TokenIds(wallet: string): Promise<string[]> {
       throw new Error(`Alchemy NFT API ${res.status}: ${await res.text().catch(() => '')}`);
     }
     const body = (await res.json()) as AlchemyNftsResponse;
+    if (typeof body.totalCount === 'number') totalCount = body.totalCount;
     for (const nft of body.ownedNfts ?? []) {
       if (nft.tokenId != null) owned.push(String(nft.tokenId));
     }
     if (!body.pageKey) break;
     pageKey = body.pageKey;
   }
-  return owned;
+  const complete = totalCount === null ? true : owned.length >= totalCount;
+  return { owned, totalCount, complete };
 }
 
 /**
@@ -322,7 +339,8 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   const beforeCounter = (snap.data()?.draftPasses as number | undefined) ?? 0;
 
   // 1. Authoritative on-chain owned tokens.
-  const ownedNumericIds = (await fetchOwnedBbb4TokenIds(w))
+  const ownedLookup = await fetchOwnedBbb4TokenIdsWithTotal(w);
+  const ownedNumericIds = ownedLookup.owned
     .map((id) => Number.parseInt(id, 10))
     .filter((n) => Number.isFinite(n));
   const ownedSet = new Set(ownedNumericIds.map((n) => String(n)));
@@ -356,7 +374,36 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   const registered =
     (await registerTokensWithGoApi(w, paidMissing, 'paid')) +
     (await registerTokensWithGoApi(w, freeMissing, 'free'));
-  const removed = await removeTransferredOutFromGoApi(w, staleInGo);
+  // DELETE GUARDS (2026-08-19, Fantasy Couch wipe):
+  //  a) a truncated Alchemy list is not evidence of anything → delete nothing;
+  //  b) every "stale" row is re-checked against the contract's ownerOf before
+  //     it's removed — the wallet still owning the token means the row stays.
+  let removed = 0;
+  if (staleInGo.length > 0) {
+    if (!ownedLookup.complete) {
+      logger.warn('reconcile.skip_remove_truncated_owned_list', {
+        wallet: w, fetched: ownedLookup.owned.length, totalCount: ownedLookup.totalCount, stale: staleInGo.length,
+      });
+    } else {
+      const { getOnchainOwner } = await import('@/lib/onchain/ownerOf');
+      const confirmedGone: string[] = [];
+      for (const r of goAvailable) {
+        if (!staleInGo.includes(r.cardId) || !r.onchainId) continue;
+        const owner = await getOnchainOwner(r.onchainId).catch(() => null);
+        if (owner === null) {
+          // Chain read failed → unknown → keep the row (never delete on doubt).
+          logger.warn('reconcile.skip_remove_owner_unknown', { wallet: w, cardId: r.cardId, onchainId: r.onchainId });
+          continue;
+        }
+        if (owner.toLowerCase() === w) {
+          logger.warn('reconcile.skip_remove_still_owned', { wallet: w, cardId: r.cardId, onchainId: r.onchainId });
+          continue;
+        }
+        confirmedGone.push(r.cardId);
+      }
+      removed = await removeTransferredOutFromGoApi(w, confirmedGone);
+    }
+  }
 
   // 5. Write the counter as a MIRROR of real spendable inventory — not from
   //    on-chain math. After the register/remove steps above, the engine's
