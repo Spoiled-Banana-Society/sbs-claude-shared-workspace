@@ -191,10 +191,10 @@ async function apiGet(path: string): Promise<Record<string, unknown>> {
 }
 
 /** Pull new mentions since the last scan (bounded pages, newest-first pagination). */
-async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
+async function fetchNewMentions(sinceMs: number, maxPages: number = MAX_SEARCH_PAGES): Promise<RawTweet[]> {
   const out: RawTweet[] = [];
   let cursor = '';
-  for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const qs = new URLSearchParams({ query: SEARCH_QUERY, queryType: 'Latest' });
     if (cursor) qs.set('cursor', cursor);
     const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
@@ -525,7 +525,12 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
   let pulled = 0; let refreshed = 0; let rtCredits = 0; let apiError: string | null = null;
   try {
     const sinceMs = Math.max(state.startsAtMs, (state.lastScanMs ?? 0) - 15 * 60_000);
-    const fresh = await fetchNewMentions(sinceMs);
+    // searchPagesOverride (state doc, optional): temporarily deepen the
+    // newest-first pagination so a long outage gap can be re-ingested in one
+    // scan. Cleared automatically after use.
+    const pagesOverride = Number((await getAdminFirestore().doc(STATE_DOC).get()).data()?.searchPagesOverride) || 0;
+    const fresh = await fetchNewMentions(sinceMs, pagesOverride > 0 ? pagesOverride : undefined);
+    if (pagesOverride > 0) await getAdminFirestore().doc(STATE_DOC).set({ searchPagesOverride: FieldValue.delete() }, { merge: true });
     const db = getAdminFirestore();
     const batch = db.batch();
     for (const t of fresh) {
@@ -557,6 +562,11 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
   }
 
   const scored = await rescoreWeek(state.weekId, nowMs);
-  await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
+  // lastScanMs is the INGEST high-water mark — advance it only when the pull
+  // actually succeeded. During the 8/19 credits outage it advanced on every
+  // failed scan, so the recharge would have resumed from "20 minutes ago" and
+  // silently dropped the whole gap. An outage now self-heals: the first
+  // successful scan reaches back to the last successful one.
+  if (!apiError) await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
   return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
 }
