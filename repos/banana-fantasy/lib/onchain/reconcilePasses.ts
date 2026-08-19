@@ -43,11 +43,6 @@ interface AlchemyNftsResponse {
  * Authoritative owned-token lookup via Alchemy NFT API. One HTTP call, no
  * iteration through contract reads. Source of truth for reconciliation.
  */
-async function fetchOwnedBbb4TokenIds(wallet: string): Promise<string[]> {
-  const { owned } = await fetchOwnedBbb4TokenIdsWithTotal(wallet);
-  return owned;
-}
-
 /**
  * Same lookup, plus Alchemy's own `totalCount` and whether the page chain
  * ended short of it. 2026-08-19: for a 389-token wallet Alchemy returned 3
