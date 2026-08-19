@@ -49,11 +49,13 @@ const DownloadGlyph = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 );
 
-// iOS (Safari) — same 3 steps everywhere.
+// iOS — same 3 steps in Safari AND Chrome (both can Add to Home Screen via
+// the Share sheet; the old "must be done in Safari" gate was wrong — Boris
+// 2026-08-18).
 function IOSSteps() {
   return (
     <div className="space-y-3.5">
-      <Step num={1} icon={DotsHorizGlyph} title={<>Tap the <span className="text-banana">three dots</span></>} desc="Bottom-right of Safari" />
+      <Step num={1} icon={DotsHorizGlyph} title={<>Tap the <span className="text-banana">three dots</span></>} desc="Bottom-right of your browser" />
       <Step num={2} icon={ShareGlyph} title={<>Tap <span className="text-banana">Share</span></>} desc="" />
       <Step num={3} icon={CheckGlyph} title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>} desc={'Don’t see it? Tap "More" first'} />
     </div>
@@ -92,7 +94,7 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
           </div>
           <h3 className="text-white font-bold text-lg">Install SBS</h3>
           <p className="text-white/40 text-xs mt-1">
-            {browser === 'both' ? 'Add it to your phone' : browser === 'safari' ? '3 simple steps' : 'Open in Safari first'}
+            {browser === 'both' ? 'Add it to your phone' : '3 simple steps'}
           </p>
         </div>
 
@@ -102,7 +104,7 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
             /* Desktop — phone type unknown, so cover iPhone + Android together. */
             <div className="space-y-4">
               <div>
-                <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5">iPhone — in Safari</p>
+                <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5">iPhone — Safari or Chrome</p>
                 <IOSSteps />
               </div>
               <div className="pt-1 border-t border-white/[0.06]">
@@ -110,39 +112,8 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
                 <AndroidSteps />
               </div>
             </div>
-          ) : browser === 'chrome' ? (
-            /* Chrome on iOS — show Safari requirement + the same iOS steps */
-            <div>
-              {/* Safari required banner */}
-              <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-                  </svg>
-                  <p className="text-white font-medium text-xs">Must be done in Safari</p>
-                </div>
-                <p className="text-white/40 text-[11px] mb-2">Open this page in Safari, then follow the steps below.</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.origin).catch(() => {});
-                      window.location.href = `x-safari-${window.location.href}`;
-                    }}
-                    className="flex-1 py-2 bg-blue-500 text-white text-xs font-bold rounded-lg"
-                  >
-                    Open Safari
-                  </button>
-                  <CopyLinkButton />
-                </div>
-              </div>
-
-              {/* Same steps as Safari */}
-              <p className="text-white/25 text-[10px] uppercase tracking-wider mb-3">Then in Safari:</p>
-              <IOSSteps />
-            </div>
           ) : (
-            /* Safari — iOS install flow */
+            /* iPhone — Safari or Chrome, same 3 steps */
             <IOSSteps />
           )}
         </div>
@@ -178,28 +149,6 @@ function Step({ num, icon, title, desc }: { num: number; icon: React.ReactNode; 
   );
 }
 
-function CopyLinkButton() {
-  const [copied, setCopied] = useState(false);
-  const url = typeof window !== 'undefined' ? window.location.origin : '';
-
-  return (
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText(url).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
-      }}
-      className="flex-1 py-2 bg-white/[0.06] text-white/50 font-medium rounded-lg text-xs flex items-center justify-center gap-1.5"
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-      </svg>
-      {copied ? 'Copied!' : 'Copy Link'}
-    </button>
-  );
-}
 
 // ── Main Card ───────────────────────────────────────────────────────────
 
