@@ -386,13 +386,23 @@ export async function POST(
     // own index + the real-time ping above already made the team live; this
     // just nudges OpenSea's copy. Skipped (not failed) when no key, so a new
     // prod contract without OpenSea wiring still completes successfully.
+    // OpenSea only knows the REAL on-chain id — map synthetic special-draft
+    // card ids to draftTokens.RealTokenId before nudging it.
+    const openSeaIds = await Promise.all(tokenIds.map(async (id) => {
+      if (/^\d+$/.test(id)) return id;
+      try {
+        const tok = await db.collection('draftTokens').doc(id).get();
+        const real = String(tok.get('RealTokenId') ?? tok.get('realTokenId') ?? '').trim();
+        return /^\d{1,7}$/.test(real) ? String(Number(real)) : id;
+      } catch { return id; }
+    }));
     const results = OPENSEA_API_KEY
-      ? await Promise.allSettled(tokenIds.map((id) => refreshToken(id)))
+      ? await Promise.allSettled(openSeaIds.map((id) => refreshToken(id)))
       : [];
     const ok = (i: number) =>
       results[i]?.status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value;
-    const refreshed = OPENSEA_API_KEY ? tokenIds.filter((_, i) => ok(i)).length : 0;
-    const failed = OPENSEA_API_KEY ? tokenIds.filter((_, i) => !ok(i)) : [];
+    const refreshed = OPENSEA_API_KEY ? openSeaIds.filter((_, i) => ok(i)).length : 0;
+    const failed = OPENSEA_API_KEY ? openSeaIds.filter((_, i) => !ok(i)) : [];
 
     if (failed.length > 0) {
       // Partial is expected on staging (synthetic test tokens aren't on-chain).
