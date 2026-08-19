@@ -37,11 +37,27 @@ export async function GET(req: NextRequest) {
       .limit(includeRead ? INBOX_LIMIT : 20)
       .get();
 
-    const notifications = snapshot.docs.map(doc => ({
+    // Pinned rows are fetched on their own, outside the recency window: a
+    // busy inbox (admins get dozens of alerts a day) pushed the pinned
+    // Founder Draft bell past the 50 newest and it silently vanished
+    // (2026-08-18). A pinned row stays until its owner × dismisses it, no
+    // matter how much lands after it. Same wallet + read filters apply.
+    let pinnedQuery = db
+      .collection(COLLECTION)
+      .where('wallet', '==', wallet.toLowerCase())
+      .where('pinned', '==', true);
+    if (!includeRead) pinnedQuery = pinnedQuery.where('read', '==', false);
+    const pinnedSnap = await pinnedQuery.limit(10).get().catch(() => null);
+
+    const seen = new Set<string>();
+    const toRow = (doc: FirebaseFirestore.QueryDocumentSnapshot) => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-    }));
+    });
+    const notifications = [...(pinnedSnap?.docs ?? []), ...snapshot.docs]
+      .filter((doc) => (seen.has(doc.id) ? false : (seen.add(doc.id), true)))
+      .map(toRow);
 
     return NextResponse.json({ notifications });
   } catch (err) {
