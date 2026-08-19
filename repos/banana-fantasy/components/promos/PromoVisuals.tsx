@@ -79,7 +79,7 @@ export function CountdownChip({
     <span
       title={label}
       aria-label={label ? `${label}: ${pad(h)}:${pad(m)}:${pad(s)}` : undefined}
-      className={`inline-flex items-center ${wide ? 'w-full justify-around' : 'gap-1'} max-w-full rounded-[12px] border ${padc} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
+      className={`inline-flex items-center ${wide ? `w-full justify-center ${size === 'lg' ? 'gap-5' : 'gap-4'}` : 'gap-1'} max-w-full rounded-[12px] border ${padc} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
     >
       {seg(h, 'HRS')}
       {colon}
