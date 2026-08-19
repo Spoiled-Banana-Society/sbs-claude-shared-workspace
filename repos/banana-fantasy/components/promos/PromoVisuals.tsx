@@ -57,48 +57,35 @@ export function CountdownChip({
   const s = d % 60;
   // Always white — yellow is reserved for claim/ready states site-wide, so a
   // clock must never turn banana (Boris 2026-08-18). No urgency color either.
-  const digit = size === 'lg' ? 'text-[15px]' : size === 'md' ? 'text-[13px]' : 'text-[12px]';
-  const unit = size === 'sm' ? 'hidden' : size === 'lg' ? 'text-[7.5px]' : 'text-[7px]';
-  const padc = size === 'lg' ? 'px-2.5 py-1.5 gap-[7px]' : size === 'md' ? 'px-2 py-1 gap-1.5' : 'px-1.5 py-[3px] gap-1';
+  // Labels dropped (Boris 2026-08-18): the chip is JUST the clock — bigger
+  // digits, full width of its row. `label` is kept as a title/aria hint only.
+  const digit = size === 'lg' ? 'text-[22px]' : size === 'md' ? 'text-[18px]' : 'text-[12px]';
+  const unit = size === 'sm' ? 'hidden' : size === 'lg' ? 'text-[8.5px]' : 'text-[7.5px]';
+  const padc = size === 'lg' ? 'px-3 py-2' : size === 'md' ? 'px-2 py-1.5' : 'px-1.5 py-[3px]';
   const seg = (v: number, u: string, tick?: boolean) => (
-    <span className="flex flex-col items-center min-w-[18px]">
+    <span className="flex flex-col items-center min-w-[24px]">
       <b
         key={tick ? v : undefined}
         className={`${digit} font-extrabold leading-none tabular-nums text-white ${tick ? 'promo-sec' : ''}`}
       >
         {pad(v)}
       </b>
-      <span className={`${unit} font-extrabold tracking-[1.3px] text-white/35 mt-[2px]`}>{u}</span>
+      <span className={`${unit} font-extrabold tracking-[1.3px] text-white/35 mt-[3px]`}>{u}</span>
     </span>
   );
-  const colon = <span className={`text-white/30 font-extrabold text-[12px] ${size === 'sm' ? '' : '-mt-2'}`}>:</span>;
-  // md (mini cards, 208px wide): label sits ABOVE the digits so the chip is
-  // never wider than the digit row — long labels were clipping (Boris
-  // 2026-08-18). lg keeps the inline label; sm has no label.
-  const stacked = size === 'md' && !!label;
-  // lg (long cards / spotlight): inline on desktop, stacked on phones (<640px)
-  // where the card body is ~200px wide.
-  const lgResponsive = size === 'lg' && !!label;
-  const rowGap = size === 'lg' ? 'gap-[7px]' : size === 'md' ? 'gap-1.5' : 'gap-1';
-  const layout = stacked
-    ? 'flex-col items-stretch gap-[3px] w-full'
-    : lgResponsive
-      ? 'flex-col items-start gap-[3px] sm:flex-row sm:items-center sm:gap-[7px]'
-      : `items-center ${rowGap}`;
+  const colon = <span className={`text-white/30 font-extrabold ${size === 'lg' ? 'text-[16px]' : 'text-[13px]'} ${size === 'sm' ? '' : '-mt-3'}`}>:</span>;
+  const wide = size !== 'sm';
   return (
     <span
-      className={`inline-flex ${layout} max-w-full rounded-[10px] border ${padc.replace(/gap-\S+/, '')} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
+      title={label}
+      aria-label={label ? `${label}: ${pad(h)}:${pad(m)}:${pad(s)}` : undefined}
+      className={`inline-flex items-center ${wide ? 'w-full justify-around' : 'gap-1'} max-w-full rounded-[12px] border ${padc} border-white/[0.16] bg-white/[0.04] ${dormant ? 'opacity-70' : ''} ${className}`}
     >
-      {label && size !== 'sm' && (
-        <span className={`text-[8px] font-extrabold tracking-[1.6px] text-white/50 whitespace-nowrap ${stacked ? '' : lgResponsive ? 'sm:mr-0.5' : 'mr-0.5'}`}>{label}</span>
-      )}
-      <span className={`inline-flex items-center ${stacked ? 'w-full justify-around px-1' : rowGap}`}>
-        {seg(h, 'HRS')}
-        {colon}
-        {seg(m, 'MIN')}
-        {colon}
-        {seg(s, 'SEC', !dormant)}
-      </span>
+      {seg(h, 'HRS')}
+      {colon}
+      {seg(m, 'MIN')}
+      {colon}
+      {seg(s, 'SEC', !dormant)}
     </span>
   );
 }
