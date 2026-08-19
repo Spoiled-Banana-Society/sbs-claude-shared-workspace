@@ -24,8 +24,6 @@ import { newPlayerFirstBuy, firstPurchaseCardRows } from '@/lib/firstPurchaseCop
 // really is granting the spins.
 const FP_BONUS_LIVE = isSpinOnPurchaseEnabled();
 const FP_ONE = newPlayerFirstBuy(1, FP_BONUS_LIVE);
-const FP_TWO = newPlayerFirstBuy(2, FP_BONUS_LIVE);
-const FP_THREE = newPlayerFirstBuy(3, FP_BONUS_LIVE);
 
 const seedBadges: UserBadge[] = seedUserBadges();
 
@@ -322,8 +320,8 @@ const seedPromos: Promo[] = [
     // Outcome-first framing (Richard 2026-07-28): lead with what they GET —
     // the free spin guarantees at least 1 Free Draft (minimum wheel wedge = 1),
     // so the first draft really is free. The X-connect step is the how.
-    title: 'New User → YOUR FIRST DRAFT IS FREE',
-    description: 'Connect your X to claim your free spin — at least 1 Free Draft guaranteed',
+    title: 'Your First Draft Is Free → NEW USER',
+    description: 'Connect your X, spin the Banana Wheel — at least 1 Free Draft, guaranteed.',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
@@ -333,7 +331,7 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'New User → Your First Draft Is FREE',
+      title: 'Your First Draft Is Free',
       explanation:
         '• Your first draft is FREE: verify your account by connecting your X to claim your Free Banana Spin.\n• Spin the Banana Wheel to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft. At least 1 Free Draft guaranteed.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
       additionalRules: '',
@@ -367,10 +365,10 @@ const seedPromos: Promo[] = [
       // a logged-in new player doesn't need to be told what they are.
       title: 'Buy 1, Get 2 Drafts Free',
       explanation:
-        `• Buy your first Draft Pass → ${FP_ONE.guaranteed} Drafts guaranteed, up to ${FP_ONE.max} from the wheel ($${FP_ONE.maxValueUsd.toLocaleString('en-US')}).`
-        + `\n• You get ${FP_ONE.spins} Banana Wheel Spins — spin to collect.`
-        + `\n• Buy more, get more: 2 passes = ${FP_TWO.guaranteed} Drafts, 3 passes = ${FP_THREE.guaranteed}.`
-        + '\n• One-time offer, first purchase only.',
+        `• Every Draft Pass you buy = ${FP_ONE.spins} Spins.`
+        + `\n• Every Promo Spin wins at least 1 Free Draft → ${FP_ONE.guaranteed - 1} Free Drafts guaranteed per pass, and the wheel can pay more.`
+        + `\n• Stacks on every pass in your first order, up to 20 passes (${(FP_ONE.guaranteed - 1) * 20} Free Drafts guaranteed).`
+        + '\n• One-time: your first order only.',
     },
   },
   {

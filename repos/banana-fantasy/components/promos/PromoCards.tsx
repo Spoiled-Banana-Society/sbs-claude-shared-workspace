@@ -13,6 +13,7 @@ import { promoAccent, promoHueStyle, promoKicker, promoName, promoRules } from '
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
+import { useAuth } from '@/hooks/useAuth';
 
 // ─── Per-promo secondary indicators (under the one-liner) ───────────────────
 
@@ -93,13 +94,19 @@ function JackpotCycle({ promo }: { promo: Promo }) {
 }
 
 function FirstBuyLadder({ variant }: { variant: 'new' | 'returning' }) {
-  const rungs = variant === 'new' ? ['1 → 2', '2 → 4', '3 → 6'] : ['2 → 1', '4 → 2', '6 → 3'];
+  // NEW players: 2 free drafts guaranteed per pass (2 promo spins × min wedge).
+  // RETURNING: classic — 2 passes = 1 spin. Last rung wears MAX (Boris 2026-08-19).
+  const rungs = variant === 'new'
+    ? [{ buy: 'BUY 1', n: '2', l: 'GTD DRAFTS' }, { buy: 'BUY 10', n: '20', l: 'GTD DRAFTS' }, { buy: 'BUY 20', n: '40', l: 'GTD DRAFTS', max: true }]
+    : [{ buy: 'BUY 2', n: '1', l: 'SPIN' }, { buy: 'BUY 10', n: '5', l: 'SPINS' }, { buy: 'BUY 20', n: '10', l: 'SPINS', max: true }];
   return (
-    <div className="flex items-center gap-[5px] mt-1">
-      {rungs.map((r, i) => (
-        <div key={r} className={`flex-1 text-center text-[10px] font-extrabold py-[5px] rounded-lg ${i === 0 ? 'bg-white/[0.12] text-white border border-white/35' : 'bg-white/[0.06] text-white/45'}`}>
-          {r}
-          <small className="block text-[8px] tracking-[1px] opacity-80 mt-[1px]">{variant === 'new' ? 'PASS → DRAFTS' : 'PASSES → DRAFTS'}</small>
+    <div className="grid grid-cols-3 gap-1 mt-1">
+      {rungs.map((r) => (
+        <div key={r.buy} className={`text-center rounded-lg bg-white/[0.08] text-white py-[4px] px-[2px] ${r.max ? 'border border-banana/60' : ''}`}>
+          <span className={`block h-[8px] leading-[8px] text-[6.5px] font-black tracking-[1.4px] ${r.max ? 'text-[#ffcf3d]' : 'text-transparent'}`}>MAX</span>
+          <i className="block not-italic text-[7.5px] font-extrabold tracking-[1.2px] text-white/85 mt-[1px] whitespace-nowrap">{r.buy}</i>
+          <b className="block text-[13px] font-extrabold leading-[1.1] mt-[1px]">= {r.n}</b>
+          <small className="block text-[6.5px] font-extrabold tracking-[1px] text-white/80 mt-[1px] whitespace-nowrap">{r.l}</small>
         </div>
       ))}
     </div>
@@ -209,6 +216,16 @@ export function PromoLongCard({
               >
                 {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
               </button>
+            ) : promo.type === 'new-user' && !isClaimed ? (
+              <NuConnectButton compact />
+            ) : isFp ? (
+              <a
+                href="/buy-drafts"
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0 rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform"
+              >
+                Buy Drafts
+              </a>
             ) : null}
           </div>
         </div>
@@ -244,6 +261,62 @@ export function PromoLongCard({
   );
 }
 
+// First Purchase spotlight indicator — the BUY 1/5/10/20 tile grid (Boris
+// 2026-08-19). NEW players count GTD free drafts (2/pass); RETURNING keep the
+// classic spins rate. MAX in yellow on the last tile; every tile identical.
+function FirstBuyTileGrid({ variant }: { variant: 'new' | 'returning' }) {
+  const stops = variant === 'new'
+    ? [{ buy: 1, n: 2 }, { buy: 5, n: 10 }, { buy: 10, n: 20 }, { buy: 20, n: 40, max: true }]
+    : [{ buy: 2, n: 1 }, { buy: 4, n: 2 }, { buy: 10, n: 5 }, { buy: 20, n: 10, max: true }];
+  const unit = variant === 'new' ? 'GTD DRAFTS' : (stops[0].n === 1 ? 'FREE SPINS' : 'FREE SPINS');
+  return (
+    <div className="grid grid-cols-4 gap-2.5 w-full max-w-[360px] md:justify-self-end md:mr-7">
+      {stops.map((t) => (
+        <div
+          key={t.buy}
+          className={`flex flex-col items-center justify-center min-h-[118px] px-1.5 py-2.5 rounded-2xl bg-black/[.34] border ${t.max ? 'border-banana/60' : 'border-white/[.22]'} shadow-[inset_0_1px_0_rgba(255,255,255,.10)]`}
+          style={{ textShadow: 'none' }}
+        >
+          <span className={`block h-[14px] leading-[14px] mb-[3px] text-[10px] font-black tracking-[2.4px] ${t.max ? 'text-[#ffcf3d] [text-shadow:0_0_10px_rgba(251,191,36,.55)]' : 'text-transparent'}`}>MAX</span>
+          <i className="block not-italic text-[12px] leading-[14px] font-extrabold tracking-[2px] text-white whitespace-nowrap">BUY {t.buy}</i>
+          <span className="block text-[13px] leading-[10px] font-bold text-white/60 mt-[3px] mb-[1px]">=</span>
+          <b className="block text-[34px] leading-none my-[2px] font-extrabold tracking-[-1px] text-white">{t.n}</b>
+          <span className="block text-[8.5px] leading-[11px] font-extrabold tracking-[1.6px] text-white whitespace-nowrap">{unit}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** "Connect your X" action — shown wherever the new-user promo needs the X
+ *  link before it can be claimed. Renders nothing once verified. */
+function NuConnectButton({ compact = false }: { compact?: boolean }) {
+  const { isTwitterVerified, linkTwitter } = useAuth();
+  if (isTwitterVerified) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); linkTwitter(); }}
+      className={`shrink-0 rounded-full bg-white font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform ${compact ? 'px-3.5 py-2 text-[11px]' : 'px-4 py-2.5 text-[12px]'}`}
+      style={{ textShadow: 'none' }}
+    >
+      {compact ? 'Connect your X' : 'Connect your X to claim'}
+    </button>
+  );
+}
+
+/** New User spotlight indicator — GUARANTEED · 1 · FREE DRAFT hero block. */
+function NewUserHero() {
+  return (
+    <div className="w-full max-w-[340px] md:justify-self-end rounded-[22px] bg-black/[.28] border border-white/[.18] px-4.5 py-5 text-center flex flex-col items-center shadow-[inset_0_1px_0_rgba(255,255,255,.12)]" style={{ textShadow: 'none' }}>
+      <span className="inline-block rounded-full bg-banana text-black text-[10.5px] font-black tracking-[2.2px] px-3.5 py-1.5">GUARANTEED</span>
+      <div className="text-[88px] font-extrabold leading-[.95] tracking-[-4px] text-white mt-1.5">1</div>
+      <div className="text-[13px] font-extrabold tracking-[3.2px] text-white mt-0.5">FREE DRAFT</div>
+      <div className="text-[11px] text-white/80 mt-2.5">minimum — the wheel can land up to 20</div>
+    </div>
+  );
+}
+
 // ─── Spotlight ───────────────────────────────────────────────────────────────
 
 export interface PromoSpotlightProps {
@@ -259,6 +332,8 @@ export interface PromoSpotlightProps {
 
 export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOpenModal, onClaim, fpVariant = 'new', fpShowNewPlayerTag = false }: PromoSpotlightProps) {
   const [how, setHow] = useState(false);
+  const { isTwitterVerified, linkTwitter } = useAuth();
+  const isNu = promo.type === 'new-user';
   const rules = promoRules(promo);
   const isAtb = promo.type === 'around-the-banana';
   const atb = promo.modalContent?.aroundTheBanana;
@@ -325,17 +400,43 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
               <PromoLive promo={promo} size="lg" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} />
             </div>
           )}
-          {hasVisibleClaim ? (
+          {(hasVisibleClaim || (isNu && !isTwitterVerified) || isFp) && (
             <div className="mt-5 flex items-center gap-2.5 flex-wrap">
-              <button type="button" onClick={onClaim} className="promo-glow rounded-full bg-banana px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform">
-                {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
-              </button>
+              {hasVisibleClaim && (
+                <button type="button" onClick={onClaim} className="promo-glow rounded-full bg-banana px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform">
+                  {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
+                </button>
+              )}
+              {isNu && !isTwitterVerified && !isClaimed && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); linkTwitter(); }}
+                  className="rounded-full bg-white px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform"
+                  style={{ textShadow: 'none' }}
+                >
+                  Connect your X to claim
+                </button>
+              )}
+              {isFp && (
+                <a
+                  href="/buy-drafts"
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded-full bg-white px-4 py-2.5 text-[12px] font-extrabold text-black hover:-translate-y-px active:scale-[.97] transition-transform"
+                  style={{ textShadow: 'none' }}
+                >
+                  Buy Drafts
+                </a>
+              )}
             </div>
-          ) : null}
+          )}
         </div>
 
         {/* Right: the big indicator */}
-        {isAtb ? (
+        {isNu ? (
+          <NewUserHero />
+        ) : isFp ? (
+          <FirstBuyTileGrid variant={fpVariant} />
+        ) : isAtb ? (
           <div className="grid grid-cols-5 gap-2 sm:gap-2.5 max-w-[360px] w-full md:justify-self-end">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
               const hit = hits.includes(n);

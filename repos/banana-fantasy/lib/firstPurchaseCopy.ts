@@ -210,9 +210,12 @@ export function firstPurchaseCardLines(
  * "from the wheel" at the end, which is the point.
  */
 export function firstPurchaseCardRows(o: FirstBuyOutcome): string[] {
+  // FREE-drafts counting (Boris 2026-08-19): the guarantee shown is the free
+  // drafts the wheel pays (guaranteed minus the bought pass), matching the
+  // "Buy 1, get 2 free" title and the ×-per-pass framing — no ceilings shown.
   return [
-    `${o.guaranteed} Drafts Guaranteed — up to ${o.max}`,
-    `from the wheel ($${o.maxValueUsd.toLocaleString('en-US')})`,
+    `Every pass you buy = ${o.spins} Spins.`,
+    `${o.guaranteed - 1} Free Drafts guaranteed — can win more on the wheel.`,
   ];
 }
 

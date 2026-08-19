@@ -273,7 +273,7 @@ export function PromoSwatch({
       break;
     }
     case 'first-purchase':
-      inner = <Big n="×2" label="FREE DRAFTS / PASS" size={size} />;
+      inner = <Big n="3" label="SPINS PER PASS" size={size} />;
       break;
     case 'new-user':
       inner = <Big n="1" label="FREE DRAFT · GUARANTEED" size={size} />;
@@ -386,9 +386,9 @@ export function PromoLive({
       return <Stat v="Windows closed" l="RESETS ONCE JP HITS" />;
     }
     case 'first-purchase':
-      return <Stat v="One-time" l="FIRST BUY ONLY" />;
+      return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;
     case 'new-user':
-      return <Stat v="Connect X" l="TO CLAIM" />;
+      return <Stat v="1 Free Spin" l="WAITING FOR YOU" />;
     case 'mint':
     case 'buy-bonus': {
       if (live) return <CountdownChip endMs={endMs} label="LEFT" size={size} className={className} />;

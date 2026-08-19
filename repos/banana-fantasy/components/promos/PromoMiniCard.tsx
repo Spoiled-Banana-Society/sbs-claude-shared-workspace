@@ -12,6 +12,7 @@ import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { promoKicker, promoName } from '@/lib/promoTheme';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { useAuth } from '@/hooks/useAuth';
 
 export interface PromoMiniCardProps {
   promo: Promo;
@@ -42,6 +43,8 @@ export function PromoMiniCard({
 }: PromoMiniCardProps) {
   const passive = promo.type === 'pick-10' || promo.type === 'jackpot';
   const isFp = promo.type === 'first-purchase';
+  const isNu = promo.type === 'new-user';
+  const { isTwitterVerified, linkTwitter } = useAuth();
   return (
     <div
       role="button"
@@ -87,6 +90,29 @@ export function PromoMiniCard({
             <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-[10px] leading-snug text-banana/80" />
           </>
         )}
+        {isNu && !isTwitterVerified && !isClaimed && !hasVisibleClaim ? (
+          /* New User, X not linked: one full-width connect button (Boris 2026-08-19). */
+          <div className="mt-auto pt-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); linkTwitter(); }}
+              className="w-full rounded-full bg-white px-3 py-2 text-[11.5px] font-extrabold text-black active:scale-[.97] transition-transform"
+            >
+              Connect your X to claim
+            </button>
+          </div>
+        ) : isFp && !hasVisibleClaim ? (
+          /* First Purchase: full-width Buy Drafts (Boris 2026-08-19). */
+          <div className="mt-auto pt-1">
+            <a
+              href="/buy-drafts"
+              onClick={(e) => e.stopPropagation()}
+              className="block w-full text-center rounded-full bg-white px-3 py-2 text-[11.5px] font-extrabold text-black active:scale-[.97] transition-transform"
+            >
+              Buy Drafts
+            </a>
+          </div>
+        ) : (
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 min-h-[30px]">
           <div className="min-w-0 flex-1">
             <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim} />
@@ -101,6 +127,7 @@ export function PromoMiniCard({
             </button>
           ) : null}
         </div>
+        )}
       </div>
     </div>
   );

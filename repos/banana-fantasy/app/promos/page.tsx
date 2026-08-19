@@ -387,23 +387,36 @@ export default function PromosPage() {
           claimable one) + LONG cards under it. Two columns on desktop, one on
           phones. Tap a card → inline "How it works"; "Full details" → modal. */}
       {filter !== 'activity' && filteredPromos.length > 0 && (() => {
-        const [spot, ...rest] = filteredPromos;
         const showSpot = filter === 'all';
-        const longs = showSpot ? rest : filteredPromos;
+        // TWO stacked spotlights while the onboarding pair is live (Boris
+        // 2026-08-19): when the sort puts new-user and/or first-purchase at
+        // the top, each gets the big treatment until it disappears (spin
+        // claimed / first order) — then ATB (or whatever sorts first) takes
+        // the single spotlight as before.
+        const ONBOARD = new Set(['new-user', 'first-purchase']);
+        let spotCount = 1;
+        if (showSpot && filteredPromos.length > 1
+            && ONBOARD.has(filteredPromos[0].type) && ONBOARD.has(filteredPromos[1].type)) {
+          spotCount = 2;
+        }
+        const spots = showSpot ? filteredPromos.slice(0, spotCount) : [];
+        const longs = showSpot ? filteredPromos.slice(spotCount) : filteredPromos;
         return (
           <>
-            {showSpot && (
-              <PromoSpotlight
-                promo={spot}
-                wallet={user?.walletAddress ?? null}
-                isClaimed={isClaimed(spot)}
-                hasVisibleClaim={hasVisibleClaim(spot)}
-                onOpenModal={() => setSelectedPromo(spot)}
-                onClaim={() => void handleClaim(spot)}
-                fpVariant={fpVariant}
-                fpShowNewPlayerTag={fpShowNewPlayerTag}
-              />
-            )}
+            {spots.map((spot, si) => (
+              <div key={spot.id} className={si > 0 ? 'mt-3.5' : ''}>
+                <PromoSpotlight
+                  promo={spot}
+                  wallet={user?.walletAddress ?? null}
+                  isClaimed={isClaimed(spot)}
+                  hasVisibleClaim={hasVisibleClaim(spot)}
+                  onOpenModal={() => setSelectedPromo(spot)}
+                  onClaim={() => void handleClaim(spot)}
+                  fpVariant={fpVariant}
+                  fpShowNewPlayerTag={fpShowNewPlayerTag}
+                />
+              </div>
+            ))}
             {longs.length > 0 && (
               <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3.5 ${showSpot ? 'mt-4' : ''}`}>
                 {longs.map((promo, i) => (

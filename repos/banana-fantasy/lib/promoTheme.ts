@@ -25,8 +25,8 @@ export const PROMO_HUES: Record<PromoType, PromoHue> = {
   'referral':          { a: '#1f9d55', b: '#08361d' },
   'pick-10':           { a: '#8b63e6', b: '#28104f' },
   'jackpot':           { a: '#d63fb0', b: '#460b36' },
-  'first-purchase':    { a: '#5b66e0', b: '#1a1e52' },
-  'new-user':          { a: '#23b39c', b: '#083a33' },
+  'first-purchase':    { a: '#3ddc84', b: '#0b3f24' }, // mint — Boris 2026-08-19 redesign
+  'new-user':          { a: '#2f6bff', b: '#0a1d5e' }, // cobalt — Boris 2026-08-19 redesign
   'mint':              { a: '#a855f7', b: '#2e0f4f' },
   'buy-bonus':         { a: '#22c55e', b: '#0b3a1c' },
   'founder-draft':     { a: '#06b6d4', b: '#063a45' },
@@ -61,8 +61,8 @@ export function promoKicker(promo: Promo): string {
     case 'referral': return 'FREE SPINS · WHEN FRIENDS BUY';
     case 'pick-10': return 'FREE SPIN · PASSIVE';
     case 'jackpot': return 'FREE SPINS · PASSIVE';
-    case 'first-purchase': return 'FIRST BUY';
-    case 'new-user': return 'WELCOME · FREE';
+    case 'first-purchase': return 'FREE DRAFTS · EVERY PASS';
+    case 'new-user': return 'NEW USER · FREE DRAFT';
     case 'mint': return 'BUY 10 · FREE SPIN';
     case 'buy-bonus': return 'KICKOFF · FREE SPIN';
     case 'founder-draft': return 'FOUNDER DRAFT · FREE SPIN';
@@ -105,7 +105,7 @@ export function promoCta(promo: Promo, opts: { canOpenPacks?: boolean } = {}): {
     case 'drop': return opts.canOpenPacks ? { label: 'Open packs', href: '/drop' } : { label: 'Draft', href: '/draft' };
     case 'daily-drafts': return { label: 'Draft', href: '/draft' };
     case 'pick-chase': return { label: 'Draft', href: '/draft' };
-    case 'first-purchase': return { label: 'Buy a pass', href: '/buy-drafts' };
+    case 'first-purchase': return { label: 'Buy Drafts', href: '/buy-drafts' };
     case 'mint': return { label: 'Buy passes', href: '/buy-drafts' };
     case 'buy-bonus': return { label: 'Buy passes', href: '/buy-drafts' };
     case 'founder-draft': return { label: 'View drafts', href: '/draft' };
