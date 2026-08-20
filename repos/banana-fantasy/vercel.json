@@ -82,10 +82,7 @@
       "path": "/api/crons/reconcile-pass-transfers",
       "schedule": "*/5 * * * *"
     },
-    {
-      "path": "/api/crons/jp-window-bells",
-      "schedule": "* * * * *"
-    },
+    
     {
       "path": "/api/crons/mindshare-scan",
       "schedule": "*/5 * * * *"
