@@ -67,7 +67,7 @@ export function PromoMiniCard({
           {(() => { const k = promoKickerLines(promo); return (
             <span className="promo-tx block max-w-[92px]">
               {k.top && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
-              <span className="block text-[12.5px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px]">{k.big}</span>
+              <span className="block text-[14px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px]">{k.big}</span>
             </span>
           ); })()}
         </div>
