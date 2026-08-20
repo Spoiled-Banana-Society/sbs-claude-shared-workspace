@@ -548,17 +548,23 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
     const sLive = (await getAdminFirestore().doc(STATE_DOC).get()).data() ?? {};
     const lastRefresh = Number(sLive.lastMetricsRefreshMs) || 0;
     const lastRt = Number(sLive.lastRtPassMs) || 0;
+    // Each heavy pass fails INDEPENDENTLY and names itself in the heartbeat —
+    // a refresh 402 must not mask a healthy ingest (or vice versa), and the
+    // gate timestamp advances even on failure so a broken pass retries on its
+    // own cadence instead of every 5-min scan.
     if (nowMs - lastRefresh >= 15 * 60_000) {
-      refreshed = await refreshRecentMetrics(state.weekId, nowMs);
       await getAdminFirestore().doc(STATE_DOC).set({ lastMetricsRefreshMs: nowMs }, { merge: true });
+      try { refreshed = await refreshRecentMetrics(state.weekId, nowMs); }
+      catch (e) { apiError = `refresh: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
     }
     if (nowMs - lastRt >= 30 * 60_000) {
-      rtCredits = await creditRetweeters(state.weekId, nowMs);
       await getAdminFirestore().doc(STATE_DOC).set({ lastRtPassMs: nowMs }, { merge: true });
+      try { rtCredits = await creditRetweeters(state.weekId, nowMs); }
+      catch (e) { apiError = `${apiError ? apiError + ' | ' : ''}rt: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
     }
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
-    apiError = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
+    apiError = `ingest: ${e instanceof Error ? e.message.slice(0, 180) : 'unknown'}`;
   }
 
   const scored = await rescoreWeek(state.weekId, nowMs);
