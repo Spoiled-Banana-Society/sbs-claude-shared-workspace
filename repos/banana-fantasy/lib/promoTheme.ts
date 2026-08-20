@@ -87,7 +87,7 @@ export function promoKickerLines(promo: Promo): { top: string; big: string } {
   switch (promo.type) {
     case 'around-the-banana': return { top: '', big: 'JACKPOT SEAT' };
     case 'drop': return { top: '', big: 'JACKHOF SEAT' };
-    case 'daily-drafts': return { top: '4 DRAFTS · 24H', big: 'FREE SPIN' };
+    case 'daily-drafts': return { top: '', big: 'FREE SPIN' };
     case 'pick-10': return { top: '', big: 'FREE SPIN' };
     case 'pick-chase': return { top: 'UP TO', big: '5 SPINS' };
     case 'referral': return { top: 'FRIENDS BUY', big: 'FREE SPINS' };
