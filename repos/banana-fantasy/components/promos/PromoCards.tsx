@@ -185,7 +185,7 @@ export function PromoLongCard({
         <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
         <div className="flex flex-col gap-1.5 min-w-0 px-4 sm:px-[18px] pt-3.5 pb-4">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-extrabold tracking-[2px] min-w-0 leading-[1.35]" style={{ color: accent }}>{promoKicker(promo)}</span>
+            <span className="text-[11.5px] font-extrabold tracking-[2px] min-w-0 leading-[1.35]" style={{ color: accent }}>{promoKicker(promo)}</span>
             <span className="text-[10px] font-extrabold tracking-[1px] text-white/45 shrink-0 whitespace-nowrap">
               {open ? 'CLOSE ▴' : 'DETAILS ▾'}
             </span>
@@ -364,7 +364,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
       </button>
       <div className="relative z-[1] grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-6 md:gap-8 items-center">
         <div className="promo-tx min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-extrabold tracking-[2.4px]">
+          <div className="flex items-center gap-2 text-[12.5px] font-extrabold tracking-[2.4px]">
             <i className="promo-ping w-[7px] h-[7px] rounded-full bg-white" />
             <span>{kicker}</span>
             {promo.isNew && <span className="ml-1 rounded-full bg-banana px-2 py-[2px] text-[9px] font-black tracking-[1.4px] text-black">NEW</span>}

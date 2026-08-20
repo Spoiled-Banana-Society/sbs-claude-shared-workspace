@@ -93,9 +93,9 @@ export function CountdownChip({
 // ─── Indicators ──────────────────────────────────────────────────────────────
 
 const SZ = {
-  lg: { big: 'text-[32px] tracking-[-1.2px]', small: 'text-[9px] tracking-[1.8px] mt-[5px]', tile: 'w-[54px] h-[54px] rounded-[14px] text-[25px]', pk: 'w-[15px] h-[21px] rounded', pip: 'w-[14px] h-[14px]', slot: 'text-[11px] rounded-[6px]', av: 'w-6 h-6', lbl: 'text-[9px] tracking-[1.8px] mt-2' },
-  md: { big: 'text-[24px] tracking-[-.9px]', small: 'text-[8px] tracking-[1.5px] mt-[3px]', tile: 'w-[38px] h-[38px] rounded-[10px] text-[18px]', pk: 'w-[11px] h-[16px] rounded-[3px]', pip: 'w-[10px] h-[10px]', slot: 'text-[7.5px] rounded', av: 'w-[18px] h-[18px]', lbl: 'text-[8px] tracking-[1.5px] mt-1.5' },
-  sm: { big: 'text-[20px] tracking-[-.7px]', small: 'text-[7px] tracking-[1.3px] mt-[2px]', tile: 'w-[30px] h-[30px] rounded-[8px] text-[14px]', pk: 'w-[9px] h-[13px] rounded-[2px]', pip: 'w-[8px] h-[8px]', slot: 'text-[6.5px] rounded-[3px]', av: 'w-[16px] h-[16px]', lbl: 'text-[7px] tracking-[1.3px] mt-1' },
+  lg: { big: 'text-[34px] tracking-[-1.2px]', small: 'text-[11px] tracking-[1.8px] mt-[5px]', tile: 'w-[54px] h-[54px] rounded-[14px] text-[25px]', pk: 'w-[15px] h-[21px] rounded', pip: 'w-[14px] h-[14px]', slot: 'text-[11px] rounded-[6px]', av: 'w-6 h-6', lbl: 'text-[11px] tracking-[1.8px] mt-2' },
+  md: { big: 'text-[26px] tracking-[-.9px]', small: 'text-[10px] tracking-[1.5px] mt-[3px]', tile: 'w-[38px] h-[38px] rounded-[10px] text-[18px]', pk: 'w-[11px] h-[16px] rounded-[3px]', pip: 'w-[10px] h-[10px]', slot: 'text-[7.5px] rounded', av: 'w-[18px] h-[18px]', lbl: 'text-[10px] tracking-[1.5px] mt-1.5' },
+  sm: { big: 'text-[21px] tracking-[-.7px]', small: 'text-[8.5px] tracking-[1.3px] mt-[2px]', tile: 'w-[30px] h-[30px] rounded-[8px] text-[14px]', pk: 'w-[9px] h-[13px] rounded-[2px]', pip: 'w-[8px] h-[8px]', slot: 'text-[6.5px] rounded-[3px]', av: 'w-[16px] h-[16px]', lbl: 'text-[8.5px] tracking-[1.3px] mt-1' },
 } as const;
 
 type Size = keyof typeof SZ;

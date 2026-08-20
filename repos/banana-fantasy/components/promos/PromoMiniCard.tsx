@@ -61,7 +61,7 @@ export function PromoMiniCard({
       <div className="relative shrink-0 h-[96px]">
         <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="h-full w-full" />
         <div className="absolute inset-0 z-[1] flex items-center justify-between px-3.5 pointer-events-none">
-          <span className="promo-tx text-[9px] font-extrabold tracking-[1.3px] text-white leading-[1.35] max-w-[92px]">
+          <span className="promo-tx text-[11px] font-extrabold tracking-[1.4px] text-white leading-[1.35] max-w-[104px]">
             {promoKicker(promo)}
           </span>
         </div>
