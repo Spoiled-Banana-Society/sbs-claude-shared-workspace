@@ -160,21 +160,20 @@ function CountdownChip({ targetMs }: { targetMs: number | null }) {
   const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60); const sec = s % 60;
   const seg = (v: number, unit: string, tickKey?: number) => (
-    <span className="flex flex-col items-center min-w-[26px]">
+    <span className="flex flex-col items-center min-w-[32px]">
       <span
         key={tickKey}
-        className="text-banana font-extrabold tabular-nums text-[16px] sm:text-[18px] leading-none"
+        className="text-banana font-extrabold tabular-nums text-[22px] sm:text-[24px] leading-none"
         style={tickKey !== undefined ? { animation: 'secTick 380ms ease-out' } : undefined}
       >
         {String(v).padStart(2, '0')}
       </span>
-      <span className="text-[8px] font-bold tracking-[0.15em] text-white/35 mt-1">{unit}</span>
+      <span className="text-[8.5px] font-bold tracking-[0.15em] text-white/40 mt-1.5">{unit}</span>
     </span>
   );
-  const colon = <span className="text-banana/35 font-bold text-[14px] -mt-3 select-none">:</span>;
+  const colon = <span className="text-banana/35 font-bold text-[19px] -mt-3.5 select-none">:</span>;
   return (
-    <span className="ml-auto flex items-center gap-2 sm:gap-2.5 border border-banana/40 bg-banana/[0.05] rounded-xl px-3 sm:px-4 py-2">
-      <span className="text-[10px] font-bold tracking-widest text-white/50 mr-0.5">🏆 WEEK ENDS IN</span>
+    <span className="ml-auto flex items-center gap-3 sm:gap-4 border border-banana/40 bg-banana/[0.05] rounded-xl px-4 sm:px-5 py-2.5">
       {seg(d, 'DAYS')}
       {colon}
       {seg(h, 'HRS')}
@@ -352,15 +351,19 @@ export default function MindsharePage() {
         </span>
         <CountdownChip targetMs={board?.week.endsAtMs ?? null} />
       </div>
-      <p className="text-white/45 text-sm mt-2 max-w-2xl">
-        <b className="text-white/70">The weekly leaderboard</b> of who owns SBS attention on X. Posts, quotes,
-        retweets and replies about SBS all grow your tile, and pulling new people into the contest grows it
-        fastest. Every Thursday night the top 25 of the week get paid, the board resets to zero, and a brand
-        new week starts on the spot — everybody back to even, every week.
+      <p className="text-white/45 text-sm mt-2 max-w-2xl leading-relaxed">
+        <b className="text-white/70">The weekly leaderboard for engaging on X.</b> Post good content about SBS,
+        quote us, retweet, reply — it all grows your tile. <b className="text-white/70">Biggest boost: people
+        finding SBS through your posts and drafting.</b> Top 25 win every Thursday night, then the board resets
+        and a fresh week starts — everyone back to even.
       </p>
 
       {/* prize ladder — the focus, never buried */}
-      <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="mt-5 flex items-center gap-2.5">
+        <span className="text-[10px] font-extrabold tracking-[0.18em] text-banana">THIS WEEK'S PRIZES</span>
+        <span className="text-[10px] font-bold tracking-[0.14em] text-white/35">TOP 25 WIN · PAID THURSDAY NIGHT · BOARD RESETS</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-2">
         {PRIZES.map((p) => (
           <div
             key={p.places}
