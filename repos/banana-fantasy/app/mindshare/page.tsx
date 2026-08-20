@@ -366,7 +366,7 @@ export default function MindsharePage() {
 
       {/* prize ladder — the focus, never buried */}
       <div className="mt-5 flex items-center gap-2.5">
-        <span className="text-[10px] font-extrabold tracking-[0.18em] text-banana">THIS WEEK'S PRIZES</span>
+        <span className="text-[10px] font-extrabold tracking-[0.18em] text-banana">THIS WEEK&apos;S PRIZES</span>
         <span className="text-[10px] font-bold tracking-[0.14em] text-white/35">TOP 25 WIN · PAID THURSDAY NIGHT · BOARD RESETS</span>
       </div>
       <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-2">
