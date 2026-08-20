@@ -9,7 +9,7 @@
 import React from 'react';
 import type { Promo } from '@/types';
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
-import { promoKicker, promoName } from '@/lib/promoTheme';
+import { promoKickerLines, promoName } from '@/lib/promoTheme';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useAuth } from '@/hooks/useAuth';
@@ -61,13 +61,15 @@ export function PromoMiniCard({
       <div className="relative shrink-0 h-[96px]">
         <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="h-full w-full" />
         <div className="absolute inset-0 z-[1] flex items-center justify-between gap-2 px-3.5 pointer-events-none">
-          {/* Kicker is capped to the swatch's reserved left column (100px −
-              padding) so it can NEVER overlap the indicator on the right —
-              at 11px it was running into the ATB slot grid / wrapping "9 PM
-              PT" onto a third line (Boris 2026-08-19). */}
-          <span className="promo-tx max-w-[86px] text-[10px] font-extrabold tracking-[1.2px] text-white leading-[1.4]">
-            {promoKicker(promo)}
-          </span>
+          {/* Two deliberate lines, capped to the swatch's reserved left
+              column: quiet qualifier on top, the PRIZE bigger underneath —
+              no mid-phrase wraps (Boris 2026-08-19). */}
+          {(() => { const k = promoKickerLines(promo); return (
+            <span className="promo-tx block max-w-[92px]">
+              {k.top && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
+              <span className="block text-[12.5px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px]">{k.big}</span>
+            </span>
+          ); })()}
         </div>
         {promo.isNew && (
           <span className="absolute top-2 right-2 z-[2] rounded-full bg-banana px-2 py-[3px] text-[9px] font-black tracking-[1.4px] text-black">
