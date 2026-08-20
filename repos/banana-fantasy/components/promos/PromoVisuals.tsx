@@ -276,7 +276,9 @@ export function PromoSwatch({
       inner = <Big n="3" label="SPINS PER PASS" size={size} />;
       break;
     case 'new-user':
-      inner = <Big n="1" label="FREE DRAFT · GUARANTEED" size={size} />;
+      // Mini cards (md/sm) are too narrow for the full label next to the
+      // kicker — it visually doubles "FREE DRAFT". Short label there.
+      inner = <Big n="1" label={size === 'lg' ? 'FREE DRAFT · GUARANTEED' : 'FREE DRAFT GTD'} size={size} />;
       break;
     case 'mint':
     case 'buy-bonus': {
