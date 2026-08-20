@@ -215,7 +215,9 @@ async function remindSealedHolders(nightId: string): Promise<{ users: number }> 
     message: `Tonight's Drop is live. You have ${n} sealed pack${n === 1 ? '' : 's'} waiting — `
       + `open ${n === 1 ? 'it' : 'them'} to see what's inside. No rush: ${n === 1 ? 'it' : 'they'}'ll `
       + `wait for you as long as it takes.`,
-    link: '/promos?promo=drop',
+    // Straight to the packs page — the bell says "open them", so the tap must
+    // land where the packs ARE (Boris 2026-08-19), not on the promo card.
+    link: '/drop',
     dedupeKey: `drop-open-reminder-${nightId}`,
     icon: 'ticket',
   })));
