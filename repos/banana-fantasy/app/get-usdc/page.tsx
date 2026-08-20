@@ -386,7 +386,7 @@ export default function GetUsdcPage() {
           </h2>
           <ul className="space-y-2 text-sm text-text-secondary leading-relaxed">
             <li>• <span className="text-text-primary font-semibold">$25 is $25</span> — entries are priced in dollars now, not ETH. No price swings.</li>
-            <li>• <span className="text-text-primary font-semibold">Prize pools hold their value</span> — $100K in USDC stays $100K, all season long.</li>
+            <li>• <span className="text-text-primary font-semibold">Prize pools hold their value</span> — $100,000 in USDC stays $100,000, all season long.</li>
             <li>• <span className="text-text-primary font-semibold">Transactions are instant</span> — mints, sales, and payouts confirm in seconds on Base.</li>
             <li>• <span className="text-text-primary font-semibold">Zero gas on SBS</span> — we cover every fee for minting and the marketplace.</li>
             <li>• <span className="text-text-primary font-semibold">Getting here is cheap too</span> — swapping or bridging into Base costs cents and takes seconds, anywhere you do it.</li>

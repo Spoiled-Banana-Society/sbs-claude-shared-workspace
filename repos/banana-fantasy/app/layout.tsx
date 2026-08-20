@@ -11,7 +11,7 @@ const SITE_URL = 'https://sbsfantasy.com';
 const SITE_NAME = 'SBSFantasy';
 const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
-  'Banana Best Ball IV is live now! $100K Guaranteed Prize Pool';
+  'Banana Best Ball IV is live now! $100,000 Guaranteed Prize Pool';
 
 // The share-card image must be an ABSOLUTE url pointing at the SAME deployment
 // that renders the page — otherwise metadataBase (sbsfantasy.com) rewrites it

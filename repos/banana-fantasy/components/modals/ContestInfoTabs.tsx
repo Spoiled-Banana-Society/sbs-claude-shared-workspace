@@ -27,7 +27,7 @@ const HOW = [
   { t: 'Playoffs (Weeks 15–17)', d: 'Week 15 — new pod of 10, top 2 advance. Week 16 — new pod of 10, top 2 advance. Week 17 — Finals pod plays for the grand prize. (Jackpot winners skip straight to the finals.)' },
 ];
 const TYPES: { word: string; pct: string; color: string; d: string }[] = [
-  { word: 'Pro', pct: '94%', color: '#a855f7', d: 'Standard draft. Compete for the $100K GTD Prize Pool.' },
+  { word: 'Pro', pct: '94%', color: '#a855f7', d: 'Standard draft. Compete for the $100,000 GTD Prize Pool.' },
   { word: 'Hall of Fame', pct: '5%', color: '#D4AF37', d: 'Bonus prize pool on top of standard rewards.' },
   { word: 'Jackpot', pct: '1%', color: '#ef4444', d: 'Win your league and skip straight to the finals.' },
   { word: 'JackHOF', pct: '1/800', color: '#ef6c37', d: 'Jackpot + HOF on the same draft — both perks at once.' },

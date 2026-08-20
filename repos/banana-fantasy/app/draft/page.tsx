@@ -282,11 +282,11 @@ export default function DraftingPage() {
                         </button>
                       </Tooltip>
                     </div>
-                    <p className="text-[15px] mt-3">
-                      <span className="font-bold text-banana">$100K</span>
+                    <p className="text-[19px] mt-3">
+                      <span className="font-extrabold text-banana">$100,000</span>
                       <span className="text-white/30 font-medium"> Prize Pool</span>
                       <span className="text-white/15 mx-1.5">&middot;</span>
-                      <span className="font-semibold text-white/70">$25K</span>
+                      <span className="font-bold text-white/70">$25,000</span>
                       <span className="text-white/30 font-medium"> 1st Place</span>
                     </p>
                     {user?.draftBlocked ? (
@@ -346,7 +346,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-white/70">94%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100K GTD Prize Pool.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100,000 GTD Prize Pool.</p>
                       </button>
                       <button
                         onClick={() => setInfoTopic('hof')}
