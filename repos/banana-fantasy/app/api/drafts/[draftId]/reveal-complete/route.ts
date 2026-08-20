@@ -6,6 +6,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { awardJackpotDraw, recordPick10, recordPickChase, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
 import { recordAroundTheBanana } from '@/lib/aroundTheBanana';
 import { recordBananaVault } from '@/lib/bananaVault';
+import { isSpecialSeatDraft } from '@/lib/specialDraftDetect';
 import { waitUntil } from '@vercel/functions';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
@@ -58,6 +59,12 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       const info = await getDraftInfo(draftId);
       const order = info?.draftOrder ?? [];
       const draftName = String(draftSnap.get('DisplayName') ?? draftId);
+      if (isSpecialSeatDraft(draftName)) {
+        // Wheel/promo-seat lobbies never advance other promos (Boris
+        // 2026-08-19) — no Pick 10 / Chase / ATB / Vault. Club badges and the
+        // reveal unlock below still run (participation, not promo).
+        throw Object.assign(new Error('special draft — promo credit skipped'), { specialSkip: true });
+      }
       // Pick-slot LADDER: slot 10 always; batch's Jackpot hit → 6 & 10; all
       // specials hit → 6, 9 & 10 — reverting to slot-10-only when the next
       // batch starts. recordPick10 is idempotent per (user, draft) and paid-gated.
@@ -122,7 +129,12 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       // Paid-only VRF winner draw + spins + winner promo + draw record. This
       // ALSO unlocks Jackpot Club for the PAID entrants (silent — folded into
       // the draw bell). Idempotent per draft via jackpot_draws create().
-      await awardJackpotDraw(draftId, String(draftSnap.get('DisplayName') ?? draftId)).catch(() => {});
+      // Special wheel/promo jackpot lobbies are prizes themselves — no
+      // Jackpot-Hit spin draw ("Jackpot #12"'s #12 would parse as a batch
+      // position and mint phantom spins). Club badges below still unlock.
+      if (!isSpecialSeatDraft(String(draftSnap.get('DisplayName') ?? ''))) {
+        await awardJackpotDraw(draftId, String(draftSnap.get('DisplayName') ?? draftId)).catch(() => {});
+      }
       // Jackpot Club badge for ALL participants — free AND paid (Boris
       // 2026-07-01). The club badge is a PARTICIPATION achievement, not a promo:
       // everyone in the jackpot draft earns it (the spins/draw stay paid-only).

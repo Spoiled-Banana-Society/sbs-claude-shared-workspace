@@ -17,6 +17,7 @@ import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 import { logger } from '@/lib/logger';
+import { isSpecialSeatDraft } from '@/lib/specialDraftDetect';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 export const dynamic = 'force-dynamic';
@@ -334,7 +335,12 @@ export async function POST(
       // in this close backstop (same fix as reveal-complete).
       return lvl.includes('jackpot') || lvl.includes('jackhof');
     });
-    await creditDraftRipeness(draftId, tokenIds, isJackpot);
+    // Special wheel/promo lobbies never trigger the Jackpot-Hit draw — their
+    // "Jackpot #N" name would parse as batch position N and mint phantom
+    // spins (Boris 2026-08-19). Ripeness/first-purchase still credit.
+    const specialInfo = await getDraftInfo(draftId).catch(() => null);
+    const isSpecial = isSpecialSeatDraft(specialInfo?.displayName);
+    await creditDraftRipeness(draftId, tokenIds, isJackpot && !isSpecial);
 
     // Pick 10 — GUARANTEED backstop at close (the order doesn't exist at the
     // fill instant; the reveal-complete route credits earlier when anyone
@@ -343,6 +349,12 @@ export async function POST(
       const info = await getDraftInfo(draftId);
       const order = info?.draftOrder ?? [];
       const draftName = info?.displayName ?? draftId;
+      if (isSpecialSeatDraft(draftName)) {
+        // Wheel/promo-seat lobbies are prizes, not qualifying drafts — no
+        // Pick 10 / Chase / ATB / Vault credit (Boris 2026-08-19).
+        logger.info('marketplace.refresh_draft_special_no_promo_credit', { draftId, draftName });
+        throw Object.assign(new Error('special draft — promo credit skipped'), { specialSkip: true });
+      }
       // Pick-slot LADDER: slot 10 always; JP hit → 6 & 10; all specials hit →
       // 6, 9 & 10 (reverts at the next batch). recordPick10 is idempotent per
       // (user, draft) + paid-gated.
@@ -379,7 +391,9 @@ export async function POST(
       // reveal-complete route may have already announced — this is the backstop).
       if (tier !== 'base') waitUntil(announcePick10ExpansionIfActivated());
     } catch (err) {
-      logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });
+      if (!(err as { specialSkip?: boolean }).specialSkip) {
+        logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });
+      }
     }
 
     // OpenSea re-index — best-effort, and only if the key is configured. Our
