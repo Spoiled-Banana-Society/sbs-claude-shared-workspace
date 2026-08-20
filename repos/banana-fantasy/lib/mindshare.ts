@@ -574,5 +574,8 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
   // silently dropped the whole gap. An outage now self-heals: the first
   // successful scan reaches back to the last successful one.
   if (!apiError) await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
+  // apiError is ALWAYS present (null when clean): the heartbeat doc merges
+  // summaries, so omitting the key let a stale outage error stick to every
+  // clean run's heartbeat (2026-08-19 — looked like a live failure for hours).
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), apiError: apiError ?? null };
 }
