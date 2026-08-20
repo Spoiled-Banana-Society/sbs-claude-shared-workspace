@@ -60,8 +60,12 @@ export function PromoMiniCard({
       {/* Colored block: kicker left, indicator right */}
       <div className="relative shrink-0 h-[96px]">
         <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="h-full w-full" />
-        <div className="absolute inset-0 z-[1] flex items-center justify-between px-3.5 pointer-events-none">
-          <span className="promo-tx text-[11px] font-extrabold tracking-[1.4px] text-white leading-[1.35] max-w-[104px]">
+        <div className="absolute inset-0 z-[1] flex items-center justify-between gap-2 px-3.5 pointer-events-none">
+          {/* Kicker is capped to the swatch's reserved left column (100px −
+              padding) so it can NEVER overlap the indicator on the right —
+              at 11px it was running into the ATB slot grid / wrapping "9 PM
+              PT" onto a third line (Boris 2026-08-19). */}
+          <span className="promo-tx max-w-[86px] text-[10px] font-extrabold tracking-[1.2px] text-white leading-[1.4]">
             {promoKicker(promo)}
           </span>
         </div>
