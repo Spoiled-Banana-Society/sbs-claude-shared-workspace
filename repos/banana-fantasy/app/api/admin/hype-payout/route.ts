@@ -76,6 +76,14 @@ export async function POST(req: NextRequest) {
     const w = String(d.data().walletAddress ?? '').toLowerCase();
     if (h && /^0x[0-9a-f]{40}$/.test(w)) byHandle.set(h, w);
   });
+  // Boris-set per-handle wallet overrides (hype_payouts/_overrides:
+  // { <handleLower>: <wallet> }) — e.g. a winner who wants the prize on a
+  // different account than their X-linked wallet (RisBrian 2026-08-20).
+  const overrides = (await db.collection('hype_payouts').doc('_overrides').get()).data() ?? {};
+  for (const [h, w] of Object.entries(overrides)) {
+    const wl = String(w).toLowerCase();
+    if (/^0x[0-9a-f]{40}$/.test(wl)) byHandle.set(h.toLowerCase(), wl);
+  }
 
   const results: Array<Record<string, unknown>> = [];
   for (const row of ranked) {
