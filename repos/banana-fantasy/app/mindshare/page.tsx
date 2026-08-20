@@ -351,12 +351,18 @@ export default function MindsharePage() {
         </span>
         <CountdownChip targetMs={board?.week.endsAtMs ?? null} />
       </div>
-      <p className="text-white/45 text-sm mt-2 max-w-2xl leading-relaxed">
-        <b className="text-white/70">The weekly leaderboard for engaging on X.</b> Post good content about SBS,
-        quote us, retweet, reply — it all grows your tile. <b className="text-white/70">Biggest boost: people
-        finding SBS through your posts and drafting.</b> Top 25 win every Thursday night, then the board resets
-        and a fresh week starts — everyone back to even.
-      </p>
+      <div className="mt-3 max-w-2xl">
+        <p className="text-white/85 text-[15px] font-semibold leading-relaxed tracking-[-0.01em]">
+          The weekly leaderboard for engaging on X.
+        </p>
+        <p className="text-white/45 text-sm mt-1.5 leading-relaxed">
+          Post good content about SBS, quote us, retweet, reply — it all grows your tile.
+          The biggest boost: <span className="text-banana/90 font-semibold">people finding SBS through your posts and drafting</span>.
+        </p>
+        <p className="text-white/45 text-sm mt-1.5 leading-relaxed">
+          Top 25 win every Thursday night — then the board resets and a fresh week begins.
+        </p>
+      </div>
 
       {/* prize ladder — the focus, never buried */}
       <div className="mt-5 flex items-center gap-2.5">
