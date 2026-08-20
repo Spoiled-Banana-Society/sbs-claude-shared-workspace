@@ -216,12 +216,16 @@ async function ensureWindowScheduled(
   for (const pos of base) {
     const hit = windowStart + pos;
     if (scheduled.has(hit)) continue;      // engine already has it
-    if (hit > filled + 1) { toAdd.push(hit); taken.add(pos); continue; }
+    // >= not >: draft filled+1 is the NEXT fill — still perfectly schedulable.
+    // The old `>` treated it as "passed", dropped the real position, and
+    // substituted a phantom (749→801 at filled=748, 2026-08-20: an extra
+    // unsealed HOF revealed at BBB #801).
+    if (hit >= filled + 1) { toAdd.push(hit); taken.add(pos); continue; }
     // Base position already passed unscheduled — substitute (first-valid rule).
     for (; ext < need + 60; ext++) {
       const p2 = drawPos(seed, lane, cycle, ext);
       const h2 = windowStart + p2;
-      if (h2 > filled + 1 && h2 <= wEnd && !taken.has(p2) && !scheduled.has(h2)) {
+      if (h2 >= filled + 1 && h2 <= wEnd && !taken.has(p2) && !scheduled.has(h2)) {
         toAdd.push(h2); taken.add(p2); ext++; break;
       }
     }

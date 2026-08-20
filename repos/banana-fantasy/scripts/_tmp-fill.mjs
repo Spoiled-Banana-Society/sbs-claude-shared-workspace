@@ -1,0 +1,10 @@
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
+const src = readFileSync('./lib/firebaseAdmin.ts','utf8');
+const m = /STAGING_SA_B64\s*=\s*'([^']+)'/.exec(src);
+admin.initializeApp({ credential: admin.credential.cert(JSON.parse(Buffer.from(m[1],'base64').toString('utf8'))), databaseURL:'https://sbs-staging-env-default-rtdb.firebaseio.com' });
+const rt = admin.database();
+const tracker = (await rt.ref('drafts/draftTracker').get()).val() || {};
+const fills = (tracker.RecentFills||[]).slice(-6);
+console.log('RecentFills tail:', JSON.stringify(fills));
+console.log('now:', Date.now()/1000|0);

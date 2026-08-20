@@ -1,0 +1,13 @@
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
+const src = readFileSync('./lib/firebaseAdmin.ts','utf8');
+const m = /STAGING_SA_B64\s*=\s*'([^']+)'/.exec(src);
+admin.initializeApp({ credential: admin.credential.cert(JSON.parse(Buffer.from(m[1],'base64').toString('utf8'))), databaseURL:'https://sbs-staging-env-default-rtdb.firebaseio.com' });
+const db = admin.firestore();
+const rt = admin.database();
+const d = (await db.collection('drafts').doc('2026-fast-draft-706').get()).data() || {};
+console.log('firestore:', JSON.stringify({ DisplayName: d.DisplayName, NumPlayers: d.NumPlayers, users: (d.CurrentUsers||[]).length }));
+const info = (await rt.ref('drafts/2026-fast-draft-706/realTimeDraftInfo').get()).val() || {};
+console.log('rtdb:', JSON.stringify({ draftStartTime: info.draftStartTime, pickNumber: info.pickNumber, currentDrafter: (info.currentDrafter||'').slice(0,10) }));
+const t = (await db.collection('drafts').doc('draftTracker').get()).data() || {};
+console.log('tracker:', JSON.stringify({ FilledLeaguesCount: t.FilledLeaguesCount, tail: (t.RecentFills||[]).slice(-2) }));
