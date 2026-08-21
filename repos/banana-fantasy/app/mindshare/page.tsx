@@ -77,14 +77,14 @@ const PRIZES: Array<{ places: string; prize: string; first?: boolean; strip: str
   { places: '1st', prize: 'JackHOF seat', first: true, strip: STRIP_JACKHOF },
   { places: '2nd and 3rd', prize: 'Jackpot seat', strip: 'bg-jackpot' },
   { places: '4th to 10th', prize: 'HOF seat', strip: 'bg-hof' },
-  { places: '11th to 25th', prize: '1 wheel spin', strip: 'bg-teal-400' },
+  { places: '11th to 25th', prize: '1 free spin', strip: 'bg-teal-400' },
 ];
 
 function prizeForRank(rank: number): string | null {
   if (rank === 1) return 'JackHOF seat';
   if (rank <= 3) return 'Jackpot seat';
   if (rank <= 10) return 'HOF seat';
-  if (rank <= 25) return '1 wheel spin';
+  if (rank <= 25) return '1 free spin';
   return null;
 }
 
