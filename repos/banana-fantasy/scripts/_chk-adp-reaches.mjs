@@ -55,6 +55,7 @@ for (const d of drafts) {
     for (let j = lo; j <= hi; j++) { if (comp[j] === d) continue; sum += pickMap[j].get(s) ?? 151; n++; }
     adp[s] = sum / n;
   }
+  d.adpAt = {}; for (const p of d.picks) d.adpAt[p.slot] = +adp[p.slot].toFixed(1);
   for (const p of d.picks) {
     if (p.bot) continue;
     const reach = adp[p.slot] - p.pick;
@@ -93,5 +94,21 @@ await Promise.all(more.map(async o => { const u = await db.collection('v2_users'
 console.log('\n== repeat reachers (human, >=3 flagged picks) : flagged picks / teams ==');
 for (const r of repeat.slice(0, 30)) console.log(`${(users[r.o]||r.o.slice(0,10)).padEnd(18)} ${r.n} flagged in ${r.drafts} drafts / ${r.teams} teams (${(r.n/r.teams).toFixed(2)}/team) sumreach=${r.sum.toFixed(0)}`);
 
+// boards for every draft with a flagged pick
+const flaggedDrafts = new Set(flagged.map(f => f.draft));
+const boards = [];
+const allOwners = new Set();
+for (const d of drafts) if (flaggedDrafts.has(d.id)) for (const p of d.picks) allOwners.add(p.owner);
+const missing = [...allOwners].filter(o => !users[o]);
+for (let i = 0; i < missing.length; i += 50) await Promise.all(missing.slice(i, i + 50).map(async o => { const u = await db.collection('v2_users').doc(o).get(); users[o] = u.data()?.username || o.slice(0, 10); }));
+for (const d of drafts) {
+  if (!flaggedDrafts.has(d.id)) continue;
+  const fl = flagged.filter(f => f.draft === d.id);
+  boards.push({ id: d.id, name: d.name, complete: d.complete, score: fl.reduce((a, f) => a + f.reach, 0), maxReach: Math.max(...fl.map(f => f.reach)), nFlags: fl.length,
+    picks: d.picks.map(p => ({ pick: p.pick, round: p.round, slot: p.slot, player: slotName(p.slot), owner: p.owner, user: users[p.owner] || p.owner.slice(0, 10), bot: p.bot, adp: d.adpAt[p.slot], reach: +(d.adpAt[p.slot] - p.pick).toFixed(1) })) });
+}
+boards.sort((a, b) => b.score - a.score);
+writeFileSync('/private/tmp/claude-501/-Users-richardvagner/2bbb0781-fe9e-4803-845d-70ed57ca3f73/scratchpad/boards.json', JSON.stringify(boards));
+console.log('boards:', boards.length);
 writeFileSync('/private/tmp/claude-501/-Users-richardvagner/2bbb0781-fe9e-4803-845d-70ed57ca3f73/scratchpad/reaches.json', JSON.stringify({ flagged, rowsDO, users, teams }, null, 1));
 process.exit(0);
