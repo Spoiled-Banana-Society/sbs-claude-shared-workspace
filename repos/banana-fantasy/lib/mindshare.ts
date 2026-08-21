@@ -49,7 +49,9 @@ const MS_DAY = 86_400_000;
 // Scoring weights — tune on real data during the week-1/2 soft launch.
 const W = {
   baseOriginal: 10,
-  baseReply: 4,
+  // Replies earn almost nothing on their own (Boris 8/21: link-drop comment
+  // spam must not pay) — a comment only scores if people ENGAGE with it.
+  baseReply: 1,
   baseRetweet: 2, // bare RT of an SBS post: flat credit, engagement stays with the original
   retweet: 6,
   quote: 8,
@@ -58,6 +60,7 @@ const W = {
   viewsPer1k: 0.5,
   viewsCap: 50_000,
   replyMult: 0.45,
+  officialBoostMult: 2, // Boris 8/21: an official RT doubles the post's points
   dayDecay: 0.5, // nth-best tweet of an ET day is worth 1/(1 + 0.5*(n-1))
   minFollowers: 5, // was 25 — zeroed real small-account community members (Wildcat23 at 11 followers, 8/13); the 90-day age gate is the real farming filter
   minAccountAgeDays: 90,
@@ -152,6 +155,10 @@ interface RawTweet {
   authorHandle: string;
   authorFollowers: number;
   authorCreatedAtMs: number;
+  /** 2x score: this post was RT'd or quoted by @SBSFantasy / @sbsdraftbot. */
+  officialBoost?: boolean;
+  /** Handle this reply was aimed at — self-replies score zero. */
+  inReplyToHandle?: string;
 }
 
 function apiKey(): string {
@@ -170,6 +177,7 @@ function parseTweet(t: any): RawTweet | null {
     text: String(t?.text ?? '').slice(0, 500),
     createdAtMs,
     isReply: Boolean(t?.isReply) || Boolean(t?.inReplyToId),
+    inReplyToHandle: String(t?.inReplyToUsername ?? t?.inReplyToUserName ?? t?.in_reply_to_screen_name ?? '').trim(),
     isRetweet: Boolean(t?.retweeted_tweet),
     isQuote: Boolean(t?.quoted_tweet) || Boolean(t?.isQuote),
     retweets: Number(t?.retweetCount) || 0,
@@ -364,11 +372,50 @@ function tweetPoints(t: RawTweet, nowMs: number): number {
   if (t.authorFollowers < W.minFollowers) return 0;
   if (t.authorCreatedAtMs > 0 && nowMs - t.authorCreatedAtMs < W.minAccountAgeDays * MS_DAY) return 0;
   if (t.isRetweet) return W.baseRetweet;
+  // Self-replies never earn (Boris 8/21): replying to your own post/comment
+  // is thread-padding, not engagement someone else chose to give you.
+  if (t.isReply && t.inReplyToHandle &&
+      t.inReplyToHandle.toLowerCase() === t.authorHandle.toLowerCase()) return 0;
   const base = t.isReply ? W.baseReply : W.baseOriginal;
   const engagement =
     t.retweets * W.retweet + t.quotes * W.quote + t.replies * W.reply +
     t.likes * W.like + (Math.min(t.views, W.viewsCap) / 1000) * W.viewsPer1k;
-  return (base + engagement) * (t.isReply ? W.replyMult : 1);
+  const total = (base + engagement) * (t.isReply ? W.replyMult : 1);
+  return t.officialBoost ? total * W.officialBoostMult : total;
+}
+
+/** Stamp officialBoost on week tweets that @SBSFantasy or @sbsdraftbot
+ *  retweeted or quote-tweeted (Boris 8/21: an official RT doubles the post's
+ *  points — it is the "this is good content" curation signal). One timeline
+ *  page per account per RT-pass (~2 calls / 30 min). Idempotent merge. */
+async function stampOfficialBoosts(weekId: string, startsAtMs: number): Promise<number> {
+  const db = getAdminFirestore();
+  let stamped = 0;
+  for (const account of ['SBSFantasy', 'sbsdraftbot']) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let items: any[] = [];
+    try {
+      const data = await apiGet(`/twitter/user/last_tweets?userName=${account}&includeReplies=false`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = data as any;
+      items = Array.isArray(d.tweets) ? d.tweets : (Array.isArray(d.data?.tweets) ? d.data.tweets : []);
+    } catch { continue; }
+    for (const raw of items) {
+      const inner = raw?.retweeted_tweet ?? raw?.quoted_tweet;
+      if (!inner) continue;
+      const t = parseTweet(inner);
+      if (!t || t.createdAtMs < startsAtMs) continue;
+      if (EXCLUDED_HANDLES.has(t.authorHandle.toLowerCase())) continue;
+      const ref = db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id);
+      const existing = await ref.get();
+      if (existing.exists && existing.data()?.officialBoost === true) continue;
+      // Upsert the full tweet if the mention scan missed it — an official RT
+      // makes it board-worthy by definition.
+      await ref.set(existing.exists ? { officialBoost: true } : { ...t, officialBoost: true }, { merge: true });
+      stamped++;
+    }
+  }
+  return stamped;
 }
 
 /** Recompute every tile for the week from its stored tweets (idempotent). */
@@ -541,7 +588,7 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
     return { ok: false, reason: 'TWITTERAPI_IO_KEY missing', weekId: state.weekId };
   }
 
-  let pulled = 0; let refreshed = 0; let rtCredits = 0; let apiError: string | null = null;
+  let pulled = 0; let refreshed = 0; let rtCredits = 0; let boosts = 0; let apiError: string | null = null;
   try {
     const sinceMs = Math.max(state.startsAtMs, (state.lastScanMs ?? 0) - 15 * 60_000);
     // searchPagesOverride (state doc, optional): temporarily deepen the
@@ -580,6 +627,8 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
       await getAdminFirestore().doc(STATE_DOC).set({ lastRtPassMs: nowMs }, { merge: true });
       try { rtCredits = await creditRetweeters(state.weekId, nowMs); }
       catch (e) { apiError = `${apiError ? apiError + ' | ' : ''}rt: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
+      try { boosts = await stampOfficialBoosts(state.weekId, state.startsAtMs); }
+      catch (e) { apiError = `${apiError ? apiError + ' | ' : ''}boost: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
     }
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
@@ -596,5 +645,5 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
   // apiError is ALWAYS present (null when clean): the heartbeat doc merges
   // summaries, so omitting the key let a stale outage error stick to every
   // clean run's heartbeat (2026-08-19 — looked like a live failure for hours).
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), apiError: apiError ?? null };
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, boosts, ...scored, ...(backfill ?? {}), apiError: apiError ?? null };
 }
