@@ -28,8 +28,7 @@ export const maxDuration = 300;
 const LADDER = (rank: number): { kind: 'jackhof' | 'jackpot' | 'hof' } | { spins: number } | null => {
   if (rank === 1) return { kind: 'jackhof' };
   if (rank <= 3) return { kind: 'jackpot' };
-  if (rank <= 6) return { kind: 'hof' };
-  if (rank <= 15) return { spins: 3 };
+  if (rank <= 10) return { kind: 'hof' };
   if (rank <= 25) return { spins: 1 };
   return null;
 };

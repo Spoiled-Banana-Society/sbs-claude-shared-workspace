@@ -76,16 +76,14 @@ const STRIP_JACKHOF = 'bg-orange-500'; // red + gold mixed = orange (Boris 8/15)
 const PRIZES: Array<{ places: string; prize: string; first?: boolean; strip: string }> = [
   { places: '1st', prize: 'JackHOF seat', first: true, strip: STRIP_JACKHOF },
   { places: '2nd and 3rd', prize: 'Jackpot seat', strip: 'bg-jackpot' },
-  { places: '4th to 6th', prize: 'HOF seat', strip: 'bg-hof' },
-  { places: '7th to 15th', prize: '3 wheel spins', strip: 'bg-pro' },
-  { places: '16th to 25th', prize: '1 wheel spin', strip: 'bg-teal-400' },
+  { places: '4th to 10th', prize: 'HOF seat', strip: 'bg-hof' },
+  { places: '11th to 25th', prize: '1 wheel spin', strip: 'bg-teal-400' },
 ];
 
 function prizeForRank(rank: number): string | null {
   if (rank === 1) return 'JackHOF seat';
   if (rank <= 3) return 'Jackpot seat';
-  if (rank <= 6) return 'HOF seat';
-  if (rank <= 15) return '3 wheel spins';
+  if (rank <= 10) return 'HOF seat';
   if (rank <= 25) return '1 wheel spin';
   return null;
 }
@@ -95,8 +93,7 @@ function stripForRank(rank: number | null): string | null {
   if (rank === null) return null;
   if (rank === 1) return STRIP_JACKHOF;
   if (rank <= 3) return 'bg-jackpot';
-  if (rank <= 6) return 'bg-hof';
-  if (rank <= 15) return 'bg-pro';
+  if (rank <= 10) return 'bg-hof';
   if (rank <= 25) return 'bg-teal-400';
   return null;
 }
@@ -105,8 +102,7 @@ function stripForRank(rank: number | null): string | null {
 function rankTextForRank(rank: number): string {
   if (rank === 1) return 'text-orange-400';
   if (rank <= 3) return 'text-jackpot';
-  if (rank <= 6) return 'text-hof';
-  if (rank <= 15) return 'text-pro';
+  if (rank <= 10) return 'text-hof';
   if (rank <= 25) return 'text-teal-400';
   return 'text-white/40';
 }
@@ -401,7 +397,7 @@ export default function MindsharePage() {
                   ? 'bg-orange-600 border-orange-500'
                   : (t.rank !== null && t.rank <= 3)
                     ? 'bg-jackpot/[0.07] border-jackpot/25'
-                    : (t.rank !== null && t.rank <= 6)
+                    : (t.rank !== null && t.rank <= 10)
                       ? 'bg-hof/[0.06] border-hof/25'
                       : 'bg-white/[0.04] border-white/[0.07]'} ${isYou ? 'outline outline-2 outline-banana' : ''} ${big ? 'p-4' : 'p-2'}`}
                 style={{
@@ -422,7 +418,7 @@ export default function MindsharePage() {
                   const label = `${t.label}${isYou ? ' · YOU' : ''}`;
                   // Name size follows the PRIZE TIER like the percent does
                   // (Boris 8/15: better prize = bigger name) — clamped to fit.
-                  const tierNameFs = t.rank === 1 ? 22 : t.rank !== null && t.rank <= 3 ? 18 : t.rank !== null && t.rank <= 6 ? 15 : 13;
+                  const tierNameFs = t.rank === 1 ? 22 : t.rank !== null && t.rank <= 3 ? 18 : t.rank !== null && t.rank <= 10 ? 15 : 13;
                   const maxFs = tiny ? 11 : tierNameFs;
                   const fitFs = Math.floor((r.w - (big ? 34 : 18)) / (0.62 * Math.max(label.length, 1)));
                   const nameFs = Math.max(8, Math.min(maxFs, fitFs));
@@ -441,7 +437,7 @@ export default function MindsharePage() {
                     visually bigger percent) — rank 1 largest, 2-3 next,
                     4-6 next, 7+ smallest — clamped to what fits the tile. */}
                 {(() => {
-                  const tierPx = t.rank === 1 ? 48 : t.rank !== null && t.rank <= 3 ? 38 : t.rank !== null && t.rank <= 6 ? 28 : 20;
+                  const tierPx = t.rank === 1 ? 48 : t.rank !== null && t.rank <= 3 ? 38 : t.rank !== null && t.rank <= 10 ? 28 : 20;
                   const pctFs = tiny ? 12 : Math.max(14, Math.min(tierPx, Math.floor(r.h * 0.3), Math.floor((r.w - 14) * 0.3)));
                   return (
                     <div

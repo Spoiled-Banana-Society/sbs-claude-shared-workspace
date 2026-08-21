@@ -11,7 +11,7 @@
  * NOT tweets and never appear here.
  */
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { WEEKS_COLLECTION, EXCLUDED_HANDLES } from '@/lib/mindshare';
+import { WEEKS_COLLECTION, EXCLUDED_HANDLES, HIDDEN_HANDLES } from '@/lib/mindshare';
 import { json, jsonError } from '@/lib/api/routeUtils';
 
 export const dynamic = 'force-dynamic';
@@ -61,6 +61,7 @@ export async function GET() {
         const text = String(t.text ?? '');
         if (!handle || !text || text.startsWith('RT of ')) continue;
         const hLower = handle.toLowerCase();
+        if (HIDDEN_HANDLES.has(hLower)) continue; // test/family accounts never surface
         const isBot = hLower === 'sbsdraftbot';
         // House replies stay in the feed — they just live under the Replies
         // filter like everyone else's; the SBS filter is posts-only
