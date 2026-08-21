@@ -34,8 +34,14 @@ const API_BASE = 'https://api.twitterapi.io';
 const SEARCH_QUERY = '(@SBSFantasy OR sbsfantasy OR "banana best ball" OR "spoiled banana society") -from:SBSFantasy';
 
 /** House accounts never compete on the board (Richard 8/13: "take away
- *  boris vagner and rich vagner lmao"). Lowercased handles. */
-export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner', 'drmichellevagner']);
+ *  boris vagner and rich vagner lmao"). Lowercased handles.
+ *  sbsdraftbot added 8/14: the draft-results bot must never bank tile points —
+ *  its posts are stored for the public feed's Draft Bot filter only. */
+/** Boris's wife's test account (Richard 8/20: "dont include her") — her real
+ *  handle is drmichellevgner (no "a"); the 8/13 entry was a typo and never
+ *  matched, so her RT credits reached the board. Hidden from the feed too. */
+export const HIDDEN_HANDLES = new Set(['drmichellevagner', 'drmichellevgner']);
+export const EXCLUDED_HANDLES = new Set(['sbsfantasy', 'richvagner', 'borisvagner', 'sbsdraftbot', ...HIDDEN_HANDLES]);
 const MAX_SEARCH_PAGES = 3;
 const REFRESH_BATCH = 48; // recent tweets whose metrics we re-pull per scan (twitterapi hard cap: 50 ids/request)
 const MS_DAY = 86_400_000;
@@ -111,6 +117,8 @@ export interface MindshareState {
   startsAtMs: number;
   endsAtMs: number;
   lastScanMs?: number;
+  lastMetricsRefreshMs?: number;
+  lastRtPassMs?: number;
   newestTweetId?: string;
 }
 
@@ -139,6 +147,7 @@ interface RawTweet {
   createdAtMs: number;
   isReply: boolean;
   isRetweet: boolean;
+  isQuote: boolean;
   retweets: number; quotes: number; replies: number; likes: number; views: number;
   authorHandle: string;
   authorFollowers: number;
@@ -162,6 +171,7 @@ function parseTweet(t: any): RawTweet | null {
     createdAtMs,
     isReply: Boolean(t?.isReply) || Boolean(t?.inReplyToId),
     isRetweet: Boolean(t?.retweeted_tweet),
+    isQuote: Boolean(t?.quoted_tweet) || Boolean(t?.isQuote),
     retweets: Number(t?.retweetCount) || 0,
     quotes: Number(t?.quoteCount) || 0,
     replies: Number(t?.replyCount) || 0,
@@ -185,10 +195,10 @@ async function apiGet(path: string): Promise<Record<string, unknown>> {
 }
 
 /** Pull new mentions since the last scan (bounded pages, newest-first pagination). */
-async function fetchNewMentions(sinceMs: number): Promise<RawTweet[]> {
+async function fetchNewMentions(sinceMs: number, maxPages: number = MAX_SEARCH_PAGES): Promise<RawTweet[]> {
   const out: RawTweet[] = [];
   let cursor = '';
-  for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const qs = new URLSearchParams({ query: SEARCH_QUERY, queryType: 'Latest' });
     if (cursor) qs.set('cursor', cursor);
     const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
@@ -229,28 +239,57 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   // -filter:replies is load-bearing: the SBS account replies constantly, so
   // page 1 of a bare from: search is ALL replies with zero RTs and the real
   // posts (the ones people retweet) never surface. Two pages, RT'd-only.
+  // House posts window: 14 DAYS (Boris 8/14: the feed's SBS filter should
+  // carry a week or two of our posts, not just launch-week). One combined
+  // query covers the company handle, both founders' personals AND the draft
+  // bot — the founders' posts no longer depend on the mention search
+  // happening to match them.
   const ourTweets: RawTweet[] = [];
   let cursor = '';
-  for (let page = 0; page < 2; page++) {
-    const qs = new URLSearchParams({ query: 'from:SBSFantasy -filter:replies', queryType: 'Latest' });
+  for (let page = 0; page < 3; page++) {
+    const qs = new URLSearchParams({
+      query: '(from:SBSFantasy OR from:BorisVagner OR from:RichVagner OR from:sbsdraftbot) -filter:replies',
+      queryType: 'Latest',
+    });
     if (cursor) qs.set('cursor', cursor);
     const data = await apiGet(`/twitter/tweet/advanced_search?${qs.toString()}`);
     for (const raw of (Array.isArray(data.tweets) ? data.tweets : [])) {
       const t = parseTweet(raw);
-      if (t && nowMs - t.createdAtMs < 7 * MS_DAY && t.retweets > 0) ourTweets.push(t);
+      if (t && nowMs - t.createdAtMs < 14 * MS_DAY) ourTweets.push(t);
     }
     if (!data.has_next_page || !data.next_cursor) break;
     cursor = String(data.next_cursor);
   }
-  ourTweets.splice(10);
+  // Persist house posts for the public feed (/api/mindshare/feed). Scoring
+  // is untouched — rescoreWeek skips EXCLUDED_HANDLES, and refreshRecentMetrics
+  // keeps their engagement counts fresh like any other stored tweet.
+  if (ourTweets.length > 0) {
+    const feedBatch = db.batch();
+    for (const t of ourTweets) {
+      feedBatch.set(db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id), { ...t }, { merge: true });
+    }
+    await feedBatch.commit();
+  }
+  // RT-credit pass only cares about posts that actually have retweets.
+  const rtCandidates = ourTweets.filter((t) => t.retweets > 0).slice(0, 10);
   let credited = 0;
-  for (const ours of ourTweets) {
+  // Skip retweeter-list pulls whose RT count hasn't moved since the last pull
+  // — the list can't have changed, and these calls were the single biggest
+  // credit sink (10 list pulls x 288 scans/day for mostly-static lists).
+  const seenSnaps = rtCandidates.length
+    ? await db.getAll(...rtCandidates.map((t) => db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id)))
+    : [];
+  const rtSeen = new Map(seenSnaps.map((d) => [d.id, Number(d.data()?.rtSeenCount) || 0]));
+  for (const ours of rtCandidates) {
+    if ((rtSeen.get(ours.id) ?? 0) >= ours.retweets) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let users: any[] = [];
     try {
       const r = await apiGet(`/twitter/tweet/retweeters?tweetId=${ours.id}`);
       users = Array.isArray(r.users) ? r.users : (Array.isArray(r.retweeters) ? r.retweeters : []);
     } catch { continue; }
+    await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(ours.id)
+      .set({ rtSeenCount: ours.retweets }, { merge: true });
     for (const u of users) {
       const handle = String(u?.userName ?? '').trim();
       if (!handle || EXCLUDED_HANDLES.has(handle.toLowerCase())) continue;
@@ -262,6 +301,7 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
           createdAtMs: nowMs,
           isReply: false,
           isRetweet: true,
+          isQuote: false,
           retweets: 0, quotes: 0, replies: 0, likes: 0, views: 0,
           authorHandle: handle,
           authorFollowers: Number(u?.followers) || 0,
@@ -275,14 +315,32 @@ async function creditRetweeters(weekId: string, nowMs: number): Promise<number> 
   return credited;
 }
 
-/** Refresh engagement metrics for recent stored tweets (engagement keeps growing). */
+/** Refresh engagement metrics for stored tweets (engagement keeps growing).
+ *  Rotating cursor (8/14): the old 2-day/limit-48 read returned the SAME
+ *  oldest 48 docs every scan — newer docs never refreshed and pre-isQuote
+ *  docs never healed. The cursor walks the whole week batch-by-batch and
+ *  wraps, so every doc cycles through roughly every half hour. */
 async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<number> {
   const db = getAdminFirestore();
-  const cutoff = nowMs - 2 * MS_DAY;
-  const snap = await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets')
-    .where('createdAtMs', '>=', cutoff).limit(REFRESH_BATCH).get();
+  const weekRef = db.collection(WEEKS_COLLECTION).doc(weekId);
+  const cursor = Number((await weekRef.get()).data()?.refreshCursorMs) || 0;
+  const tweetsCol = weekRef.collection('tweets');
+  let snap = await tweetsCol.where('createdAtMs', '>', cursor)
+    .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
+  if (snap.empty && cursor > 0) {
+    // End of the week's docs — wrap for the next lap. Floor at 4 days back:
+    // engagement on older tweets is effectively frozen, so re-pulling them
+    // every lap was pure credit burn (Boris 2026-08-19).
+    const floorMs = nowMs - 4 * MS_DAY;
+    await weekRef.set({ refreshCursorMs: floorMs }, { merge: true });
+    snap = await tweetsCol.where('createdAtMs', '>', floorMs)
+      .orderBy('createdAtMs', 'asc').limit(REFRESH_BATCH).get();
+  }
   if (snap.empty) return 0;
-  const ids = snap.docs.map((d) => d.id);
+  const lastCreatedAtMs = Number(snap.docs[snap.docs.length - 1].data()?.createdAtMs) || 0;
+  await weekRef.set({ refreshCursorMs: lastCreatedAtMs }, { merge: true });
+  const ids = snap.docs.map((d) => d.id).filter((id) => !id.startsWith('rt-'));
+  if (!ids.length) return 0;
   const data = await apiGet(`/twitter/tweets?tweet_ids=${ids.join(',')}`);
   const fresh = (Array.isArray(data.tweets) ? data.tweets : [])
     .map(parseTweet)
@@ -291,7 +349,9 @@ async function refreshRecentMetrics(weekId: string, nowMs: number): Promise<numb
   for (const t of fresh) {
     batch.set(
       db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').doc(t.id),
-      { retweets: t.retweets, quotes: t.quotes, replies: t.replies, likes: t.likes, views: t.views },
+      // isQuote rides along so pre-8/14 docs (stored before the flag existed)
+      // self-heal on their next metrics refresh and filter correctly in the feed.
+      { retweets: t.retweets, quotes: t.quotes, replies: t.replies, likes: t.likes, views: t.views, isQuote: t.isQuote },
       { merge: true },
     );
   }
@@ -392,7 +452,13 @@ async function rolloverIfDue(state: MindshareState, nowMs: number): Promise<Mind
 async function backfillPrivyLinksOnce(): Promise<Record<string, unknown> | null> {
   const db = getAdminFirestore();
   const marker = db.doc('mindshare_state/privy-link-backfill');
-  if ((await marker.get()).exists) return null;
+  // Recurring (8/15, was one-shot): new users who sign up WITH X via Privy
+  // get no site-side link row until this runs — a stale one-shot marker left
+  // every post-backfill signup unlinked (blank X handle in admin lookup,
+  // invisible on the Hype board). Re-sweep daily; create() is idempotent.
+  const markerSnap = await marker.get();
+  const lastRunMs = markerSnap.data()?.ranAt?.toMillis?.() ?? 0;
+  if (Date.now() - lastRunMs < 24 * 3600 * 1000) return null;
   const appId = (process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim();
   const secret = (process.env.PRIVY_APP_SECRET ?? '').trim();
   if (!appId || !secret) return { backfill: 'skipped: privy creds missing' };
@@ -463,7 +529,12 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
   let pulled = 0; let refreshed = 0; let rtCredits = 0; let apiError: string | null = null;
   try {
     const sinceMs = Math.max(state.startsAtMs, (state.lastScanMs ?? 0) - 15 * 60_000);
-    const fresh = await fetchNewMentions(sinceMs);
+    // searchPagesOverride (state doc, optional): temporarily deepen the
+    // newest-first pagination so a long outage gap can be re-ingested in one
+    // scan. Cleared automatically after use.
+    const pagesOverride = Number((await getAdminFirestore().doc(STATE_DOC).get()).data()?.searchPagesOverride) || 0;
+    const fresh = await fetchNewMentions(sinceMs, pagesOverride > 0 ? pagesOverride : undefined);
+    if (pagesOverride > 0) await getAdminFirestore().doc(STATE_DOC).set({ searchPagesOverride: FieldValue.delete() }, { merge: true });
     const db = getAdminFirestore();
     const batch = db.batch();
     for (const t of fresh) {
@@ -472,14 +543,43 @@ export async function runMindshareScan(): Promise<Record<string, unknown>> {
       pulled += 1;
     }
     await batch.commit();
-    refreshed = await refreshRecentMetrics(state.weekId, nowMs);
-    rtCredits = await creditRetweeters(state.weekId, nowMs);
+    // CREDIT BUDGET (Boris 2026-08-19, after twitterapi ran dry): the mention
+    // ingest stays every scan (it's 2-4 cheap calls and is the "real-time"
+    // part users see). The two heavy passes are time-gated:
+    //  - metrics refresh: every 15 min (a lap of the week still completes in
+    //    hours; engagement counts don't move minute-to-minute)
+    //  - house-posts + retweeter credit: every 30 min (RT credit can lag)
+    const sLive = (await getAdminFirestore().doc(STATE_DOC).get()).data() ?? {};
+    const lastRefresh = Number(sLive.lastMetricsRefreshMs) || 0;
+    const lastRt = Number(sLive.lastRtPassMs) || 0;
+    // Each heavy pass fails INDEPENDENTLY and names itself in the heartbeat —
+    // a refresh 402 must not mask a healthy ingest (or vice versa), and the
+    // gate timestamp advances even on failure so a broken pass retries on its
+    // own cadence instead of every 5-min scan.
+    if (nowMs - lastRefresh >= 15 * 60_000) {
+      await getAdminFirestore().doc(STATE_DOC).set({ lastMetricsRefreshMs: nowMs }, { merge: true });
+      try { refreshed = await refreshRecentMetrics(state.weekId, nowMs); }
+      catch (e) { apiError = `refresh: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
+    }
+    if (nowMs - lastRt >= 30 * 60_000) {
+      await getAdminFirestore().doc(STATE_DOC).set({ lastRtPassMs: nowMs }, { merge: true });
+      try { rtCredits = await creditRetweeters(state.weekId, nowMs); }
+      catch (e) { apiError = `${apiError ? apiError + ' | ' : ''}rt: ${e instanceof Error ? e.message.slice(0, 160) : 'unknown'}`; }
+    }
   } catch (e) {
     // 402 = credits drained — score from what we have, surface in heartbeat.
-    apiError = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
+    apiError = `ingest: ${e instanceof Error ? e.message.slice(0, 180) : 'unknown'}`;
   }
 
   const scored = await rescoreWeek(state.weekId, nowMs);
-  await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
-  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), ...(apiError ? { apiError } : {}) };
+  // lastScanMs is the INGEST high-water mark — advance it only when the pull
+  // actually succeeded. During the 8/19 credits outage it advanced on every
+  // failed scan, so the recharge would have resumed from "20 minutes ago" and
+  // silently dropped the whole gap. An outage now self-heals: the first
+  // successful scan reaches back to the last successful one.
+  if (!apiError) await getAdminFirestore().doc(STATE_DOC).set({ lastScanMs: nowMs }, { merge: true });
+  // apiError is ALWAYS present (null when clean): the heartbeat doc merges
+  // summaries, so omitting the key let a stale outage error stick to every
+  // clean run's heartbeat (2026-08-19 — looked like a live failure for hours).
+  return { ok: !apiError, weekId: state.weekId, pulled, refreshed, rtCredits, ...scored, ...(backfill ?? {}), apiError: apiError ?? null };
 }
