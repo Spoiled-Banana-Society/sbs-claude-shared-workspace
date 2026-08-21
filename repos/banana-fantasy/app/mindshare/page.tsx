@@ -74,17 +74,17 @@ const STRIP_JACKHOF = 'bg-orange-500'; // red + gold mixed = orange (Boris 8/15)
 // differ from each other too): JackHOF red→gold, Jackpot red, HOF gold,
 // 3 spins purple, 1 spin teal.
 const PRIZES: Array<{ places: string; prize: string; first?: boolean; strip: string }> = [
-  { places: '1st', prize: 'JackHOF seat', first: true, strip: STRIP_JACKHOF },
-  { places: '2nd and 3rd', prize: 'Jackpot seat', strip: 'bg-jackpot' },
-  { places: '4th to 10th', prize: 'HOF seat', strip: 'bg-hof' },
-  { places: '11th to 25th', prize: '1 free spin', strip: 'bg-teal-400' },
+  { places: '1st', prize: 'JackHOF Seat', first: true, strip: STRIP_JACKHOF },
+  { places: '2nd and 3rd', prize: 'Jackpot Seat', strip: 'bg-jackpot' },
+  { places: '4th to 10th', prize: 'HOF Seat', strip: 'bg-hof' },
+  { places: '11th to 25th', prize: '1 Free Spin', strip: 'bg-teal-400' },
 ];
 
 function prizeForRank(rank: number): string | null {
-  if (rank === 1) return 'JackHOF seat';
-  if (rank <= 3) return 'Jackpot seat';
-  if (rank <= 10) return 'HOF seat';
-  if (rank <= 25) return '1 free spin';
+  if (rank === 1) return 'JackHOF Seat';
+  if (rank <= 3) return 'Jackpot Seat';
+  if (rank <= 10) return 'HOF Seat';
+  if (rank <= 25) return '1 Free Spin';
   return null;
 }
 
