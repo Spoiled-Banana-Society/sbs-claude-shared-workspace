@@ -1,8 +1,3 @@
-// ⚠️ 8/17 LESSON: this script does NOT clear the NFT-facing copies — marketplace_index/{id} (status/players/
-// leagueNumber/image) and draftTokenMetadata/{id} roster attrs — so OpenSea kept showing the voided rosters
-// (Cherry's #419 team, Wp34's #724 team). After ANY void/refund/burn ALSO run, from repos/banana-fantasy:
-//   node scripts/_fix-voided-token-ghosts.mjs   (dry-run; CONFIRM=1)  → tokens not in a league → pass + OpenSea refresh
-//   node scripts/_fix-stale-index-players.mjs   (dry-run; CONFIRM=1)  → re-entered tokens w/ old pick lists → cleared
 // VOID 2026-slow-draft-40 (BBB #419) and refund every seat EXCEPT Cherry
 // (0xed3edfd8398dffe345590c4884a02de666559bb0) — Richard 8/16 (troll drafting wrecked ADP).
 // Mirrors app/api/admin/drafts/manage/[slotId] DELETE exactly, minus cherry's
