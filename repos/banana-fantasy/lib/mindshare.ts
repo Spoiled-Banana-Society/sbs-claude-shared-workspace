@@ -415,14 +415,29 @@ async function rescoreWeek(weekId: string, nowMs: number): Promise<{ tiles: numb
 async function rolloverIfDue(state: MindshareState, nowMs: number): Promise<MindshareState> {
   if (nowMs < state.endsAtMs) return state;
   const db = getAdminFirestore();
-  const tilesSnap = await db.collection(WEEKS_COLLECTION).doc(state.weekId).collection('tiles').get();
+  // Snapshot must rank the SAME population the board shows: house accounts
+  // out, LINKED SBS accounts only (Richard 8/13). Week 1 (8/20) snapshotted
+  // raw tiles, so two unlinked tweeters held prize slots 18 + 25 and the
+  // payout route skipped them — two real linked players went unpaid.
+  const [tilesSnap, linksSnap] = await Promise.all([
+    db.collection(WEEKS_COLLECTION).doc(state.weekId).collection('tiles').get(),
+    db.collection('v2_twitter_links').select('twitterHandle', 'walletAddress').get(),
+  ]);
+  const linked = new Set<string>();
+  for (const d of linksSnap.docs) {
+    const h = String(d.data()?.twitterHandle ?? '').replace(/^@/, '').toLowerCase();
+    const w = String(d.data()?.walletAddress ?? '').toLowerCase();
+    if (h && /^0x[0-9a-f]{40}$/.test(w)) linked.add(h);
+  }
   const ranked = tilesSnap.docs
     .map((d) => {
       const t = d.data();
-      return { handle: String(t.handle ?? d.id), score: (Number(t.attention) || 0) + (Number(t.refBonus) || 0) };
+      return { key: d.id, handle: String(t.handle ?? d.id), score: (Number(t.attention) || 0) + (Number(t.refBonus) || 0) };
     })
+    .filter((t) => !EXCLUDED_HANDLES.has(t.key) && t.score > 0 && linked.has(t.key))
     .sort((a, b) => b.score - a.score)
     .slice(0, 25)
+    .map(({ key: _key, ...t }) => t)
     .map((t, i) => ({ rank: i + 1, ...t }));
   await db.collection(WEEKS_COLLECTION).doc(state.weekId).set({
     status: 'final',
