@@ -23,9 +23,9 @@ function boardHtml(b) {
     const pos = posOf(p.slot); const big = !p.bot && p.pick<=110 && p.reach>=40; const mid = !p.bot && p.pick<=110 && p.reach>=25 && p.reach<40; const steal = p.adp<=120 && p.reach<=-25;
     const cls = big?'big':mid?'mid':steal?'steal':'';
     const d = p.reach; const delta = d>=1?`+${d.toFixed(0)}`:d<=-1?`${d.toFixed(0)}`:'0';
-    return `<td class="cell ${cls}" style="border-left:5px solid ${POS[pos]||'#888'}"><div class="name">${esc(p.player)}</div><div class="meta"><span>#${p.pick}</span><span>ADP ${p.adp.toFixed(0)}</span><span class="delta">${delta}</span></div></td>`;
+    return `<td class="cell ${cls}" style="border-left:5px solid ${POS[pos]||'#888'}"><div class="name">${esc(p.slot.replace('-',' '))}</div><div class="meta"><span>#${p.pick}</span><span>ADP ${p.adp.toFixed(0)}</span><span class="delta">${delta}</span></div></td>`;
   }).join('') + '</tr>').join('');
-  const flagLine = flags.map(f => `<b>${esc(f.user)}</b> took ${esc(f.player)} at #${f.pick} (ADP ${f.adp.toFixed(0)}, ${f.reach.toFixed(0)} early)`).join(' &nbsp;·&nbsp; ');
+  const flagLine = flags.map(f => `<b>${esc(f.user)}</b> took ${esc(f.slot.replace('-',' '))} at #${f.pick} (ADP ${f.adp.toFixed(0)}, ${f.reach.toFixed(0)} early)`).join(' &nbsp;·&nbsp; ');
   return `<section class="board">
   <h1>${esc(b.name)}${b.complete?'':' (still drafting)'} <span class="sub">${b.id}</span></h1>
   <div class="flags">${flagLine || 'no flagged reaches'}</div>
