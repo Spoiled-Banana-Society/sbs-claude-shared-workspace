@@ -55,7 +55,7 @@ const RULES =
   + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
   + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
   + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
-  + '• Your tier locks the moment you take a seat and pays when the draft fills. Leave the lobby and nothing pays. Re-enter and you lock a fresh tier at wherever the counter is then.\n'
+  + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1. Leave the lobby and nothing pays.\n'
   + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
   + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
   + '• Free drafts land in your passes automatically. No claim button, no limit.';
@@ -311,7 +311,7 @@ export default function BonusZonePreviewPage() {
           </div>
         </Section>
 
-        <Section title="5 · AFTER YOU TAKE THE SEAT" note="What the server says back the instant the seat is taken (toast copy), and the My Drafts row while the lobby fills.">
+        <Section title="5 · AFTER YOU TAKE THE SEAT" note="What the server says back the instant the seat is taken (toast copy), and the My Drafts row while the lobby fills. The tier shown is the live one; the draft pays by where it actually fills.">
           <div className="grid gap-4 md:grid-cols-3">
             {[t1Lock, t2Lock, t3Lock, badLock].map((l, i) => {
               const c = bonusLockedToastCopy(l);

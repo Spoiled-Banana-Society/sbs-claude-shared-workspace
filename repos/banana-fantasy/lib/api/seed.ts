@@ -735,7 +735,7 @@ const seedPromos: Promo[] = [
         + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
         + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
         + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
-        + '• Your tier locks the moment you take a seat and pays when the draft fills. Leave the lobby and nothing pays. Re-enter and you lock a fresh tier at wherever the counter is then.\n'
+        + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1. Leave the lobby and nothing pays.\n'
         + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
         + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
         + '• Free drafts land in your passes automatically. No claim button, no limit.',

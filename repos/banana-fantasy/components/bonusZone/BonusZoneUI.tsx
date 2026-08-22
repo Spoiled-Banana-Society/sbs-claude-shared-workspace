@@ -48,9 +48,19 @@ export const unitsCopy = (units: number) =>
 export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLike; compact?: boolean }) {
   if (!view.enabled || !view.tier) return null;
   const left = view.draftsLeftInTier;
+  // `compact` = forced phone cut (no viewport breakpoints) for mocks/previews;
+  // the live header lets the lg: breakpoints decide, same as the lane pills.
+  if (compact) {
+    return (
+      <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[84px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
+        <span className="text-[8px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BONUS · {left} LEFT</span>
+        <span className="mt-[3px] text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      </div>
+    );
+  }
   return (
     <div
-      className={`flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] lg:rounded-[10px] border px-1.5 lg:px-2 py-[5px] lg:py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] ${compact ? 'w-[84px]' : 'w-[84px] lg:w-[118px]'}`}
+      className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] lg:rounded-[10px] border px-1.5 lg:px-2 py-[5px] lg:py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[84px] lg:w-[124px]"
       data-testid="bonus-zone-pill"
     >
       <span className="text-[8px] lg:text-[9.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">
@@ -163,11 +173,7 @@ export function ineligibleCopy(reason: string): string {
  */
 export function BonusPendingGlyph({ lock }: { lock: BonusLockLike }) {
   const tip = lock.eligible
-    ? (lock.tier === 1
-        ? 'Bonus Zone locked: Buy 1 Get 1. A free draft pays the moment this draft fills. Leave and it is forfeited.'
-        : lock.tier === 2
-          ? 'Bonus Zone locked: Buy 2 Get 1. Half a free draft pays when this fills; two halves in the same Jackpot window make one free draft.'
-          : 'Bonus Zone locked: Buy 3 Get 1. A third of a free draft pays when this fills; three in the same Jackpot window make one free draft.')
+    ? `Bonus Zone: this seat pays by the window position this draft FILLS at. Right now that is ${lock.label} (${lock.tier === 1 ? 'a free draft' : lock.tier === 2 ? 'half a free draft' : 'a third of a free draft'}). Leave and nothing pays.`
     : `Bonus Zone: nothing pays on this seat. ${ineligibleCopy(lock.reason)}`;
   return (
     <Tooltip content={tip}>
@@ -202,13 +208,13 @@ export function BonusZoneEntryLine({ status, buyingSeat, firstPurchaseApplies }:
   const v = status.view;
   const left = plural(v.draftsLeftInTier, 'draft');
   const earns = v.tier === 1
-    ? 'earns a free draft when it fills'
-    : v.tier === 2 ? 'earns half a free draft when it fills, two fills make one' : 'earns a third of a free draft when it fills, three fills make one';
+    ? `earns a free draft if it fills inside the next ${left}`
+    : v.tier === 2 ? `earns half a free draft if it fills inside the next ${left}` : `earns a third of a free draft if it fills inside the next ${left}`;
   if (buyingSeat) {
     if (firstPurchaseApplies) return null; // First Purchase wins; that purchase is not zone-eligible
     return (
       <p className="text-emerald-300 text-xs mt-0.5" data-testid="bonus-zone-entry-line">
-        Bonus Zone · {tierLabel(v.tier)} · ends in {left}. This seat {earns}.
+        Bonus Zone · {tierLabel(v.tier)}. This seat {earns}.
       </p>
     );
   }
@@ -222,7 +228,7 @@ export function BonusZoneEntryLine({ status, buyingSeat, firstPurchaseApplies }:
   }
   return (
     <p className="text-emerald-300 text-xs mt-0.5" data-testid="bonus-zone-entry-line">
-      Bonus Zone · {tierLabel(v.tier)} · ends in {left}. This seat {earns}.
+      Bonus Zone · {tierLabel(v.tier)}. This seat {earns}. The tier is set by where the draft fills, not where you enter.
       {p && p.eligibleCount < p.paidTotal && (
         <span className="block text-white/45">{p.eligibleCount} of your {p.paidTotal} paid passes qualify. Older passes get used first.</span>
       )}
@@ -239,7 +245,7 @@ export function BonusZoneEntryLine({ status, buyingSeat, firstPurchaseApplies }:
 export function BonusZoneConfirmLine({ status }: { status: BonusZoneStatusLike | null }) {
   if (!status?.enabled || !status.view?.tier) return null;
   return (
-    <p className="text-emerald-300/90 text-xs mt-1">Bonus Zone {tierLabel(status.view.tier)} locks the moment you take your seat. It pays when the draft fills.</p>
+    <p className="text-emerald-300/90 text-xs mt-1">Bonus Zone is {tierLabel(status.view.tier)} right now. Your seat pays by the position the draft fills at.</p>
   );
 }
 
@@ -249,7 +255,7 @@ export function BonusLeaveWarning({ lock }: { lock: BonusLockLike | null | undef
   if (!lock?.eligible) return null;
   return (
     <p className="mb-6 -mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/[0.07] px-3 py-2 text-[13px] leading-snug text-emerald-200" data-testid="bonus-zone-leave-warning">
-      Leaving forfeits this seat&apos;s Bonus Zone {lock.label}{lock.tier === 1 ? ' free draft' : lock.tier === 2 ? ' half credit' : ' third credit'}. Re-enter later and you lock whatever tier is live then.
+      Leaving forfeits this seat&apos;s Bonus Zone credit ({lock.label} right now). Nothing pays on a lobby you leave.
     </p>
   );
 }
@@ -261,10 +267,10 @@ export function bonusLockedToastCopy(lock: BonusLockLike): { title: string; mess
     return { title: 'Seat taken. No Bonus Zone on this pass', message: ineligibleCopy(lock.reason) };
   }
   return lock.tier === 1
-    ? { title: 'Locked: Buy 1 Get 1', message: 'A free draft lands in your passes the moment this draft fills.' }
+    ? { title: 'Seat taken. Bonus Zone: Buy 1 Get 1', message: 'Fills inside the band and a free draft lands in your passes. The tier is set by where it fills.' }
     : lock.tier === 2
-      ? { title: 'Locked: Buy 2 Get 1', message: 'Half a free draft lands when this fills. Two in the same Jackpot window make one.' }
-      : { title: 'Locked: Buy 3 Get 1', message: 'A third of a free draft lands when this fills. Three in the same Jackpot window make one.' };
+      ? { title: 'Seat taken. Bonus Zone: Buy 2 Get 1', message: 'Fills inside the band and half a free draft banks. Two in the same Jackpot window make one.' }
+      : { title: 'Seat taken. Bonus Zone: Buy 3 Get 1', message: 'Fills inside the band and a third of a free draft banks. Three in the same Jackpot window make one.' };
 }
 
 // ─── Promo modal body ────────────────────────────────────────────────────────
@@ -348,13 +354,13 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       {/* Pending locks */}
       {(data?.pending?.length ?? 0) > 0 && (
         <div>
-          <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">LOCKED ON LOBBIES STILL FILLING</p>
+          <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">YOUR SEATS IN LOBBIES STILL FILLING</p>
           <ul className="space-y-1">
             {data!.pending.map((p) => (
               <li key={p.draftId} className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px]">
                 <span className="text-white/80">{draftName(p.draftId)}</span>
                 <span className={p.eligible ? 'font-bold text-emerald-300' : 'text-white/40'}>
-                  {p.eligible ? `${p.label} · ${p.tier === 1 ? 'free draft' : p.tier === 2 ? 'half' : 'third'} pending` : 'not eligible'}
+                  {p.eligible ? `pays by fill position · now ${p.label}` : 'not eligible'}
                 </span>
               </li>
             ))}

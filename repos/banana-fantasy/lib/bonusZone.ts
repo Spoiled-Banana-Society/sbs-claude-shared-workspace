@@ -21,9 +21,13 @@
  *
  * Rules (all Richard's, 8/22):
  *   • PAID entries only. Free passes never earn free passes.
- *   • The tier LOCKS at entry (what the pill showed when you took the seat) and
- *     PAYS when the draft fills. Leave the lobby = nothing pays; re-enter with
- *     the same pass = a fresh lock at wherever the counter is then.
+ *   • The tier is set by the draft's REAL window position when it FILLS (its
+ *     own "BBB #N" relative to the window it lands in — same anchoring as the
+ *     jackpot draw), NOT by what the pill showed at entry. Richard 8/22: "if
+ *     you enter 20 fast drafts and a slow draft fills in between, only 19
+ *     land inside the band" — entry-locking would pay all 20. Entry records
+ *     eligibility + the projected tier for the UI only. Leave the lobby =
+ *     nothing pays.
  *   • NO per-wallet cap.
  *   • Pass-level eligibility: a pass bought AFTER launch is eligible unless that
  *     purchase used the new-user or First Purchase promo; passes bought BEFORE
@@ -47,7 +51,7 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
-import { isRollingActive, replayJpLane, lanePosition } from '@/lib/rollingLanes';
+import { isRollingActive, replayJpLane, lanePosition, computeJpCycle } from '@/lib/rollingLanes';
 
 // ── Tiers ───────────────────────────────────────────────────────────────────
 
@@ -421,20 +425,28 @@ export async function classifyAvailablePasses(wallet: string, cfg: BonusZoneConf
 export const BONUS_ZONE_ENTRIES = 'bonus_zone_entries';
 export const BONUS_ZONE_PROGRESS = 'bonus_zone_progress';
 
-export type BonusEntryStatus = 'pending' | 'ineligible' | 'left' | 'settling' | 'paid' | 'half' | 'grant_failed' | 'closed';
+export type BonusEntryStatus = 'pending' | 'ineligible' | 'left' | 'settling' | 'paid' | 'half' | 'grant_failed' | 'closed' | 'position_unresolved';
 
 export interface BonusZoneEntry {
   draftId: string;
   wallet: string;
   tokenId: string;
+  /** PROJECTED tier at entry (what the pill showed) — UI only. The paid tier
+   *  is decided at fill from the draft's real window position. */
   tier: BonusZoneTier;
   label: string;
   credit: number;
-  /** Sixths of a free draft this fill banks (6 / 3 / 2). */
+  /** Sixths of a free draft the projected tier would bank (6 / 3 / 2). */
   units: number;
   position: number;
   windowStart: number;
   lockedAtIso: string;
+  /** Fill-time truth (set at settlement). */
+  fillDraftNo?: number;
+  fillPosition?: number;
+  fillWindowStart?: number;
+  paidTier?: BonusZoneTier | null;
+  paidLabel?: string;
   status: BonusEntryStatus;
   eligible: boolean;
   reason: string;
@@ -460,15 +472,16 @@ export interface LockResult {
   locked: boolean;
   entry?: BonusZoneEntry;
   view?: BonusZoneView;
-  skipped?: 'disabled' | 'not_rolling' | 'zone_closed' | 'not_bbb_draft' | 'free_pass' | 'token_unresolved';
+  skipped?: 'disabled' | 'not_rolling' | 'not_bbb_draft' | 'free_pass' | 'token_unresolved';
 }
 
 /**
  * Called from /api/owner/use-pass (joined:true) — the seat is already taken by
- * Go. Locks the live tier onto THIS (draft, wallet) with the exact token the
- * engine consumed. Ineligible passes get an entry too (status 'ineligible') so
- * the UI can say exactly why nothing will pay. Re-entry overwrites the doc —
- * a fresh lock at the new position, never a second payout.
+ * Go. Records THIS (draft, wallet) with the exact token the engine consumed,
+ * its eligibility, and the PROJECTED tier (what the pill shows) for the row
+ * glyph / leave warning. The paid tier is decided at fill. Ineligible passes
+ * get an entry too (status 'ineligible') so the UI can say why nothing will
+ * pay. Re-entry overwrites the doc — never a second payout.
  */
 export async function lockBonusZoneEntry(input: { wallet: string; draftId: string; passTypeHint: 'paid' | 'free' }): Promise<LockResult> {
   const cfg = await readBonusZoneConfig();
@@ -477,23 +490,23 @@ export async function lockBonusZoneEntry(input: { wallet: string; draftId: strin
   const wallet = input.wallet.toLowerCase();
   const view = await readBonusZoneView();
   if (!view.enabled || view.windowStart <= 0) return { locked: false, skipped: 'not_rolling', view };
-  if (!view.tier) return { locked: false, skipped: 'zone_closed', view };
-
+  // Zone closed on the pill: still record the seat — a Jackpot hit before this
+  // lobby fills resets the window and the fill could land at position 1.
   const tok = await resolveTokenInDraft(wallet, input.draftId);
   const passType = tok?.passType ?? input.passTypeHint;
   if (passType === 'free') return { locked: false, skipped: 'free_pass', view };
   if (!tok?.tokenId) return { locked: false, skipped: 'token_unresolved', view };
 
   const elig = await classifyPassForBonusZone(wallet, tok.tokenId, 'paid', cfg);
-  const t = tierInfo(view.tier, cfg);
+  const t = tierInfo(view.tier ?? 3, cfg);
   const entry: BonusZoneEntry = {
     draftId: input.draftId,
     wallet,
     tokenId: tok.tokenId,
-    tier: t.tier,
-    label: t.label,
-    credit: t.credit,
-    units: t.units,
+    tier: view.tier ?? t.tier,
+    label: view.tier ? t.label : 'Zone closed',
+    credit: view.tier ? t.credit : 0,
+    units: view.tier ? t.units : 0,
     position: view.position,
     windowStart: view.windowStart,
     lockedAtIso: new Date().toISOString(),
@@ -502,7 +515,7 @@ export async function lockBonusZoneEntry(input: { wallet: string; draftId: strin
     reason: elig.reason,
   };
   await getAdminFirestore().collection(BONUS_ZONE_ENTRIES).doc(entryDocId(input.draftId, wallet)).set(entry);
-  logger.info('bonus_zone.locked', { context: { draftId: input.draftId, wallet, tokenId: tok.tokenId, tier: t.tier, position: view.position, eligible: elig.eligible, reason: elig.reason } });
+  logger.info('bonus_zone.recorded', { context: { draftId: input.draftId, wallet, tokenId: tok.tokenId, projectedTier: view.tier, position: view.position, eligible: elig.eligible, reason: elig.reason } });
   return { locked: true, entry, view };
 }
 
@@ -551,23 +564,52 @@ export async function grantBonusZonePasses(wallet: string, count: number, reason
   return { tokenIds, txHash: res.txHash };
 }
 
+// ── Fill position (the truth the payout keys off) ───────────────────────────
+
+/**
+ * The draft's own window position, anchored to its "BBB #N" display name —
+ * never the live filled count (that's how BBB #349 over-paid the jackpot
+ * draw). Go writes DisplayName a beat after the fill, so this retries.
+ */
+export async function fillPositionForDraft(draftId: string, cfg: BonusZoneConfig): Promise<{ draftNo: number; position: number; windowStart: number; tier: BonusZoneTierInfo | null } | null> {
+  const db = getAdminFirestore();
+  let draftNo: number | null = null;
+  for (let i = 0; i < 6 && draftNo === null; i++) {
+    const info = await db.collection('drafts').doc(draftId).collection('state').doc('info').get().catch(() => null);
+    const m = /BBB\s*#\s*(\d+)/.exec(String(info?.data()?.DisplayName ?? ''));
+    if (m) draftNo = Number(m[1]);
+    else await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (draftNo === null) return null;
+  const t = (await db.collection('drafts').doc('draftTracker').get()).data() as TrackerDoc | undefined;
+  const filled = Number(t?.FilledLeaguesCount ?? 0) || 0;
+  const rollingStart = Number(t?.RollingStartDraft ?? 0) || 0;
+  if (!isRollingActive(rollingStart, filled) || draftNo < rollingStart) return null;
+  const jpIds = Array.isArray(t?.JackpotLeagueIds) ? t!.JackpotLeagueIds!.map(Number) : [];
+  // computeJpCycle excludes hits at/after draftNo, so the draft lands in the
+  // window it actually filled into (even when it IS the jackpot that closes it).
+  const cyc = computeJpCycle(jpIds, rollingStart, Math.max(filled, draftNo), draftNo);
+  return { draftNo, position: cyc.position, windowStart: cyc.windowStart, tier: bonusZoneTierForPosition(cyc.position, cfg) };
+}
+
 // ── Fill settlement ─────────────────────────────────────────────────────────
 
 export interface SettleOutcome {
   wallet: string;
-  outcome: 'no_entry' | 'not_pending' | 'token_mismatch' | 'paid' | 'half' | 'grant_failed' | 'error';
+  outcome: 'no_entry' | 'not_pending' | 'token_mismatch' | 'paid' | 'half' | 'grant_failed' | 'outside_zone' | 'position_unresolved' | 'error';
   tokenIds?: string[];
   units?: number;
   error?: string;
 }
 
 /**
- * Called from the draft-filled webhook (the one RELIABLE fill observer). For
- * every wallet with a pending lock on this draft: verify the engine still has
- * that wallet in the draft with the locked token, then pay — tier 1 mints a
- * free pass now; tier 2 banks a half in this window's progress doc and mints
- * when the second half lands. Idempotent: pending → settling is a transaction,
- * so a backstop re-fire can never pay twice.
+ * Called from the draft-filled webhook (the one RELIABLE fill observer). The
+ * tier is decided HERE from the draft's real window position. For every wallet
+ * with a pending record on this draft: verify the engine still has that wallet
+ * in the draft with the recorded token, then pay — tier 1 mints a free pass
+ * now; tiers 2/3 bank sixths in the FILL window's progress doc and mint at 6.
+ * Idempotent: pending → settling is a transaction, so a backstop re-fire can
+ * never pay twice.
  */
 export async function settleBonusZoneFill(draftId: string, wallets: string[]): Promise<SettleOutcome[]> {
   const cfg = await readBonusZoneConfig();
@@ -575,17 +617,33 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
   const db = getAdminFirestore();
   const out: SettleOutcome[] = [];
 
+  // Any pending records at all? (cheap exit for lobbies nobody recorded on)
+  const pendingSnap = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', '==', 'pending').limit(1).get();
+  if (pendingSnap.empty) return [];
+
+  const fill = await fillPositionForDraft(draftId, cfg);
+  if (!fill) {
+    // DisplayName not there yet — park the records; the minute cron re-runs
+    // settlement for position_unresolved entries.
+    const batch = db.batch();
+    for (const w of wallets) batch.set(db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, w.toLowerCase())), { status: 'position_unresolved', retryable: true }, { merge: true });
+    await batch.commit().catch(() => {});
+    logger.warn('bonus_zone.position_unresolved', { context: { draftId } });
+    return wallets.map((w) => ({ wallet: w.toLowerCase(), outcome: 'position_unresolved' as const }));
+  }
+  const paidTier = fill.tier;
+
   for (const raw of wallets) {
     const wallet = raw.toLowerCase();
     const ref = db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet));
     try {
-      // Claim.
+      // Claim (pending OR parked position_unresolved).
       const claimed = await db.runTransaction(async (tx) => {
         const s = await tx.get(ref);
         if (!s.exists) return null;
         const e = s.data() as BonusZoneEntry;
-        if (e.status !== 'pending') return { e, claimed: false };
-        tx.update(ref, { status: 'settling', settlingAtIso: new Date().toISOString() });
+        if (e.status !== 'pending' && e.status !== 'position_unresolved') return { e, claimed: false };
+        tx.update(ref, { status: 'settling', settlingAtIso: new Date().toISOString(), fillDraftNo: fill.draftNo, fillPosition: fill.position, fillWindowStart: fill.windowStart, paidTier: paidTier?.tier ?? null, paidLabel: paidTier?.label ?? 'Zone closed' });
         return { e, claimed: true };
       });
       if (!claimed) { out.push({ wallet, outcome: 'no_entry' }); continue; }
@@ -602,11 +660,18 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
         continue;
       }
 
-      if (e.tier === 1) {
+      // Filled past the zone (entered at 58, filled at 63): nothing pays.
+      if (!paidTier) {
+        await ref.set({ status: 'closed', closedReason: 'filled_outside_zone', settledAtIso: new Date().toISOString() }, { merge: true });
+        out.push({ wallet, outcome: 'outside_zone' });
+        continue;
+      }
+
+      if (paidTier.tier === 1) {
         try {
           const g = await grantBonusZonePasses(wallet, 1, `t1:${draftId}`);
           await ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
-          await notifyBonusPaid(wallet, draftId, g.tokenIds.length, e.label);
+          await notifyBonusPaid(wallet, draftId, g.tokenIds.length, paidTier.label);
           out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds });
         } catch (err) {
           await ref.set({ status: 'grant_failed', error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
@@ -616,32 +681,32 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
         continue;
       }
 
-      // Tiers 2/3: bank sixths (½ = 3, ⅓ = 2) in THIS window's progress doc;
-      // mint when it reaches 6. Halves and thirds mix freely. Leftovers die
-      // with the window (Richard 8/22: same window only).
-      const progRef = db.collection(BONUS_ZONE_PROGRESS).doc(`${wallet}__${e.windowStart}`);
-      const add = e.units ?? (e.tier === 2 ? 3 : 2);
+      // Tiers 2/3: bank sixths (½ = 3, ⅓ = 2) in the FILL window's progress
+      // doc; mint when it reaches 6. Halves and thirds mix freely. Leftovers
+      // die with the window (Richard 8/22: same window only).
+      const progRef = db.collection(BONUS_ZONE_PROGRESS).doc(`${wallet}__${fill.windowStart}`);
+      const add = paidTier.units;
       const after = await db.runTransaction(async (tx) => {
         const s = await tx.get(progRef);
         const cur = s.exists ? Number((s.data() as { units?: number }).units ?? 0) : 0;
         const next = cur + add;
         if (next >= BZ_UNITS_PER_PASS) {
-          tx.set(progRef, { wallet, windowStart: e.windowStart, units: next - BZ_UNITS_PER_PASS, minted: FieldValue.increment(1), updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+          tx.set(progRef, { wallet, windowStart: fill.windowStart, units: next - BZ_UNITS_PER_PASS, minted: FieldValue.increment(1), updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
           return next;
         }
-        tx.set(progRef, { wallet, windowStart: e.windowStart, units: next, updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+        tx.set(progRef, { wallet, windowStart: fill.windowStart, units: next, updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
         return next;
       });
       if (after < BZ_UNITS_PER_PASS) {
         await ref.set({ status: 'half', unitsAfter: after, settledAtIso: new Date().toISOString() }, { merge: true });
-        await notifyBonusPartial(wallet, draftId, e.windowStart, e.label, after);
+        await notifyBonusPartial(wallet, draftId, fill.windowStart, paidTier.label, after);
         out.push({ wallet, outcome: 'half', units: after });
         continue;
       }
       try {
-        const g = await grantBonusZonePasses(wallet, 1, `t${e.tier}:${draftId}`);
+        const g = await grantBonusZonePasses(wallet, 1, `t${paidTier.tier}:${draftId}`);
         await ref.set({ status: 'paid', unitsAfter: after, grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
-        await notifyBonusPaid(wallet, draftId, g.tokenIds.length, e.label);
+        await notifyBonusPaid(wallet, draftId, g.tokenIds.length, paidTier.label);
         out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds, units: after });
       } catch (err) {
         await ref.set({ status: 'grant_failed', unitsAfter: after, error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
@@ -659,12 +724,18 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
   return out;
 }
 
-/** Retry grants that failed at fill (mint hiccups). Runs from the minute cron. */
+/** Retry grants that failed at fill (mint hiccups) and re-settle records whose
+ *  draft number wasn't readable at fill time. Runs from the minute cron. */
 export async function retryFailedBonusZoneGrants(max = 5): Promise<number> {
   if (!isFirestoreConfigured()) return 0;
   const cfg = await readBonusZoneConfig();
   if (!cfg.enabled) return 0;
   const db = getAdminFirestore();
+  // Parked fills: DisplayName should exist by now — settle them properly.
+  const parked = await db.collection(BONUS_ZONE_ENTRIES).where('status', '==', 'position_unresolved').limit(max).get();
+  const byDraft = new Map<string, string[]>();
+  for (const d of parked.docs) { const e = d.data() as BonusZoneEntry; byDraft.set(e.draftId, [...(byDraft.get(e.draftId) ?? []), e.wallet]); }
+  for (const [draftId, ws] of byDraft) await settleBonusZoneFill(draftId, ws).catch(() => []);
   const snap = await db.collection(BONUS_ZONE_ENTRIES).where('status', '==', 'grant_failed').limit(max).get();
   let done = 0;
   for (const doc of snap.docs) {
@@ -680,7 +751,7 @@ export async function retryFailedBonusZoneGrants(max = 5): Promise<number> {
     try {
       const g = await grantBonusZonePasses(e.wallet, e.owed ?? 1, `retry:${e.draftId}`);
       await doc.ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString(), error: FieldValue.delete() }, { merge: true });
-      await notifyBonusPaid(e.wallet, e.draftId, g.tokenIds.length, e.label);
+      await notifyBonusPaid(e.wallet, e.draftId, g.tokenIds.length, e.paidLabel ?? e.label);
       done++;
     } catch (err) {
       await doc.ref.set({ status: 'grant_failed', error: (err as Error).message }, { merge: true });
@@ -762,12 +833,14 @@ export async function getBonusZoneWalletStatus(wallet: string, opts: { includePa
   ]);
   const entries = entriesSnap.docs.map((d) => d.data() as BonusZoneEntry);
   const pending = entries
-    .filter((e) => e.status === 'pending' || e.status === 'ineligible')
+    .filter((e) => e.status === 'pending' || e.status === 'ineligible' || e.status === 'position_unresolved')
     .map((e) => ({ draftId: e.draftId, tier: e.tier, label: e.label, credit: e.credit, position: e.position, eligible: e.eligible, reason: e.reason, status: e.status }));
   const settled = entries
     .filter((e) => e.status === 'paid' || e.status === 'half' || e.status === 'grant_failed')
     .sort((a, b) => String(b.settledAtIso ?? '').localeCompare(String(a.settledAtIso ?? '')));
   const earned = settled.reduce((s, e) => s + (e.status === 'paid' ? (e.grantedTokenIds?.length ?? 1) : 0), 0);
+  // History shows the tier that actually PAID (fill position), not the projection.
+  for (const e of settled) if (e.paidLabel) e.label = e.paidLabel;
   const reasons: Record<string, number> = {};
   for (const p of passes?.ineligible ?? []) reasons[p.reason] = (reasons[p.reason] ?? 0) + 1;
   return {
