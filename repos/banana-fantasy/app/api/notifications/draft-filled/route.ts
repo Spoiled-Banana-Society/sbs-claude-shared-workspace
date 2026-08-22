@@ -218,6 +218,18 @@ export async function POST(req: NextRequest) {
           .catch((err) => logger.warn('notifications.draft_filled.ripeness_failed', { draftId, wallet, err: String(err) }));
       }));
 
+      // BONUS ZONE (ships dark): the free draft pays HERE, at fill, against the
+      // tier locked at entry — never at entry (leave refunds the pass). Each
+      // (draft, wallet) lock is claimed pending→settling in a transaction, so
+      // the close backstop re-firing this webhook can never pay twice. Free
+      // entries and ineligible passes were already marked at lock time.
+      try {
+        const { settleBonusZoneFill } = await import('@/lib/bonusZone');
+        await settleBonusZoneFill(draftId, wallets);
+      } catch (err) {
+        logger.warn('bonus_zone.fill_settle_failed', { draftId, err: String(err) });
+      }
+
       // Wheel-won Jackpot/HOF queue drafts: the club badge unlocks when THIS
       // draft fills (Boris 2026-06-10 — not at the wheel-spin moment). The
       // type was never secret for queue drafts, so no reveal-timing concern.

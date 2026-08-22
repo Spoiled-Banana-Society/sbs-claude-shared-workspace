@@ -11,6 +11,19 @@ import type {
 import type { DbSchema } from './dbTypes';
 import { API_CONFIG } from './config';
 import { seedUserBadges } from '@/lib/badges/catalog';
+import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
+import { newPlayerFirstBuy, firstPurchaseCardRows } from '@/lib/firstPurchaseCopy';
+
+// New-player first-purchase numbers, counted as TOTAL drafts in hand (bought
+// passes + wheel payouts) — see lib/firstPurchaseCopy.
+//
+// Gated on the SERVER flag alone, deliberately: `grantPurchaseSpins` keys off
+// exactly this flag, so it is the only thing that decides whether a Bonus Spin
+// is actually handed out. The NEXT_PUBLIC half only toggles client chrome —
+// AND-ing it in here would make the copy UNDERSTATE the offer on a server that
+// really is granting the spins.
+const FP_BONUS_LIVE = isSpinOnPurchaseEnabled();
+const FP_ONE = newPlayerFirstBuy(1, FP_BONUS_LIVE);
 
 const seedBadges: UserBadge[] = seedUserBadges();
 
@@ -229,7 +242,10 @@ const seedPromos: Promo[] = [
   {
     id: '2',
     type: 'pick-10',
-    title: 'Pick 6 & 10 → FREE SPINS',
+    // Slot 10 ONLY — the 6/9/10 ladder is retired (Boris 2026-07-26). This is
+    // the seed copy every freshly-created user doc inherits, so it must not
+    // mention slots the credit path won't pay.
+    title: 'Pick 10 → FREE SPIN',
     description: 'Every Spin wins up to 20 Free Drafts',
     ctaText: 'Draft Now',
     ctaLink: '/drafting',
@@ -243,9 +259,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Pick 6 & 10 → Free Spins',
+      title: 'Pick 10 → Free Spin',
       explanation:
-        '• Hit Pick 10 in any draft → Free Banana Spin.\n• When the Jackpot is hit, Pick 6 unlocks — Pick 6 and Pick 10 each win a Free Spin until the batch ends.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
+        '• Hit Pick 10 in any draft → Free Banana Spin.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
       // Per-user state — starts empty. Real Pick 10s are appended by
       // recordPick10 on actual paid drafts. (Previously this carried 3 fake
       // demo rows incl. 2 'claim' entries, which were cloned into every real
@@ -258,7 +274,7 @@ const seedPromos: Promo[] = [
     id: '3',
     type: 'referral',
     title: 'Refer Friend → FREE SPIN',
-    description: 'Invite friends both get a spin',
+    description: 'Friend buys passes → you get Free Spins at their 1st, 4th & 10th pass.',
     ctaText: 'Invite Now',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
@@ -301,8 +317,11 @@ const seedPromos: Promo[] = [
   {
     id: '6',
     type: 'new-user',
-    title: 'New User → FREE SPIN',
-    description: 'Connect your X to claim your free spin',
+    // Outcome-first framing (Richard 2026-07-28): lead with what they GET —
+    // the free spin guarantees at least 1 Free Draft (minimum wheel wedge = 1),
+    // so the first draft really is free. The X-connect step is the how.
+    title: 'Your First Draft Is Free → NEW USER',
+    description: 'Connect your X, spin the Banana Wheel — at least 1 Free Draft, guaranteed.',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
@@ -312,9 +331,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'New User → FREE SPIN',
+      title: 'Your First Draft Is Free',
       explanation:
-        '• Verify your account by connecting your X to claim your Free Banana Spin.\n• Then spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
+        '• Your first draft is FREE: verify your account by connecting your X to claim your Free Banana Spin.\n• Spin the Banana Wheel to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft. At least 1 Free Draft guaranteed.\n• One account per person — more than one account makes you ineligible to win prizes.\n• You must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
       additionalRules: '',
       twitterConnected: false,
     },
@@ -322,8 +341,13 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    title: 'First Purchase → WIN UP TO 40 FREE DRAFTS',
-    description: 'Every Pass = 2 Free Spins · Buy 1 → 2 Free Drafts GTD, up to 40 Free Drafts ($1,000 in Drafts)',
+    // Headline = the guaranteed outcome (Richard 2026-07-28). Body counts TOTAL
+    // drafts in hand, bought pass included (Richard 2026-07-30) — that is what
+    // makes the ceiling a round 60 and the guarantee (3) match the spin count
+    // (3) instead of sitting one below it and reading as a mistake. Every
+    // number comes from FP_ONE, so none of it can drift from the grant math.
+    title: 'First Purchase → BUY 1, GET 2 DRAFTS FREE',
+    description: firstPurchaseCardRows(FP_ONE).join(' · '),
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -336,9 +360,15 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Every Pass = 2 Free Spins — win up to 40 Free Drafts ($1,000 in Drafts)',
+      // No "New players" label here — getDefaultPromos prefixes it for
+      // LOGGED-OUT viewers (who might turn out to be returning players);
+      // a logged-in new player doesn't need to be told what they are.
+      title: 'Buy 1, Get 2 Drafts Free',
       explanation:
-        '• Every Draft Pass you buy = 2 Free Spins — no cap.\n• Buy 1 → 2 Free Spins: 2 Free Drafts guaranteed — win up to 40 Free Drafts ($1,000 in Drafts).\n• Buy 2 → 4 Free Spins: 4 Free Drafts guaranteed — up to 80 Free Drafts ($2,000 in Drafts).\n• Buy 4 → 8 Free Spins: 8 Free Drafts guaranteed — up to 160 Free Drafts ($4,000 in Drafts).\n• One-time offer: your first purchase only.\n• Your Spins land right here after you buy — claim and spin to collect your Drafts.',
+        `• Every Draft Pass you buy = ${FP_ONE.spins} Spins.`
+        + `\n• Every Promo Spin wins at least 1 Free Draft → ${FP_ONE.guaranteed - 1} Free Drafts guaranteed per pass, and the wheel can pay more.`
+        + `\n• Stacks on every pass in your first order, up to 20 passes (${(FP_ONE.guaranteed - 1) * 20} Free Drafts guaranteed).`
+        + '\n• One-time: your first order only.',
     },
   },
   {
@@ -357,6 +387,34 @@ const seedPromos: Promo[] = [
       title: '4 Drafts in 24 Hours → FREE SPIN',
       explanation:
         '• Get into 4 paid drafts within 24 hours to earn a Free Banana Spin.\n• A draft counts as soon as it fills — not when it finishes.\n• Your 24-hour clock starts the moment your first paid draft fills.\n• Hit 4 in time and the clock resets instantly for a fresh run — no limit, every 4 paid drafts earns another Spin.\n• If 24 hours pass before you reach 4, your progress toward the spin resets to 0 and the clock restarts when your next paid draft fills.\n• Paid drafts only.',
+    },
+  },
+  {
+    // Match Your Pick — PERMANENT (Boris 2026-07-25; no longer limited-time).
+    // Draft, see your pick slot, then chase it again for escalating spins.
+    // Base copy is PAID-ONLY; during the promo window getPromos rewrites it to
+    // "free drafts count too" (same de-paid injection daily-drafts/jackpot get),
+    // so it flips back on its own at the deadline with no deploy.
+    id: 'pick-chase',
+    type: 'pick-chase',
+    title: 'Match Your Pick → up to 5 Spins',
+    description: 'Land your pick slot again using a paid draft to win Free Spins — the longer it takes, the bigger the payout.',
+    ctaText: 'Start Drafting',
+    ctaLink: '/drafting',
+    backgroundColor: '#2a2a35',
+    progressCurrent: 0,
+    // No x/5 meter — attempts are unbounded (Boris 2026-07-23). progressMax 0
+    // also keeps the card in its fixed order slot (after first-purchase) instead
+    // of progress-bubbling above it when a chase is active.
+    progressMax: 0,
+    // NEW tag retired 2026-07-25 — the promo is permanent now, not a launch.
+    isNew: false,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Match Your Pick → up to 5 Free Spins',
+      explanation:
+        '• Your first draft locks your pick — the slot (1–10) you land when it fills. That starts your 24 hours.\n• Every draft after is an ATTEMPT to match it. Land that same slot again to win — the more attempts it takes, the bigger the reward:\n   · 1st attempt = 1 Spin\n   · 2nd attempt = 2 Spins\n   · 3rd attempt = 3 Spins\n   · 4th attempt = 4 Spins\n   · 5th attempt & beyond = 5 Spins (MAX)\n• Match it and it resets — your next draft locks a new pick.\n• If 24 hours pass without matching it, it resets — your next draft starts a fresh 24-hour clock with a new pick.\n• Paid Drafts Only.',
     },
   },
   {
@@ -380,8 +438,8 @@ const seedPromos: Promo[] = [
   {
     id: '7',
     type: 'buy-bonus',
-    title: 'Buy 2 → FREE SPIN',
-    description: 'Football is BACK! Ends Sunday night',
+    title: 'Every 2 Buys → 1 Promo Spin + 2 Bonus Spins',
+    description: 'Ends tonight at midnight PT.',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -395,9 +453,9 @@ const seedPromos: Promo[] = [
     progressCurrent: 0,
     progressMax: 2,
     modalContent: {
-      title: '🏈 Football is BACK: Buy 2 → FREE SPIN',
+      title: '🏈 Football is BACK: Every 2 Buys → 1 Promo Spin + 2 Bonus Spins',
       explanation:
-        '• Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• Buy 4 drafts, earn 2 spins — max 20 buys.\n• PLUS every draft you buy still earns its regular Bonus Spin — Kickoff spins come on top.\n• Ends Sunday at midnight PT!',
+        '• Kickoff Weekend special: every 2 drafts purchased earns a free Banana Wheel spin!\n• Every spin wins up to 20 Free Drafts — at least 1 guaranteed.\n• Buy 4 drafts, earn 2 spins — max 20 buys.\n• PLUS every draft you buy still earns its regular Bonus Spin — Kickoff spins come on top.\n• Ends tonight at midnight PT!',
     },
   },
   {
@@ -420,10 +478,272 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // 🌙 THE DROP — packs earned from FILLED drafts, sealed until 8pm PT.
+    // Built 2026-08-02, NOT LAUNCHED: gated behind ADMIN_PREVIEW_PROMO_TYPES
+    // until Richard says otherwise.
+    id: 'drop',
+    type: 'drop',
+    title: 'THE DROP → JACKHOF SEAT',
+    description: 'Fill drafts, earn packs. Open them at 9PM.',
+    ctaText: 'Open your packs',
+    ctaLink: '/drop',
+    backgroundColor: '#2a2a35',
+    isNew: false,
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: '🌙 THE DROP',
+      explanation:
+        // Prizes FIRST — the old order buried them under the mechanic, and on
+        // a phone you had to scroll past everything to find out what you were
+        // even playing for (Richard 2026-08-02).
+        'TONIGHT\'S PRIZES — ALL GUARANTEED\n'
+        + '• 1 JACKHOF SEAT\n'
+        + '• 1 HOF SEAT\n'
+        + '• 1 pack with 5 SPINS\n'
+        + '• 2 packs with 2 SPINS each\n'
+        + '• 6 packs with 1 SPIN each\n'
+        + '\n'
+        + '11 packs win something. Every other pack is empty.\n'
+        + '\n'
+        + 'HOW IT WORKS\n'
+        + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
+        + '• Packs stay sealed all day. At 9:00 PM PT they unlock.\n'
+        + '• Open one at a time, or open the whole stack at once.\n'
+        + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
+        + '• Anything still sealed at midnight opens itself — you never lose what you earned.\n'
+        + '\n'
+        + 'YOUR ODDS\n'
+        + '• The seat lands in exactly one pack out of every pack earned that day.\n'
+        + '• So the more packs you hold, the bigger your share of it. Two people with one pack each are 50/50 for the seat; hold ten of the night\'s hundred and it is one in ten.\n'
+        + '\n'
+        + 'PROVABLY FAIR\n'
+        + '• Every prize is assigned at 9:00 PM from randomness committed BEFORE the night began.\n'
+        + '• Opening only reveals what was already decided — nobody, us included, can steer it.',
+      additionalRules: '',
+    },
+  },
+  {
+    // 🔥 THE ELIMINATOR — the hourly burn-down that succeeds the Banana Draw.
+    // Held behind ADMIN_PREVIEW_PROMO_TYPES until Richard's green light; the
+    // /promos leaderboard (EliminatorBanner) is the real surface, this card is
+    // what opens the modal explaining the mechanic.
+    id: 'eliminator',
+    type: 'eliminator',
+    title: 'THE ELIMINATOR → JACKHOF SEAT',
+    description: 'Every hour the list burns down to 5. Last 5 standing at 9pm win.',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    // No x/N meter — Bananas are unbounded and reset each day, so a progress
+    // bar would read as a cap that doesn't exist (same reasoning as the
+    // Banana Draw card and pick-chase).
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: '🔥 THE ELIMINATOR',
+      explanation:
+        '• Every hour on the hour, the list BURNS down to 5 survivors. Everyone else is wiped.\n'
+        + '• Enter any draft to get on the list — and to get back on after a burn.\n'
+        + '• You keep every Banana you earn. Getting burned only costs you your spot, never your stack.\n'
+        + '• The more Bananas you have, the harder you are to burn. But nobody is ever safe.\n'
+        + '• At 9pm PT the burning stops. The last 5 standing win.\n'
+        + '\n'
+        + 'HOW YOU EARN BANANAS\n'
+        + '• Enter a paid draft — +2\n'
+        + '• Enter a free draft — +1\n'
+        + '• Survive an hour on the list — +10, every single hour, no cap\n'
+        + '\n'
+        // Bananas come from DRAFTING, never from buying (Richard 2026-07-31).
+        // Stated explicitly because it's the first thing people assume wrong,
+        // and a purchase reward would let someone buy 30 passes at 8:45pm and
+        // instantly match a player who had survived six hours.
+        + 'Bananas come from DRAFTING, not from buying. Six hours on the list is 60 Bananas. All day is 120. Nobody who shows up at 8:55 is catching that.\n'
+        + '\n'
+        + 'THE PRIZE\n'
+        // Weighted, NOT a flat 1-in-5 (Richard 2026-07-31). Surviving all day
+        // pays twice over: it gets you into the final five, then it decides how
+        // big your slice of that five is. Verified over 100k simulated finals —
+        // 120/80/50/20/10 Bananas measured 42.86 / 28.56 / 17.80 / 7.26 / 3.52%.
+        + '• 1 of the final 5 wins a JACKHOF SEAT — and your odds are your BANANAS.\n'
+        + '• Finish on 120 Bananas and you have twice the shot of someone finishing on 60. Every Banana you bank all day is another ticket in the hat.\n'
+        + '• Everyone in the final 5 has a real chance — a smaller stack is a smaller slice, never a zero one.\n'
+        + '• The other 4 get 2 spins each.\n'
+        + '• Five nights, five seats.\n'
+        + '\n'
+        + 'THE SCHEDULE\n'
+        + '• Burns run every hour, 9am–9pm PT.\n'
+        + '• Overnight the list freezes — but Bananas still count. Anything you draft after 9pm banks into the 9am burn.\n'
+        + '• Bananas reset every morning. Five clean nights.',
+      additionalRules: '',
+    },
+  },
+  {
+    // Around The Banana — draft from ALL 10 pick slots; the first 10 players
+    // to cover every slot each win a Jackpot seat (Richard 2026-08-11 — was
+    // JackHOF for a moment during the build, Richard switched it same day).
+    // Built 2026-08-11, NOT LAUNCHED: gated behind ADMIN_PREVIEW_PROMO_TYPES
+    // + ATB_START_MS (lib/aroundTheBanana.ts) until Richard's green light.
+    // Seeded now so every user's promo doc exists dormant before launch.
+    id: 'around-the-banana',
+    type: 'around-the-banana',
+    title: 'Around The Banana → JACKPOT SEAT',
+    // Card copy (Boris 2026-08-17): 2-line clamp on every surface — sentence two
+    // must measure ≤ "Cover all 10 pick slots and win a" in Inter or it clips.
+    // Existing per-user docs are re-stamped live in app/api/promos/route.ts.
+    description: 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid and free drafts count.',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: false, // NEW ribbon retired 2026-08-18 (round 3) — see promoFilter force-clear
+    progressCurrent: 0,
+    // x/10 meter = distinct pick slots covered — a real, bounded target
+    // (unlike Bananas), so the bar earns its place here.
+    progressMax: 10,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Around The Banana → Jackpot Seat',
+      explanation:
+        // Eligibility is the FIRST thing on the card (Richard 2026-08-11:
+        // "make it high up there") — paid AND free both count, any order.
+        '• PAID and FREE drafts BOTH count.\n'
+        + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
+        + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
+        + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'
+        + '• 10 seats total. When they\'re gone, they\'re gone — the card shows how many are left.\n'
+        + '• Any number of drafts counts. Repeat slots don\'t hurt you, only new slots move you forward.\n'
+        + '• Drafts count when they FILL and reveal, not when you enter.\n'
+        + '\n'
+        // Prize explained in ONE line (Richard 2026-08-11: no "what is a
+        // jackpot draft" lecture — just the perk).
+        + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+        // Sell window (Richard 2026-08-11): passes sell BEFORE the draft and
+        // teams sell AFTER it — the only no-sell window is mid-draft. Never
+        // write "sellable until the draft fills" as if that's the end of it.
+        + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+        + '\n'
+        + '• One seat per player.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.',
+    },
+  },
+  {
+    // 🔒 The Banana Vault — ATB's successor (Boris 2026-08-15). Every player
+    // gets a SECRET 4-slot combo; every filled draft can click one tumbler.
+    // First 3 to click all 4 win a Jackpot seat; first 5 to click 2 with paid
+    // drafts win 2 Free Spins. 48h vaults; campaign fills ONE vault-only
+    // Jackpot lobby (10 winners across three vaults).
+    id: 'banana-vault',
+    type: 'banana-vault',
+    title: 'The Banana Vault → JACKPOT SEAT',
+    description: 'You have a secret 4-slot combo. Every draft can click a tumbler — collect all 4 in any order.',
+    ctaText: 'Draft to crack it',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    progressCurrent: 0,
+    progressMax: 4,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'The Banana Vault → Jackpot Seat',
+      explanation:
+        '• The Vault dealt you a SECRET combo of 4 pick slots — sealed and random, nobody knows it. Not even us.\n'
+        + '• Every draft counts, PAID or FREE. Your pick slot is the position (1 to 10) you land when a draft fills — random every time.\n'
+        + '• If your slot is one of your 4 numbers, a tumbler CLICKS open — in ANY order, no sequence.\n'
+        + '• Tap your vault after every draft to check. Unclicked tumblers stay secret to the end.\n'
+        + '• FIRST 3 players to click all 4 win a JACKPOT SEAT.\n'
+        + '• First 5 to unlock and click 2 tumblers with PAID drafts win 2 Free Spins each.\n'
+        + '• 48 hours, then the vault re-locks with fresh combos for everyone. Three vaults total — the 10 winners fill one exclusive Vault Jackpot draft, only them.\n'
+        + '\n'
+        + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+        + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. It is a slow draft.\n'
+        + '\n'
+        + '• One seat per player per vault.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.',
+    },
+  },
+  {
+    // Banana Draw — the 24h JackHOF-seat raffle. Sits near the FRONT (Boris)
+    // and carries the NEW tag. `timerEndTime` is stamped per-read with the
+    // cycle close, so the promo card's existing bare countdown renders it with
+    // no custom label — same treatment as Match Your Pick.
+    id: 'banana-draw',
+    type: 'banana-draw',
+    title: 'Collect Bananas → JACKHOF SEAT',
+    description: 'Every 24 hours, someone wins a JackHOF seat',
+    ctaText: 'View Drafts',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    isNew: true,
+    // No x/N meter — Bananas are unbounded and reset each cycle, so a progress
+    // bar would read as a cap that doesn't exist (same reasoning as pick-chase).
+    progressCurrent: 0,
+    progressMax: 0,
+    modalContent: {
+      title: 'Collect Bananas → JackHOF Seat',
+      explanation:
+        '• Every 24 hours, one player wins a seat in the FIRST EVER JackHOF draft.\n'
+        // WHAT THE PRIZE ACTUALLY IS. This used to be one thin line near the
+        // bottom, under the rules — so the promo explained how to enter at
+        // length and barely explained what you were entering FOR (Boris
+        // 2026-07-27). Wording matches the canonical answers in
+        // lib/faqContent.ts so the two can never drift.
+        + '\n'
+        + 'WHAT IS A JACKHOF DRAFT?\n'
+        + '• The rarest draft in SBS — the Jackpot and a HOF landing on the SAME draft (~1 in 800).\n'
+        + '• It carries BOTH perks. Two perks, one draft:\n'
+        + '   – Jackpot perk: win your league and skip straight to the Week 17 finals, past both playoff rounds.\n'
+        + '   – HOF perk: your team also enters the separate HOF playoff track, competing for bonus prizes on top.\n'
+        + '• Your team card gets the exclusive red-and-gold JackHOF border.\n'
+        + '\n'
+        + 'HOW TO EARN BANANAS — 4 WAYS\n'
+        + '• More Bananas, better odds — but all it takes is one Banana.\n'
+        + '• Every draft you fill earns 1 Banana. Paid drafts earn 2.\n'
+        + '• A NEW friend you invite drafts → 5 Bananas. That friend makes a purchase → 5 more. Invites from before this promo started don’t count.\n'
+        + '• Drafts count once they FILL, not when you enter.\n'
+        + '• Bananas reset every 24 hours — use your drafts.\n'
+        + '• Provably fair: the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
+        + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in, however many days that takes.\n'
+        + '• Your seat arrives as a JackHOF draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+        + '• One account per person — more than one account makes you ineligible to win prizes.\n'
+        + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.',
+    },
+  },
+  {
+    // 🟢 BONUS ZONE (Richard 2026-08-22) — replaces Jackpot Hit below. Ships
+    // dark: /api/promos strips it unless system_config/bonusZone.enabled (or
+    // the viewer is an admin). Copy rule: no dashes in posted copy.
+    id: 'bonus-zone',
+    type: 'bonus-zone',
+    title: 'Bonus Zone → FREE DRAFTS',
+    description: 'Jackpot just hit? That is the best time to draft. Early in every Jackpot window, paid drafts earn free drafts.',
+    ctaText: 'Draft now',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    progressCurrent: 0,
+    progressMax: 1,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Bonus Zone → FREE DRAFTS',
+      explanation:
+        '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 69 drafts of every window.\n'
+        + '• Drafts 1 to 33: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
+        + '• Drafts 34 to 69: Buy 2 Get 1. Every paid draft earns half a free draft. Two fills in the same window equal one free draft. A leftover half is lost when the Jackpot hits.\n'
+        + '• Draft 70 and up: no bonus. The Jackpot odds sell themselves from here.\n'
+        + '• Your tier locks the moment you take a seat and pays when the draft fills. Leave the lobby and nothing pays. Re-enter and you lock a fresh tier at wherever the counter is then.\n'
+        + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
+        + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
+        + '• Free drafts land in your passes automatically. No claim button, no limit.',
+    },
+  },
+  {
     id: '4',
     type: 'jackpot',
     title: 'Jackpot Hit → FREE SPIN',
-    description: 'Win a Jackpot draft for a bonus',
+    description: 'Jackpot hits early? One of its 10 drafters wins 10 or 5 Free Spins.',
     ctaText: 'View Drafts',
     ctaLink: '/my-teams',
     backgroundColor: '#2a2a35',
@@ -432,7 +752,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
       explanation:
-        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• Cycle resets after every 100 drafts\n• Winner drawn from VRF randomness sealed on-chain before the draft exists — every draw posts an instant on-chain receipt\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
+        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within the first 25 drafts of the cycle → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within the first 50 drafts of the cycle → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• The cycle RESETS the moment the Jackpot hits — a fresh cycle opens on the very next draft with the 10-Spin window live again\n• Winner drawn from VRF randomness sealed on-chain before the draft exists — every draw posts an instant on-chain receipt\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
       jackpotHistory: [],
     },
   },
@@ -451,7 +771,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Founder Draft → FREE SPIN',
       explanation:
-        '• Founder Draft happens every week at the same time\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n• Every drafter in the Founder Draft earns 1 Free Banana Spin to claim\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
+        '• Founder Draft happens every week at the same time\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n• Every paid drafter in the Founder Draft earns 1 Free Banana Spin to claim (free entries get the badge and the perk, not the Spin)\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
       founderHistory: [],
     },
   },
@@ -473,9 +793,25 @@ export const seedDb: DbSchema = {
 
 /** Return default promo templates for logged-out users (no claim state). */
 export function getDefaultPromos(): Promo[] {
-  return seedPromos.map((p) => ({
-    ...p,
-    claimable: false,
-    claimCount: 0,
-  }));
+  return seedPromos.map((p) => {
+    const promo = { ...p, claimable: false, claimCount: 0 };
+    // LOGGED-OUT ONLY (Richard 2026-07-28): the seed carries the NEW-PLAYER
+    // first-purchase offer, and a logged-out visitor might be a returning
+    // player who gets the lesser classic rate after login. Label the offer
+    // explicitly so nobody feels baited — logged-in surfaces render the
+    // correct per-user variant instead (getPromos / firstPurchaseVariant).
+    if (promo.type === 'first-purchase') {
+      promo.description = `New players: ${promo.description}`;
+      promo.modalContent = {
+        ...promo.modalContent,
+        title: `New players: ${promo.modalContent.title}`,
+        // The classic-offer footnote was cut 2026-07-30 (Richard): a new player
+        // reading a new-player modal doesn't care, returning players never see
+        // this copy (the server swaps in the classic variant for them), and the
+        // "New players" label above already covers logged-out ambiguity.
+        explanation: promo.modalContent.explanation,
+      };
+    }
+    return promo;
+  });
 }

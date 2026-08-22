@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
+import { buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
 import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
 import { runInBackground } from '@/lib/serverBackground';
@@ -11,6 +11,22 @@ import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
 
+/**
+ * ⚠️ THE ELIMINATOR TOUCHES NOTHING HERE. Entering a draft neither credits
+ * Bananas nor puts you back on the list — both happen only when the draft
+ * actually FILLS, from the draft-filled webhook (Richard 2026-07-31).
+ *
+ * Do not re-add either one to this route. Leaving a filling lobby refunds the
+ * pass (/api/owner/refund-pass), so anything granted on entry is free and
+ * unbounded: enter → get it → leave → get the pass back → repeat. That was
+ * caught first for Bananas (16 wallets left 41 drafts and kept every Banana)
+ * and then for standing, which is worth more — standing is what enters you in
+ * the weighted burn draw, so a burned wallet could ride the list all night on
+ * lobbies it never completed.
+ *
+ * The known cost: fills are rarer than entries, so the list thins between
+ * burns. That's the intended shape — a spot has to be re-earned by real play.
+ */
 /**
  * POST /api/owner/use-pass
  *
@@ -71,6 +87,24 @@ export async function POST(req: Request) {
       // token) + the draft_entered feed row. Self-correcting by construction.
       const counts = await recountFromInventory(userId, activityDoc);
       runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
+      // BONUS ZONE (ships dark): LOCK the live tier onto this seat — nothing is
+      // credited here (see the warning above: entry-crediting is farmable).
+      // The lock only records what the pill showed when the seat was taken;
+      // the free draft pays from the draft-filled webhook, and leaving voids
+      // it. Awaited so the client can show "Locked: Buy 1 Get 1" instantly;
+      // a failure never affects the join.
+      let bonusZone: unknown = null;
+      if (leagueId) {
+        try {
+          const { lockBonusZoneEntry } = await import('@/lib/bonusZone');
+          const lock = await lockBonusZoneEntry({ wallet: userId, draftId: leagueId, passTypeHint: passType });
+          bonusZone = lock.locked && lock.entry
+            ? { locked: true, tier: lock.entry.tier, label: lock.entry.label, credit: lock.entry.credit, position: lock.entry.position, eligible: lock.entry.eligible, reason: lock.entry.reason, tokenId: lock.entry.tokenId }
+            : { locked: false, skipped: lock.skipped ?? null };
+        } catch (err) {
+          logger.warn('use-pass.bonus_zone_lock_failed', { userId, leagueId, err: (err as Error).message });
+        }
+      }
       return json({
         success: true,
         joined: true,
@@ -78,11 +112,11 @@ export async function POST(req: Request) {
         decremented: true,
         draftPasses: counts.draftPasses,
         freeDrafts: counts.freeDrafts,
+        bonusZone,
       });
     }
 
     const db = getAdminFirestore();
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
     // Hard gate: never let a user spend a pass they don't really have. We check
     // the engine's REAL spendable inventory (owners/{wallet}/validDraftTokens —
@@ -112,26 +146,28 @@ export async function POST(req: Request) {
       },
     });
 
-    const result = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(userRef);
-      const mirror = (snap.exists ? (snap.data()?.[field] as number | undefined) : undefined) ?? 0;
-      // `available` (the wallet's REAL spendable inventory in validDraftTokens,
-      // confirmed > 0 by the hard gate above) is the source of truth. The scalar
-      // counter is only a fast-read MIRROR and can legitimately lag BELOW the real
-      // inventory: a mint/grant that writes the token but dies before
-      // recountFromInventory (slow on-chain grant + serverless timeout — the exact
-      // failure Boris hit) leaves the mirror stale-low while the token really
-      // exists. The OLD `if (current <= 0) return decremented:false` here then
-      // falsely blocked a pass the wallet genuinely owns, and the client showed a
-      // ghost "deducted then refunded" with no draft. Trust the real inventory:
-      // decrement from the true count and write the reconciled value so the mirror
-      // self-heals toward reality. Gate 1 guarantees available >= 1, so this always
-      // decrements — a stale mirror can never block a real pass again.
-      const trueCount = Math.max(mirror, available);
-      tx.set(userRef, { [field]: trueCount - 1 }, { merge: true });
-      addActivityEventToTx(tx, activityDoc);
-      return { decremented: true, before: mirror, after: trueCount - 1 };
-    });
+    // NO BLIND DECREMENT (2026-07-27, the AceJohn incident). This legacy
+    // branch decremented whichever field the CLIENT claimed ('paid'/'free').
+    // When the claim disagreed with the token the engine actually consumed —
+    // stale app bundles still call this pre-join — the split flipped (paid
+    // showed 0 while a paid pass sat in the wallet). The counter is a MIRROR
+    // of owners/{w}/validDraftTokens and may only ever be SET from it:
+    //   • gate passed (available > 0) → the client may proceed;
+    //   • the counter itself is recounted from inventory, not arithmetic'd.
+    // For a pre-join caller inventory hasn't shrunk yet, so this write is a
+    // no-op-at-worst; the Go join consumes the real token and the next
+    // recount (use-pass joined:true, balance GET, or the stream's drift
+    // guard) lands the decrement. The counter can no longer lie about the
+    // split, because nothing arithmetic ever touches it.
+    const before = await db.collection(USERS_COLLECTION).doc(userId).get()
+      .then((s) => Math.max(0, (s.data()?.[field] as number | undefined) ?? 0))
+      .catch(() => 0);
+    const counts = await recountFromInventory(userId, activityDoc);
+    const result = {
+      decremented: true,
+      before,
+      after: field === 'draftPasses' ? counts.draftPasses : counts.freeDrafts,
+    };
 
     // Admin heads-up when a genuinely new organic user takes a seat in a
     // filling draft (Boris 2026-07-03). Same gate + fan-out as the "left the
@@ -140,6 +176,7 @@ export async function POST(req: Request) {
     if (result.decremented) {
       runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
     }
+
 
     return json({
       success: true,

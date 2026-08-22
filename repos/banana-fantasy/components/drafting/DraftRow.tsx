@@ -10,6 +10,7 @@ import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { useIsFounderDraft } from '@/hooks/useIsFounderDraft';
 import { slowDraftActiveSecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import type { DraftState } from '@/lib/draftStore';
+import { BonusPendingGlyph } from '@/components/bonusZone/BonusZoneUI';
 
 export type Draft = DraftState;
 
@@ -143,6 +144,14 @@ export function DraftRow({
               the league-players poll (sortOrders.AutoDraft), so it shows for
               toggles made on other devices and for the server's own
               missed-picks promotion — MrMcNasty, Discord 2026-08-17. */}
+          {/* BONUS ZONE lock (ships dark — only stamped while the switch is
+              on). A quiet ticket tick while the lobby is still filling: green
+              = free draft (or half) pays on this fill; dim+slash = the pass
+              used was not eligible. Gone once the draft fills (the bell and
+              the promo card carry the payout from there). */}
+          {draft.bonusZone && !isSpecial && effectiveLive.isFilling && (
+            <BonusPendingGlyph lock={draft.bonusZone} />
+          )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick on">
               <span className="inline-flex flex-shrink-0 text-banana/70" aria-label="Auto-pick on">

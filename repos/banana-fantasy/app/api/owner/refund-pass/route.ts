@@ -86,6 +86,15 @@ export async function POST(req: Request) {
     if (reason === 'leave') {
       runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'left', leagueId }));
     }
+    // BONUS ZONE: leaving forfeits the lock — the pass comes back, nothing
+    // pays. Any refund reason counts (a join-failure refund means there is no
+    // seat to pay on either). Re-entering re-locks at the new position.
+    if (leagueId) {
+      runInBackground('bonus_zone.void_on_leave', (async () => {
+        const { voidBonusZoneEntryOnLeave } = await import('@/lib/bonusZone');
+        await voidBonusZoneEntryOnLeave(userId, leagueId);
+      })());
+    }
 
     return json({
       success: true,

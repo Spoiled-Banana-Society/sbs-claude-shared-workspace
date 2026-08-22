@@ -10,7 +10,15 @@ export interface User {
   draftPasses: number;
   usdcBalance: number; // USDC balance on Base (human-readable, e.g. 25.00)
   freeDrafts: number;
+  /** Promo Spins — earned from promotions. Pay the wedge value in full. */
   wheelSpins: number;
+  /**
+   * Bonus Spins — one per paid pass, granted only while SPIN_ON_PURCHASE is on.
+   * Pay the wedge value MINUS the seat already bought, so landing on 1 Draft
+   * credits nothing. Optional: absent on every user until the flag is flipped.
+   * See lib/spinTypes.ts.
+   */
+  purchaseSpins?: number;
   jackpotEntries: number;
   hofEntries: number;
   jackhofEntries?: number;
@@ -43,6 +51,25 @@ export interface User {
   firstPurchaseBonusGranted?: boolean;
   pendingWheelWinnings?: number;
   firstPurchasePromoUnlocked?: boolean;
+  /**
+   * Which first-purchase offer this user should be pitched, computed
+   * SERVER-side from the same inputs computeFirstPurchaseGrant judges with
+   * (see lib/promoMath.ts firstPurchaseVariant) and delivered on the balance
+   * payload/stream. 'new' = every pass → 2 promo spins; 'returning' = classic
+   * every-2-passes-in-24h rate; 'done' = bonus consumed, pitch nothing.
+   * Absent (logged-out / not yet loaded) → surfaces render the 'new' copy.
+   */
+  firstPurchaseVariant?: 'new' | 'returning' | 'done';
+  /**
+   * Admin drafting block (Boris 2026-08-18): the account stays fully usable —
+   * login, teams, winnings, marketplace — but every draft-entry path refuses
+   * with "Drafting is disabled on this account". Softer than `banned`, which
+   * 403s the whole API. Set on v2_users.draftBlocked; delivered on the
+   * balance payload + stream so the client can gate Enter buttons live.
+   */
+  draftBlocked?: boolean;
+  /** Admin support block: Crisp never mounts/opens for this account (Boris 2026-08-18). */
+  supportBlocked?: boolean;
   // True once the user has spun the Banana Wheel at least once. Drives the
   // first-time "what's a spin?" explainer on promo cards — shown until their
   // first spin, then hidden everywhere.
@@ -98,6 +125,7 @@ export type BadgeContentKind =
   | 'text'          // short letters (JP / HOF / OG)
   | 'numeral-crown' // small filled crown above a roman numeral (BBB champion)
   | 'hof-champ'     // small crown above "HOF" + season numeral (HOF champion)
+  | 'jackhof'       // "JACK" in Jackpot red over "HOF" in gold, split red→gold rim
   | 'icon'          // a flat line icon (King crown outline / Founders key)
   | 'logo';         // a full-color image (NFL team logo via iconUrl)
 
@@ -362,7 +390,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana' | 'banana-vault' | 'bonus-zone';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -451,10 +479,87 @@ export interface Promo {
     dailyHistory?: { date: string; count: number }[];
     /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
     lifetimePaidDrafts?: number;
-    /** Jackpot promo: live cycle data stamped at read time. */
-    cycle?: { filledCount: number; position: number; tenLeft: number; fiveLeft: number };
+    /** Jackpot promo: live cycle data stamped at read time. `position` is
+     *  1-indexed within the JP lane's CURRENT window (which resets the draft
+     *  after a hit), not within a fixed block of 100. */
+    cycle?: {
+      filledCount: number;
+      position: number;
+      /** Window length, so the UI never hardcodes 100. */
+      windowLength: number;
+      /** Spins a jackpot hitting right now would pay: 10 / 5 / 0. */
+      reward: number;
+      tenLeft: number;
+      fiveLeft: number;
+    };
     /** Jackpot promo: most recent draw (social proof in the modal). */
     latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
+    /** BONUS ZONE: live tier + this user's locks, stamped at read time. */
+    bonusZone?: {
+      tier: 1 | 2 | null;
+      label: string | null;
+      position: number;
+      draftsLeftInTier: number;
+      draftsLeftInZone: number;
+      tier1Through: number;
+      tier2Through: number;
+      /** Eligible unused paid passes / total unused paid passes (null = unknown). */
+      eligiblePasses: number | null;
+      paidPasses: number | null;
+      pending: Array<{ draftId: string; tier: 1 | 2; label: string; credit: 1 | 0.5; eligible: boolean; reason: string }>;
+      halvesThisWindow: number;
+      earned: number;
+      history: Array<{ draftId: string; label: string; status: string; settledAtIso?: string; halvesAfter?: number }>;
+    };
+    /** Banana Draw: live cycle state, stamped at read time. Everything here
+     *  resets every 24h EXCEPT `allTime`, which is the permanent ledger. */
+    bananaDraw?: {
+      cycleId: string;
+      closesAt: number;
+      /** This user's Bananas this cycle + where they came from. */
+      bananas: number;
+      free: number;
+      paid: number;
+      referral: number;
+      freeDrafts: number;
+      paidDrafts: number;
+      referrals: number;
+      /** Drafts entered but not yet filled — Bananas land at FILL. */
+      pending: number;
+      /** Their odds right now, as a percentage of the whole pool. */
+      sharePct: number;
+      totalBananas: number;
+      entrantCount: number;
+      /** Ranked by Bananas, SURFACED as share — never as position. */
+      leaderboard: Array<{ name: string; bananas: number; sharePct: number; isYou: boolean }>;
+      /** Entrant names from the most recent DRAWN cycle — the cast the
+       *  winner-reveal reel cycles. Yesterday's draw is replayed by
+       *  yesterday's entrants, not whoever is on today's fresh board. */
+      lastDrawEntrants?: string[];
+      /** Seats claimed in the first-ever JackHOF league. */
+      seatsClaimed: number;
+      seatsTotal: number;
+      /** Most recent winners, newest first. */
+      recentWinners: Array<{ cycleId: string; name: string; bananas: number }>;
+      /** Permanent all-time credit history for this user. */
+      allTime: Array<{ cycleId: string; source: string; bananas: number; at: string }>;
+    };
+    /** Around The Banana: live race state, stamped at read time. The persisted
+     *  per-user fields (atbSlotsHit / atbSeenDraftIds / atbWonAt…) stay
+     *  untyped inside modalContent, same as the chase fields — this is the
+     *  one object the card renders from. */
+    aroundTheBanana?: {
+      /** Pick slots (1–10) this user has drafted from, sorted. */
+      slotsHit: number[];
+      /** Seats taken so far in the first-N race. */
+      seatsClaimed: number;
+      seatsTotal: number;
+      /** This user finished all 10 (with or without a seat). */
+      completed: boolean;
+      /** This user took a seat; seatNumber = their completion order. */
+      won: boolean;
+      seatNumber?: number;
+    };
   };
 }
 
@@ -471,11 +576,19 @@ export interface QueueMember {
   tokenId?: string;
 }
 
+/** Where the passes in a round came from. Wheel wins and promo giveaways fill
+ *  SEPARATE rounds so a 0.1%-wedge winner never shares a draft with a Banana
+ *  Draw grantee (Richard, 2026-07-30). Untagged legacy rounds read as 'wheel' —
+ *  every pre-existing jackpot/hof round is wheel-origin. */
+export type QueueRoundSource = 'wheel' | 'promo' | 'atb' | 'vault';
+
 export interface QueueRound {
   roundId: number;
   members: QueueMember[];
   status: RoundStatus;
   draftId: string | null;
+  /** Absent on rounds created before 2026-07-30; treated as 'wheel'. */
+  source?: QueueRoundSource;
   /** Set (epoch ms) while one server request holds the right to create the Go
    *  league for this round — prevents two simultaneous wheel winners creating
    *  two leagues. Stale claims (>60s, create crashed) are taken over. */

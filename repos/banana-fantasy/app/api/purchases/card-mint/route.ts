@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { assertWalletCanDraft } from '@/lib/draftBlockServer';
 import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -30,6 +31,7 @@ import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
+import { grantPurchaseSpins } from '@/lib/purchases/grantPurchaseSpins';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -84,6 +86,8 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId').toLowerCase();
+    // Admin drafting block — no buying passes / funding for drafts either.
+    await assertWalletCanDraft(userId);
     if (!WALLET_REGEX.test(userId)) {
       return jsonError('userId must be a wallet address', 400);
     }
@@ -563,6 +567,25 @@ export async function POST(req: Request) {
           quantity,
           err: (refErr as Error).message,
         });
+      }
+      // One free bonus spin per paid pass. Dark unless SPIN_ON_PURCHASE=1.
+      // ⚠️ This route duplicates bookkeepPaidMint's bookkeeping rather than
+      // calling it — the same grant lives there. KEEP IN SYNC.
+      await grantPurchaseSpins(userId, quantity);
+      // BONUS ZONE pass-level stamp: a purchase that used the First Purchase
+      // promo is excluded from the zone (Richard 2026-08-22); everything else
+      // bought after launch is eligible. Stamped at checkout so eligibility is
+      // a fact, never a heuristic. KEEP IN SYNC with bookkeepPaidMint.
+      try {
+        const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+        await stampPurchasedTokens({
+          tokenIds: mintResult.tokenIds.map(String),
+          wallet: userId,
+          excluded: promoAwards.firstPurchaseSpinsEarned > 0,
+          reason: promoAwards.firstPurchaseSpinsEarned > 0 ? 'first_purchase' : 'purchase',
+        });
+      } catch (stampErr) {
+        logger.warn('card-mint.bonus_zone_stamp_failed', { userId, err: (stampErr as Error).message });
       }
     }
 

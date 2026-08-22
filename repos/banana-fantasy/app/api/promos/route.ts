@@ -28,21 +28,137 @@ export async function GET(req: Request) {
       }
     } catch { /* stats are decoration — promos still return */ }
 
-    // Jackpot promo: live cycle position + latest draw (real counter — the
-    // same drafts/draftTracker.FilledLeaguesCount the award logic uses).
+    // Banana Draw: everything the card + modal render, stamped at read time.
+    // timerEndTime drives the promo card's EXISTING bare countdown — no custom
+    // "next draw" label, same treatment as Match Your Pick (Boris 2026-07-26).
+    try {
+      const bd = promos.find((p) => p.type === 'banana-draw');
+      if (bd && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
+        const { getUserCycleState, getCycleLeaderboard, getUserLedger, getRecentWinners, getBananaDrawSeatCount, getPendingDrafts, getLastDrawEntrantNames }
+          = await import('@/lib/bananaDraw');
+        const me = userId.toLowerCase();
+        const [state, board, ledger, winners, seats, pending, lastDrawEntrants] = await Promise.all([
+          getUserCycleState(me),
+          getCycleLeaderboard(),
+          getUserLedger(me, 50),
+          getRecentWinners(5),
+          getBananaDrawSeatCount(),
+          getPendingDrafts(me),
+          getLastDrawEntrantNames(),
+        ]);
+
+        // The countdown is the cycle close — the existing formatter renders it.
+        bd.timerEndTime = new Date(state.cycle.closesAt).toISOString();
+
+        const e = state.entry;
+        bd.modalContent.bananaDraw = {
+          cycleId: state.cycle.cycleId,
+          closesAt: state.cycle.closesAt,
+          bananas: e?.bananas ?? 0,
+          free: e?.free ?? 0,
+          paid: e?.paid ?? 0,
+          referral: e?.referral ?? 0,
+          freeDrafts: e?.freeDrafts ?? 0,
+          paidDrafts: e?.paidDrafts ?? 0,
+          referrals: e?.referrals ?? 0,
+          pending, // entered but not yet filled — Bananas land at FILL
+          sharePct: state.sharePct,
+          totalBananas: state.totalBananas,
+          entrantCount: state.entrantCount,
+          // Names resolved SERVER-side from the stored username/bananaNumber —
+          // never derived from the wallet hash, which invents handles.
+          leaderboard: board.rows.map((r) => ({
+            name: r.name,
+            bananas: r.bananas,
+            sharePct: r.sharePct,
+            isYou: r.userId === me,
+          })),
+          // Cast of the replayed draw — yesterday's entrants, not today's board.
+          lastDrawEntrants,
+          seatsClaimed: seats.claimed,
+          seatsTotal: seats.total,
+          recentWinners: winners,
+          allTime: ledger.map((l) => ({
+            cycleId: l.cycleId, source: l.source, bananas: l.bananas, at: l.at,
+          })),
+        };
+      }
+    } catch { /* live stats are decoration — promos still return */ }
+
+    // Around The Banana: live race state for the card's slot grid + seats-left
+    // counter, stamped at read time (persisted per-user fields + the one
+    // global winners doc). Decoration — a failure never breaks the list.
+    try {
+      const atb = promos.find((p) => p.type === 'around-the-banana');
+      if (atb) {
+        // Seeded per-user docs carry the launch-day description, which the
+        // 2-line card clamp truncated ("...and win a…") — keep every user's
+        // card on the current copy (Boris 2026-08-17). Same string on the
+        // carousel, sidebar and /promos card.
+        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid and free drafts count.';
+        const { getAtbSeatCount } = await import('@/lib/aroundTheBanana');
+        const seats = await getAtbSeatCount();
+        const mc = atb.modalContent as unknown as Record<string, unknown>;
+        atb.modalContent.aroundTheBanana = {
+          slotsHit: (mc.atbSlotsHit as number[] | undefined) ?? [],
+          seatsClaimed: seats.claimed,
+          seatsTotal: seats.total,
+          completed: !!mc.atbCompletedAt,
+          // "won" = won THIS round. The round reset clears atbCompletedAt but
+          // keeps atbWonAt/atbSeatNumber as history — surfacing that history
+          // as a live seat made round-3 cards read "Seat 2" for last round's
+          // winners (Fantasy Couch, 2026-08-18: "I have 3 banana seats").
+          won: !!mc.atbWonAt && !!mc.atbCompletedAt,
+          seatNumber: (!!mc.atbWonAt && !!mc.atbCompletedAt) ? (mc.atbSeatNumber as number | undefined) : undefined,
+        };
+      }
+    } catch { /* live stats are decoration — promos still return */ }
+
+    // THE DROP: rebuild the modal's prize copy from tonight's ACTUAL pool.
+    // Per-user promo docs are seeded snapshots, so a one-night pool boost
+    // (NIGHT_PRIZE_OVERRIDES) would otherwise show yesterday's list.
+    try {
+      const drop = promos.find((p) => p.type === 'drop');
+      if (drop) {
+        const { dropExplanationFor, revealNightIdFor, nightlyPrizesFor, spinsForNight } = await import('@/lib/dropRates');
+        const nightId = revealNightIdFor(Date.now());
+        drop.modalContent.explanation = dropExplanationFor(nightId);
+        // Seeded per-user docs carry the old CTA + 8PM description — keep both
+        // live-synced with the current schedule/wording (9PM, 2026-08-05).
+        drop.ctaText = 'Open your packs';
+        // Card line names tonight's prizes (Boris 2026-08-18) — seats from the
+        // live prize table (so a one-night override shows), spins summed.
+        const rows = nightlyPrizesFor(nightId);
+        const seatWords = rows
+          .filter((r) => r.kind === 'jackhof' || r.kind === 'hof' || r.kind === 'jackpot')
+          .map((r) => `${r.count} ${r.kind === 'jackhof' ? 'JackHOF' : r.kind === 'hof' ? 'HOF' : 'Jackpot'} seat${r.count === 1 ? '' : 's'}`);
+        const spins = spinsForNight(nightId);
+        const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
+        drop.description = `Draft, earn packs. Open at 9 PM.\nDaily: ${prizeLine}.`;
+        drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
+      }
+    } catch { /* copy refresh is decoration — promos still return */ }
+
+    // Jackpot promo: live cycle position + latest draw. Position comes from
+    // getJackpotCycleState → computeJpCycle, the SAME math awardJackpotDraw
+    // credits with. It used to do its own `(filled - 1) % 100`, which ignored
+    // the rolling-lane reset — so after a jackpot hit the card announced
+    // "bonus windows closed" while the lane had actually restarted and the
+    // next hit really was worth 10 spins (Boris 2026-07-25).
     try {
       const jp = promos.find((p) => p.type === 'jackpot');
       if (jp) {
         const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+        const { getJackpotCycleState } = await import('@/lib/db-firestore');
         const db = getAdminFirestore();
-        const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
-        const filled = Number((trackerSnap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
-        const position = filled <= 0 ? 1 : ((filled - 1) % 100) + 1;
+        const cycle = await getJackpotCycleState();
         jp.modalContent.cycle = {
-          filledCount: filled,
-          position,
-          tenLeft: Math.max(0, 25 - position),
-          fiveLeft: Math.max(0, 50 - position),
+          filledCount: cycle.filled,
+          position: cycle.position,
+          windowLength: cycle.windowLength,
+          reward: cycle.reward,
+          tenLeft: cycle.tenLeft,
+          fiveLeft: cycle.fiveLeft,
         };
         const last = await db.collection('jackpot_draws')
           .where('pending', '==', false).orderBy('atIso', 'desc').limit(1).get()
@@ -136,6 +252,45 @@ export async function GET(req: Request) {
         }
       }
     } catch { /* best-effort */ }
+
+    // 🟢 BONUS ZONE (Richard 2026-08-22) — replaces Jackpot Hit. Ships dark:
+    // the card is stripped unless the zone switch is ON (admins see it dark
+    // for preview); while ON the jackpot card is stripped instead. Live tier +
+    // this user's locks/earned/half are stamped for the card, modal and
+    // entry modal. Best-effort — promos always return.
+    try {
+      const { readBonusZoneConfig, getBonusZoneWalletStatus } = await import('@/lib/bonusZone');
+      const { isWalletAdmin } = await import('@/lib/adminAllowlist');
+      const cfg = await readBonusZoneConfig();
+      const adminPreview = isWalletAdmin(userId);
+      const bzIdx = promos.findIndex((p) => p.type === 'bonus-zone');
+      if (cfg.enabled || adminPreview) {
+        if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
+          const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
+          promos[bzIdx].modalContent.bonusZone = {
+            tier: st.view.tier,
+            label: st.view.label,
+            position: st.view.position,
+            draftsLeftInTier: st.view.draftsLeftInTier,
+            draftsLeftInZone: st.view.draftsLeftInZone,
+            tier1Through: st.view.tier1Through,
+            tier2Through: st.view.tier2Through,
+            eligiblePasses: st.passes?.eligibleCount ?? null,
+            paidPasses: st.passes?.paidTotal ?? null,
+            pending: st.pending.map((e) => ({ draftId: e.draftId, tier: e.tier, label: e.label, credit: e.credit, eligible: e.eligible, reason: e.reason })),
+            halvesThisWindow: st.halvesThisWindow,
+            earned: st.earned,
+            history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, halvesAfter: h.halvesAfter })),
+          };
+        }
+        if (cfg.enabled) {
+          const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
+          if (jpIdx !== -1) promos.splice(jpIdx, 1);
+        }
+      } else if (bzIdx !== -1) {
+        promos.splice(bzIdx, 1);
+      }
+    } catch { /* live stamp is decoration */ }
 
     return json(promos, 200);
   } catch (err) {

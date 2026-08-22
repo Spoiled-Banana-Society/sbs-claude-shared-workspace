@@ -1,10 +1,12 @@
 'use client';
 
 import React from 'react';
+import { BonusLeaveWarning } from '@/components/bonusZone/BonusZoneUI';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
 import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
+import NextLobbyLine from '@/components/drafting/NextLobbyLine';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
 import { PromosSidebar } from '@/components/drafting/PromosSidebar';
@@ -13,8 +15,10 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
+import { FirstPurchaseClaimModal, type ClaimVariant } from '@/components/modals/FirstPurchaseClaimModal';
 import { BuyPassesBalanceModal } from '@/components/modals/BuyPassesBalanceModal';
 import { DEPOSITS_ENABLED } from '@/lib/deposits';
+import { API_CONFIG } from '@/lib/api/config';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
@@ -74,7 +78,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
       { q: 'What is a Hall of Fame Draft?', a: 'HOF Drafts are premium draft rooms making up 5% of all drafts. Your team competes for a separate bonus prize pool on top of the regular tournament prizes.' },
       { q: 'How do I get into a HOF Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and 5 HOF are guaranteed in every rolling 100-draft window. 2) The Banana Wheel: land on HOF and you win a guaranteed seat in a HOF draft (from the Wheel), free.' },
       { q: 'What happens when I win a HOF on the Banana Wheel?', a: 'You\'re seated in a HOF draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
-      { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
+      { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won HOF drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
     ],
   },
@@ -84,7 +88,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
       { q: 'What is a Jackpot Draft?', a: 'Jackpot Drafts are the rarest and most valuable draft type — only 1% of all drafts. If you win your league in a Jackpot draft, you skip straight to the finals, bypassing two weeks of playoffs.' },
       { q: 'How do I get into a Jackpot Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and a Jackpot is always within 100 drafts of the last one. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a Jackpot draft (from the Wheel), free.' },
       { q: 'What happens when I win a Jackpot on the Banana Wheel?', a: 'You\'re seated in a Jackpot draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
-      { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. But until the draft fills, you can sell the pass on the SBS Marketplace and the buyer takes your seat. It\'s the only draft pass that can ever be sold. Once the draft fills, the window closes and it\'s your draft.' },
+      { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won Jackpot drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
       { q: 'What exactly happens if I win?', a: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely.' },
     ],
@@ -150,6 +154,7 @@ export default function DraftingPage() {
   const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
   const [showDraftInfo, setShowDraftInfo] = React.useState(false);
+  const [fpClaim, setFpClaim] = React.useState<{ variant: ClaimVariant; depositUsd?: number } | null>(null);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live
@@ -204,7 +209,7 @@ export default function DraftingPage() {
             </button>
           )}
         </div>
-        {activeDrafts.length > 0 && (
+        {activeDrafts.length > 0 && !user?.draftBlocked && (
           <div className="flex items-center gap-2.5">
             <button
               onClick={handleEnterDraft}
@@ -229,6 +234,10 @@ export default function DraftingPage() {
       {/* "Keep waiting" nudge — how many fast drafts are going + the furthest
           round. Renders nothing when the flag is off or nothing's live. */}
       <LiveDraftActivityLine className="-mt-4 mb-6" />
+
+      {/* How full the lobby you'd land in is, before you press Enter. Renders
+          nothing when neither lane has a partially-filled lobby. */}
+      <NextLobbyLine className="-mt-2 mb-6" />
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
@@ -274,13 +283,16 @@ export default function DraftingPage() {
                         </button>
                       </Tooltip>
                     </div>
-                    <p className="text-[15px] mt-3">
-                      <span className="font-bold text-banana">$100K</span>
-                      <span className="text-white/30 font-medium"> Prize Pool</span>
+                    <p className="text-[15px] sm:text-[19px] mt-3">
+                      <span className="font-extrabold text-banana">$100,000</span>
+                      <span className="text-white/30 font-medium"> GTD Prize Pool</span>
                       <span className="text-white/15 mx-1.5">&middot;</span>
-                      <span className="font-semibold text-white/70">$25K</span>
+                      <span className="font-bold text-white/70">$25,000</span>
                       <span className="text-white/30 font-medium"> 1st Place</span>
                     </p>
+                    {user?.draftBlocked ? (
+                      <p className="mt-6 text-center text-sm text-white/45">Drafting is disabled on this account. You can still view your teams.</p>
+                    ) : (
                     <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                       <button
                         onClick={handleEnterDraft}
@@ -297,6 +309,7 @@ export default function DraftingPage() {
                         </button>
                       )}
                     </div>
+                    )}
                   </div>
 
                   <div>
@@ -334,7 +347,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-white/70">94%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100K GTD Prize Pool.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100,000 GTD Prize Pool.</p>
                       </button>
                       <button
                         onClick={() => setInfoTopic('hof')}
@@ -368,7 +381,7 @@ export default function DraftingPage() {
                         <div className="flex items-center gap-2 mb-1.5">
                           <h4 className="text-[14px] font-semibold tracking-tight"><span className="text-jackpot">Jack</span><span className="text-hof">HOF</span></h4>
                           <span className="text-white/15">&middot;</span>
-                          <span className="text-[15px] font-bold tracking-tight text-white/70">1/800</span>
+                          <span className="text-[15px] font-bold tracking-tight text-white/70">.13%</span>
                         </div>
                         <p className="text-white/50 text-[12px] leading-[1.6]">Jackpot + HOF on one draft. Both perks.</p>
                       </button>
@@ -441,6 +454,7 @@ export default function DraftingPage() {
             <p className="text-white/60 mb-6">
               Are you sure you want to leave <span className="text-white font-medium">{exitingDraft.contestName}</span>? Your draft pass will be returned.
             </p>
+            <BonusLeaveWarning lock={exitingDraft.bonusZone} />
             <div className="flex gap-3">
               <button
                 onClick={() => setExitingDraft(null)}
@@ -492,7 +506,32 @@ export default function DraftingPage() {
 
       {/* Add Funds — mount only while open (useFundWallet crash rule) */}
       {showAddFunds && (
-        <AddFundsModal isOpen={true} onClose={() => setShowAddFunds(false)} />
+        <AddFundsModal
+          isOpen={true}
+          onClose={() => setShowAddFunds(false)}
+          onFunded={(amountUsd) => {
+            // Same post-deposit promo pitch as the header/homepage Add Funds
+            // flows — this page used to skip it entirely (deposits made from
+            // the draft-room entry flow got no popup at all).
+            const fpOpen = user && user.firstPurchaseVariant !== 'done' && user.firstPurchaseBonusGranted !== true;
+            const kickoffOpen = API_CONFIG.promos.buyBonus.enabled && Date.now() < API_CONFIG.promos.buyBonus.endsAtMs;
+            if (fpOpen || kickoffOpen) {
+              setShowAddFunds(false);
+              setFpClaim({
+                variant: fpOpen ? (user?.firstPurchaseVariant === 'returning' ? 'returning' : 'new') : 'kickoff',
+                depositUsd: amountUsd,
+              });
+            }
+          }}
+        />
+      )}
+      {fpClaim && (
+        <FirstPurchaseClaimModal
+          isOpen={true}
+          onClose={() => setFpClaim(null)}
+          variant={fpClaim.variant}
+          depositUsd={fpClaim.depositUsd}
+        />
       )}
 
       <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />

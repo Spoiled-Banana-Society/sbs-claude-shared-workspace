@@ -1,0 +1,761 @@
+/**
+ * BONUS ZONE — the cold-zone free-draft ladder (Richard 2026-08-22).
+ *
+ * Problem it solves: the rolling Jackpot window shows odds climbing from 1%
+ * right after a hit to 100% at draft 100, so drafters camp the hot end and the
+ * first ~70 drafts of every window fill at the same slow baseline (8/22 data:
+ * human joins are FLAT from position 0 to 70, then 13/hr, 61/hr, 746/hr). The
+ * real fix (flat per-draft odds) is next year; this makes the cold zone the
+ * best deal on the site until then.
+ *
+ * The ladder, by the Jackpot window position of the draft you ENTER:
+ *   positions  1–33  →  Buy 1 Get 1   (every eligible paid entry earns 1 free draft)
+ *   positions 34–69  →  Buy 2 Get 1   (every eligible paid entry earns ½; two in
+ *                                      the SAME window = 1 free draft; a leftover
+ *                                      half dies when the Jackpot hits)
+ *   positions 70+    →  nothing — the odds sell themselves from here.
+ *
+ * Rules (all Richard's, 8/22):
+ *   • PAID entries only. Free passes never earn free passes.
+ *   • The tier LOCKS at entry (what the pill showed when you took the seat) and
+ *     PAYS when the draft fills. Leave the lobby = nothing pays; re-enter with
+ *     the same pass = a fresh lock at wherever the counter is then.
+ *   • NO per-wallet cap.
+ *   • Pass-level eligibility: a pass bought AFTER launch is eligible unless that
+ *     purchase used the new-user or First Purchase promo; passes bought BEFORE
+ *     launch are eligible only if on the grandfather list (the 19 "plain"
+ *     purchases that earned no promo — see GRANDFATHERED_TOKEN_IDS).
+ *   • Fast + slow BBB drafts both count (they share the Jackpot lane). Special
+ *     seat drafts (Jackpot/HOF/JackHOF passes) and private leagues do not.
+ *   • Replaces the Jackpot Hit spin promo (promo 4): while the zone is ON the
+ *     spin draw pays nothing and its bells/card are swapped for Bonus Zone.
+ *
+ * ⚠️ SHIPS DARK. Nothing here pays, locks, bells or renders until
+ * system_config/bonusZone.enabled === true (or env BONUS_ZONE=1). Flip with
+ * scripts/_bonus-zone-toggle.mjs. The /preview/bonus-zone page renders every
+ * visual with mock data regardless of the switch.
+ *
+ * Reveal safety: the live position is read the same way the header pill reads
+ * it (reveal-gated `pre` window while a Jackpot hit's slot hasn't landed), so
+ * the zone can never move before the slot machine does and never spoils it.
+ */
+
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { FieldValue } from 'firebase-admin/firestore';
+import { logger } from '@/lib/logger';
+import { isRollingActive, replayJpLane, lanePosition } from '@/lib/rollingLanes';
+
+// ── Tiers ───────────────────────────────────────────────────────────────────
+
+export const BZ_TIER1_THROUGH = 33;
+export const BZ_TIER2_THROUGH = 69;
+
+export type BonusZoneTier = 1 | 2;
+
+export interface BonusZoneTierInfo {
+  tier: BonusZoneTier;
+  /** "Buy 1 Get 1" / "Buy 2 Get 1" */
+  label: string;
+  /** Upper-case pill form. */
+  short: string;
+  /** Free drafts earned per eligible paid FILL: 1 or 0.5. */
+  credit: 1 | 0.5;
+  /** Last window position this tier covers. */
+  through: number;
+}
+
+export function tierInfo(tier: BonusZoneTier, cfg?: Pick<BonusZoneConfig, 'tier1Through' | 'tier2Through'>): BonusZoneTierInfo {
+  const t1 = cfg?.tier1Through ?? BZ_TIER1_THROUGH;
+  const t2 = cfg?.tier2Through ?? BZ_TIER2_THROUGH;
+  return tier === 1
+    ? { tier: 1, label: 'Buy 1 Get 1', short: 'BUY 1 GET 1', credit: 1, through: t1 }
+    : { tier: 2, label: 'Buy 2 Get 1', short: 'BUY 2 GET 1', credit: 0.5, through: t2 };
+}
+
+/** Which tier a 1-indexed Jackpot window position falls in (null = none). */
+export function bonusZoneTierForPosition(
+  position: number,
+  cfg?: Pick<BonusZoneConfig, 'tier1Through' | 'tier2Through'>,
+): BonusZoneTierInfo | null {
+  const t1 = cfg?.tier1Through ?? BZ_TIER1_THROUGH;
+  const t2 = cfg?.tier2Through ?? BZ_TIER2_THROUGH;
+  if (!Number.isFinite(position) || position < 1) return null;
+  if (position <= t1) return tierInfo(1, cfg);
+  if (position <= t2) return tierInfo(2, cfg);
+  return null;
+}
+
+// ── Live view (what the pill / bot / entry modal show) ───────────────────────
+
+export interface BonusZoneView {
+  enabled: boolean;
+  /** Live tier for the NEXT draft to fill, null when the zone is closed. */
+  tier: BonusZoneTier | null;
+  label: string | null;
+  short: string | null;
+  credit: 1 | 0.5 | null;
+  /** 1-indexed window position the NEXT fill lands on. */
+  position: number;
+  /** Drafts (counting the next one) still inside the live tier. */
+  draftsLeftInTier: number;
+  /** Drafts (counting the next one) until the zone closes entirely. */
+  draftsLeftInZone: number;
+  windowStart: number;
+  tier1Through: number;
+  tier2Through: number;
+}
+
+/**
+ * Pure view math. `revealedFilled` = FilledLeaguesCount minus fills whose slot
+ * hasn't landed — the same number the header's % uses — so the pill, the bot
+ * and the entry lock always agree and none of them can front-run a reveal.
+ */
+export function bonusZoneViewForLane(
+  windowStart: number,
+  revealedFilled: number,
+  cfg: Pick<BonusZoneConfig, 'enabled' | 'tier1Through' | 'tier2Through'>,
+): BonusZoneView {
+  const position = lanePosition(revealedFilled, windowStart) + 1;
+  const t = cfg.enabled ? bonusZoneTierForPosition(position, cfg) : null;
+  return {
+    enabled: cfg.enabled,
+    tier: t?.tier ?? null,
+    label: t?.label ?? null,
+    short: t?.short ?? null,
+    credit: t?.credit ?? null,
+    position,
+    draftsLeftInTier: t ? Math.max(0, t.through - position + 1) : 0,
+    draftsLeftInZone: Math.max(0, cfg.tier2Through - position + 1),
+    windowStart,
+    tier1Through: cfg.tier1Through,
+    tier2Through: cfg.tier2Through,
+  };
+}
+
+// ── Config / switch ─────────────────────────────────────────────────────────
+
+export interface BonusZoneConfig {
+  enabled: boolean;
+  /** Purchases at/after this instant are eligible (ISO). Null = not launched. */
+  launchAtIso: string | null;
+  tier1Through: number;
+  tier2Through: number;
+  /** Pre-launch passes that still qualify (token ids as strings). */
+  grandfatherTokenIds: string[];
+}
+
+/**
+ * The 19 "plain" pre-launch purchases (Richard 8/22): paid passes bought with
+ * NO promo reward attached, by person. Everyone else's pre-launch passes had a
+ * promo and must buy new ones. VagBros (team wallet, tokens 2160/2168) left out
+ * on Richard's call. Source: scripts/_chk-paid-passes-promo-origin.mjs census.
+ */
+export const GRANDFATHERED_TOKEN_IDS: readonly string[] = [
+  // Forzie — 8 for $200, 8/10
+  '6803', '6804', '6805', '6806', '6807', '6808', '6809', '6810',
+  // Vertig0 — 3 for $75 on 8/21 + 3 for $75 on 8/22
+  '9117', '9118', '9119', '9336', '9337', '9338',
+  // Bombsicle — 2 for $50, 8/15
+  '7943', '7944',
+  // Kiely — 8/20
+  '8919',
+  // NickW — 8/20
+  '8993',
+  // TheBestBanana — 8/17
+  '8422',
+];
+
+export const BONUS_ZONE_CONFIG_DOC = 'bonusZone';
+const CONFIG_TTL_MS = 20_000;
+let cfgCache: { at: number; cfg: BonusZoneConfig } | null = null;
+
+function defaultConfig(): BonusZoneConfig {
+  return {
+    enabled: false,
+    launchAtIso: null,
+    tier1Through: BZ_TIER1_THROUGH,
+    tier2Through: BZ_TIER2_THROUGH,
+    grandfatherTokenIds: [...GRANDFATHERED_TOKEN_IDS],
+  };
+}
+
+/** Env override for emergencies: BONUS_ZONE=1 forces ON, =0 forces OFF. */
+function envOverride(): boolean | null {
+  const v = process.env.BONUS_ZONE;
+  if (v === '1') return true;
+  if (v === '0') return false;
+  return null;
+}
+
+export async function readBonusZoneConfig(opts: { fresh?: boolean } = {}): Promise<BonusZoneConfig> {
+  const now = Date.now();
+  if (!opts.fresh && cfgCache && now - cfgCache.at < CONFIG_TTL_MS) return cfgCache.cfg;
+  const cfg = defaultConfig();
+  if (isFirestoreConfigured()) {
+    try {
+      const snap = await getAdminFirestore().collection('system_config').doc(BONUS_ZONE_CONFIG_DOC).get();
+      const d = (snap.exists ? snap.data() : null) as Partial<BonusZoneConfig> | null;
+      if (d) {
+        if (typeof d.enabled === 'boolean') cfg.enabled = d.enabled;
+        if (typeof d.launchAtIso === 'string' && d.launchAtIso) cfg.launchAtIso = d.launchAtIso;
+        if (Number.isFinite(d.tier1Through) && (d.tier1Through as number) > 0) cfg.tier1Through = Number(d.tier1Through);
+        if (Number.isFinite(d.tier2Through) && (d.tier2Through as number) >= cfg.tier1Through) cfg.tier2Through = Number(d.tier2Through);
+        if (Array.isArray(d.grandfatherTokenIds)) {
+          cfg.grandfatherTokenIds = Array.from(new Set([...cfg.grandfatherTokenIds, ...d.grandfatherTokenIds.map(String)]));
+        }
+      }
+    } catch (err) {
+      logger.warn('bonus_zone.config_read_failed', { err: (err as Error).message });
+    }
+  }
+  const ov = envOverride();
+  if (ov !== null) cfg.enabled = ov;
+  // An enabled zone with no launch stamp would make every old pass ineligible
+  // except the grandfather list — that is the intended "never launched" state,
+  // but it's almost certainly a toggle mistake, so shout.
+  if (cfg.enabled && !cfg.launchAtIso) logger.warn('bonus_zone.enabled_without_launch_stamp');
+  cfgCache = { at: now, cfg };
+  return cfg;
+}
+
+export async function isBonusZoneEnabled(): Promise<boolean> {
+  return (await readBonusZoneConfig()).enabled;
+}
+
+// ── Live lane view off the tracker (reveal-gated like the header) ───────────
+
+const REVEAL_OFFSET_SEC = 39; // slot lands at DraftStartTime-39s (batchProgress/stream)
+
+interface TrackerDoc {
+  FilledLeaguesCount?: number;
+  RollingStartDraft?: number;
+  JackpotLeagueIds?: number[];
+  RecentFills?: Array<{ Id?: number; StartTime?: number }>;
+}
+
+/**
+ * Mirrors buildPayload in app/api/league/batchProgress/stream/route.ts: fills
+ * whose slot hasn't landed are excluded from the window replay AND from the
+ * revealed count, so this returns exactly the window the pill is showing.
+ */
+export function laneViewFromTracker(d: TrackerDoc | undefined, nowMs = Date.now()): { windowStart: number; revealedFilled: number; filled: number; rolling: boolean } {
+  const filled = Number(d?.FilledLeaguesCount ?? 0) || 0;
+  const rollingStart = Number(d?.RollingStartDraft ?? 0) || 0;
+  const rolling = isRollingActive(rollingStart, filled);
+  if (!rolling) return { windowStart: 0, revealedFilled: filled, filled, rolling: false };
+  const jpIds = Array.isArray(d?.JackpotLeagueIds) ? d!.JackpotLeagueIds!.map(Number) : [];
+  const stById = new Map<number, number>();
+  for (const rf of Array.isArray(d?.RecentFills) ? d!.RecentFills! : []) {
+    const id = Number(rf?.Id ?? 0) || 0;
+    const st = Number(rf?.StartTime ?? 0) || 0;
+    if (!id) continue;
+    if (!stById.has(id) || st > (stById.get(id) as number)) stById.set(id, st);
+  }
+  const unrevealed = new Set<number>();
+  for (const [id, st] of stById) {
+    if (id > filled || id < rollingStart) continue;
+    const atMs = st > 0 ? (st - REVEAL_OFFSET_SEC) * 1000 : nowMs + 3_600_000;
+    if (atMs > nowMs) unrevealed.add(id);
+  }
+  const { windowStart } = replayJpLane(jpIds.filter((id) => !unrevealed.has(id)), rollingStart, filled);
+  return { windowStart, revealedFilled: filled - unrevealed.size, filled, rolling: true };
+}
+
+export async function readBonusZoneView(): Promise<BonusZoneView> {
+  const cfg = await readBonusZoneConfig();
+  if (!isFirestoreConfigured()) return bonusZoneViewForLane(0, 0, { ...cfg, enabled: false });
+  const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
+  const lane = laneViewFromTracker(snap.data() as TrackerDoc | undefined);
+  if (!lane.rolling) return bonusZoneViewForLane(0, 0, { ...cfg, enabled: false });
+  return bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, cfg);
+}
+
+// ── Pass eligibility (token level) ──────────────────────────────────────────
+
+export type IneligibleReason =
+  | 'free_pass'          // not a paid pass
+  | 'pre_launch'         // bought before the zone launched and not grandfathered
+  | 'first_purchase'     // that purchase used the new-user / First Purchase promo
+  | 'granted'            // reward / wheel / admin pass — never purchased
+  | 'transferred'        // bought by a different wallet
+  | 'no_purchase_record' // no pass_purchased row — not a real purchase
+  | 'unknown_token';
+
+export interface PassEligibility {
+  tokenId: string;
+  eligible: boolean;
+  reason: 'grandfathered' | 'post_launch' | IneligibleReason;
+}
+
+export const BONUS_ZONE_TOKEN_FLAGS = 'bonus_zone_token_flags';
+
+/**
+ * Stamp purchased tokens at checkout so eligibility is a fact, not a heuristic.
+ * Called from the card-mint route + its NY twin right after incrementMintPromos:
+ * `excluded` when the purchase earned First Purchase spins (the new-user promo
+ * pays a FREE pass, so it's already out by pass type).
+ */
+export async function stampPurchasedTokens(input: {
+  tokenIds: string[];
+  wallet: string;
+  excluded: boolean;
+  reason: string;
+  purchasedAtIso?: string;
+}): Promise<void> {
+  if (!isFirestoreConfigured() || input.tokenIds.length === 0) return;
+  const db = getAdminFirestore();
+  const batch = db.batch();
+  for (const t of input.tokenIds) {
+    batch.set(db.collection(BONUS_ZONE_TOKEN_FLAGS).doc(String(t)), {
+      tokenId: String(t),
+      wallet: input.wallet.toLowerCase(),
+      excluded: input.excluded,
+      reason: input.reason,
+      purchasedAtIso: input.purchasedAtIso ?? new Date().toISOString(),
+    }, { merge: true });
+  }
+  await batch.commit().catch((err) => logger.warn('bonus_zone.stamp_failed', { err: (err as Error).message }));
+}
+
+/**
+ * Classify ONE token for `wallet`. `passType` is the engine's stamp for the
+ * token (from Go's /owner/{w}/draftToken/all or validDraftTokens.PassType).
+ */
+export async function classifyPassForBonusZone(
+  wallet: string,
+  tokenId: string,
+  passType: 'paid' | 'free' | null,
+  cfg: BonusZoneConfig,
+): Promise<PassEligibility> {
+  const w = wallet.toLowerCase();
+  const tid = String(tokenId);
+  if (passType !== 'paid') return { tokenId: tid, eligible: false, reason: passType === 'free' ? 'free_pass' : 'unknown_token' };
+  if (cfg.grandfatherTokenIds.includes(tid)) return { tokenId: tid, eligible: true, reason: 'grandfathered' };
+  if (!isFirestoreConfigured()) return { tokenId: tid, eligible: false, reason: 'no_purchase_record' };
+  const db = getAdminFirestore();
+
+  // Reward / wheel / admin passes carry a pass_origin doc — never purchased.
+  const origin = await db.collection('pass_origin').doc(tid).get().catch(() => null);
+  if (origin?.exists) return { tokenId: tid, eligible: false, reason: 'granted' };
+
+  // Checkout stamp (post-launch purchases) — the authoritative answer.
+  const flag = await db.collection(BONUS_ZONE_TOKEN_FLAGS).doc(tid).get().catch(() => null);
+  const f = flag?.exists ? (flag.data() as { wallet?: string; excluded?: boolean; purchasedAtIso?: string }) : null;
+  if (f) {
+    if (f.wallet && f.wallet !== w) return { tokenId: tid, eligible: false, reason: 'transferred' };
+    if (f.excluded) return { tokenId: tid, eligible: false, reason: 'first_purchase' };
+    if (cfg.launchAtIso && f.purchasedAtIso && f.purchasedAtIso < cfg.launchAtIso) {
+      return { tokenId: tid, eligible: false, reason: 'pre_launch' };
+    }
+    return { tokenId: tid, eligible: true, reason: 'post_launch' };
+  }
+
+  // No stamp: find the purchase row (tokenIds array-contains, single-field
+  // index only — type is filtered in memory so no composite index is needed).
+  const rows = await db.collection('v2_activity_events')
+    .where('tokenIds', 'array-contains', tid).limit(5).get().catch(() => null);
+  const purchase = rows?.docs.map((d) => d.data() as { type?: string; userId?: string; walletAddress?: string; createdAtIso?: string })
+    .find((e) => e.type === 'pass_purchased');
+  if (!purchase) return { tokenId: tid, eligible: false, reason: 'no_purchase_record' };
+  const buyer = String(purchase.userId ?? purchase.walletAddress ?? '').toLowerCase();
+  if (buyer && buyer !== w) return { tokenId: tid, eligible: false, reason: 'transferred' };
+  const at = String(purchase.createdAtIso ?? '');
+  if (!cfg.launchAtIso || !at || at < cfg.launchAtIso) return { tokenId: tid, eligible: false, reason: 'pre_launch' };
+  // Post-launch but unstamped (stamp write lost) — trust the purchase row.
+  return { tokenId: tid, eligible: true, reason: 'post_launch' };
+}
+
+interface GoToken { _cardId?: string | number; _leagueId?: string; passType?: string; _level?: string; _draftType?: string }
+
+async function fetchGoTokens(wallet: string): Promise<{ active: GoToken[]; available: GoToken[] } | null> {
+  const baseUrl = (process.env.STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app').replace(/\/$/, '');
+  try {
+    const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(wallet.toLowerCase())}/draftToken/all`, {
+      cache: 'no-store', signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { active?: GoToken[]; available?: GoToken[] };
+    return { active: body.active ?? [], available: body.available ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/** The token a wallet is sitting in `draftId` with, straight from the engine. */
+export async function resolveTokenInDraft(wallet: string, draftId: string): Promise<{ tokenId: string; passType: 'paid' | 'free' | null } | null> {
+  const toks = await fetchGoTokens(wallet);
+  if (!toks) return null;
+  const tok = [...toks.active, ...toks.available].find((t) => String(t._leagueId ?? '') === draftId);
+  if (!tok) return null;
+  const pt = String(tok.passType ?? '');
+  return { tokenId: String(tok._cardId ?? ''), passType: pt === 'paid' ? 'paid' : pt === 'free' ? 'free' : null };
+}
+
+/** Eligibility of every UNUSED paid pass in the wallet (for the entry modal). */
+export async function classifyAvailablePasses(wallet: string, cfg: BonusZoneConfig): Promise<{ paidTotal: number; eligible: PassEligibility[]; ineligible: PassEligibility[] }> {
+  const toks = await fetchGoTokens(wallet);
+  const paid = (toks?.available ?? []).filter((t) => String(t.passType ?? '') === 'paid'
+    && !/jackpot|hall of fame|jackhof/i.test(String(t._level ?? '')));
+  const out = await Promise.all(paid.map((t) => classifyPassForBonusZone(wallet, String(t._cardId ?? ''), 'paid', cfg)));
+  return { paidTotal: paid.length, eligible: out.filter((e) => e.eligible), ineligible: out.filter((e) => !e.eligible) };
+}
+
+// ── Entries: lock at entry, void on leave, pay at fill ──────────────────────
+
+export const BONUS_ZONE_ENTRIES = 'bonus_zone_entries';
+export const BONUS_ZONE_PROGRESS = 'bonus_zone_progress';
+
+export type BonusEntryStatus = 'pending' | 'ineligible' | 'left' | 'settling' | 'paid' | 'half' | 'grant_failed' | 'closed';
+
+export interface BonusZoneEntry {
+  draftId: string;
+  wallet: string;
+  tokenId: string;
+  tier: BonusZoneTier;
+  label: string;
+  credit: 1 | 0.5;
+  position: number;
+  windowStart: number;
+  lockedAtIso: string;
+  status: BonusEntryStatus;
+  eligible: boolean;
+  reason: string;
+  /** Fill-time outcome. */
+  settledAtIso?: string;
+  grantedTokenIds?: string[];
+  grantTxHash?: string;
+  /** For half credits: where this entry's half landed (0/2 → 1/2 → paid). */
+  halvesAfter?: number;
+  error?: string;
+}
+
+export function entryDocId(draftId: string, wallet: string): string {
+  return `${draftId}__${wallet.toLowerCase()}`;
+}
+
+/** Drafts the zone applies to: BBB fast/slow lobbies only. */
+export function isBonusZoneDraftId(draftId: string): boolean {
+  return /^2026-(fast|slow)-draft-\d+$/.test(draftId);
+}
+
+export interface LockResult {
+  locked: boolean;
+  entry?: BonusZoneEntry;
+  view?: BonusZoneView;
+  skipped?: 'disabled' | 'not_rolling' | 'zone_closed' | 'not_bbb_draft' | 'free_pass' | 'token_unresolved';
+}
+
+/**
+ * Called from /api/owner/use-pass (joined:true) — the seat is already taken by
+ * Go. Locks the live tier onto THIS (draft, wallet) with the exact token the
+ * engine consumed. Ineligible passes get an entry too (status 'ineligible') so
+ * the UI can say exactly why nothing will pay. Re-entry overwrites the doc —
+ * a fresh lock at the new position, never a second payout.
+ */
+export async function lockBonusZoneEntry(input: { wallet: string; draftId: string; passTypeHint: 'paid' | 'free' }): Promise<LockResult> {
+  const cfg = await readBonusZoneConfig();
+  if (!cfg.enabled) return { locked: false, skipped: 'disabled' };
+  if (!isBonusZoneDraftId(input.draftId)) return { locked: false, skipped: 'not_bbb_draft' };
+  const wallet = input.wallet.toLowerCase();
+  const view = await readBonusZoneView();
+  if (!view.enabled || view.windowStart <= 0) return { locked: false, skipped: 'not_rolling', view };
+  if (!view.tier) return { locked: false, skipped: 'zone_closed', view };
+
+  const tok = await resolveTokenInDraft(wallet, input.draftId);
+  const passType = tok?.passType ?? input.passTypeHint;
+  if (passType === 'free') return { locked: false, skipped: 'free_pass', view };
+  if (!tok?.tokenId) return { locked: false, skipped: 'token_unresolved', view };
+
+  const elig = await classifyPassForBonusZone(wallet, tok.tokenId, 'paid', cfg);
+  const t = tierInfo(view.tier, cfg);
+  const entry: BonusZoneEntry = {
+    draftId: input.draftId,
+    wallet,
+    tokenId: tok.tokenId,
+    tier: t.tier,
+    label: t.label,
+    credit: t.credit,
+    position: view.position,
+    windowStart: view.windowStart,
+    lockedAtIso: new Date().toISOString(),
+    status: elig.eligible ? 'pending' : 'ineligible',
+    eligible: elig.eligible,
+    reason: elig.reason,
+  };
+  await getAdminFirestore().collection(BONUS_ZONE_ENTRIES).doc(entryDocId(input.draftId, wallet)).set(entry);
+  logger.info('bonus_zone.locked', { context: { draftId: input.draftId, wallet, tokenId: tok.tokenId, tier: t.tier, position: view.position, eligible: elig.eligible, reason: elig.reason } });
+  return { locked: true, entry, view };
+}
+
+/** Leaving the lobby forfeits the lock (pass is refunded, nothing pays). */
+export async function voidBonusZoneEntryOnLeave(wallet: string, draftId: string): Promise<void> {
+  if (!isFirestoreConfigured()) return;
+  const ref = getAdminFirestore().collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet));
+  await ref.set({ status: 'left', leftAtIso: new Date().toISOString() }, { merge: true }).catch(() => {});
+}
+
+export async function getBonusZoneEntry(wallet: string, draftId: string): Promise<BonusZoneEntry | null> {
+  if (!isFirestoreConfigured()) return null;
+  const snap = await getAdminFirestore().collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet)).get();
+  return snap.exists ? (snap.data() as BonusZoneEntry) : null;
+}
+
+// ── Grant (the free pass) ───────────────────────────────────────────────────
+
+/**
+ * Mint + register `count` FREE passes (free origin, not sellable mid-season,
+ * never earns the bonus again). Same recipe as admin grant-drafts.
+ */
+export async function grantBonusZonePasses(wallet: string, count: number, reason: string): Promise<{ tokenIds: string[]; txHash: string }> {
+  const { isAdminMintConfigured, reserveTokensToWallet } = await import('@/lib/onchain/adminMint');
+  if (!isAdminMintConfigured()) throw new Error('admin mint not configured');
+  const w = wallet.toLowerCase();
+  const res = await reserveTokensToWallet({ to: w, count });
+  const tokenIds = res.tokenIds.map(String);
+  const { recordPassOrigins } = await import('@/lib/onchain/passOrigin');
+  await recordPassOrigins({ tokenIds: res.tokenIds, origin: 'admin_grant', ownerAtMint: w, txHash: res.txHash, reason: `bonus_zone:${reason}` });
+  const { registerMintedTokens } = await import('@/lib/onchain/reconcilePasses');
+  await registerMintedTokens(w, res.tokenIds, 'free');
+  const { buildActivityEventDoc } = await import('@/lib/activityEvents');
+  const { recountFromInventory } = await import('@/lib/passLedger');
+  const activityDoc = await buildActivityEventDoc({
+    type: 'pass_granted',
+    userId: w,
+    walletAddress: w,
+    paymentMethod: 'free',
+    quantity: count,
+    tokenIds,
+    txHash: res.txHash,
+    metadata: { source: 'bonus_zone', reason },
+  });
+  await recountFromInventory(w, activityDoc);
+  return { tokenIds, txHash: res.txHash };
+}
+
+// ── Fill settlement ─────────────────────────────────────────────────────────
+
+export interface SettleOutcome {
+  wallet: string;
+  outcome: 'no_entry' | 'not_pending' | 'token_mismatch' | 'paid' | 'half' | 'grant_failed' | 'error';
+  tokenIds?: string[];
+  halves?: number;
+  error?: string;
+}
+
+/**
+ * Called from the draft-filled webhook (the one RELIABLE fill observer). For
+ * every wallet with a pending lock on this draft: verify the engine still has
+ * that wallet in the draft with the locked token, then pay — tier 1 mints a
+ * free pass now; tier 2 banks a half in this window's progress doc and mints
+ * when the second half lands. Idempotent: pending → settling is a transaction,
+ * so a backstop re-fire can never pay twice.
+ */
+export async function settleBonusZoneFill(draftId: string, wallets: string[]): Promise<SettleOutcome[]> {
+  const cfg = await readBonusZoneConfig();
+  if (!cfg.enabled || !isFirestoreConfigured() || !isBonusZoneDraftId(draftId)) return [];
+  const db = getAdminFirestore();
+  const out: SettleOutcome[] = [];
+
+  for (const raw of wallets) {
+    const wallet = raw.toLowerCase();
+    const ref = db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet));
+    try {
+      // Claim.
+      const claimed = await db.runTransaction(async (tx) => {
+        const s = await tx.get(ref);
+        if (!s.exists) return null;
+        const e = s.data() as BonusZoneEntry;
+        if (e.status !== 'pending') return { e, claimed: false };
+        tx.update(ref, { status: 'settling', settlingAtIso: new Date().toISOString() });
+        return { e, claimed: true };
+      });
+      if (!claimed) { out.push({ wallet, outcome: 'no_entry' }); continue; }
+      if (!claimed.claimed) { out.push({ wallet, outcome: 'not_pending' }); continue; }
+      const e = claimed.e;
+
+      // The seat must still be held with the locked token (leave → re-enter
+      // with another pass rewrites the lock, so a mismatch here is a leave
+      // whose refund call never landed). Fail closed: nothing pays.
+      const tok = await resolveTokenInDraft(wallet, draftId);
+      if (!tok || tok.tokenId !== e.tokenId || tok.passType !== 'paid') {
+        await ref.set({ status: 'closed', closedReason: 'token_mismatch', seenTokenId: tok?.tokenId ?? null, settledAtIso: new Date().toISOString() }, { merge: true });
+        out.push({ wallet, outcome: 'token_mismatch' });
+        continue;
+      }
+
+      if (e.tier === 1) {
+        try {
+          const g = await grantBonusZonePasses(wallet, 1, `t1:${draftId}`);
+          await ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
+          await notifyBonusPaid(wallet, draftId, g.tokenIds.length, e.label);
+          out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds });
+        } catch (err) {
+          await ref.set({ status: 'grant_failed', error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
+          logger.error('bonus_zone.grant_failed', { context: { draftId, wallet, err: (err as Error).message } });
+          out.push({ wallet, outcome: 'grant_failed', error: (err as Error).message });
+        }
+        continue;
+      }
+
+      // Tier 2: half now; the pair must land in the SAME window (Richard 8/22).
+      const progRef = db.collection(BONUS_ZONE_PROGRESS).doc(`${wallet}__${e.windowStart}`);
+      const halves = await db.runTransaction(async (tx) => {
+        const s = await tx.get(progRef);
+        const cur = s.exists ? Number((s.data() as { halves?: number }).halves ?? 0) : 0;
+        const next = cur + 1;
+        if (next >= 2) {
+          tx.set(progRef, { wallet, windowStart: e.windowStart, halves: 0, minted: FieldValue.increment(1), updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+          return 2;
+        }
+        tx.set(progRef, { wallet, windowStart: e.windowStart, halves: next, updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+        return next;
+      });
+      if (halves < 2) {
+        await ref.set({ status: 'half', halvesAfter: halves, settledAtIso: new Date().toISOString() }, { merge: true });
+        await notifyBonusHalf(wallet, draftId, e.windowStart);
+        out.push({ wallet, outcome: 'half', halves });
+        continue;
+      }
+      try {
+        const g = await grantBonusZonePasses(wallet, 1, `t2:${draftId}`);
+        await ref.set({ status: 'paid', halvesAfter: 2, grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
+        await notifyBonusPaid(wallet, draftId, g.tokenIds.length, e.label);
+        out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds, halves: 2 });
+      } catch (err) {
+        await ref.set({ status: 'grant_failed', halvesAfter: 2, error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
+        logger.error('bonus_zone.grant_failed', { context: { draftId, wallet, err: (err as Error).message } });
+        out.push({ wallet, outcome: 'grant_failed', error: (err as Error).message });
+      }
+    } catch (err) {
+      logger.error('bonus_zone.settle_error', { context: { draftId, wallet, err: (err as Error).message } });
+      out.push({ wallet, outcome: 'error', error: (err as Error).message });
+    }
+  }
+  if (out.some((o) => o.outcome === 'paid' || o.outcome === 'half')) {
+    logger.info('bonus_zone.settled', { context: { draftId, outcomes: out.map((o) => `${o.wallet.slice(0, 8)}:${o.outcome}`) } });
+  }
+  return out;
+}
+
+/** Retry grants that failed at fill (mint hiccups). Runs from the minute cron. */
+export async function retryFailedBonusZoneGrants(max = 5): Promise<number> {
+  if (!isFirestoreConfigured()) return 0;
+  const cfg = await readBonusZoneConfig();
+  if (!cfg.enabled) return 0;
+  const db = getAdminFirestore();
+  const snap = await db.collection(BONUS_ZONE_ENTRIES).where('status', '==', 'grant_failed').limit(max).get();
+  let done = 0;
+  for (const doc of snap.docs) {
+    const e = doc.data() as BonusZoneEntry & { owed?: number; attempts?: number };
+    if ((e.attempts ?? 0) >= 8) continue;
+    const claimed = await db.runTransaction(async (tx) => {
+      const s = await tx.get(doc.ref);
+      if ((s.data() as BonusZoneEntry).status !== 'grant_failed') return false;
+      tx.update(doc.ref, { status: 'settling', attempts: FieldValue.increment(1) });
+      return true;
+    });
+    if (!claimed) continue;
+    try {
+      const g = await grantBonusZonePasses(e.wallet, e.owed ?? 1, `retry:${e.draftId}`);
+      await doc.ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString(), error: FieldValue.delete() }, { merge: true });
+      await notifyBonusPaid(e.wallet, e.draftId, g.tokenIds.length, e.label);
+      done++;
+    } catch (err) {
+      await doc.ref.set({ status: 'grant_failed', error: (err as Error).message }, { merge: true });
+    }
+  }
+  return done;
+}
+
+// ── Notifications ───────────────────────────────────────────────────────────
+
+async function notifyBonusPaid(wallet: string, draftId: string, count: number, label: string): Promise<void> {
+  try {
+    const { createNotification } = await import('@/lib/queueNotifications');
+    await createNotification(wallet, {
+      type: 'promo',
+      title: count === 1 ? '🟢 Bonus Zone: your free draft landed' : `🟢 Bonus Zone: ${count} free drafts landed`,
+      message: `Your ${label} draft filled, so your free draft pass is in your passes now. Use it on any draft.`,
+      link: '/promos?promo=bonus-zone',
+      dedupeKey: `bonus-zone-paid-${draftId}`,
+      icon: 'sparkles',
+    });
+  } catch (err) {
+    logger.warn('bonus_zone.notify_failed', { wallet, err: (err as Error).message });
+  }
+}
+
+async function notifyBonusHalf(wallet: string, draftId: string, windowStart: number): Promise<void> {
+  try {
+    const { createNotification } = await import('@/lib/queueNotifications');
+    await createNotification(wallet, {
+      type: 'promo',
+      title: '🟢 Bonus Zone: 1 of 2 toward a free draft',
+      message: 'Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours.',
+      link: '/promos?promo=bonus-zone',
+      dedupeKey: `bonus-zone-half-${draftId}-${windowStart}`,
+      icon: 'sparkles',
+    });
+  } catch (err) {
+    logger.warn('bonus_zone.notify_failed', { wallet, err: (err as Error).message });
+  }
+}
+
+// ── Per-wallet status (entry modal, My Drafts, promo card) ──────────────────
+
+export interface BonusZoneWalletStatus {
+  view: BonusZoneView;
+  passes: { paidTotal: number; eligibleCount: number; ineligibleReasons: Record<string, number> } | null;
+  /** Live locks on lobbies still filling. */
+  pending: Array<{ draftId: string; tier: BonusZoneTier; label: string; credit: 1 | 0.5; position: number; eligible: boolean; reason: string; status: BonusEntryStatus }>;
+  /** Half credits banked in the CURRENT window (0 or 1). */
+  halvesThisWindow: number;
+  /** Free drafts earned all-time from the zone. */
+  earned: number;
+  history: Array<{ draftId: string; label: string; status: BonusEntryStatus; settledAtIso?: string; grantedTokenIds?: string[]; halvesAfter?: number }>;
+}
+
+export async function getBonusZoneWalletStatus(wallet: string, opts: { includePasses?: boolean } = {}): Promise<BonusZoneWalletStatus> {
+  const cfg = await readBonusZoneConfig();
+  const view = await readBonusZoneView();
+  const w = wallet.toLowerCase();
+  const empty: BonusZoneWalletStatus = { view, passes: null, pending: [], halvesThisWindow: 0, earned: 0, history: [] };
+  if (!cfg.enabled || !isFirestoreConfigured()) return empty;
+  const db = getAdminFirestore();
+  const [entriesSnap, progSnap, passes] = await Promise.all([
+    db.collection(BONUS_ZONE_ENTRIES).where('wallet', '==', w).limit(200).get(),
+    view.windowStart > 0 ? db.collection(BONUS_ZONE_PROGRESS).doc(`${w}__${view.windowStart}`).get() : Promise.resolve(null),
+    opts.includePasses ? classifyAvailablePasses(w, cfg) : Promise.resolve(null),
+  ]);
+  const entries = entriesSnap.docs.map((d) => d.data() as BonusZoneEntry);
+  const pending = entries
+    .filter((e) => e.status === 'pending' || e.status === 'ineligible')
+    .map((e) => ({ draftId: e.draftId, tier: e.tier, label: e.label, credit: e.credit, position: e.position, eligible: e.eligible, reason: e.reason, status: e.status }));
+  const settled = entries
+    .filter((e) => e.status === 'paid' || e.status === 'half' || e.status === 'grant_failed')
+    .sort((a, b) => String(b.settledAtIso ?? '').localeCompare(String(a.settledAtIso ?? '')));
+  const earned = settled.reduce((s, e) => s + (e.status === 'paid' ? (e.grantedTokenIds?.length ?? 1) : 0), 0);
+  const reasons: Record<string, number> = {};
+  for (const p of passes?.ineligible ?? []) reasons[p.reason] = (reasons[p.reason] ?? 0) + 1;
+  return {
+    view,
+    passes: passes ? { paidTotal: passes.paidTotal, eligibleCount: passes.eligible.length, ineligibleReasons: reasons } : null,
+    pending,
+    halvesThisWindow: progSnap?.exists ? Number((progSnap.data() as { halves?: number }).halves ?? 0) : 0,
+    earned,
+    history: settled.slice(0, 30).map((e) => ({ draftId: e.draftId, label: e.label, status: e.status, settledAtIso: e.settledAtIso, grantedTokenIds: e.grantedTokenIds, halvesAfter: e.halvesAfter })),
+  };
+}
+
+/** Plain-English reason for an ineligible pass (entry modal / row tooltip). */
+export function ineligibleReasonCopy(reason: string): string {
+  switch (reason) {
+    case 'free_pass': return 'Free passes never earn Bonus Zone.';
+    case 'pre_launch': return 'This pass was bought before Bonus Zone started.';
+    case 'first_purchase': return 'This pass came with the First Purchase promo.';
+    case 'granted': return 'This pass was a reward, not a purchase.';
+    case 'transferred': return 'This pass was bought by a different wallet.';
+    case 'no_purchase_record': return 'This pass has no purchase on record.';
+    default: return 'This pass is not Bonus Zone eligible.';
+  }
+}

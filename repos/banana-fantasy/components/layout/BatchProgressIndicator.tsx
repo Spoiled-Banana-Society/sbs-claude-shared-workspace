@@ -6,6 +6,7 @@ import type { BatchProgress } from '@/lib/api/leagues';
 import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
+import { BonusZonePill, BonusZoneTooltipSection } from '@/components/bonusZone/BonusZoneUI';
 
 const HEAT_TRIGGER_PCT = 10; // a live special starts pulsing once ITS odds hit 10%
 const HEAT_MAX_PCT = 35;     // …ramping to full intensity by ~35% (a near-lock)
@@ -231,6 +232,9 @@ export function BatchProgressIndicator() {
               <span className="text-[10.5px] text-text-muted">rolling windows</span>
             </div>
 
+            {/* BONUS ZONE (ships dark — absent until the switch is on) */}
+            {data.bonusZone && <BonusZoneTooltipSection view={data.bonusZone} />}
+
             {/* Jackpot lane */}
             <div className="mb-2.5">
               <div className="flex items-baseline justify-between">
@@ -273,46 +277,38 @@ export function BatchProgressIndicator() {
             tablets land between sm and lg, where the FULL-size pills + counter
             collide with the desktop nav (Richard 7/21 landscape screenshot).
             Compact cut persists until lg, where everything genuinely fits. */}
-        <div className="relative flex flex-row items-center gap-1 ml-3 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
-          {/* Global draft number, desktop position: its own column left of the
-              pills. On smaller screens it moves BETWEEN the two pills below. */}
-          <div className="hidden lg:flex lg:flex-col lg:items-center lg:gap-0 leading-tight lg:px-0.5 lg:pr-2 lg:mr-0.5 lg:border-r lg:border-white/10">
-            <span className="text-[8px] font-bold tracking-[0.14em] text-white/40">DRAFT</span>
-            <span className="text-[13px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
-          </div>
-
-          {/* Mobile: draft number centered ON TOP of the pill pair (Boris
-              2026-07-22 — no more splitting the pills); desktop keeps the
-              left column. Pills sit tighter together underneath. */}
+        <div className="relative flex flex-row items-center gap-1 ml-9 mr-1 lg:gap-1.5 lg:ml-0 lg:mr-3 cursor-default">
+          {/* Standalone DRAFT #N removed from the header (Boris 2026-07-23) —
+              the global draft number now lives ONLY in the hover tooltip above,
+              not as its own element on desktop or mobile. */}
           <div className="flex flex-col items-center gap-[2px] lg:contents">
-            <div className="flex items-baseline gap-1 leading-none lg:hidden">
-              <span className="text-[6.5px] font-bold tracking-[0.12em] text-white/40">DRAFT</span>
-              <span className="text-[9.5px] font-bold tabular-nums text-white/80">#{filledLeaguesCount}</span>
-            </div>
           <div className="flex flex-row items-center gap-[3px] lg:gap-1.5">
+            {/* BONUS ZONE pill — green, left of JACKPOT; hides when the zone
+                is closed (70+) and is absent entirely while the switch is off.
+                Reveal-gated server-side off the same `pre` window the red pill
+                uses, so the two can never disagree. */}
+            {data.bonusZone && <BonusZonePill view={data.bonusZone} />}
             {pills.map((p) => (
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get
                     a tighter cut of the desktop pill (Boris 2026-07-21). */}
-                <div className={`flex flex-col gap-[2px] rounded-[8px] lg:rounded-[10px] border px-1.5 lg:px-2.5 py-[2px] lg:py-[5px] min-w-[70px] lg:min-w-[122px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
-                  <div className="flex items-center gap-1 lg:gap-1.5 leading-none">
-                    <span className={`text-[7.5px] lg:text-[10px] font-extrabold tracking-[0.1em] lg:tracking-[0.12em] ${p.textCls}`}>{p.tag}</span>
-                    {!p.hit && p.pct !== null && (
-                      <span className={`ml-auto text-[9px] lg:text-[11.5px] font-bold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
-                    )}
-                  </div>
-                  <div className="leading-none" style={heatPulse(p.heat, p.color)}>
-                    {p.hit ? (
-                      <span className="text-[10.5px] lg:text-[12px] font-extrabold text-green-400">✓ HIT</span>
-                    ) : (
-                      <span className="text-[10px] lg:text-[13px] font-extrabold tabular-nums text-white/90">
-                        {p.remaining}<span className="text-[8px] lg:text-[10.5px] font-semibold text-white/60">/{p.left}</span>
+                <div className={`flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] lg:rounded-[10px] border px-2 py-[5px] lg:py-[6px] w-[68px] lg:w-[82px] ${p.hit ? 'border-green-400/70 bg-green-400/10' : p.frameCls}`}>
+                  {/* Boris 2026-07-23: centered, 2 lines — label on top, then the
+                      odds (prominent, colored — the exciting number) + count
+                      together. No bar; compact, minimal empty space. */}
+                  <span className={`text-[8px] lg:text-[9.5px] font-extrabold tracking-[0.07em] leading-none ${p.textCls}`}>{p.tag}</span>
+                  {p.hit ? (
+                    <span className="mt-[3px] text-[11px] lg:text-[13px] font-extrabold text-green-400 leading-none">✓ HIT</span>
+                  ) : (
+                    <div className="mt-[3px] flex items-baseline gap-1 leading-none" style={heatPulse(p.heat, p.color)}>
+                      {p.pct !== null && (
+                        <span className={`text-[10.5px] lg:text-[12.5px] font-extrabold tabular-nums ${p.textCls}`}>{fmtPct(p.pct)}</span>
+                      )}
+                      <span className="text-[8px] lg:text-[9.5px] font-bold tabular-nums text-white/85">
+                        <span className="text-white">{p.remaining}</span>/{p.left}
                       </span>
-                    )}
-                  </div>
-                  <div className="h-[2px] lg:h-[2.5px] overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full rounded-full" style={{ width: `${p.hit ? 100 : p.pos}%`, background: p.hit ? '#4ade80' : p.barBg }} />
-                  </div>
+                    </div>
+                  )}
                 </div>
               </React.Fragment>
             ))}

@@ -4,16 +4,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { promoWeekendActive } from '@/lib/promoWindow';
 import { Modal } from '../ui/Modal';
+import { PromoModalHeader } from '@/components/promos/PromoModalHeader';
 import { Button } from '../ui/Button';
 import { Promo } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
+import { useDropMe } from '@/hooks/useDropMe';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
-import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { API_CONFIG } from '@/lib/api/config';
+import { deriveChaseState } from '@/lib/chasePromo';
+import { BananaDrawReveal } from '@/components/promos/BananaDrawReveal';
+import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
+import { BonusZoneModalContent } from '@/components/bonusZone/BonusZoneUI';
+import { promoRules } from '@/lib/promoTheme';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -42,19 +48,27 @@ function fmtWhen(d: string | undefined): string {
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
-  // Pick 10 expands to slots 6 & 9 (on top of 10) while the current 100-batch
-  // has all its specials (1 JP + 5 HOF) hit — surface that live in the modal.
-  const { data: batchData } = useBatchProgress();
-  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
-  // When the bonus is live, the Pick-10 modal title + explainer speak to all
-  // three winning slots (6, 9 & 10), not just 10.
-  const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
-  const modalTitle = isPickBonus ? 'Get Pick 6 9 10 → SPIN' : (promo?.modalContent.title ?? '');
-  const pickExplanation = isPickBonus
-    ? (promoWeekendActive()
-      ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• FREE and paid drafts BOTH count — through Sunday 12pm PT.'
-      : '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.')
-    : (promo?.modalContent.explanation ?? '');
+  const dropMe = useDropMe(user?.walletAddress);
+  // 🔒 Banana Vault modal state — reveal animation + claim feedback.
+  const [vaultJustRevealed, setVaultJustRevealed] = useState<number[]>([]);
+  const [vaultJustMissed, setVaultJustMissed] = useState<number[]>([]);
+  const [vaultShaking, setVaultShaking] = useState(false);
+  const [vaultMsg, setVaultMsg] = useState<string | null>(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [vaultClaimedKinds, setVaultClaimedKinds] = useState<{ spins?: boolean; seat?: boolean }>({});
+  const [vaultCracked, setVaultCracked] = useState(false);
+  const vaultStageRef = useRef<HTMLDivElement>(null);
+  // ⛔ Client-side Pick-slot LADDER REMOVED 2026-07-26. It read the SSE's
+  // legacy per-100 counters (jackpotRemaining/hofRemaining), which don't know
+  // the rolling-lane era retired the ladder on 2026-07-20 — so a batch's 5th
+  // HOF landing made the modal announce "Pick 6 9 10" while the server only
+  // ever credited slot 10. Pick 10 is the ONLY winning slot; the server owns
+  // the copy (getPick10DisplayTier → PICK_TIER_COPY), so just render it.
+  const modalTitle = promo?.modalContent.title ?? '';
+  // Banana Draw owns its whole modal body (renderBananaDrawContent) — leading
+  // with the generic bullet list too would print the same rules twice and bury
+  // the mechanic under a wall of text (Boris 2026-07-26).
+  const pickExplanation = promo?.type === 'banana-draw' ? '' : (promo?.modalContent.explanation ?? '');
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
@@ -88,6 +102,18 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // Live names + pfps for jackpot draw entrants (default-or-edited, same
   // resolver as the draft room). Empty unless a draw is loaded.
   const jpEntryUsers = useDraftRoomUsers((jpEntries ?? []).map((e) => e.wallet));
+
+  // Banana Draw names arrive ALREADY RESOLVED from the server (real username
+  // or the stored bananaNumber). Deliberately not resolved client-side: the
+  // old fallback derived a name from the wallet HASH, which invents handles
+  // that don't match the user's real one — it read as fake data because it was.
+
+  const BANANA_SOURCE_LABEL: Record<string, string> = {
+    'draft-free': 'Free draft filled',
+    'draft-paid': 'Paid draft filled',
+    'referral-draft': 'A friend you invited drafted',
+    'referral-purchase': 'That friend made a purchase',
+  };
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -279,6 +305,86 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  const renderChaseContent = () => {
+    const chase = deriveChaseState(promo);
+    const mc = (promo.modalContent || {}) as Record<string, unknown>;
+    const history = (Array.isArray(mc.chaseHistory) ? mc.chaseHistory : []) as Array<{ date?: string; slot?: number; spins?: number; attempts?: number }>;
+    const totalSpins = typeof mc.totalChaseSpins === 'number' ? mc.totalChaseSpins : 0;
+    return (
+      <>
+        {/* Current chase state */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          {chase.active ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-text-muted text-xs">Matching</div>
+                <div className="text-2xl font-bold text-[#f97316] leading-tight">Pick {chase.slot}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-text-muted text-xs">Next hit</div>
+                <div className="text-white font-semibold">
+                  Attempt {chase.attempt} → <span className="text-[#f97316]">{chase.nextHit} {chase.nextHit === 1 ? 'Spin' : 'Spins'}{chase.isMax ? ' MAX' : ''}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-text-secondary text-sm">
+              Draft to lock your pick slot — then land that same slot again within 24 hours to win Free Spins.
+            </p>
+          )}
+        </div>
+        {/* Lifetime stats */}
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-banana tabular-nums">{history.length}</div>
+            <div className="text-text-muted text-xs mt-1">Picks Matched</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{Math.max(totalSpins, promo.claimCount ?? 0)}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Won Here</div>
+          </div>
+        </div>
+        {/* Time Remaining — always shown, 24:00:00 until a pick is locked */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-text-secondary">Time Remaining</span>
+            <div className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span className="text-xl font-bold text-banana tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
+            </div>
+          </div>
+          {!promo.timerEndTime && (
+            <p className="text-text-muted text-xs mt-2">Timer starts when your next draft fills and locks your pick.</p>
+          )}
+        </div>
+        {promo.claimable && promo.claimCount && promo.claimCount > 0 ? (
+          <p className="text-banana text-sm font-medium">
+            You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!
+          </p>
+        ) : null}
+        {/* History — one row per caught pick, newest first. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">History</h4>
+          {history.length > 0 ? (
+            <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
+              {history.map((e, index) => (
+                <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
+                  <span className="text-text-secondary text-sm">{fmtWhen(e.date)}</span>
+                  <span className="text-banana font-medium text-sm">Pick {e.slot} · {e.spins} {e.spins === 1 ? 'spin' : 'spins'}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-text-muted text-sm">Every time you match your pick it lands here with the date and Spins won.</p>
+          )}
+        </div>
+      </>
+    );
+  };
+
   const renderDailyDraftsContent = () => (
     <>
       {renderProgressSection()}
@@ -375,23 +481,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
     return (
       <>
-        {/* Expanded-window banner — live when the current 100-batch has had all
-            its specials (1 Jackpot + 5 HOF) hit. Until the next batch, slots 6
-            and 9 also win, on top of the usual slot 10. */}
-        {pickExpanded ? (
-          <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
-            <p className="text-banana font-semibold text-sm">🔥 Bonus active — this batch&apos;s Jackpot &amp; HOFs are all gone</p>
-            <p className="text-text-secondary text-sm mt-1">
-              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin, not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-xl p-4 bg-bg-tertiary">
-            <p className="text-text-secondary text-sm">
-              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin.
-            </p>
-          </div>
-        )}
+        {/* Slot 10 is the only winning slot — no ladder (see the note by
+            modalTitle). Copy follows the promo window: free drafts count until
+            Sun 12pm PT, paid-only after. */}
+        <div className="rounded-xl p-4 bg-bg-tertiary">
+          <p className="text-text-secondary text-sm">
+            Land <span className="text-text-primary font-semibold">slot 10</span> in a{promoWeekendActive() ? '' : ' paid'} draft for a free spin.
+          </p>
+        </div>
 
         {/* Total Pick 10s */}
         {promo.modalContent.totalPick10s !== undefined && (
@@ -425,7 +522,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               ))}
             </div>
           ) : (
-            <p className="text-text-muted text-sm">{isPickBonus ? 'Every slot 6, 9 & 10 you land in a draft lands here with the draft and date.' : 'Every 10th slot pick you land in a paid draft lands here with the draft and date.'}</p>
+            <p className="text-text-muted text-sm">{'Every 10th slot pick you land lands here with the draft and date.'}</p>
           )}
         </div>
       </>
@@ -683,6 +780,497 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  // ── Banana Draw ───────────────────────────────────────────────────────
+  // Order is deliberate (Boris 2026-07-26): the MECHANIC in one line, then how
+  // to earn, then their own numbers, then everything else. The generic bullet
+  // list is suppressed for this promo (see pickExplanation) — it printed the
+  // same rules a second time and buried the point under a wall of text.
+  /**
+   * THE ELIMINATOR — the modal explains the mechanic, but the thing people
+   * actually want after reading it is the live board. Without this button the
+   * only route there is closing the modal and scrolling, which on the home
+   * carousel means navigating to /promos by hand (Richard 2026-07-31).
+   */
+  /**
+   * THE DROP — the modal explained the promo and then dead-ended on a disabled
+   * CLAIM button with no way to reach the opening room (Richard 2026-08-02).
+   * Now it shows the stack you're sitting on and takes you straight there.
+   */
+  const renderDropContent = () => (
+    <div className="bg-bg-tertiary rounded-xl p-5 text-center">
+      {dropMe.loaded && dropMe.sealed > 0 ? (
+        <>
+          <p className="text-4xl font-black text-text-primary tabular-nums">{dropMe.sealed}</p>
+          <p className="mt-1 text-sm text-text-secondary">
+            sealed pack{dropMe.sealed === 1 ? '' : 's'} waiting for tonight
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-text-secondary">
+          Fill a draft to earn your first packs — paid 2, free 1.
+        </p>
+      )}
+      <Button
+        className="mt-4 w-full"
+        onClick={() => { onClose(); window.location.href = '/drop'; }}
+      >
+        {dropMe.status === 'earning' ? 'See your packs' : 'Open your packs'}
+      </Button>
+      <p className="mt-2 text-[11px] text-text-tertiary">
+        {dropMe.status === 'earning'
+          ? 'Locked until 8:00 PM PT'
+          : 'Unlocked — open them now'}
+      </p>
+    </div>
+  );
+
+  const renderEliminatorContent = () => (
+    <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+      <p className="text-text-secondary text-sm mb-3">
+        See who&apos;s surviving right now and how far you are from a seat.
+      </p>
+      <Button
+        className="w-full"
+        onClick={() => { onClose(); window.location.href = '/promos#eliminator-board'; }}
+      >
+        View the Leaderboard
+      </Button>
+    </div>
+  );
+
+  // 🔒 The Banana Vault — interactive tumblers with the PACK-OPENING treatment
+  // (Boris 8/16): tap → 1.4s escalating rattle + building gold glow → either a
+  // burst flash + number punch-in + confetti (hit) or a gray slump + ✕ (miss).
+  // 4th click fires a second confetti wave + the VAULT CRACKED takeover.
+  // Prizes were locked at fill; the tap is pure reveal ceremony.
+  const renderVaultContent = () => {
+    type VaultPayload = {
+      open?: boolean; seatsLeft?: number; revealedSlots?: number[]; unrevealed?: number;
+      seatWon?: boolean; seatClaimable?: boolean; spinsClaimable?: boolean;
+      paidClicks?: number; bountiesLeft?: number; missedSlots?: number[];
+    };
+    const bv = (promo.modalContent as { bananaVault?: VaultPayload } | undefined)?.bananaVault;
+    if (!bv) return null;
+    const revealedAll = [...new Set([...(bv.revealedSlots ?? []), ...vaultJustRevealed])].sort((a, b) => a - b);
+    const pendingCount = Math.max(0, (bv.unrevealed ?? 0) - vaultJustRevealed.length - vaultJustMissed.filter((m) => !(bv.missedSlots ?? []).includes(m)).length);
+    const wallet = user?.walletAddress?.toLowerCase();
+
+    const spawnParticles = (colors: string[], count: number) => {
+      const host = vaultStageRef.current;
+      if (!host) return;
+      const rect = host.getBoundingClientRect();
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;width:8px;height:8px;border-radius:2px;pointer-events:none;z-index:20;';
+        el.style.left = `${rect.width / 2}px`;
+        el.style.top = '70px';
+        el.style.background = colors[i % colors.length];
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 60 + Math.random() * 120;
+        el.animate([
+          { opacity: 1, transform: 'translate(0,0) rotate(0deg)' },
+          { opacity: 0, transform: `translate(${Math.cos(ang) * dist}px, ${Math.sin(ang) * dist - 40}px) rotate(${Math.random() * 720 - 360}deg)` },
+        ], { duration: 900, easing: 'ease-out', fill: 'forwards' });
+        host.appendChild(el);
+        setTimeout(() => el.remove(), 950);
+      }
+    };
+
+    const tapVault = async () => {
+      if (!wallet || vaultBusy) return;
+      setVaultBusy(true);
+      setVaultShaking(true); // rattle phase
+      try {
+        const res = await fetch('/api/vault/reveal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: wallet }),
+        });
+        const data = await res.json();
+        const slots: number[] = (data.revealed ?? []).map((c: { slot: number }) => c.slot);
+        const missed: number[] = data.missedSlots ?? [];
+        setTimeout(() => {
+          setVaultShaking(false);
+          if (missed.length > 0) setVaultJustMissed((prev) => [...new Set([...prev, ...missed])]);
+          if (slots.length === 0) {
+            if (missed.length > 0) {
+              spawnParticles(['rgba(255,255,255,0.25)'], 6);
+              setVaultMsg(`…no click. Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} crossed off your map.`);
+            } else {
+              setVaultMsg('…nothing new. Your next draft could click one.');
+            }
+            setVaultBusy(false);
+          } else {
+            slots.forEach((sl, i) => setTimeout(() => {
+              setVaultJustRevealed((prev) => {
+                const next = prev.includes(sl) ? prev : [...prev, sl];
+                const total = new Set([...(bv.revealedSlots ?? []), ...next]).size;
+                spawnParticles(['#fbbf24', '#22c55e', '#ffffff'], 26);
+                if (total >= 4) {
+                  setTimeout(() => {
+                    spawnParticles(['#fbbf24', '#ef4444', '#22c55e', '#ffffff'], 60);
+                    setVaultCracked(true);
+                  }, 650);
+                }
+                return next;
+              });
+            }, i * 800));
+            setVaultMsg(slots.length === 1 ? '🔓 CLICK! A tumbler opened.' : `🔓 ${slots.length} tumblers clicked open!`);
+            if (missed.length > 0) {
+              setVaultMsg((m) => `${m} Slot${missed.length > 1 ? 's' : ''} ${missed.join(', ')} crossed off.`);
+            }
+            setTimeout(() => setVaultBusy(false), slots.length * 800 + 400);
+          }
+        }, 1400); // rattle duration
+      } catch {
+        setVaultShaking(false);
+        setVaultBusy(false);
+      }
+    };
+
+    const claim = async (kind: 'spins' | 'seat') => {
+      if (!wallet || vaultBusy) return;
+      setVaultBusy(true);
+      try {
+        const res = await fetch('/api/vault/claim', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: wallet, kind }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setVaultClaimedKinds((prev) => ({ ...prev, [kind]: true }));
+          spawnParticles(kind === 'seat' ? ['#ef4444', '#fbbf24', '#ffffff'] : ['#fbbf24', '#ffffff'], 40);
+          setVaultMsg(kind === 'spins'
+            ? '🎰 2 Free Spins added to your wheel!'
+            : '💥 Jackpot seat locked in — only Vault winners share that lobby.');
+        }
+      } finally {
+        setVaultBusy(false);
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        <style>{`
+          @keyframes vaultRattle {
+            0% { transform: translate(0) rotate(0); box-shadow: 0 0 0 rgba(251,191,36,0); }
+            15% { transform: translate(-2px,1px) rotate(-1deg); }
+            30% { transform: translate(3px,-1px) rotate(1.4deg); box-shadow: 0 0 16px rgba(251,191,36,0.25); }
+            45% { transform: translate(-3px,2px) rotate(-1.8deg); }
+            60% { transform: translate(4px,-2px) rotate(2.4deg); box-shadow: 0 0 32px rgba(251,191,36,0.5); }
+            75% { transform: translate(-5px,2px) rotate(-2.8deg); }
+            90% { transform: translate(5px,-3px) rotate(3.2deg); box-shadow: 0 0 50px rgba(251,191,36,0.8); }
+            100% { transform: translate(0) rotate(0); box-shadow: 0 0 58px rgba(251,191,36,0.9); }
+          }
+          @keyframes vaultBurst {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.16); box-shadow: 0 0 80px rgba(34,197,94,0.9), 0 0 130px rgba(251,191,36,0.5); }
+            100% { transform: scale(1); box-shadow: 0 0 22px rgba(34,197,94,0.4); }
+          }
+          @keyframes vaultPunch { 0% { transform: scale(3); opacity: 0; } 60% { transform: scale(0.9); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+          @keyframes vaultBannerIn { 0% { opacity: 0; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
+          @media (prefers-reduced-motion: reduce) { .vault-rattle, .vault-burst { animation: none !important; } }
+        `}</style>
+        {/* tumblers + particle host */}
+        <div ref={vaultStageRef} className="relative">
+          <div className="flex justify-center gap-3">
+            {Array.from({ length: 4 }, (_, i) => {
+              const num = revealedAll[i];
+              const isRevealed = num !== undefined;
+              const justNow = isRevealed && vaultJustRevealed.includes(num);
+              const isPending = !isRevealed && i < revealedAll.length + pendingCount;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={isPending ? tapVault : undefined}
+                  disabled={!isPending || vaultBusy}
+                  className={`w-16 h-20 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                    isRevealed
+                      ? 'border-green-500/70 bg-green-500/10'
+                      : isPending
+                        ? 'border-banana bg-banana/10 cursor-pointer'
+                        : 'border-white/15 bg-white/[0.03]'
+                  } ${isPending && vaultShaking ? 'vault-rattle' : isPending ? 'animate-pulse' : ''} ${justNow ? 'vault-burst' : ''}`}
+                  style={isPending && vaultShaking
+                    ? { animation: 'vaultRattle 1400ms cubic-bezier(.36,.07,.19,.97) both' }
+                    : justNow ? { animation: 'vaultBurst 420ms ease-out both' } : undefined}
+                >
+                  <span
+                    className={`text-3xl font-black tabular-nums ${
+                      isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/20'
+                    }`}
+                    style={justNow ? { animation: 'vaultPunch 500ms cubic-bezier(.2,1.6,.35,1) both' } : undefined}
+                  >
+                    {isRevealed ? num : '?'}
+                  </span>
+                  <span className={`text-[8px] font-bold tracking-wider mt-1 ${
+                    isRevealed ? 'text-green-400' : isPending ? 'text-banana' : 'text-white/30'
+                  }`}>
+                    {isRevealed ? 'CLICKED' : isPending ? 'TAP' : 'SEALED'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* VAULT CRACKED takeover */}
+          {vaultCracked && (
+            <div
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1 rounded-xl bg-black/85"
+              style={{ animation: 'vaultBannerIn 500ms cubic-bezier(.2,1.4,.35,1) both' }}
+              onClick={() => setVaultCracked(false)}
+            >
+              <span className="text-2xl font-black text-banana">💥 VAULT CRACKED</span>
+              <span className="text-xs font-bold text-white/70">All 4 tumblers open — claim your Jackpot seat below</span>
+            </div>
+          )}
+        </div>
+        {pendingCount > 0 && !vaultMsg && (
+          <p className="text-center text-banana text-sm font-bold animate-pulse">
+            👆 A draft filled — tap to check your tumblers
+          </p>
+        )}
+        {vaultMsg && <p className="text-center text-sm font-bold text-white">{vaultMsg}</p>}
+        <p className="text-center text-xs text-text-secondary">
+          <span className="font-bold text-red-400">{bv.seatsLeft ?? 0} Jackpot seats left</span> in this vault
+        </p>
+        {/* Personal bounty status (Boris 8/15): users can't otherwise tell
+            which of their clicks were paid — show the meter while the race
+            is live and they haven't already won it. */}
+        {(bv.bountiesLeft ?? 0) > 0 && !bv.spinsClaimable && (bv.paidClicks ?? 0) < 2 && (
+          <p className="text-center text-xs text-banana font-semibold">
+            🎰 First 5 to click 2 tumblers with paid drafts win 2 Free Spins — you&apos;re {bv.paidClicks ?? 0}/2 ({bv.bountiesLeft} left)
+          </p>
+        )}
+        {/* YOUR SLOT MAP (Boris 8/15): earned info only — green = your revealed
+            clicks, ✕ = slots you tried that aren't in your combo, ? = untried.
+            Misses only mark AFTER a tap so the reveal suspense stays intact. */}
+        {(() => {
+          const missedAll = [...new Set([...(bv.missedSlots ?? []), ...vaultJustMissed])];
+          if (revealedAll.length === 0 && missedAll.length === 0) return null;
+          return (
+            <div>
+              <p className="text-center text-[9px] font-bold tracking-widest text-white/30 mb-1">YOUR SLOT MAP</p>
+              <div className="flex justify-center gap-1">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((sl) => {
+                  const hit = revealedAll.includes(sl);
+                  const dead = missedAll.includes(sl);
+                  return (
+                    <div key={sl} className={`w-6 h-7 rounded flex items-center justify-center text-[10px] font-bold tabular-nums ${
+                      hit ? 'bg-green-500/80 text-white' : dead ? 'bg-white/[0.06] text-red-400/80' : 'bg-white/[0.06] text-white/30'
+                    }`}>
+                      {hit ? sl : dead ? '✕' : sl}
+                    </div>
+                  );
+                })}
+              </div>
+              {missedAll.length > 0 && (
+                <p className="mt-1 text-center text-[10px] text-white/35">✕ = not in your combo — hitting it again does nothing</p>
+              )}
+            </div>
+          );
+        })()}
+        {bv.spinsClaimable && !vaultClaimedKinds.spins && (
+          <button
+            type="button"
+            onClick={() => claim('spins')}
+            disabled={vaultBusy}
+            className="w-full py-3 rounded-xl bg-banana text-black font-extrabold text-sm"
+          >
+            🎰 CLAIM 2 FREE SPINS
+          </button>
+        )}
+        {bv.seatClaimable && !vaultClaimedKinds.seat && (
+          <button
+            type="button"
+            onClick={() => claim('seat')}
+            disabled={vaultBusy}
+            className="w-full py-3 rounded-xl bg-red-500 text-white font-extrabold text-sm"
+          >
+            🏆 CLAIM YOUR JACKPOT SEAT
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderBananaDrawContent = () => {
+    const bd = promo.modalContent.bananaDraw;
+    if (!bd) return null;
+    const lastWin = bd.recentWinners[0];
+
+    // One earning row. Count is shown only once they have some, so a new user
+    // reads a clean rate card instead of a column of zeros.
+    const earn = (label: string, bananas: number, count: number) => (
+      <div key={label} className="flex items-center justify-between py-2">
+        <span className="text-text-secondary text-sm">{label}</span>
+        <span className="flex items-center gap-3">
+          {count > 0 && <span className="text-text-muted text-xs tabular-nums">{count} so far</span>}
+          <span className="text-banana font-bold tabular-nums">{bananas} 🍌</span>
+        </span>
+      </div>
+    );
+
+    return (
+      <>
+        {/* 1 — THE MECHANIC. Two lines, nothing else. */}
+        <div className="text-center py-1">
+          <p className="text-text-primary text-base font-semibold leading-snug">
+            Every 24 hours, one player wins a seat in the<br />
+            first ever <JackHofWordmark size={16} /> draft.
+          </p>
+          <p className="text-text-muted text-sm mt-1.5">
+            More Bananas, better odds — but all it takes is one.
+          </p>
+        </div>
+
+        {/* 2 — HOW YOU EARN. The rate card, straight after the mechanic. */}
+        <div className="bg-bg-tertiary rounded-xl px-4 py-3">
+          <div className="divide-y divide-white/5">
+            {earn('Free draft — once it fills', 1, bd.freeDrafts)}
+            {earn('Paid draft — once it fills', 2, bd.paidDrafts)}
+            {earn('A friend you invited drafts', 5, bd.referrals)}
+            {earn('…and when they buy passes', 5, 0)}
+          </div>
+          <p className="text-text-muted text-xs mt-2.5 pt-2.5 border-t border-white/5">
+            Bananas reset every 24 hours — use your drafts.
+          </p>
+        </div>
+
+        {/* 3 — YOUR POSITION. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          {/* Odds callout removed (Boris 2026-07-26) — the leaderboard already
+              shows each player's share, so a second percentage here was noise. */}
+          <div className="flex items-baseline justify-between">
+            <span className="text-3xl font-bold text-banana tabular-nums">{bd.bananas} 🍌</span>
+            <span className="text-text-muted text-xs">this cycle</span>
+          </div>
+          {bd.pending > 0 && (
+            <p className="text-text-muted text-xs mt-2">
+              {bd.pending} {bd.pending === 1 ? 'draft' : 'drafts'} filling — {bd.pending === 1 ? 'that Banana lands' : 'those Bananas land'} when {bd.pending === 1 ? 'it fills' : 'they fill'}.
+            </p>
+          )}
+          {bd.totalBananas > 0 && (
+            <p className="text-text-secondary text-sm mt-2">
+              {bd.totalBananas} Bananas in this draw from {bd.entrantCount} {bd.entrantCount === 1 ? 'player' : 'players'}.
+            </p>
+          )}
+        </div>
+
+        {/* 4 — THE PRIZE + seats. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-text-primary font-medium">
+              First ever <JackHofWordmark size={13} /> draft
+            </span>
+            <span className="text-text-muted text-xs tabular-nums">{bd.seatsClaimed} of {bd.seatsTotal} seats</span>
+          </div>
+          <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, (bd.seatsClaimed / (bd.seatsTotal || 10)) * 100)}%`,
+                       background: 'linear-gradient(90deg,#ef4444,#D4AF37)' }} />
+          </div>
+          <p className="text-text-secondary text-sm">
+            Jackpot + Hall of Fame on ONE roster — win your league and skip straight
+            to the finals, AND compete for HOF prizes. When all {bd.seatsTotal} seats are
+            claimed, it drafts.
+          </p>
+        </div>
+
+        {/* 5 — LEADERBOARD, by share not rank. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Current leaderboard</h4>
+          {bd.leaderboard.length === 0 ? (
+            <p className="text-text-muted text-sm">
+              Nobody has earned a Banana yet this cycle. Fill a draft and you&apos;re first on the board.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {bd.leaderboard.slice(0, 10).map((r, i) => (
+                <div key={`${r.name}-${i}`}
+                  className={`flex items-center justify-between text-sm py-1 ${r.isYou ? 'text-banana font-semibold' : 'text-text-secondary'}`}>
+                  <span className="truncate mr-3">
+                    <span className="text-text-muted mr-2 tabular-nums">{i + 1}</span>
+                    {r.isYou ? 'You' : r.name}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{r.bananas} 🍌</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 7 — The rest. Deliberately last: true, but not what you open for. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-2 text-text-primary">Good to know</h4>
+          <p className="whitespace-pre-line text-text-secondary text-sm leading-relaxed">
+            {'• Provably fair — the random number is sealed before the clock runs out and published after, so anyone can check the draw.\n'
+            + '• Win twice? Your second seat goes into the NEXT JackHOF league — we don’t redraw. The first draft keeps filling until 10 DIFFERENT players are in.\n'
+            + '• Your seat is a slow draft. Sell it on the marketplace before the draft, or sell your team after it wraps — you just can\'t sell while the draft is live.\n'
+            + '• One account per person — more than one account makes you ineligible to win prizes.\n'
+            + '• Real players only: the friends you refer must actually play fantasy football. Referring people who don’t makes BOTH you and your referral ineligible to win prizes.'}
+          </p>
+        </div>
+
+        {/* 8 — All-time history. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Your Banana history</h4>
+          {bd.allTime.length === 0 ? (
+            <p className="text-text-muted text-sm">
+              Every Banana you earn lands here with the date and where it came from — your drafts, and friends you invite.
+            </p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {bd.allTime.map((h, i) => (
+                <div key={`${h.at}-${i}`} className="flex justify-between text-sm py-0.5">
+                  <span className="text-text-secondary">{BANANA_SOURCE_LABEL[h.source] ?? h.source}</span>
+                  <span className="flex items-center gap-3 tabular-nums">
+                    <span className="text-text-muted text-xs">{h.at.slice(5, 10)}</span>
+                    <span className="text-banana">{h.bananas} 🍌</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 9 — The draw ceremony, LAST (Boris 2026-07-27). It used to sit
+            mid-modal, where a reel captioned "Drawing from the sealed
+            number…" read as a draw happening RIGHT NOW — mid-cycle, hours
+            after the number was actually drawn ("its pretending to do it").
+            Down here, under the history, framed as "Seat N winner", the same
+            animation reads as what it is: the replay of a finished draw.
+            Entrants who got the result bell land in this modal and can watch
+            it play out; the winner is server-decided either way. */}
+        {lastWin && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            {/* EVERY seat winner, oldest first — not just the latest (Boris
+                2026-07-28: "show both their names"). The reveal below still
+                replays the most recent draw. */}
+            <div className="mb-2 space-y-0.5">
+              {[...bd.recentWinners].reverse().map((w, i, arr) => {
+                const n = Math.max(1, bd.seatsClaimed - (arr.length - 1 - i));
+                const v = n % 100;
+                const suf = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4)] ?? 'th';
+                return (
+                  <h4 key={w.cycleId} className="font-semibold text-text-primary">
+                    {n}{suf} Seat — {w.name}
+                  </h4>
+                );
+              })}
+            </div>
+            <BananaDrawReveal
+              entrants={bd.lastDrawEntrants?.length
+                ? bd.lastDrawEntrants
+                : bd.leaderboard.map((r) => (r.isYou ? 'You' : r.name))}
+              winnerName={lastWin.name}
+              winnerBananas={lastWin.bananas}
+            />
+          </div>
+        )}
+      </>
+    );
+  };
+
   const renderJackpotContent = () => {
     const history = promo.modalContent.jackpotHistory;
     const hasHistory = history && history.length > 0;
@@ -746,19 +1334,24 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             logic reads; refreshed on every stream ping. */}
         {cycle && (
           <div className="bg-bg-tertiary rounded-xl p-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-text-primary font-medium">Draft #{cycle.filledCount}</span>
-              <span className="text-text-muted text-xs">#{cycle.position} of 100 this cycle</span>
+            {/* Position only — the global draft number (#2,6xx) read as a
+                second, unrelated counter next to it and just confused people
+                (Boris 2026-07-25). What matters is where the cycle stands. */}
+            <div className="mb-2">
+              <span className="text-text-primary font-medium">{cycle.position} of {cycle.windowLength} this cycle</span>
             </div>
             <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
-              <div className="h-full bg-jackpot rounded-full transition-all duration-500" style={{ width: `${cycle.position}%` }} />
+              <div
+                className="h-full bg-jackpot rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, (cycle.position / (cycle.windowLength || 100)) * 100)}%` }}
+              />
             </div>
             <p className="text-text-secondary text-sm">
               {cycle.tenLeft > 0
                 ? `${cycle.tenLeft} ${cycle.tenLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 10 Free Spins — up to 200 free drafts.`
                 : cycle.fiveLeft > 0
                 ? `${cycle.fiveLeft} ${cycle.fiveLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 5 Free Spins — up to 100 free drafts.`
-                : 'Bonus windows closed for this cycle — a fresh cycle (and the 10-Spin window) starts at the next 100.'}
+                : 'Bonus windows are closed for this cycle. The moment this cycle’s Jackpot lands, a fresh cycle opens and the 10-Spin window is live again.'}
             </p>
             {latest && (
               <p className="text-text-muted text-xs mt-2">
@@ -925,7 +1518,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     return (
       <div className="bg-bg-tertiary rounded-xl p-4 text-center">
         <div className="text-4xl mb-3">🏈</div>
-        <p className="font-semibold mb-2 text-text-primary">Football is BACK — Kickoff Weekend Only!</p>
+        <p className="font-semibold mb-2 text-text-primary">Kickoff Weekend Only!</p>
+        {/* Live countdown to the Sunday-night cutoff (timerEndTime is stamped
+            server-side on every read while the window is open). */}
         {promo?.timerEndTime && (
           <p className="text-xl font-bold text-banana tabular-nums mb-1">{formatTimeRemaining(promo.timerEndTime)}</p>
         )}
@@ -1094,8 +1689,15 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  // BONUS ZONE: live tier ladder + this user's locks/earned + the rules.
+  const renderBonusZoneContent = () => (
+    <BonusZoneModalContent data={promo.modalContent?.bonusZone} rules={promoRules(promo)} />
+  );
+
   const renderPromoContent = () => {
     switch (promo.type) {
+      case 'bonus-zone':
+        return renderBonusZoneContent();
       case 'daily-drafts':
         return renderDailyDraftsContent();
       case 'pick-10':
@@ -1114,6 +1716,16 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderBuyBonusContent();
       case 'tweet-engagement':
         return renderTweetEngagementContent();
+      case 'pick-chase':
+        return renderChaseContent();
+      case 'banana-vault':
+        return renderVaultContent();
+      case 'banana-draw':
+        return renderBananaDrawContent();
+      case 'eliminator':
+        return renderEliminatorContent();
+      case 'drop':
+        return renderDropContent();
       default:
         return null;
     }
@@ -1139,7 +1751,22 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={modalTitle}
+      size="lg"
+      sheetOnMobile
+      header={(
+        <PromoModalHeader
+          promo={promo}
+          wallet={user?.walletAddress ?? null}
+          onClose={onClose}
+          hasVisibleClaim={baseCanClaim}
+          isClaimed={isPromoClaimed}
+        />
+      )}
+    >
       <div className="space-y-5">
         {/* Explanation */}
         <div className="text-text-secondary leading-relaxed">
@@ -1171,8 +1798,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {/* Dynamic Content Based on Promo Type */}
         {renderPromoContent()}
 
-        {/* Claim Button */}
-        <div className="pt-4 border-t border-bg-tertiary">
+        {/* Claim Button — hidden for THE DROP, which has nothing to claim here
+            and carries its own CTA into the opening room. Leaving the generic
+            one made the modal dead-end on a disabled button (Richard). */}
+        <div className={`pt-4 border-t border-bg-tertiary ${promo.type === 'drop' ? 'hidden' : ''}`}>
           <Button
             className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
             disabled={!canClaim}

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { BonusLeaveWarning } from '@/components/bonusZone/BonusZoneUI';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
@@ -473,6 +474,13 @@ function DraftRoomContent() {
 
   const [autoDraft, setAutoDraft] = useState(false);
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
+  // Mis-tap protection (Vertig0 2026-08-19): turning auto-draft ON asks first
+  // (turning OFF stays instant), and the toggle ignores taps for the first
+  // ~700ms after mount — the "room loaded under my second tap" case. ONLY the
+  // manual button goes through this; every automatic path (timeout auto-pick,
+  // consecutive-miss auto-enable, prefs sync) calls the engine directly.
+  const [confirmAutoOn, setConfirmAutoOn] = useState(false);
+  const toggleMountedAtRef = useRef(Date.now());
   const [sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
   const { preference: defaultSortPreference, loaded: defaultSortPreferenceLoaded } = useAutoPickSortPreference();
   const { rankMap: userRankMap, overrideMap: userStatsMap } = useUserRankings(walletParam);
@@ -2687,9 +2695,14 @@ function DraftRoomContent() {
         // (root cause of "auto never picks until I log in", 2026-07-11).
         const isOn = isLiveMode ? autoDraft : engine.airplaneMode;
         const handler = isLiveMode ? handleToggleAutoDraft : handleToggleAirplane;
+        const guardedClick = () => {
+          if (Date.now() - toggleMountedAtRef.current < 700) return; // load-guard
+          if (!isOn) { setConfirmAutoOn(true); return; }             // enabling asks
+          void handler();                                            // disabling is instant
+        };
         return (
           <button
-            onClick={handler}
+            onClick={guardedClick}
             disabled={isLiveMode && autoDraftLoading}
             title={isOn ? 'Auto-draft ON — click to disable' : 'Auto-draft OFF — click to enable'}
             className={`cursor-pointer text-[12px] flex items-center justify-center border px-1 font-primary transition-all ${
@@ -2710,6 +2723,30 @@ function DraftRoomContent() {
     // the page scroll. `clip` still cuts off horizontal overflow (confetti,
     // screen-shake) without creating a scroll container.
     <div className={`min-h-screen text-white overflow-x-clip flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
+      {/* Auto-draft enable confirm — one question, two buttons (Boris 2026-08-19). */}
+      {confirmAutoOn && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-6" onClick={() => setConfirmAutoOn(false)}>
+          <div className="w-full max-w-[320px] rounded-2xl border border-white/[0.12] bg-[#15151b] p-5 text-center" onClick={(e) => e.stopPropagation()}>
+            <h4 className="text-[16px] font-extrabold">Turn auto-draft on?</h4>
+            <div className="mt-4 flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmAutoOn(false)}
+                className="flex-1 rounded-full bg-white/10 py-2.5 text-[13px] font-extrabold text-white active:scale-[.97] transition-transform"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setConfirmAutoOn(false); void (isLiveMode ? handleToggleAutoDraft() : handleToggleAirplane()); }}
+                className="flex-1 rounded-full bg-emerald-500 py-2.5 text-[13px] font-extrabold text-[#04140d] active:scale-[.97] transition-transform"
+              >
+                Turn on
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* No full-screen edge frame. A screen-edge line fights the desktop
           scrollbar and the iOS notch/home-indicator/rounded corners, so it
           never sat cleanly on the outer edge (Boris 2026-06-13). The draft
@@ -2921,6 +2958,7 @@ function DraftRoomContent() {
           <DraftRoomDrafting
             engine={engine}
             usersMap={draftRoomUsers}
+            contestName={contestName}
             phase={phase}
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}
@@ -3069,6 +3107,7 @@ function DraftRoomContent() {
             <p className="text-white/60 mb-6">
               Are you sure you want to leave <span className="text-white font-medium">{contestName}</span>? Your draft pass will be returned.
             </p>
+            <BonusLeaveWarning lock={draftId ? draftStore.getDraft(draftId)?.bonusZone : null} />
             <div className="flex gap-3">
               <button
                 onClick={() => setShowLeaveConfirm(false)}

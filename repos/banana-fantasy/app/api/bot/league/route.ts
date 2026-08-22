@@ -8,9 +8,9 @@ import { json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, getAdminDatabase, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, laneDraftsLeft, lanePct } from '@/lib/rollingLanes';
+import { getLiveActivityCached } from '@/lib/liveActivityServer';
 import {
   LIVE_ACTIVITY_ENABLED,
-  LIVE_ACTIVITY_RTDB_PATH,
   LIVE_ACTIVITY_STALE_MS,
   formatLiveActivity,
 } from '@/lib/liveActivity';
@@ -217,16 +217,13 @@ interface ActivitySnapshot {
 async function loadActivitySnapshot(): Promise<ActivitySnapshot | null> {
   if (!LIVE_ACTIVITY_ENABLED) return null;
   try {
-    const snap = await getAdminDatabase().ref(LIVE_ACTIVITY_RTDB_PATH).get();
-    const v = snap.val() as { count?: unknown; round?: unknown; updatedAt?: unknown } | null;
-    if (!v || typeof v !== 'object') return null;
-    const count = Number(v.count) || 0;
-    const round = Number(v.round) || 0;
-    const updatedAt = Number(v.updatedAt) || 0;
-    if (count < 1 || round < 1) return null;
-    // Fail-closed: a stalled/dead aggregator appends nothing, not a frozen line.
-    if (Date.now() - updatedAt > LIVE_ACTIVITY_STALE_MS) return null;
-    return { count, round, updatedAt };
+    // OUR computed count (lib/liveActivityServer) — same source the in-app line
+    // reads now. The Go aggregator node it used to read stuck at count:0 while a
+    // fast draft was live (2026-08-18) and silently dropped this suffix.
+    const v = await getLiveActivityCached();
+    if (v.count < 1 || v.round < 1) return null;
+    if (Date.now() - v.updatedAt > LIVE_ACTIVITY_STALE_MS) return null;
+    return { count: v.count, round: v.round, updatedAt: v.updatedAt };
   } catch (err) {
     // A bad read must never take the feed down — just append nothing.
     logger.error('[api/bot/league] live-activity read failed', err);
@@ -346,6 +343,23 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   };
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
+
+  // BONUS ZONE line (ships dark — empty while the switch is off). Rides under
+  // the odds on FILLING lobbies only: the zone is about the NEXT draft to fill,
+  // so the just-filled ping never carries it. Reveal-gated off the same
+  // tracker view as the header pill, so it can't move before the slot lands.
+  let bonusZoneLine = '';
+  try {
+    const { readBonusZoneConfig, laneViewFromTracker, bonusZoneViewForLane } = await import('@/lib/bonusZone');
+    const bzCfg = await readBonusZoneConfig();
+    if (bzCfg.enabled) {
+      const lane = laneViewFromTracker(trackerData as Parameters<typeof laneViewFromTracker>[0]);
+      if (lane.rolling) {
+        const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
+        if (v.tier) bonusZoneLine = `🟢 BONUS ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
+      }
+    }
+  } catch { /* decoration */ }
 
   // (The old slot-keyed 🍌 ladder that used to stand in when the odds line
   // was absent is GONE — by slot ~179 it had grown into a 40-banana wall
@@ -534,7 +548,8 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // No odds line (all batch specials hit) → just the name; the repeat-🍌
     // ledger below keeps end-of-batch texts unique for X, which is what the
     // old 40-banana slot ladder used to do.
-    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
+    const zoneTail = !isFilled && bonusZoneLine ? `\n${bonusZoneLine}` : '';
+    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}${zoneTail}` : `${namePart}${zoneTail ? `\n${zoneTail}` : ''}`;
 
     let displayName = base;
     // The activity snapshot is appended to the SERVED text but never to `base`,

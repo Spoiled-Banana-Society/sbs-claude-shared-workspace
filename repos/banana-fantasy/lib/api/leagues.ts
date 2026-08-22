@@ -9,6 +9,7 @@ import type { DraftRoom, LeaderboardEntry } from '@/types';
 import { ApiError, createHttpClient, normalizeWalletAddress } from './client';
 import type { ApiDraftToken, ApiDraftTokenLevel } from './owner';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { assertClientCanDraft } from '@/lib/draftBlock';
 
 function draftsApi() {
   return createHttpClient({
@@ -38,6 +39,7 @@ export async function joinDraft(
   numLeaguesToJoin: number = 1,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
+  assertClientCanDraft(); // admin drafting block — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeoutMs = 20_000;
@@ -80,6 +82,7 @@ export async function joinPrivateDraft(
   speed: DraftSpeed,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
+  assertClientCanDraft(); // admin drafting block — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -320,6 +323,9 @@ export interface BatchProgress {
   // carries RollingStartDraft and that draft has been reached — its presence
   // is what flips the header to the dual-counter UI. Absent → legacy batches.
   lanes?: import('@/lib/rollingLanes').RollingLanes;
+  // BONUS ZONE live tier for the NEXT draft (ships dark; absent while the
+  // zone switch is off). Drives the green header pill + entry modal line.
+  bonusZone?: import('@/lib/bonusZone').BonusZoneView;
 }
 
 /**
