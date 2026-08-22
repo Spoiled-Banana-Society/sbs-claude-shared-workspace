@@ -8,12 +8,16 @@
  * real fix (flat per-draft odds) is next year; this makes the cold zone the
  * best deal on the site until then.
  *
- * The ladder, by the Jackpot window position of the draft you ENTER:
- *   positions  1–33  →  Buy 1 Get 1   (every eligible paid entry earns 1 free draft)
- *   positions 34–69  →  Buy 2 Get 1   (every eligible paid entry earns ½; two in
- *                                      the SAME window = 1 free draft; a leftover
- *                                      half dies when the Jackpot hits)
- *   positions 70+    →  nothing — the odds sell themselves from here.
+ * The ladder, by the Jackpot window position of the draft you ENTER (Richard
+ * 8/22 FINAL — three deadlines, no flat stretch longer than 20, every later
+ * draft strictly worse than the one before):
+ *   positions  1–20  →  Buy 1 Get 1   (every eligible paid entry earns 1 free draft)
+ *   positions 21–40  →  Buy 2 Get 1   (earns ½)   credits bank per WINDOW in sixths
+ *   positions 41–60  →  Buy 3 Get 1   (earns ⅓)   (½=3, ⅓=2) and mint at 6; leftovers
+ *   positions 61+    →  nothing        die when the Jackpot hits
+ * Cost ≈ 0.36+0.16+0.06 ≈ 0.58 free passes per human paid seat (1–20 holds
+ * ~36% of all drafts, 21–40 ~32%, 41–60 ~19%). Cutoffs are config
+ * (--tiers 20 40 60).
  *
  * Rules (all Richard's, 8/22):
  *   • PAID entries only. Free passes never earn free passes.
@@ -47,10 +51,13 @@ import { isRollingActive, replayJpLane, lanePosition } from '@/lib/rollingLanes'
 
 // ── Tiers ───────────────────────────────────────────────────────────────────
 
-export const BZ_TIER1_THROUGH = 33;
-export const BZ_TIER2_THROUGH = 69;
+export const BZ_TIER1_THROUGH = 20;
+export const BZ_TIER2_THROUGH = 40;
+export const BZ_TIER3_THROUGH = 60;
+/** Credits bank in sixths so ½ (tier 2) and ⅓ (tier 3) add up cleanly. */
+export const BZ_UNITS_PER_PASS = 6;
 
-export type BonusZoneTier = 1 | 2;
+export type BonusZoneTier = 1 | 2 | 3;
 
 export interface BonusZoneTierInfo {
   tier: BonusZoneTier;
@@ -58,30 +65,34 @@ export interface BonusZoneTierInfo {
   label: string;
   /** Upper-case pill form. */
   short: string;
-  /** Free drafts earned per eligible paid FILL: 1 or 0.5. */
-  credit: 1 | 0.5;
+  /** Free drafts earned per eligible paid FILL: 1, ½ or ⅓. */
+  credit: number;
+  /** Same thing in sixths: 6 / 3 / 2. */
+  units: number;
   /** Last window position this tier covers. */
   through: number;
 }
 
-export function tierInfo(tier: BonusZoneTier, cfg?: Pick<BonusZoneConfig, 'tier1Through' | 'tier2Through'>): BonusZoneTierInfo {
+type TierCfg = Pick<BonusZoneConfig, 'tier1Through' | 'tier2Through' | 'tier3Through'>;
+
+export function tierInfo(tier: BonusZoneTier, cfg?: Partial<TierCfg>): BonusZoneTierInfo {
   const t1 = cfg?.tier1Through ?? BZ_TIER1_THROUGH;
   const t2 = cfg?.tier2Through ?? BZ_TIER2_THROUGH;
-  return tier === 1
-    ? { tier: 1, label: 'Buy 1 Get 1', short: 'BUY 1 GET 1', credit: 1, through: t1 }
-    : { tier: 2, label: 'Buy 2 Get 1', short: 'BUY 2 GET 1', credit: 0.5, through: t2 };
+  const t3 = cfg?.tier3Through ?? BZ_TIER3_THROUGH;
+  if (tier === 1) return { tier: 1, label: 'Buy 1 Get 1', short: 'BUY 1 GET 1', credit: 1, units: 6, through: t1 };
+  if (tier === 2) return { tier: 2, label: 'Buy 2 Get 1', short: 'BUY 2 GET 1', credit: 0.5, units: 3, through: t2 };
+  return { tier: 3, label: 'Buy 3 Get 1', short: 'BUY 3 GET 1', credit: 1 / 3, units: 2, through: t3 };
 }
 
 /** Which tier a 1-indexed Jackpot window position falls in (null = none). */
-export function bonusZoneTierForPosition(
-  position: number,
-  cfg?: Pick<BonusZoneConfig, 'tier1Through' | 'tier2Through'>,
-): BonusZoneTierInfo | null {
+export function bonusZoneTierForPosition(position: number, cfg?: Partial<TierCfg>): BonusZoneTierInfo | null {
   const t1 = cfg?.tier1Through ?? BZ_TIER1_THROUGH;
   const t2 = cfg?.tier2Through ?? BZ_TIER2_THROUGH;
+  const t3 = cfg?.tier3Through ?? BZ_TIER3_THROUGH;
   if (!Number.isFinite(position) || position < 1) return null;
   if (position <= t1) return tierInfo(1, cfg);
   if (position <= t2) return tierInfo(2, cfg);
+  if (position <= t3) return tierInfo(3, cfg);
   return null;
 }
 
@@ -93,7 +104,7 @@ export interface BonusZoneView {
   tier: BonusZoneTier | null;
   label: string | null;
   short: string | null;
-  credit: 1 | 0.5 | null;
+  credit: number | null;
   /** 1-indexed window position the NEXT fill lands on. */
   position: number;
   /** Drafts (counting the next one) still inside the live tier. */
@@ -103,6 +114,7 @@ export interface BonusZoneView {
   windowStart: number;
   tier1Through: number;
   tier2Through: number;
+  tier3Through: number;
 }
 
 /**
@@ -113,7 +125,7 @@ export interface BonusZoneView {
 export function bonusZoneViewForLane(
   windowStart: number,
   revealedFilled: number,
-  cfg: Pick<BonusZoneConfig, 'enabled' | 'tier1Through' | 'tier2Through'>,
+  cfg: Pick<BonusZoneConfig, 'enabled'> & Partial<TierCfg>,
 ): BonusZoneView {
   const position = lanePosition(revealedFilled, windowStart) + 1;
   const t = cfg.enabled ? bonusZoneTierForPosition(position, cfg) : null;
@@ -125,10 +137,11 @@ export function bonusZoneViewForLane(
     credit: t?.credit ?? null,
     position,
     draftsLeftInTier: t ? Math.max(0, t.through - position + 1) : 0,
-    draftsLeftInZone: Math.max(0, cfg.tier2Through - position + 1),
+    draftsLeftInZone: Math.max(0, (cfg.tier3Through ?? BZ_TIER3_THROUGH) - position + 1),
     windowStart,
-    tier1Through: cfg.tier1Through,
-    tier2Through: cfg.tier2Through,
+    tier1Through: cfg.tier1Through ?? BZ_TIER1_THROUGH,
+    tier2Through: cfg.tier2Through ?? BZ_TIER2_THROUGH,
+    tier3Through: cfg.tier3Through ?? BZ_TIER3_THROUGH,
   };
 }
 
@@ -140,6 +153,7 @@ export interface BonusZoneConfig {
   launchAtIso: string | null;
   tier1Through: number;
   tier2Through: number;
+  tier3Through: number;
   /** Pre-launch passes that still qualify (token ids as strings). */
   grandfatherTokenIds: string[];
 }
@@ -175,6 +189,7 @@ function defaultConfig(): BonusZoneConfig {
     launchAtIso: null,
     tier1Through: BZ_TIER1_THROUGH,
     tier2Through: BZ_TIER2_THROUGH,
+    tier3Through: BZ_TIER3_THROUGH,
     grandfatherTokenIds: [...GRANDFATHERED_TOKEN_IDS],
   };
 }
@@ -200,6 +215,7 @@ export async function readBonusZoneConfig(opts: { fresh?: boolean } = {}): Promi
         if (typeof d.launchAtIso === 'string' && d.launchAtIso) cfg.launchAtIso = d.launchAtIso;
         if (Number.isFinite(d.tier1Through) && (d.tier1Through as number) > 0) cfg.tier1Through = Number(d.tier1Through);
         if (Number.isFinite(d.tier2Through) && (d.tier2Through as number) >= cfg.tier1Through) cfg.tier2Through = Number(d.tier2Through);
+        cfg.tier3Through = Number.isFinite(d.tier3Through) && (d.tier3Through as number) >= cfg.tier2Through ? Number(d.tier3Through) : cfg.tier2Through;
         if (Array.isArray(d.grandfatherTokenIds)) {
           cfg.grandfatherTokenIds = Array.from(new Set([...cfg.grandfatherTokenIds, ...d.grandfatherTokenIds.map(String)]));
         }
@@ -413,7 +429,9 @@ export interface BonusZoneEntry {
   tokenId: string;
   tier: BonusZoneTier;
   label: string;
-  credit: 1 | 0.5;
+  credit: number;
+  /** Sixths of a free draft this fill banks (6 / 3 / 2). */
+  units: number;
   position: number;
   windowStart: number;
   lockedAtIso: string;
@@ -424,8 +442,8 @@ export interface BonusZoneEntry {
   settledAtIso?: string;
   grantedTokenIds?: string[];
   grantTxHash?: string;
-  /** For half credits: where this entry's half landed (0/2 → 1/2 → paid). */
-  halvesAfter?: number;
+  /** For partial credits: banked sixths after this fill (6 = minted). */
+  unitsAfter?: number;
   error?: string;
 }
 
@@ -475,6 +493,7 @@ export async function lockBonusZoneEntry(input: { wallet: string; draftId: strin
     tier: t.tier,
     label: t.label,
     credit: t.credit,
+    units: t.units,
     position: view.position,
     windowStart: view.windowStart,
     lockedAtIso: new Date().toISOString(),
@@ -538,7 +557,7 @@ export interface SettleOutcome {
   wallet: string;
   outcome: 'no_entry' | 'not_pending' | 'token_mismatch' | 'paid' | 'half' | 'grant_failed' | 'error';
   tokenIds?: string[];
-  halves?: number;
+  units?: number;
   error?: string;
 }
 
@@ -597,32 +616,35 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
         continue;
       }
 
-      // Tier 2: half now; the pair must land in the SAME window (Richard 8/22).
+      // Tiers 2/3: bank sixths (½ = 3, ⅓ = 2) in THIS window's progress doc;
+      // mint when it reaches 6. Halves and thirds mix freely. Leftovers die
+      // with the window (Richard 8/22: same window only).
       const progRef = db.collection(BONUS_ZONE_PROGRESS).doc(`${wallet}__${e.windowStart}`);
-      const halves = await db.runTransaction(async (tx) => {
+      const add = e.units ?? (e.tier === 2 ? 3 : 2);
+      const after = await db.runTransaction(async (tx) => {
         const s = await tx.get(progRef);
-        const cur = s.exists ? Number((s.data() as { halves?: number }).halves ?? 0) : 0;
-        const next = cur + 1;
-        if (next >= 2) {
-          tx.set(progRef, { wallet, windowStart: e.windowStart, halves: 0, minted: FieldValue.increment(1), updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
-          return 2;
+        const cur = s.exists ? Number((s.data() as { units?: number }).units ?? 0) : 0;
+        const next = cur + add;
+        if (next >= BZ_UNITS_PER_PASS) {
+          tx.set(progRef, { wallet, windowStart: e.windowStart, units: next - BZ_UNITS_PER_PASS, minted: FieldValue.increment(1), updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+          return next;
         }
-        tx.set(progRef, { wallet, windowStart: e.windowStart, halves: next, updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
+        tx.set(progRef, { wallet, windowStart: e.windowStart, units: next, updatedAtIso: new Date().toISOString(), lastDraftId: draftId }, { merge: true });
         return next;
       });
-      if (halves < 2) {
-        await ref.set({ status: 'half', halvesAfter: halves, settledAtIso: new Date().toISOString() }, { merge: true });
-        await notifyBonusHalf(wallet, draftId, e.windowStart);
-        out.push({ wallet, outcome: 'half', halves });
+      if (after < BZ_UNITS_PER_PASS) {
+        await ref.set({ status: 'half', unitsAfter: after, settledAtIso: new Date().toISOString() }, { merge: true });
+        await notifyBonusPartial(wallet, draftId, e.windowStart, e.label, after);
+        out.push({ wallet, outcome: 'half', units: after });
         continue;
       }
       try {
-        const g = await grantBonusZonePasses(wallet, 1, `t2:${draftId}`);
-        await ref.set({ status: 'paid', halvesAfter: 2, grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
+        const g = await grantBonusZonePasses(wallet, 1, `t${e.tier}:${draftId}`);
+        await ref.set({ status: 'paid', unitsAfter: after, grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
         await notifyBonusPaid(wallet, draftId, g.tokenIds.length, e.label);
-        out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds, halves: 2 });
+        out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds, units: after });
       } catch (err) {
-        await ref.set({ status: 'grant_failed', halvesAfter: 2, error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
+        await ref.set({ status: 'grant_failed', unitsAfter: after, error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
         logger.error('bonus_zone.grant_failed', { context: { draftId, wallet, err: (err as Error).message } });
         out.push({ wallet, outcome: 'grant_failed', error: (err as Error).message });
       }
@@ -685,15 +707,26 @@ async function notifyBonusPaid(wallet: string, draftId: string, count: number, l
   }
 }
 
-async function notifyBonusHalf(wallet: string, draftId: string, windowStart: number): Promise<void> {
+/** "1 of 2", "2 of 3", or a percentage when halves and thirds are mixed. */
+export function progressCopy(units: number): string {
+  if (units <= 0) return '0 toward a free draft';
+  if (units === 3) return '1 of 2 toward a free draft';
+  if (units === 2) return '1 of 3 toward a free draft';
+  if (units === 4) return '2 of 3 toward a free draft';
+  return `${Math.round((units / BZ_UNITS_PER_PASS) * 100)}% of the way to a free draft`;
+}
+
+async function notifyBonusPartial(wallet: string, draftId: string, windowStart: number, label: string, units: number): Promise<void> {
   try {
     const { createNotification } = await import('@/lib/queueNotifications');
+    const left = BZ_UNITS_PER_PASS - units;
+    const more = left <= 2 ? 'One more Buy 3 Get 1 draft' : left <= 3 ? 'One more Buy 2 Get 1 draft (or two Buy 3 Get 1)' : 'A couple more Bonus Zone drafts';
     await createNotification(wallet, {
       type: 'promo',
-      title: '🟢 Bonus Zone: 1 of 2 toward a free draft',
-      message: 'Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours.',
+      title: `🟢 Bonus Zone: ${progressCopy(units)}`,
+      message: `Your ${label} draft filled. ${more} before the Jackpot hits and the free draft is yours.`,
       link: '/promos?promo=bonus-zone',
-      dedupeKey: `bonus-zone-half-${draftId}-${windowStart}`,
+      dedupeKey: `bonus-zone-part-${draftId}-${windowStart}`,
       icon: 'sparkles',
     });
   } catch (err) {
@@ -707,19 +740,19 @@ export interface BonusZoneWalletStatus {
   view: BonusZoneView;
   passes: { paidTotal: number; eligibleCount: number; ineligibleReasons: Record<string, number> } | null;
   /** Live locks on lobbies still filling. */
-  pending: Array<{ draftId: string; tier: BonusZoneTier; label: string; credit: 1 | 0.5; position: number; eligible: boolean; reason: string; status: BonusEntryStatus }>;
-  /** Half credits banked in the CURRENT window (0 or 1). */
-  halvesThisWindow: number;
+  pending: Array<{ draftId: string; tier: BonusZoneTier; label: string; credit: number; position: number; eligible: boolean; reason: string; status: BonusEntryStatus }>;
+  /** Sixths of a free draft banked in the CURRENT window (0–5). */
+  unitsThisWindow: number;
   /** Free drafts earned all-time from the zone. */
   earned: number;
-  history: Array<{ draftId: string; label: string; status: BonusEntryStatus; settledAtIso?: string; grantedTokenIds?: string[]; halvesAfter?: number }>;
+  history: Array<{ draftId: string; label: string; status: BonusEntryStatus; settledAtIso?: string; grantedTokenIds?: string[]; unitsAfter?: number }>;
 }
 
 export async function getBonusZoneWalletStatus(wallet: string, opts: { includePasses?: boolean } = {}): Promise<BonusZoneWalletStatus> {
   const cfg = await readBonusZoneConfig();
   const view = await readBonusZoneView();
   const w = wallet.toLowerCase();
-  const empty: BonusZoneWalletStatus = { view, passes: null, pending: [], halvesThisWindow: 0, earned: 0, history: [] };
+  const empty: BonusZoneWalletStatus = { view, passes: null, pending: [], unitsThisWindow: 0, earned: 0, history: [] };
   if (!cfg.enabled || !isFirestoreConfigured()) return empty;
   const db = getAdminFirestore();
   const [entriesSnap, progSnap, passes] = await Promise.all([
@@ -741,9 +774,9 @@ export async function getBonusZoneWalletStatus(wallet: string, opts: { includePa
     view,
     passes: passes ? { paidTotal: passes.paidTotal, eligibleCount: passes.eligible.length, ineligibleReasons: reasons } : null,
     pending,
-    halvesThisWindow: progSnap?.exists ? Number((progSnap.data() as { halves?: number }).halves ?? 0) : 0,
+    unitsThisWindow: progSnap?.exists ? Number((progSnap.data() as { units?: number }).units ?? 0) : 0,
     earned,
-    history: settled.slice(0, 30).map((e) => ({ draftId: e.draftId, label: e.label, status: e.status, settledAtIso: e.settledAtIso, grantedTokenIds: e.grantedTokenIds, halvesAfter: e.halvesAfter })),
+    history: settled.slice(0, 30).map((e) => ({ draftId: e.draftId, label: e.label, status: e.status, settledAtIso: e.settledAtIso, grantedTokenIds: e.grantedTokenIds, unitsAfter: e.unitsAfter })),
   };
 }
 

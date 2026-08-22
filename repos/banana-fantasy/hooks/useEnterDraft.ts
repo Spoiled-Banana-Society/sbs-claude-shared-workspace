@@ -330,10 +330,10 @@ export function useEnterDraft() {
         // on the row so My Drafts can show "free draft pending" and the leave
         // dialog can warn. Absent while the zone switch is off.
         try {
-          const body = (await res.json()) as { bonusZone?: { locked?: boolean; tier?: 1 | 2; label?: string; credit?: 1 | 0.5; position?: number; eligible?: boolean; reason?: string } | null };
+          const body = (await res.json()) as { bonusZone?: { locked?: boolean; tier?: 1 | 2 | 3; label?: string; credit?: number; position?: number; eligible?: boolean; reason?: string } | null };
           const bz = body?.bonusZone;
           if (bz?.locked && bz.tier && bz.label) {
-            draftStore.updateDraft(newId, { bonusZone: { tier: bz.tier, label: bz.label, credit: bz.credit ?? (bz.tier === 1 ? 1 : 0.5), position: bz.position ?? 0, eligible: bz.eligible === true, reason: bz.reason ?? '' } });
+            draftStore.updateDraft(newId, { bonusZone: { tier: bz.tier, label: bz.label, credit: bz.credit ?? (bz.tier === 1 ? 1 : bz.tier === 2 ? 0.5 : 1 / 3), position: bz.position ?? 0, eligible: bz.eligible === true, reason: bz.reason ?? '' } });
           }
         } catch { /* body optional */ }
       })

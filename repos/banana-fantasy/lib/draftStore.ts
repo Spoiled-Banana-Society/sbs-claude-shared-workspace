@@ -52,7 +52,7 @@ export interface DraftState {
   passType?: 'paid' | 'free';
   // BONUS ZONE lock for this seat (server-stamped at entry via use-pass).
   // Drives the "free draft pending" glyph on the row + the leave warning.
-  bonusZone?: { tier: 1 | 2; label: string; credit: 1 | 0.5; position: number; eligible: boolean; reason: string };
+  bonusZone?: { tier: 1 | 2 | 3; label: string; credit: number; position: number; eligible: boolean; reason: string };
 
   // Special draft type (Jackpot/HOF from wheel) — forces slot machine result
   specialType?: 'jackpot' | 'hof' | 'jackhof';

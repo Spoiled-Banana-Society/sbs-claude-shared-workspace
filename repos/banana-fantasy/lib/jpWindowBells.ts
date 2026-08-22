@@ -112,7 +112,8 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
  *   • A Jackpot hits → window resets → "Bonus Zone is ON: Buy 1 Get 1 for the
  *     next N drafts" (tier 1 band of the new window). Waits for the hit's
  *     jackpot_draws doc so it can never beat the slot-machine reveal.
- *   • The window reaches tier 2 with no hit → "Buy 2 Get 1 for the next N".
+ *   • The window reaches tier 2 / tier 3 with no hit → "Buy 2 Get 1 for the
+ *     next N" / "Buy 3 Get 1 for the next N".
  * Past the zone: silence. Audience = every non-bot account.
  */
 async function runBonusZoneBells(
@@ -155,17 +156,27 @@ async function runBonusZoneBells(
     .filter((w) => /^0x[0-9a-f]{40}$/.test(w) && !bots.has(w));
 
   const t2 = tierInfo(2, cfg);
+  const t3 = tierInfo(3, cfg);
   const bell = live.tier === 1
     ? {
         title: '🟢 Jackpot hit. Bonus Zone is ON: Buy 1 Get 1',
         message: `Every paid draft you enter in the next ${left} drafts earns a FREE draft when it fills. `
-          + `Then Buy 2 Get 1 through draft ${t2.through}. Tap for the rules.`,
+          + (t3.through > t2.through
+            ? `Then Buy 2 Get 1 through draft ${t2.through} and Buy 3 Get 1 through ${t3.through}. Tap for the rules.`
+            : `Then Buy 2 Get 1 through draft ${t2.through}. Tap for the rules.`),
       }
-    : {
-        title: '🟢 Bonus Zone: Buy 2 Get 1',
-        message: `Every 2 paid drafts you enter in the next ${left} drafts earn a FREE draft when they fill. `
-          + `Ends at draft ${t2.through} of the window. Tap for the rules.`,
-      };
+    : live.tier === 2
+      ? {
+          title: '🟢 Bonus Zone: Buy 2 Get 1',
+          message: `Every 2 paid drafts you enter in the next ${left} drafts earn a FREE draft when they fill. `
+            + (t3.through > t2.through ? `Drops to Buy 3 Get 1 at draft ${t2.through + 1}. ` : `The zone closes at draft ${t2.through} of the window. `)
+            + 'Tap for the rules.',
+        }
+      : {
+          title: '🟢 Bonus Zone: Buy 3 Get 1, last call',
+          message: `Every 3 paid drafts you enter in the next ${left} drafts earn a FREE draft when they fill. `
+            + `The zone closes at draft ${t3.through} of the window. Tap for the rules.`,
+        };
 
   const { createNotificationForWallets } = await import('@/lib/queueNotifications');
   await createNotificationForWallets(wallets, {

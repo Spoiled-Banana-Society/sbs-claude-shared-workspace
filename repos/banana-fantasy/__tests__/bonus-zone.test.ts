@@ -5,66 +5,96 @@ import {
   laneViewFromTracker,
   isBonusZoneDraftId,
   entryDocId,
+  progressCopy,
   GRANDFATHERED_TOKEN_IDS,
   BZ_TIER1_THROUGH,
   BZ_TIER2_THROUGH,
+  BZ_TIER3_THROUGH,
+  BZ_UNITS_PER_PASS,
 } from '@/lib/bonusZone';
 
-const cfg = { enabled: true, tier1Through: BZ_TIER1_THROUGH, tier2Through: BZ_TIER2_THROUGH };
+const cfg = { enabled: true, tier1Through: BZ_TIER1_THROUGH, tier2Through: BZ_TIER2_THROUGH, tier3Through: BZ_TIER3_THROUGH };
 
-describe('bonus zone tiers (Richard 2026-08-22: 1-33 BOGO, 34-69 B2G1, 70+ nothing)', () => {
+describe('bonus zone tiers (Richard 2026-08-22 FINAL: 1-20 Buy 1 Get 1, 21-40 Buy 2 Get 1, 41-60 Buy 3 Get 1, 61+ nothing)', () => {
+  it('defaults', () => {
+    expect(BZ_TIER1_THROUGH).toBe(20);
+    expect(BZ_TIER2_THROUGH).toBe(40);
+    expect(BZ_TIER3_THROUGH).toBe(60);
+  });
+
   it('maps window positions to tiers', () => {
     expect(bonusZoneTierForPosition(1)?.tier).toBe(1);
-    expect(bonusZoneTierForPosition(33)?.tier).toBe(1);
-    expect(bonusZoneTierForPosition(34)?.tier).toBe(2);
-    expect(bonusZoneTierForPosition(69)?.tier).toBe(2);
-    expect(bonusZoneTierForPosition(70)).toBeNull();
+    expect(bonusZoneTierForPosition(20)?.tier).toBe(1);
+    expect(bonusZoneTierForPosition(21)?.tier).toBe(2);
+    expect(bonusZoneTierForPosition(40)?.tier).toBe(2);
+    expect(bonusZoneTierForPosition(41)?.tier).toBe(3);
+    expect(bonusZoneTierForPosition(60)?.tier).toBe(3);
+    expect(bonusZoneTierForPosition(61)).toBeNull();
     expect(bonusZoneTierForPosition(100)).toBeNull();
     expect(bonusZoneTierForPosition(0)).toBeNull();
   });
 
-  it('credits: tier 1 = 1 free draft, tier 2 = half', () => {
-    expect(bonusZoneTierForPosition(10)?.credit).toBe(1);
-    expect(bonusZoneTierForPosition(50)?.credit).toBe(0.5);
-    expect(bonusZoneTierForPosition(10)?.label).toBe('Buy 1 Get 1');
-    expect(bonusZoneTierForPosition(50)?.label).toBe('Buy 2 Get 1');
+  it('credits: tier 1 = 1 free draft (6 units), tier 2 = half (3), tier 3 = third (2)', () => {
+    expect(bonusZoneTierForPosition(5)?.credit).toBe(1);
+    expect(bonusZoneTierForPosition(5)?.units).toBe(6);
+    expect(bonusZoneTierForPosition(30)?.credit).toBe(0.5);
+    expect(bonusZoneTierForPosition(30)?.units).toBe(3);
+    expect(bonusZoneTierForPosition(50)?.credit).toBeCloseTo(1 / 3);
+    expect(bonusZoneTierForPosition(50)?.units).toBe(2);
+    expect(bonusZoneTierForPosition(5)?.label).toBe('Buy 1 Get 1');
+    expect(bonusZoneTierForPosition(30)?.label).toBe('Buy 2 Get 1');
+    expect(bonusZoneTierForPosition(50)?.label).toBe('Buy 3 Get 1');
+    expect(BZ_UNITS_PER_PASS).toBe(6);
   });
 
-  it('honours config overrides', () => {
-    const c = { tier1Through: 25, tier2Through: 50 };
-    expect(bonusZoneTierForPosition(30, c)?.tier).toBe(2);
-    expect(bonusZoneTierForPosition(51, c)).toBeNull();
+  it('a half plus two thirds never mint early; 3+3, 2+2+2, 3+2+... all reach 6', () => {
+    expect(3 + 2 < BZ_UNITS_PER_PASS).toBe(true);
+    expect(3 + 3).toBe(BZ_UNITS_PER_PASS);
+    expect(2 + 2 + 2).toBe(BZ_UNITS_PER_PASS);
+  });
+
+  it('the third band collapses when tier3Through == tier2Through (config)', () => {
+    const c = { tier1Through: 20, tier2Through: 60, tier3Through: 60 };
+    expect(bonusZoneTierForPosition(50, c)?.tier).toBe(2);
+    expect(bonusZoneTierForPosition(61, c)).toBeNull();
+  });
+
+  it('progress copy', () => {
+    expect(progressCopy(3)).toBe('1 of 2 toward a free draft');
+    expect(progressCopy(2)).toBe('1 of 3 toward a free draft');
+    expect(progressCopy(4)).toBe('2 of 3 toward a free draft');
+    expect(progressCopy(5)).toMatch(/83%/);
   });
 });
 
 describe('bonus zone live view', () => {
-  it('right after a hit the NEXT draft is position 1 with 33 left', () => {
-    // window opened at 818; nothing filled in it yet (revealedFilled = 817)
+  it('right after a hit the NEXT draft is position 1 with 20 left in tier 1, 60 in the zone', () => {
     const v = bonusZoneViewForLane(818, 817, cfg);
     expect(v.position).toBe(1);
     expect(v.tier).toBe(1);
-    expect(v.draftsLeftInTier).toBe(33);
-    expect(v.draftsLeftInZone).toBe(69);
+    expect(v.draftsLeftInTier).toBe(20);
+    expect(v.draftsLeftInZone).toBe(60);
   });
 
-  it('live 8/22 state: window 818, 852 filled → next is position 36 (Buy 2 Get 1, 34 left)', () => {
+  it('live 8/22 state: window 818, 852 filled → next is position 36 (Buy 2 Get 1, 5 left)', () => {
     const v = bonusZoneViewForLane(818, 852, cfg);
     expect(v.position).toBe(36);
     expect(v.tier).toBe(2);
-    expect(v.draftsLeftInTier).toBe(69 - 36 + 1);
+    expect(v.draftsLeftInTier).toBe(40 - 36 + 1);
   });
 
-  it('tier boundary: 32 filled in window → next is 33 (last BOGO), 33 filled → next is 34 (B2G1)', () => {
-    expect(bonusZoneViewForLane(818, 818 + 31, cfg).position).toBe(33);
-    expect(bonusZoneViewForLane(818, 818 + 31, cfg).tier).toBe(1);
-    expect(bonusZoneViewForLane(818, 818 + 31, cfg).draftsLeftInTier).toBe(1);
-    expect(bonusZoneViewForLane(818, 818 + 32, cfg).position).toBe(34);
-    expect(bonusZoneViewForLane(818, 818 + 32, cfg).tier).toBe(2);
+  it('tier boundaries: 19 filled → next is 20 (last BOGO); 20 → 21 (B2G1); 40 → 41 (B3G1)', () => {
+    expect(bonusZoneViewForLane(818, 818 + 18, cfg).position).toBe(20);
+    expect(bonusZoneViewForLane(818, 818 + 18, cfg).tier).toBe(1);
+    expect(bonusZoneViewForLane(818, 818 + 18, cfg).draftsLeftInTier).toBe(1);
+    expect(bonusZoneViewForLane(818, 818 + 19, cfg).tier).toBe(2);
+    expect(bonusZoneViewForLane(818, 818 + 39, cfg).position).toBe(41);
+    expect(bonusZoneViewForLane(818, 818 + 39, cfg).tier).toBe(3);
   });
 
-  it('zone closes at 70 and the pill hides (tier null, 0 left)', () => {
-    const v = bonusZoneViewForLane(818, 818 + 68, cfg);
-    expect(v.position).toBe(70);
+  it('zone closes at 61 and the pill hides (tier null, 0 left)', () => {
+    const v = bonusZoneViewForLane(818, 818 + 59, cfg);
+    expect(v.position).toBe(61);
     expect(v.tier).toBeNull();
     expect(v.draftsLeftInTier).toBe(0);
   });
@@ -79,7 +109,6 @@ describe('bonus zone live view', () => {
 describe('reveal gating mirrors the header pill', () => {
   const now = 1_787_400_000_000; // ms
   it('an unrevealed jackpot fill keeps the OLD window on screen (no spoiler)', () => {
-    // Draft 853 filled 5s ago and is the JP hit; its slot lands at start-39s.
     const tracker = {
       FilledLeaguesCount: 853,
       RollingStartDraft: 201,
@@ -87,10 +116,9 @@ describe('reveal gating mirrors the header pill', () => {
       RecentFills: [{ Id: 853, StartTime: Math.floor(now / 1000) + 55 }],
     };
     const lane = laneViewFromTracker(tracker, now);
-    expect(lane.windowStart).toBe(818);         // still the old window
-    expect(lane.revealedFilled).toBe(852);      // 853 not revealed yet
-    const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, cfg);
-    expect(v.position).toBe(36);                // NOT position 1 — reveal first
+    expect(lane.windowStart).toBe(818);
+    expect(lane.revealedFilled).toBe(852);
+    expect(bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, cfg).position).toBe(36);
   });
 
   it('once the slot has landed the window resets and the zone reopens at 1', () => {

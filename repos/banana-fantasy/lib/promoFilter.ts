@@ -324,7 +324,7 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // nothing pending is ever hidden.
     if (p.type === 'bonus-zone') {
       const bz = p.modalContent?.bonusZone;
-      const owed = (bz?.pending?.length ?? 0) > 0 || (bz?.earned ?? 0) > 0 || (bz?.halvesThisWindow ?? 0) > 0;
+      const owed = (bz?.pending?.length ?? 0) > 0 || (bz?.earned ?? 0) > 0 || (bz?.unitsThisWindow ?? 0) > 0;
       if (owed) return true;
       if (conversionCardShowing) return false;
       if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;

@@ -122,7 +122,7 @@ function Extra({ promo, fpVariant }: { promo: Promo; fpVariant: 'new' | 'returni
     case 'bonus-zone': {
       const bz = promo.modalContent?.bonusZone;
       if (!bz) return null;
-      return <BonusZoneLadder view={{ enabled: true, ...bz }} pending={bz.pending.filter((e) => e.eligible).length} halves={bz.halvesThisWindow} />;
+      return <BonusZoneLadder view={{ enabled: true, ...bz }} pending={bz.pending.filter((e) => e.eligible).length} units={bz.unitsThisWindow} />;
     }
     case 'first-purchase': return <FirstBuyLadder variant={fpVariant} />;
     default: return null;

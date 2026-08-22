@@ -275,12 +275,13 @@ export async function GET(req: Request) {
             draftsLeftInZone: st.view.draftsLeftInZone,
             tier1Through: st.view.tier1Through,
             tier2Through: st.view.tier2Through,
+            tier3Through: st.view.tier3Through,
             eligiblePasses: st.passes?.eligibleCount ?? null,
             paidPasses: st.passes?.paidTotal ?? null,
             pending: st.pending.map((e) => ({ draftId: e.draftId, tier: e.tier, label: e.label, credit: e.credit, eligible: e.eligible, reason: e.reason })),
-            halvesThisWindow: st.halvesThisWindow,
+            unitsThisWindow: st.unitsThisWindow,
             earned: st.earned,
-            history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, halvesAfter: h.halvesAfter })),
+            history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, unitsAfter: h.unitsAfter })),
           };
         }
         if (cfg.enabled) {

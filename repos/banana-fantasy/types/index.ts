@@ -496,20 +496,22 @@ export interface Promo {
     latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
     /** BONUS ZONE: live tier + this user's locks, stamped at read time. */
     bonusZone?: {
-      tier: 1 | 2 | null;
+      tier: 1 | 2 | 3 | null;
       label: string | null;
       position: number;
       draftsLeftInTier: number;
       draftsLeftInZone: number;
       tier1Through: number;
       tier2Through: number;
+      tier3Through: number;
       /** Eligible unused paid passes / total unused paid passes (null = unknown). */
       eligiblePasses: number | null;
       paidPasses: number | null;
-      pending: Array<{ draftId: string; tier: 1 | 2; label: string; credit: 1 | 0.5; eligible: boolean; reason: string }>;
-      halvesThisWindow: number;
+      pending: Array<{ draftId: string; tier: 1 | 2 | 3; label: string; credit: number; eligible: boolean; reason: string }>;
+      /** Sixths of a free draft banked this window (½ = 3, ⅓ = 2; 6 mints). */
+      unitsThisWindow: number;
       earned: number;
-      history: Array<{ draftId: string; label: string; status: string; settledAtIso?: string; halvesAfter?: number }>;
+      history: Array<{ draftId: string; label: string; status: string; settledAtIso?: string; unitsAfter?: number }>;
     };
     /** Banana Draw: live cycle state, stamped at read time. Everything here
      *  resets every 24h EXCEPT `allTime`, which is the permanent ledger. */

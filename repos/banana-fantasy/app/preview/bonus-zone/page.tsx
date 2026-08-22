@@ -29,28 +29,32 @@ import {
 } from '@/components/bonusZone/BonusZoneUI';
 import { promoRules } from '@/lib/promoTheme';
 
-const T1 = 33;
-const T2 = 69;
+const T1 = 20;
+const T2 = 40;
+const T3 = 60;
 
 function viewFor(position: number): BonusZoneViewLike {
-  const tier: 1 | 2 | null = position <= T1 ? 1 : position <= T2 ? 2 : null;
+  const tier: 1 | 2 | 3 | null = position <= T1 ? 1 : position <= T2 ? 2 : position <= T3 ? 3 : null;
   return {
     enabled: true,
     tier,
-    label: tier === 1 ? 'Buy 1 Get 1' : tier === 2 ? 'Buy 2 Get 1' : null,
+    label: tier === 1 ? 'Buy 1 Get 1' : tier === 2 ? 'Buy 2 Get 1' : tier === 3 ? 'Buy 3 Get 1' : null,
     position,
-    draftsLeftInTier: tier === 1 ? T1 - position + 1 : tier === 2 ? T2 - position + 1 : 0,
-    draftsLeftInZone: Math.max(0, T2 - position + 1),
+    draftsLeftInTier: tier === 1 ? T1 - position + 1 : tier === 2 ? T2 - position + 1 : tier === 3 ? T3 - position + 1 : 0,
+    draftsLeftInZone: Math.max(0, T3 - position + 1),
     tier1Through: T1,
     tier2Through: T2,
+    tier3Through: T3,
   };
 }
 
 const RULES =
-  '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 69 drafts of every window.\n'
-  + '• Drafts 1 to 33: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
-  + '• Drafts 34 to 69: Buy 2 Get 1. Every paid draft earns half a free draft. Two fills in the same window equal one free draft. A leftover half is lost when the Jackpot hits.\n'
-  + '• Draft 70 and up: no bonus. The Jackpot odds sell themselves from here.\n'
+  '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 60 drafts of every window.\n'
+  + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
+  + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
+  + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
+  + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
+  + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
   + '• Your tier locks the moment you take a seat and pays when the draft fills. Leave the lobby and nothing pays. Re-enter and you lock a fresh tier at wherever the counter is then.\n'
   + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
   + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
@@ -79,6 +83,7 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
         draftsLeftInZone: view.draftsLeftInZone,
         tier1Through: T1,
         tier2Through: T2,
+        tier3Through: T3,
         eligiblePasses: rich ? 3 : 5,
         paidPasses: 5,
         pending: rich
@@ -88,12 +93,12 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
               { draftId: '2026-fast-draft-713', tier: 1, label: 'Buy 1 Get 1', credit: 1, eligible: false, reason: 'pre_launch' },
             ]
           : [],
-        halvesThisWindow: rich ? 1 : 0,
+        unitsThisWindow: rich ? 3 : 0,
         earned: rich ? 4 : 0,
         history: rich
           ? [
               { draftId: '2026-fast-draft-709', label: 'Buy 1 Get 1', status: 'paid', settledAtIso: '2026-08-22T18:02:00Z' },
-              { draftId: '2026-fast-draft-704', label: 'Buy 2 Get 1', status: 'half', settledAtIso: '2026-08-22T16:40:00Z', halvesAfter: 1 },
+              { draftId: '2026-fast-draft-704', label: 'Buy 2 Get 1', status: 'half', settledAtIso: '2026-08-22T16:40:00Z', unitsAfter: 3 },
               { draftId: '2026-fast-draft-701', label: 'Buy 1 Get 1', status: 'paid', settledAtIso: '2026-08-22T15:11:00Z' },
             ]
           : [],
@@ -159,7 +164,7 @@ function Bell({ title, message, link }: { title: string; message: string; link: 
   );
 }
 
-function DraftRowMock({ name, lock, count }: { name: string; lock: { tier: 1 | 2; label: string; credit: 1 | 0.5; eligible: boolean; reason: string } | null; count: number }) {
+function DraftRowMock({ name, lock, count }: { name: string; lock: { tier: 1 | 2 | 3; label: string; credit: number; eligible: boolean; reason: string } | null; count: number }) {
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02]">
       <div className="flex items-center justify-between gap-1 sm:gap-2 px-3 sm:px-5 py-3">
@@ -185,11 +190,12 @@ export default function BonusZonePreviewPage() {
   const [rich, setRich] = useState(true);
   const view = useMemo(() => viewFor(pos), [pos]);
   const promo = useMemo(() => promoFor(view, rich), [view, rich]);
-  const t1Lock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1 as const, eligible: true, reason: 'post_launch' };
-  const t2Lock = { tier: 2 as const, label: 'Buy 2 Get 1', credit: 0.5 as const, eligible: true, reason: 'grandfathered' };
-  const badLock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1 as const, eligible: false, reason: 'pre_launch' };
-  const status: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 5, eligibleCount: rich ? 3 : 5, ineligibleReasons: rich ? { pre_launch: 2 } : {} }, halvesThisWindow: rich ? 1 : 0 };
-  const statusNone: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 4, eligibleCount: 0, ineligibleReasons: { pre_launch: 3, first_purchase: 1 } }, halvesThisWindow: 0 };
+  const t1Lock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1, eligible: true, reason: 'post_launch' };
+  const t3Lock = { tier: 3 as const, label: 'Buy 3 Get 1', credit: 1 / 3, eligible: true, reason: 'post_launch' };
+  const t2Lock = { tier: 2 as const, label: 'Buy 2 Get 1', credit: 0.5, eligible: true, reason: 'grandfathered' };
+  const badLock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1, eligible: false, reason: 'pre_launch' };
+  const status: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 5, eligibleCount: rich ? 3 : 5, ineligibleReasons: rich ? { pre_launch: 2 } : {} }, unitsThisWindow: rich ? 3 : 0 };
+  const statusNone: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 4, eligibleCount: 0, ineligibleReasons: { pre_launch: 3, first_purchase: 1 } }, unitsThisWindow: 0 };
   const noop = () => {};
 
   return (
@@ -203,7 +209,7 @@ export default function BonusZonePreviewPage() {
             <input type="range" min={1} max={100} value={pos} onChange={(e) => setPos(Number(e.target.value))} className="w-56 accent-emerald-400" />
             <span className="text-[13px] font-bold tabular-nums">{pos} · {view.label ?? 'zone closed'}{view.tier ? ` · ${view.draftsLeftInTier} left` : ''}</span>
             <div className="flex gap-1.5 ml-auto">
-              {[['Fresh hit', 1], ['Mid BOGO', 12], ['Last BOGO', 33], ['B2G1', 50], ['Closed', 75]].map(([l, p]) => (
+              {[['Fresh hit', 1], ['Mid BOGO', 12], ['Last BOGO', 20], ['B2G1', 30], ['B3G1', 50], ['Closed', 75]].map(([l, p]) => (
                 <button key={String(l)} onClick={() => setPos(Number(p))} className={`rounded-full px-3 py-1 text-[11px] font-bold ${pos === p ? 'bg-emerald-400 text-black' : 'bg-white/[0.08] text-white/70'}`}>{l}</button>
               ))}
               <button onClick={() => setRich((r) => !r)} className="rounded-full px-3 py-1 text-[11px] font-bold bg-white/[0.08] text-white/70">{rich ? 'User with history' : 'Brand new user'}</button>
@@ -257,7 +263,7 @@ export default function BonusZonePreviewPage() {
               </Frame>
             </div>
             <Frame label="THE LADDER ON ITS OWN (card indicator)">
-              <BonusZoneLadder view={view} pending={rich ? 2 : 0} halves={rich ? 1 : 0} />
+              <BonusZoneLadder view={view} pending={rich ? 2 : 0} units={rich ? 3 : 0} />
             </Frame>
           </div>
         </Section>
@@ -272,7 +278,7 @@ export default function BonusZonePreviewPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <Frame label="ALL PASSES QUALIFY">
               <div className="rounded-xl border-2 border-banana/30 bg-banana/5 p-5">
-                <div className="flex items-center justify-between"><div><p className="font-semibold">Paid Draft Pass</p><BonusZoneEntryLine status={{ ...status, passes: { paidTotal: 5, eligibleCount: 5, ineligibleReasons: {} }, halvesThisWindow: 0 }} buyingSeat={false} firstPurchaseApplies={false} /></div><p className="text-3xl font-bold text-banana">5</p></div>
+                <div className="flex items-center justify-between"><div><p className="font-semibold">Paid Draft Pass</p><BonusZoneEntryLine status={{ ...status, passes: { paidTotal: 5, eligibleCount: 5, ineligibleReasons: {} }, unitsThisWindow: 0 }} buyingSeat={false} firstPurchaseApplies={false} /></div><p className="text-3xl font-bold text-banana">5</p></div>
               </div>
             </Frame>
             <Frame label="SOME QUALIFY (+ half banked)">
@@ -307,10 +313,10 @@ export default function BonusZonePreviewPage() {
 
         <Section title="5 · AFTER YOU TAKE THE SEAT" note="What the server says back the instant the seat is taken (toast copy), and the My Drafts row while the lobby fills.">
           <div className="grid gap-4 md:grid-cols-3">
-            {[t1Lock, t2Lock, badLock].map((l, i) => {
+            {[t1Lock, t2Lock, t3Lock, badLock].map((l, i) => {
               const c = bonusLockedToastCopy(l);
               return (
-                <Frame key={i} label={i === 0 ? 'TOAST · BUY 1 GET 1' : i === 1 ? 'TOAST · BUY 2 GET 1' : 'TOAST · PASS NOT ELIGIBLE'}>
+                <Frame key={i} label={['TOAST · BUY 1 GET 1', 'TOAST · BUY 2 GET 1', 'TOAST · BUY 3 GET 1', 'TOAST · PASS NOT ELIGIBLE'][i]}>
                   <div className={`rounded-xl border px-4 py-3 ${l.eligible ? 'border-emerald-400/30 bg-emerald-400/[0.07]' : 'border-white/10 bg-white/[0.04]'}`}>
                     <p className="text-[13.5px] font-bold">{c.title}</p>
                     <p className="text-[12.5px] text-white/65 mt-0.5">{c.message}</p>
@@ -323,6 +329,7 @@ export default function BonusZonePreviewPage() {
             <div className="space-y-2">
               <DraftRowMock name="Draft Lobby" lock={t1Lock} count={7} />
               <DraftRowMock name="Draft Lobby" lock={t2Lock} count={3} />
+              <DraftRowMock name="Draft Lobby" lock={t3Lock} count={6} />
               <DraftRowMock name="Draft Lobby" lock={badLock} count={5} />
               <DraftRowMock name="Draft Lobby" lock={null} count={9} />
             </div>
@@ -343,8 +350,9 @@ export default function BonusZonePreviewPage() {
 
         <Section title="7 · BELLS" note="Broadcast bells (replace the 10 spin / 5 spin Jackpot Watch bells) and the two personal payout bells.">
           <div className="grid gap-3 md:grid-cols-2">
-            <Bell title="🟢 Jackpot hit. Bonus Zone is ON: Buy 1 Get 1" message="Every paid draft you enter in the next 33 drafts earns a FREE draft when it fills. Then Buy 2 Get 1 through draft 69. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Bonus Zone: Buy 2 Get 1" message="Every 2 paid drafts you enter in the next 36 drafts earn a FREE draft when they fill. Ends at draft 69 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Jackpot hit. Bonus Zone is ON: Buy 1 Get 1" message="Every paid draft you enter in the next 20 drafts earns a FREE draft when it fills. Then Buy 2 Get 1 through draft 40 and Buy 3 Get 1 through 60. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Bonus Zone: Buy 2 Get 1" message="Every 2 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. Drops to Buy 3 Get 1 at draft 41. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Bonus Zone: Buy 3 Get 1, last call" message="Every 3 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. The zone closes at draft 60 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
             <Bell title="🟢 Bonus Zone: your free draft landed" message="Your Buy 1 Get 1 draft filled, so your free draft pass is in your passes now. Use it on any draft." link="/promos?promo=bonus-zone · the drafter" />
             <Bell title="🟢 Bonus Zone: 1 of 2 toward a free draft" message="Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours." link="/promos?promo=bonus-zone · the drafter" />
           </div>
@@ -362,7 +370,7 @@ export default function BonusZonePreviewPage() {
           <Frame label="HOW IT GOES LIVE" w="max-w-2xl">
             <ol className="list-decimal pl-5 space-y-1.5 text-[13px] text-white/75">
               <li><code className="text-emerald-300">node scripts/_bonus-zone-toggle.mjs</code> shows the config and what the pill would say right now.</li>
-              <li><code className="text-emerald-300">node scripts/_bonus-zone-toggle.mjs --on</code> enables it and stamps the launch time. Passes bought from that instant qualify; the 19 grandfathered passes qualify already.</li>
+              <li><code className="text-emerald-300">node scripts/_bonus-zone-toggle.mjs --on</code> enables it and stamps the launch time. Passes bought from that instant qualify; the 19 grandfathered passes qualify already. Cutoffs are config: <code className="text-emerald-300">--tiers 20 40 60</code>.</li>
               <li>Within 20 seconds: the header pill appears, the promo card replaces Jackpot Hit, entries start locking, the bot line shows, and the next Jackpot hit sends the Buy 1 Get 1 bell.</li>
               <li><code className="text-emerald-300">--off</code> hides everything again. Locks already pending still pay at fill only if the switch is on, so turn it off only between windows.</li>
             </ol>

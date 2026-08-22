@@ -729,10 +729,12 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Bonus Zone → FREE DRAFTS',
       explanation:
-        '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 69 drafts of every window.\n'
-        + '• Drafts 1 to 33: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
-        + '• Drafts 34 to 69: Buy 2 Get 1. Every paid draft earns half a free draft. Two fills in the same window equal one free draft. A leftover half is lost when the Jackpot hits.\n'
-        + '• Draft 70 and up: no bonus. The Jackpot odds sell themselves from here.\n'
+        '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 60 drafts of every window.\n'
+        + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
+        + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
+        + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
+        + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
+        + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
         + '• Your tier locks the moment you take a seat and pays when the draft fills. Leave the lobby and nothing pays. Re-enter and you lock a fresh tier at wherever the counter is then.\n'
         + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
         + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
