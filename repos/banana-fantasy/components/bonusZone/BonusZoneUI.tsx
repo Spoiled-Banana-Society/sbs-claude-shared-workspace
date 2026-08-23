@@ -180,7 +180,7 @@ export function ineligibleCopy(reason: string): string {
     case 'free_pass': return 'Free passes never earn Banana Zone spins.';
     case 'pre_launch': return 'This pass was bought before Banana Zone started.';
     case 'first_purchase': return 'This pass came with the First Purchase promo.';
-    case 'granted': return 'This pass was a reward, not a purchase.';
+    case 'granted': return 'This pass came from the wheel or a grant, not a purchase.';
     case 'transferred': return 'This pass was bought by a different wallet.';
     case 'no_purchase_record': return 'This pass has no purchase on record.';
     default: return 'This pass is not Banana Zone eligible.';

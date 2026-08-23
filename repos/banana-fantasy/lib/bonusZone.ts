@@ -303,7 +303,7 @@ export type IneligibleReason =
   | 'free_pass'          // not a paid pass
   | 'pre_launch'         // bought before the zone launched and not grandfathered
   | 'first_purchase'     // that purchase used the new-user / First Purchase promo
-  | 'granted'            // reward / wheel / admin pass — never purchased
+  | 'granted'            // wheel / admin pass — never purchased (card fee reward passes DO count, Richard 8/22)
   | 'transferred'        // bought by a different wallet
   | 'no_purchase_record' // no pass_purchased row — not a real purchase
   | 'unknown_token';
@@ -381,8 +381,11 @@ export async function classifyPassForBonusZone(
   // index only — type is filtered in memory so no composite index is needed).
   const rows = await db.collection('v2_activity_events')
     .where('tokenIds', 'array-contains', tid).limit(5).get().catch(() => null);
-  const purchase = rows?.docs.map((d) => d.data() as { type?: string; userId?: string; walletAddress?: string; createdAtIso?: string })
-    .find((e) => e.type === 'pass_purchased');
+  const events = rows?.docs.map((d) => d.data() as { type?: string; userId?: string; walletAddress?: string; createdAtIso?: string; metadata?: { source?: string } }) ?? [];
+  // Card fee reward passes count like a purchase (Richard 8/22: "card fees
+  // should count") — they're earned by paying, registered 'paid', no pass_origin.
+  const purchase = events.find((e) => e.type === 'pass_purchased')
+    ?? events.find((e) => e.type === 'pass_granted' && e.metadata?.source === 'card_fee_reward');
   if (!purchase) return { tokenId: tid, eligible: false, reason: 'no_purchase_record' };
   const buyer = String(purchase.userId ?? purchase.walletAddress ?? '').toLowerCase();
   if (buyer && buyer !== w) return { tokenId: tid, eligible: false, reason: 'transferred' };
@@ -868,7 +871,7 @@ export function ineligibleReasonCopy(reason: string): string {
     case 'free_pass': return 'Free passes never earn Banana Zone spins.';
     case 'pre_launch': return 'This pass was bought before Banana Zone started.';
     case 'first_purchase': return 'This pass came with the First Purchase promo.';
-    case 'granted': return 'This pass was a reward, not a purchase.';
+    case 'granted': return 'This pass came from the wheel or a grant, not a purchase.';
     case 'transferred': return 'This pass was bought by a different wallet.';
     case 'no_purchase_record': return 'This pass has no purchase on record.';
     default: return 'This pass is not Banana Zone eligible.';

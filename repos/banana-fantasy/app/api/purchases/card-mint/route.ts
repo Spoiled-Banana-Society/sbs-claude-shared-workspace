@@ -584,6 +584,10 @@ export async function POST(req: Request) {
           excluded: promoAwards.firstPurchaseSpinsEarned > 0,
           reason: promoAwards.firstPurchaseSpinsEarned > 0 ? 'first_purchase' : 'purchase',
         });
+        // Card fee reward passes count too (Richard 8/22).
+        if (rewardTokenIds.length > 0) {
+          await stampPurchasedTokens({ tokenIds: rewardTokenIds.map(String), wallet: userId, excluded: false, reason: 'card_fee_reward' });
+        }
       } catch (stampErr) {
         logger.warn('card-mint.bonus_zone_stamp_failed', { userId, err: (stampErr as Error).message });
       }
