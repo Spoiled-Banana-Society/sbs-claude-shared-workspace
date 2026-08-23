@@ -27,18 +27,18 @@ import { promoHueStyle } from '@/lib/promoTheme';
 
 const STORY = (
   <>
-    <p className="text-[14.5px] leading-[1.55] text-white/90">
+    <p className="text-[15px] leading-[1.55] text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,.35)]">
       Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.
     </p>
-    <div className="mt-2.5 max-w-[340px] divide-y divide-white/10">
+    <div className="mt-2.5 max-w-[340px] divide-y divide-white/15">
       {[
         ['Buy 1 Get 1 Spin', 'Drafts 1–20'],
         ['Buy 2 Get 1 Spin', 'Drafts 21–40'],
         ['Buy 3 Get 1 Spin', 'Drafts 41–60'],
       ].map(([deal, range]) => (
-        <div key={deal} className="flex items-baseline justify-between gap-4 py-[5px] text-[14px] leading-[1.35]">
+        <div key={deal} className="flex items-baseline justify-between gap-4 py-[6px] text-[14.5px] leading-[1.35] [text-shadow:0_1px_2px_rgba(0,0,0,.35)]">
           <b className="text-white font-bold">{deal}</b>
-          <span className="text-white/60 text-[12.5px] font-semibold tracking-[.4px] whitespace-nowrap">{range}</span>
+          <span className="text-white/90 text-[13.5px] font-bold tracking-[.4px] whitespace-nowrap">{range}</span>
         </div>
       ))}
     </div>

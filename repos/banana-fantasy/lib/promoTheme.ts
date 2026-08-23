@@ -60,8 +60,8 @@ export function promoKicker(promo: Promo): string {
     case 'daily-drafts': return 'FREE SPIN · EVERY 4';
     case 'pick-chase': return 'UP TO 5 SPINS';
     case 'referral': return 'FREE SPINS · WHEN FRIENDS BUY';
-    case 'pick-10': return 'FREE SPIN · PASSIVE';
-    case 'jackpot': return 'FREE SPINS · PASSIVE';
+    case 'pick-10': return 'FREE SPIN';
+    case 'jackpot': return 'FREE SPINS';
     case 'first-purchase': return 'FREE DRAFTS · EVERY PASS';
     case 'new-user': return 'NEW USER · FREE DRAFT';
     case 'mint': return 'BUY 10 · FREE SPIN';
