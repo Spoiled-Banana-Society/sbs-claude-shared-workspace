@@ -28,7 +28,7 @@ import { promoHueStyle } from '@/lib/promoTheme';
 const STORY = (
   <>
     <p className="text-[14.5px] leading-[1.55] text-white/90">
-      Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.
+      Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.
     </p>
     <div className="mt-2.5 max-w-[340px] divide-y divide-white/10">
       {[

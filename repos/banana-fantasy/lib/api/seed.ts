@@ -719,7 +719,7 @@ const seedPromos: Promo[] = [
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Banana Zone → FREE SPINS',
-    description: 'Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.',
+    description: 'Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
