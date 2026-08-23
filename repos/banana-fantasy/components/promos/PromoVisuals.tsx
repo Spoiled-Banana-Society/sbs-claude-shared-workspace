@@ -276,11 +276,11 @@ export function PromoSwatch({
       const bz = mc.bonusZone;
       if (!bz) { inner = <Big n="1+1" label="FREE SPINS" size={size} />; break; }
       inner = bz.tier === 1
-        ? <Big n="1+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+        ? <Big n="1+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
         : bz.tier === 2
-          ? <Big n="2+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+          ? <Big n="2+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
           : bz.tier === 3
-            ? <Big n="3+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+            ? <Big n="3+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
             : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
       break;
     }

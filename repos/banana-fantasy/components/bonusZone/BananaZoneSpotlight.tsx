@@ -26,11 +26,23 @@ import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { promoHueStyle } from '@/lib/promoTheme';
 
 const STORY = (
-  <>Jackpot just hit? The zone is open — every paid draft you enter earns Free
-  Spins. <b className="text-white">Buy 1 Get 1 Spin</b> for drafts 1–20,{' '}
-  <b className="text-white">Buy 2 Get 1 Spin</b> for 21–40,{' '}
-  <b className="text-white">Buy 3 Get 1 Spin</b> for 41–60 — then it closes
-  until the next Jackpot.</>
+  <>
+    <p className="text-[14.5px] leading-[1.55] text-white/90">
+      Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.
+    </p>
+    <div className="mt-2.5 max-w-[340px] divide-y divide-white/10">
+      {[
+        ['Buy 1 Get 1 Spin', 'Drafts 1–20'],
+        ['Buy 2 Get 1 Spin', 'Drafts 21–40'],
+        ['Buy 3 Get 1 Spin', 'Drafts 41–60'],
+      ].map(([deal, range]) => (
+        <div key={deal} className="flex items-baseline justify-between gap-4 py-[5px] text-[14px] leading-[1.35]">
+          <b className="text-white font-bold">{deal}</b>
+          <span className="text-white/60 text-[12.5px] font-semibold tracking-[.4px] whitespace-nowrap">{range}</span>
+        </div>
+      ))}
+    </div>
+  </>
 );
 
 /** Units of a spin one paid fill banks at each tier (spin = 6 units). */
@@ -56,7 +68,6 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
   // actually live.
   const hasView = Boolean(live || bz);
   const tier = (live ? live.tier : bz?.tier) ?? null;
-  const position = (live ? live.position : bz?.position) ?? 0;
   const draftsLeftInTier = (live ? live.draftsLeftInTier : bz?.draftsLeftInTier) ?? 0;
   const label = tier ? `Buy ${tier} Get 1` : null;
 
@@ -94,7 +105,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
             <h3 className="text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px]">
               Free <span className="text-banana">Spins</span>
             </h3>
-            <div className="mt-1.5 text-[15px] sm:text-[17px] font-black tracking-[5px] text-banana [text-shadow:0_0_16px_rgba(255,207,61,.55)]">BANANA ZONE</div>
+            <div className="mt-1.5 text-[15px] sm:text-[16px] font-extrabold tracking-[5px] text-white">BANANA ZONE</div>
           </div>
           <button
             type="button"
@@ -106,7 +117,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
         </div>
 
         {/* story */}
-        <p className="promo-tx mt-3 text-[14.5px] leading-[1.55] max-w-[56ch] text-white/90">{STORY}</p>
+        <div className="promo-tx mt-3 max-w-[56ch]">{STORY}</div>
 
         {/* combined panel: countdown | your fills */}
         <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] grid grid-cols-1 min-[480px]:grid-cols-[1fr_1px_1.2fr] items-center gap-4 px-5 py-4">
@@ -119,10 +130,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 <div className="mt-1 text-[10px] font-extrabold tracking-[1.6px] text-white/70 uppercase">
                   drafts left at {label}
                 </div>
-                <div className="mt-1 inline-flex items-center gap-1.5 text-[9.5px] font-extrabold tracking-[1.4px] text-white/55 uppercase">
-                  <i className="w-[6px] h-[6px] rounded-full bg-emerald-300 promo-ping" />
-                  Live · window draft {position} of 60
-                </div>
+
               </>
             ) : (
               <>
@@ -135,8 +143,8 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
           </div>
           <div className="hidden min-[480px]:block w-px h-[74px] bg-banana/30" />
           <div className="text-center flex flex-col items-center gap-2">
-            <div className="text-[9.5px] font-extrabold tracking-[2.6px] text-white/60 uppercase">Your Filled Drafts</div>
-            <div className="inline-flex gap-2.5">
+            <div className="text-[10.5px] font-extrabold tracking-[2.6px] text-white/75 uppercase">Your Filled Drafts</div>
+            <div className="inline-flex gap-3">
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
                 const part = i === filled && hasPartial;
@@ -144,13 +152,13 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 return (
                   <span
                     key={i}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-[19px] transition-all duration-300 ${
-                      on ? 'border-[2.5px] border-banana bg-banana/10 shadow-[0_0_12px_rgba(255,207,61,.5)]'
-                        : part ? 'border-[2.5px] border-banana/60 bg-banana/[.06]'
-                          : `border-[2.5px] border-dashed border-white/30 ${next ? 'bz-nextup' : ''}`
+                    className={`w-[52px] h-[52px] sm:w-[58px] sm:h-[58px] rounded-full flex items-center justify-center text-[25px] sm:text-[28px] transition-all duration-300 ${
+                      on ? 'border-[3px] border-banana bg-banana/15 shadow-[0_0_18px_rgba(255,207,61,.65)] scale-[1.04]'
+                        : part ? 'border-[3px] border-banana/60 bg-banana/[.08]'
+                          : `border-[3px] border-dashed border-white/45 bg-black/20 ${next ? 'bz-nextup' : ''}`
                     }`}
                   >
-                    <span className={on ? '' : part ? 'opacity-70 grayscale-[.4]' : 'grayscale brightness-[.45]'}>🍌</span>
+                    <span className={on ? '[filter:drop-shadow(0_0_8px_rgba(255,207,61,.6))]' : part ? 'opacity-80 grayscale-[.3]' : 'opacity-80 grayscale-[.5] brightness-[.8]'}>🍌</span>
                   </span>
                 );
               })}
@@ -164,7 +172,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
               </button>
             ) : (
-              <div className="text-[12.5px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
+              <div className="text-[14px] sm:text-[15px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
                 {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
               </div>
             )}

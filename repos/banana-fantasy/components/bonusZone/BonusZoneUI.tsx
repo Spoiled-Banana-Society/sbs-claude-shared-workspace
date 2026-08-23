@@ -53,8 +53,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   if (compact) {
     return (
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[108px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
-        <span className="text-[9px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
-        <span className="mt-[3px] text-[12px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        <span className="text-[8px] font-extrabold tracking-[0.06em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
+        <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
       </div>
     );
   }
@@ -63,11 +63,11 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   // as a slim strip under the header (BonusZoneMobileBar).
   return (
     <div
-      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[150px]"
+      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[168px]"
       data-testid="bonus-zone-pill"
     >
-      <span className="text-[10.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
-      <span className="mt-[3px] text-[14px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      <span className="text-[9px] font-extrabold tracking-[0.06em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
+      <span className="mt-[3px] text-[12.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
     </div>
   );
 }
@@ -126,6 +126,42 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
  * the banana playhead at the live position. Same bones as JackpotCycle so it
  * reads as the same family.
  */
+/**
+ * Tier chips — the SAME visual as the spotlight card (Boris 2026-08-23), so
+ * the promo reads identically on the card, the modal and the header tooltip.
+ * Replaces the old absolutely-positioned band labels, which overlapped on
+ * narrow containers (words rendering on top of words).
+ */
+export function ZoneTierChips({ view, small = false }: { view: BonusZoneViewLike; small?: boolean }) {
+  const bands: Array<{ band: 1 | 2 | 3; deal: string; range: string }> = [
+    { band: 1, deal: 'BUY 1 GET 1', range: `DRAFTS 1–${view.tier1Through}` },
+    { band: 2, deal: 'BUY 2 GET 1', range: `DRAFTS ${view.tier1Through + 1}–${view.tier2Through}` },
+    { band: 3, deal: 'BUY 3 GET 1', range: `DRAFTS ${view.tier2Through + 1}–${zoneEnd(view)}` },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-1.5">
+      {bands.map(({ band, deal, range }) => {
+        const st: 'live' | 'dead' | 'future' = view.tier === null ? 'dead' : band === view.tier ? 'live' : band < view.tier ? 'dead' : 'future';
+        return (
+          <div
+            key={band}
+            className={`text-center rounded-lg px-0.5 uppercase font-extrabold leading-[1.25] transition-all duration-300 ${small ? 'py-1.5' : 'py-2'} ${
+              st === 'live'
+                ? `${small ? 'text-[10px]' : 'text-[11.5px]'} text-[#04231a] border border-emerald-300 bg-gradient-to-br from-[#7ff0c3] via-[#34d399] to-[#0fa371]`
+                : `${small ? 'text-[9.5px]' : 'text-[10.5px]'} ${st === 'dead' ? 'text-white/55 border border-white/10 bg-black/20' : 'text-white/80 border border-white/15 bg-black/20'}`
+            }`}
+          >
+            {deal}
+            <em className={`block not-italic mt-0.5 font-extrabold tracking-[1px] ${small ? 'text-[7px]' : 'text-[8px]'} ${st === 'live' ? 'text-[#04231a]/80' : 'text-white/40'}`}>{range}</em>
+            {st === 'live' && <span className={`block mt-0.5 font-black tracking-[1.6px] text-[#04231a]/85 ${small ? 'text-[6.5px]' : 'text-[7px]'}`}>● LIVE</span>}
+            {st === 'dead' && <span className={`block mt-0.5 font-extrabold tracking-[1.4px] text-white/30 ${small ? 'text-[6px]' : 'text-[6.5px]'}`}>BACK NEXT JP</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZoneViewLike; pending?: number; units?: number }) {
   const t1 = view.tier1Through;
   const t2 = view.tier2Through;
@@ -144,17 +180,12 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
           <div key={b.l1} className={`${b.cls} ${b.on ? '' : 'opacity-40'}`} style={{ width: `${b.to - b.from}%` }} />
         ))}
       </div>
-      <div className="relative h-[34px]">
-        {bands.map((b) => (
-          <div key={b.l1} className="absolute top-1 text-center" style={{ left: `${b.from}%`, width: `${b.to - b.from}%` }}>
-            <span className={`block text-[9px] tracking-[1px] font-extrabold leading-[1.3] whitespace-nowrap ${b.on ? 'text-emerald-300' : 'text-white/45'}`}>{b.l1}</span>
-            <span className="block text-[8.5px] tracking-[1px] font-bold text-white/35 whitespace-nowrap">{b.l2}</span>
-          </div>
-        ))}
+      <div className="relative h-[6px]">
         <div className="absolute -top-[13px] w-[3px] h-[18px] rounded-sm bg-banana transition-[left] duration-700" style={{ left: `calc(${pct}% - 1px)` }} />
       </div>
+      <ZoneTierChips view={view} small />
       {(pending > 0 || units > 0) && (
-        <div className="flex gap-[5px] -mt-1">
+        <div className="flex gap-[5px] mt-1.5">
           {pending > 0 && (
             <span className="rounded-md bg-emerald-400/15 px-2 py-[3px] text-[10.5px] font-extrabold tracking-[1px] text-emerald-300">
               {pending} PENDING
