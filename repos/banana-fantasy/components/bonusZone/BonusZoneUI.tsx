@@ -80,18 +80,35 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
 export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: { view: BonusZoneViewLike; href?: string }) {
   if (!view.enabled || !view.tier) return null;
   const left = view.draftsLeftInTier;
+  // Tap behavior matches the JACKPOT / HOF counters (Boris 2026-08-23): the
+  // shared Tooltip shows instantly on touch and auto-holds ~4.5s — no more
+  // split-second flash. Info lives here; the full promo is one tap away on
+  // the Promos page.
+  void href;
   return (
-    <a
-      href={href}
-      className="lg:hidden flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300"
-      data-testid="bonus-zone-mobile-bar"
-      aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
+    <Tooltip
+      position="bottom"
+      content={
+        <div className="w-[250px] py-0.5">
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="text-[12px] font-extrabold tracking-[1px] text-emerald-300">BANANA ZONE</span>
+            {view.tier && <span className="text-[11px] font-bold text-text-secondary">{tierLabel(view.tier)}</span>}
+          </div>
+          <BonusZoneTooltipSection view={view} />
+        </div>
+      }
     >
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
-      <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-      <span className="text-[11px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
-    </a>
+      <div
+        className="lg:hidden flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300 cursor-default"
+        data-testid="bonus-zone-mobile-bar"
+        aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
+        <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        <span className="text-[11px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
+      </div>
+    </Tooltip>
   );
 }
 
