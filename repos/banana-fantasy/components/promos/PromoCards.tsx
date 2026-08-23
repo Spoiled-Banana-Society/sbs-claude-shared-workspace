@@ -14,6 +14,7 @@ import { promoAccent, promoHueStyle, promoKicker, promoName, promoRules } from '
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
+import { BananaZoneSpotlight } from '@/components/bonusZone/BananaZoneSpotlight';
 import { useAuth } from '@/hooks/useAuth';
 
 // ─── Per-promo secondary indicators (under the one-liner) ───────────────────
@@ -339,6 +340,20 @@ export interface PromoSpotlightProps {
 export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOpenModal, onClaim, fpVariant = 'new', fpShowNewPlayerTag = false }: PromoSpotlightProps) {
   const [how, setHow] = useState(false);
   const { isTwitterVerified, linkTwitter } = useAuth();
+  // Banana Zone wears its own signed-off spotlight (Boris 2026-08-23) —
+  // live window view off the header's SSE stream, claim through the same
+  // onClaim → claimPromo → ClaimSuccessModal path as every other promo.
+  // Branch sits AFTER every hook so the hook order never changes.
+  if (promo.type === 'bonus-zone') {
+    return (
+      <BananaZoneSpotlight
+        promo={promo}
+        hasVisibleClaim={hasVisibleClaim}
+        onClaim={onClaim}
+        onOpenModal={onOpenModal}
+      />
+    );
+  }
   const isNu = promo.type === 'new-user';
   const rules = promoRules(promo);
   const isAtb = promo.type === 'around-the-banana';
