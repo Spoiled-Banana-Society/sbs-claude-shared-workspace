@@ -373,7 +373,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
         </div>
       </div>
 
-      {/* BONUS ZONE strip — PHONES ONLY. Phones have no room for a fourth pill
+      {/* BANANA ZONE strip — PHONES ONLY. Phones have no room for a fourth pill
           next to JACKPOT / HOF / passes / balance (Richard 2026-08-22), so the
           zone rides as a slim full-width strip under the bar. Filled via a
           portal from BatchProgressIndicator (one SSE stream feeds both); empty

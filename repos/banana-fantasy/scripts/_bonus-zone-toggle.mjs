@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BONUS ZONE switch — system_config/bonusZone. READ-ONLY unless a flag is given.
+// BANANA ZONE switch — system_config/bonusZone. READ-ONLY unless a flag is given.
 //
 //   node scripts/_bonus-zone-toggle.mjs                 # show current config + live view
 //   node scripts/_bonus-zone-toggle.mjs --on            # enable + stamp launchAtIso=now (if unset)

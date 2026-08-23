@@ -712,12 +712,12 @@ const seedPromos: Promo[] = [
     },
   },
   {
-    // 🟢 BONUS ZONE (Richard 2026-08-22) — replaces Jackpot Hit below. Ships
+    // 🟢 BANANA ZONE (Richard 2026-08-22) — replaces Jackpot Hit below. Ships
     // dark: /api/promos strips it unless system_config/bonusZone.enabled (or
     // the viewer is an admin). Copy rule: no dashes in posted copy.
     id: 'bonus-zone',
     type: 'bonus-zone',
-    title: 'Bonus Zone → FREE DRAFTS',
+    title: 'Banana Zone → FREE DRAFTS',
     description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
@@ -727,9 +727,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Bonus Zone → FREE DRAFTS',
+      title: 'Banana Zone → FREE DRAFTS',
       explanation:
-        '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 60 drafts of every window.\n'
+        '• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first 60 drafts of every window.\n'
         + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
         + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
         + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'

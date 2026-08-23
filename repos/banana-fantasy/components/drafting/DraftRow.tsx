@@ -144,7 +144,7 @@ export function DraftRow({
               the league-players poll (sortOrders.AutoDraft), so it shows for
               toggles made on other devices and for the server's own
               missed-picks promotion — MrMcNasty, Discord 2026-08-17. */}
-          {/* BONUS ZONE lock (ships dark — only stamped while the switch is
+          {/* BANANA ZONE lock (ships dark — only stamped while the switch is
               on). A quiet ticket tick while the lobby is still filling: green
               = free draft (or half) pays on this fill; dim+slash = the pass
               used was not eligible. Gone once the draft fills (the bell and

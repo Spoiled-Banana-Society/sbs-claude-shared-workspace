@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * BONUS ZONE — every visual, with mock data, regardless of the switch.
+ * BANANA ZONE — every visual, with mock data, regardless of the switch.
  * /preview/bonus-zone[?tier=1|2|0][&pos=N]
  *
  * Richard's review page (2026-08-22): the header pill in both cuts, the promo
@@ -50,7 +50,7 @@ function viewFor(position: number): BonusZoneViewLike {
 }
 
 const RULES =
-  '• The Jackpot window counts up from 1 after every Jackpot hit. The Bonus Zone is the first 60 drafts of every window.\n'
+  '• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first 60 drafts of every window.\n'
   + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
   + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
   + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
@@ -65,7 +65,7 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
   return {
     id: 'bonus-zone',
     type: 'bonus-zone',
-    title: 'Bonus Zone → FREE DRAFTS',
+    title: 'Banana Zone → FREE DRAFTS',
     description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
@@ -74,7 +74,7 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
     isNew: true,
     featured: true,
     modalContent: {
-      title: 'Bonus Zone → FREE DRAFTS',
+      title: 'Banana Zone → FREE DRAFTS',
       explanation: RULES,
       bonusZone: {
         tier: view.tier,
@@ -203,7 +203,7 @@ export default function BonusZonePreviewPage() {
     <main className="min-h-screen bg-[#08080b] text-white px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-5xl space-y-10">
         <header className="space-y-3">
-          <p className="text-[11px] font-extrabold tracking-[3px] text-emerald-300">BONUS ZONE · PREVIEW · MOCK DATA · SWITCH IS OFF</p>
+          <p className="text-[11px] font-extrabold tracking-[3px] text-emerald-300">BANANA ZONE · PREVIEW · MOCK DATA · SWITCH IS OFF</p>
           <h1 className="text-3xl font-black tracking-tight">Every visual, down to the inch</h1>
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
             <label className="text-[12px] text-white/60">Window position of the next draft</label>
@@ -357,11 +357,11 @@ export default function BonusZonePreviewPage() {
 
         <Section title="7 · BELLS" note="Broadcast bells (replace the 10 spin / 5 spin Jackpot Watch bells) and the two personal payout bells.">
           <div className="grid gap-3 md:grid-cols-2">
-            <Bell title="🟢 Jackpot hit. Bonus Zone is ON: Buy 1 Get 1" message="Every paid draft you enter in the next 20 drafts earns a FREE draft when it fills. Then Buy 2 Get 1 through draft 40 and Buy 3 Get 1 through 60. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Bonus Zone: Buy 2 Get 1" message="Every 2 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. Drops to Buy 3 Get 1 at draft 41. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Bonus Zone: Buy 3 Get 1, last call" message="Every 3 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. The zone closes at draft 60 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Bonus Zone: your free draft landed" message="Your Buy 1 Get 1 draft filled, so your free draft pass is in your passes now. Use it on any draft." link="/promos?promo=bonus-zone · the drafter" />
-            <Bell title="🟢 Bonus Zone: 1 of 2 toward a free draft" message="Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours." link="/promos?promo=bonus-zone · the drafter" />
+            <Bell title="🟢 Jackpot hit. Banana Zone is ON: Buy 1 Get 1" message="Every paid draft you enter in the next 20 drafts earns a FREE draft when it fills. Then Buy 2 Get 1 through draft 40 and Buy 3 Get 1 through 60. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Banana Zone: Buy 2 Get 1" message="Every 2 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. Drops to Buy 3 Get 1 at draft 41. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Banana Zone: Buy 3 Get 1, last call" message="Every 3 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. The zone closes at draft 60 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🟢 Banana Zone: your free draft landed" message="Your Buy 1 Get 1 draft filled, so your free draft pass is in your passes now. Use it on any draft." link="/promos?promo=bonus-zone · the drafter" />
+            <Bell title="🟢 Banana Zone: 1 of 2 toward a free draft" message="Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours." link="/promos?promo=bonus-zone · the drafter" />
           </div>
         </Section>
 
@@ -369,7 +369,7 @@ export default function BonusZonePreviewPage() {
           <Frame label="FILL BOT POST" w="max-w-md">
             <pre className="whitespace-pre-wrap font-sans text-[13.5px] leading-relaxed text-white/85">{`3 more to fill BBB #${817 + pos}
 
-✅ HOF - ${((3 / (100 - pos + 1)) * 100).toFixed(2)}% Jackpot - ${((1 / (100 - pos + 1)) * 100).toFixed(2)}%${view.tier ? `\n🟢 BONUS ZONE: ${view.label} · ${view.draftsLeftInTier} ${view.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left` : ''}`}</pre>
+✅ HOF - ${((3 / (100 - pos + 1)) * 100).toFixed(2)}% Jackpot - ${((1 / (100 - pos + 1)) * 100).toFixed(2)}%${view.tier ? `\n🟢 BANANA ZONE: ${view.label} · ${view.draftsLeftInTier} ${view.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left` : ''}`}</pre>
           </Frame>
         </Section>
 

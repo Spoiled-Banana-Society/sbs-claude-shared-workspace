@@ -87,7 +87,7 @@ export function EntryFlowModal({
   // has nothing lane-specific to show, since paid and free share lobbies.
   const nextLobby = useNextLobbyFill(isOpen && step === 'speed' && !privateMode);
 
-  // BONUS ZONE (ships dark): one status read per open — what this seat earns
+  // BANANA ZONE (ships dark): one status read per open — what this seat earns
   // right now + whether the wallet's paid passes qualify. Deps are stable
   // scalars only (Rule #0: never a Privy callback in a fetching effect).
   const [bonusZone, setBonusZone] = useState<BonusZoneStatusLike | null>(null);
@@ -277,7 +277,7 @@ export function EntryFlowModal({
                     {buyingSeat && fpOfferLine && (
                       <p className="text-banana/70 text-xs mt-0.5">{fpOfferLine}</p>
                     )}
-                    {/* BONUS ZONE: what this seat earns right now (ships dark). */}
+                    {/* BANANA ZONE: what this seat earns right now (ships dark). */}
                     <BonusZoneEntryLine status={bonusZone} buyingSeat={buyingSeat} firstPurchaseApplies={!!fpOfferLine} />
                   </div>
                   <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>

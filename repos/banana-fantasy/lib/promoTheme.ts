@@ -22,7 +22,7 @@ export const PROMO_HUES: Record<PromoType, PromoHue> = {
   'drop':              { a: '#e5731f', b: '#4d1c06' },
   'daily-drafts':      { a: '#c98f00', b: '#4a3300' },
   'pick-chase':        { a: '#0aa3c7', b: '#04304d' },
-  'referral':          { a: '#d63fb0', b: '#460b36' }, // took Jackpot Hit's magenta when Bonus Zone replaced it (Richard 8/22) — green is the zone's now
+  'referral':          { a: '#d63fb0', b: '#460b36' }, // took Jackpot Hit's magenta when Banana Zone replaced it (Richard 8/22) — green is the zone's now
   'pick-10':           { a: '#8b63e6', b: '#28104f' },
   'jackpot':           { a: '#d63fb0', b: '#460b36' },
   'first-purchase':    { a: '#3ddc84', b: '#0b3f24' }, // mint — Boris 2026-08-19 redesign
@@ -96,7 +96,7 @@ export function promoKickerLines(promo: Promo): { top: string; big: string } {
     case 'jackpot': return { top: 'WHEN JP HITS', big: 'FREE SPINS' };
     case 'new-user': return { top: 'NEW USER', big: 'FREE DRAFT' };
     case 'first-purchase': return { top: 'EVERY PASS', big: 'FREE DRAFTS' };
-    case 'bonus-zone': return { top: 'BONUS ZONE', big: 'FREE DRAFTS' };
+    case 'bonus-zone': return { top: 'BANANA ZONE', big: 'FREE DRAFTS' };
     default: {
       const [a, b] = promoKicker(promo).split(' · ');
       return b ? { top: b, big: a } : { top: '', big: a };

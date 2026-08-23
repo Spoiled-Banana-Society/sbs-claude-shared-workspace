@@ -344,7 +344,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
-  // BONUS ZONE line (ships dark — empty while the switch is off). Rides under
+  // BANANA ZONE line (ships dark — empty while the switch is off). Rides under
   // the odds on FILLING lobbies only: the zone is about the NEXT draft to fill,
   // so the just-filled ping never carries it. Reveal-gated off the same
   // tracker view as the header pill, so it can't move before the slot lands.
@@ -356,7 +356,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       const lane = laneViewFromTracker(trackerData as Parameters<typeof laneViewFromTracker>[0]);
       if (lane.rolling) {
         const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
-        if (v.tier) bonusZoneLine = `🟢 BONUS ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
+        if (v.tier) bonusZoneLine = `🟢 BANANA ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
       }
     }
   } catch { /* decoration */ }

@@ -1,5 +1,5 @@
 /**
- * BONUS ZONE — the cold-zone free-draft ladder (Richard 2026-08-22).
+ * BANANA ZONE — the cold-zone free-draft ladder (Richard 2026-08-22).
  *
  * Problem it solves: the rolling Jackpot window shows odds climbing from 1%
  * right after a hit to 100% at draft 100, so drafters camp the hot end and the
@@ -36,7 +36,7 @@
  *   • Fast + slow BBB drafts both count (they share the Jackpot lane). Special
  *     seat drafts (Jackpot/HOF/JackHOF passes) and private leagues do not.
  *   • Replaces the Jackpot Hit spin promo (promo 4): while the zone is ON the
- *     spin draw pays nothing and its bells/card are swapped for Bonus Zone.
+ *     spin draw pays nothing and its bells/card are swapped for Banana Zone.
  *
  * ⚠️ SHIPS DARK. Nothing here pays, locks, bells or renders until
  * system_config/bonusZone.enabled === true (or env BONUS_ZONE=1). Flip with
@@ -767,7 +767,7 @@ async function notifyBonusPaid(wallet: string, draftId: string, count: number, l
     const { createNotification } = await import('@/lib/queueNotifications');
     await createNotification(wallet, {
       type: 'promo',
-      title: count === 1 ? '🟢 Bonus Zone: your free draft landed' : `🟢 Bonus Zone: ${count} free drafts landed`,
+      title: count === 1 ? '🟢 Banana Zone: your free draft landed' : `🟢 Banana Zone: ${count} free drafts landed`,
       message: `Your ${label} draft filled, so your free draft pass is in your passes now. Use it on any draft.`,
       link: '/promos?promo=bonus-zone',
       dedupeKey: `bonus-zone-paid-${draftId}`,
@@ -791,10 +791,10 @@ async function notifyBonusPartial(wallet: string, draftId: string, windowStart: 
   try {
     const { createNotification } = await import('@/lib/queueNotifications');
     const left = BZ_UNITS_PER_PASS - units;
-    const more = left <= 2 ? 'One more Buy 3 Get 1 draft' : left <= 3 ? 'One more Buy 2 Get 1 draft (or two Buy 3 Get 1)' : 'A couple more Bonus Zone drafts';
+    const more = left <= 2 ? 'One more Buy 3 Get 1 draft' : left <= 3 ? 'One more Buy 2 Get 1 draft (or two Buy 3 Get 1)' : 'A couple more Banana Zone drafts';
     await createNotification(wallet, {
       type: 'promo',
-      title: `🟢 Bonus Zone: ${progressCopy(units)}`,
+      title: `🟢 Banana Zone: ${progressCopy(units)}`,
       message: `Your ${label} draft filled. ${more} before the Jackpot hits and the free draft is yours.`,
       link: '/promos?promo=bonus-zone',
       dedupeKey: `bonus-zone-part-${draftId}-${windowStart}`,
@@ -856,12 +856,12 @@ export async function getBonusZoneWalletStatus(wallet: string, opts: { includePa
 /** Plain-English reason for an ineligible pass (entry modal / row tooltip). */
 export function ineligibleReasonCopy(reason: string): string {
   switch (reason) {
-    case 'free_pass': return 'Free passes never earn Bonus Zone.';
-    case 'pre_launch': return 'This pass was bought before Bonus Zone started.';
+    case 'free_pass': return 'Free passes never earn Banana Zone.';
+    case 'pre_launch': return 'This pass was bought before Banana Zone started.';
     case 'first_purchase': return 'This pass came with the First Purchase promo.';
     case 'granted': return 'This pass was a reward, not a purchase.';
     case 'transferred': return 'This pass was bought by a different wallet.';
     case 'no_purchase_record': return 'This pass has no purchase on record.';
-    default: return 'This pass is not Bonus Zone eligible.';
+    default: return 'This pass is not Banana Zone eligible.';
   }
 }

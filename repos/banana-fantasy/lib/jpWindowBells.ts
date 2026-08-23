@@ -36,7 +36,7 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   const { windowStart } = replayJpLane(jpIds.map(Number), rollingStart, filled);
   const position = filled - windowStart + 1;
 
-  // BONUS ZONE replaces the Jackpot Hit spin promo (Richard 2026-08-22): while
+  // BANANA ZONE replaces the Jackpot Hit spin promo (Richard 2026-08-22): while
   // the zone is ON this loop announces the zone's tiers instead of spin bands,
   // and drains any free-draft grants that failed at fill. Same once-per-window-
   // per-tier markers, same reveal gate.
@@ -108,8 +108,8 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
 }
 
 /**
- * Bonus Zone bells (Richard 2026-08-22) — the zone's two announce moments:
- *   • A Jackpot hits → window resets → "Bonus Zone is ON: Buy 1 Get 1 for the
+ * Banana Zone bells (Richard 2026-08-22) — the zone's two announce moments:
+ *   • A Jackpot hits → window resets → "Banana Zone is ON: Buy 1 Get 1 for the
  *     next N drafts" (tier 1 band of the new window). Waits for the hit's
  *     jackpot_draws doc so it can never beat the slot-machine reveal.
  *   • The window reaches tier 2 / tier 3 with no hit → "Buy 2 Get 1 for the
@@ -159,7 +159,7 @@ async function runBonusZoneBells(
   const t3 = tierInfo(3, cfg);
   const bell = live.tier === 1
     ? {
-        title: '🟢 Jackpot hit. Bonus Zone is ON: Buy 1 Get 1',
+        title: '🟢 Jackpot hit. Banana Zone is ON: Buy 1 Get 1',
         message: `Every paid draft you enter in the next ${left} drafts earns a FREE draft when it fills. `
           + (t3.through > t2.through
             ? `Then Buy 2 Get 1 through draft ${t2.through} and Buy 3 Get 1 through ${t3.through}. Tap for the rules.`
@@ -167,13 +167,13 @@ async function runBonusZoneBells(
       }
     : live.tier === 2
       ? {
-          title: '🟢 Bonus Zone: Buy 2 Get 1',
+          title: '🟢 Banana Zone: Buy 2 Get 1',
           message: `Every 2 paid drafts you enter in the next ${left} drafts earn a FREE draft when they fill. `
             + (t3.through > t2.through ? `Drops to Buy 3 Get 1 at draft ${t2.through + 1}. ` : `The zone closes at draft ${t2.through} of the window. `)
             + 'Tap for the rules.',
         }
       : {
-          title: '🟢 Bonus Zone: Buy 3 Get 1, last call',
+          title: '🟢 Banana Zone: Buy 3 Get 1, last call',
           message: `Every 3 paid drafts you enter in the next ${left} drafts earn a FREE draft when they fill. `
             + `The zone closes at draft ${t3.through} of the window. Tap for the rules.`,
         };

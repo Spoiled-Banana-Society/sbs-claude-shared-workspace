@@ -237,7 +237,7 @@ export function BatchProgressIndicator() {
               <span className="text-[10.5px] text-text-muted">rolling windows</span>
             </div>
 
-            {/* BONUS ZONE (ships dark — absent until the switch is on) */}
+            {/* BANANA ZONE (ships dark — absent until the switch is on) */}
             {data.bonusZone && <BonusZoneTooltipSection view={data.bonusZone} />}
 
             {/* Jackpot lane */}
@@ -288,7 +288,7 @@ export function BatchProgressIndicator() {
               not as its own element on desktop or mobile. */}
           <div className="flex flex-col items-center gap-[2px] lg:contents">
           <div className="flex flex-row items-center gap-[3px] lg:gap-1.5">
-            {/* BONUS ZONE pill — green, left of JACKPOT; hides when the zone
+            {/* BANANA ZONE pill — green, left of JACKPOT; hides when the zone
                 is closed (70+) and is absent entirely while the switch is off.
                 Reveal-gated server-side off the same `pre` window the red pill
                 uses, so the two can never disagree. */}
