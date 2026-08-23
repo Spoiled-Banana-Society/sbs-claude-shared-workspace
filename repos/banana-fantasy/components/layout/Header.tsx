@@ -380,6 +380,48 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
           while the switch is off or the zone is closed. */}
       <div id="bonus-zone-mobile-slot" className="lg:hidden" />
 
+      {/* ADMIN strip — PHONES ONLY, admins only (Richard 2026-08-22: "why do
+          I have to move my phone to the side to see admin"). Desktop keeps the
+          Admin nav link; on phones that link is hidden and the only way in was
+          the profile menu. Rides under the Banana Zone strip inside the sticky
+          header so it is always at the top of the page. Badge = same unseen
+          count as the desktop link, jumps straight to Logs. */}
+      {isAdminWallet && isLoggedIn && (
+        <Link
+          href="/admin"
+          className="md:hidden flex items-center justify-center gap-2 w-full border-t border-banana/30 bg-banana/[0.08] px-3 py-[6px] text-banana focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+          aria-label={adminNotifTotal > 0 ? `Admin, ${adminNotifTotal} items need attention` : 'Admin'}
+          data-testid="admin-mobile-strip"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z" />
+          </svg>
+          <span className="text-[10px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">ADMIN</span>
+          {adminNotifTotal > 0 && (
+            <span
+              role="link"
+              tabIndex={0}
+              aria-label={`${adminNotifTotal} items need attention, open Logs`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                router.push('/admin?tab=logs');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.push('/admin?tab=logs');
+                }
+              }}
+              className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-banana text-black text-[9px] font-bold leading-none"
+            >
+              {adminNotifTotal > 99 ? '99+' : adminNotifTotal}
+            </span>
+          )}
+        </Link>
+      )}
+
       {/* Mount only while open — useFundWallet crashes when mounted at page
           level (see CLAUDE.md troubleshooting / BuyPassesModal precedent). */}
       {showAddFunds && (

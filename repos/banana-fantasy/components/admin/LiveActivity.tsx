@@ -21,11 +21,12 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   marketplace_sold: 'Marketplace sale',
   marketplace_bought: 'Marketplace buy',
   cashout_completed: 'Cashout completed',
+  deposit_completed: 'Deposit',
   user_signed_up: 'New account',
   user_returned: 'Logged in',
 };
 
-const TYPE_COLOR: Record<ActivityEventType, string> = {
+export const TYPE_COLOR: Record<ActivityEventType, string> = {
   pass_purchased: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
   pass_granted: 'text-[#F3E216] bg-yellow-500/10 border-yellow-500/30',
   spin_won: 'text-purple-300 bg-purple-500/10 border-purple-500/30',
@@ -37,6 +38,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   marketplace_sold: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
   marketplace_bought: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
   cashout_completed: 'text-green-300 bg-green-500/10 border-green-500/30',
+  deposit_completed: 'text-lime-300 bg-lime-500/10 border-lime-500/30',
   user_signed_up: 'text-banana bg-yellow-500/10 border-yellow-500/30',
   user_returned: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30',
 };
@@ -71,7 +73,7 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
 /** pass_granted covers three real sources — label by which one it was.
  *  (It used to blanket-say "Admin grant", making every wheel-prize mint look
  *  like a manual freebie — Boris 2026-07-03.) */
-function typeLabelFor(e: LiveActivityEvent): string {
+export function typeLabelFor(e: LiveActivityEvent): string {
   if (e.type === 'pass_granted') {
     const s = String(e.metadata?.source ?? '');
     if (s === 'wheel_spin_mint') return 'Wheel prize mint';
@@ -92,7 +94,7 @@ function basescanTxUrl(hash: string | null): string | null {
   return `https://basescan.org/tx/${hash}`;
 }
 
-function relativeTime(createdAt: number | null, iso: string): string {
+export function relativeTime(createdAt: number | null, iso: string): string {
   const ms = createdAt ?? Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const diff = Date.now() - ms;
@@ -102,7 +104,12 @@ function relativeTime(createdAt: number | null, iso: string): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-type TypeFilter = 'all' | ActivityEventType;
+/** 'money' is the compound view Boris asked for (2026-07-27): every event
+ *  where real dollars arrive — pass purchases AND card deposits — in ONE
+ *  list, so nobody flips between two pills to follow the money. */
+type TypeFilter = 'all' | 'money' | ActivityEventType;
+
+const MONEY_TYPES: ReadonlySet<ActivityEventType> = new Set(['pass_purchased', 'deposit_completed']);
 type WalletFilter = 'all' | WalletType;
 type PaymentFilter = 'all' | NonNullable<PaymentMethod>;
 
@@ -113,7 +120,9 @@ function eventMatchesFilters(
   payment: PaymentFilter,
   search: string,
 ): boolean {
-  if (type !== 'all' && e.type !== type) return false;
+  if (type === 'money') {
+    if (!MONEY_TYPES.has(e.type)) return false;
+  } else if (type !== 'all' && e.type !== type) return false;
   if (wallet !== 'all' && e.walletType !== wallet) return false;
   if (payment !== 'all' && e.paymentMethod !== payment) return false;
   if (search) {
@@ -419,6 +428,7 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
           {isConnected ? 'Live' : error ? 'Reconnecting…' : 'Connecting…'}
         </div>
         <Pill active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>All types</Pill>
+        <Pill active={typeFilter === 'money'} onClick={() => setTypeFilter('money')}>💵 Money in</Pill>
         {(Object.keys(TYPE_LABEL) as ActivityEventType[]).map((t) => (
           <Pill key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{TYPE_LABEL[t]}</Pill>
         ))}
@@ -483,6 +493,20 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
           {history === null && <span className="text-gray-600"> — live window only; use “Load full history” for all-time</span>}
         </p>
       )}
+      {typeFilter === 'money' && filtered.length > 0 && (() => {
+        const buys = filtered.filter((e) => e.type === 'pass_purchased');
+        const deps = filtered.filter((e) => e.type === 'deposit_completed');
+        const buyUsd = buys.reduce((s, e) => s + (Number(e.metadata?.totalPrice) || 0), 0);
+        const depUsd = deps.reduce((s, e) => s + (Number(e.metadata?.amountUsd) || 0), 0);
+        return (
+          <p className="text-[11px] text-gray-400">
+            ${(buyUsd + depUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })} in
+            {' — '}{buys.length} purchase{buys.length === 1 ? '' : 's'} (${buyUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+            {' + '}{deps.length} deposit{deps.length === 1 ? '' : 's'} (${depUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+            {history === null && <span className="text-gray-600"> — live window only; use “Load full history” for all-time</span>}
+          </p>
+        );
+      })()}
 
       {/* Events table */}
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
@@ -544,7 +568,33 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {WALLET_TYPE_LABEL[e.walletType]} · {e.devicePlatform}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-300 capitalize">{e.paymentMethod ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-300">
+                      {e.type === 'deposit_completed' ? (
+                        // Deposits carry the full answer in one cell: amount +
+                        // provider + method ("$25.00 · MoonPay card").
+                        <span className="text-lime-200 whitespace-nowrap">
+                          {typeof e.metadata?.amountUsd === 'number' ? `$${(e.metadata.amountUsd as number).toFixed(2)} · ` : ''}
+                          {String(e.metadata?.provider ?? '') === 'moonpay' ? 'MoonPay ' : ''}card
+                        </span>
+                      ) : e.type === 'pass_purchased' ? (
+                        // WHERE the money came from, per Boris (2026-07-27):
+                        // card buys ride MoonPay; USDC buys are labeled by the
+                        // wallet that funded them — an external wallet means
+                        // MetaMask/Coinbase-style self-custody money.
+                        <span className="whitespace-nowrap">
+                          {Number(e.metadata?.totalPrice) > 0 ? `$${Number(e.metadata?.totalPrice).toFixed(0)} · ` : ''}
+                          {e.paymentMethod === 'card'
+                            ? 'card (MoonPay)'
+                            : e.walletType === 'privy_external'
+                              ? 'USDC · external wallet'
+                              : e.walletType === 'external_connect'
+                                ? 'USDC · external wallet'
+                                : 'USDC · in-app wallet'}
+                        </span>
+                      ) : (
+                        <span className="capitalize">{e.paymentMethod ?? '—'}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-xs text-right text-gray-200">{e.quantity}</td>
                     <td className="px-4 py-3 text-xs">
                       {tx ? (
