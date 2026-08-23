@@ -53,8 +53,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   if (compact) {
     return (
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[108px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
-        <span className="text-[8px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
-        <span className="mt-[3px] text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        <span className="text-[9px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
+        <span className="mt-[3px] text-[12px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
       </div>
     );
   }
@@ -66,8 +66,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[150px]"
       data-testid="bonus-zone-pill"
     >
-      <span className="text-[9.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
-      <span className="mt-[3px] text-[12.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      <span className="text-[10.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
+      <span className="mt-[3px] text-[14px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
     </div>
   );
 }
@@ -88,9 +88,9 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
       aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      <span className="text-[10px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
-      <span className="text-[11.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-      <span className="text-[10px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
+      <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
+      <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      <span className="text-[11px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
     </a>
   );
 }
@@ -103,10 +103,10 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
   return (
     <div className="mb-2.5">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11.5px] font-bold text-emerald-400">BANANA ZONE · {view.tier ? tierShort(view.tier) : 'CLOSED'}</span>
-        {view.tier && <span className="text-[12px] font-semibold tabular-nums text-emerald-400">{view.draftsLeftInTier} left</span>}
+        <span className="text-[13px] font-bold text-emerald-400">BANANA ZONE · {view.tier ? tierShort(view.tier) : 'CLOSED'}</span>
+        {view.tier && <span className="text-[13px] font-semibold tabular-nums text-emerald-400">{view.draftsLeftInTier} left</span>}
       </div>
-      <p className="text-[10.5px] leading-snug text-text-secondary">
+      <p className="text-[11.5px] leading-snug text-text-secondary">
         {view.tier === 1 && `Every paid draft that fills in the next ${plural(view.draftsLeftInTier, 'draft')} earns a Free Spin. Then Buy 2 Get 1 Spin through draft ${t2}.`}
         {view.tier === 2 && `Every 2 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. ${end > t2 ? `Then Buy 3 Get 1 Spin through ${end}.` : `Zone closes at draft ${t2}.`}`}
         {view.tier === 3 && `Every 3 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. Zone closes at draft ${end}.`}
@@ -147,8 +147,8 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
       <div className="relative h-[34px]">
         {bands.map((b) => (
           <div key={b.l1} className="absolute top-1 text-center" style={{ left: `${b.from}%`, width: `${b.to - b.from}%` }}>
-            <span className={`block text-[8px] tracking-[1px] font-extrabold leading-[1.3] whitespace-nowrap ${b.on ? 'text-emerald-300' : 'text-white/45'}`}>{b.l1}</span>
-            <span className="block text-[7.5px] tracking-[1px] font-bold text-white/35 whitespace-nowrap">{b.l2}</span>
+            <span className={`block text-[9px] tracking-[1px] font-extrabold leading-[1.3] whitespace-nowrap ${b.on ? 'text-emerald-300' : 'text-white/45'}`}>{b.l1}</span>
+            <span className="block text-[8.5px] tracking-[1px] font-bold text-white/35 whitespace-nowrap">{b.l2}</span>
           </div>
         ))}
         <div className="absolute -top-[13px] w-[3px] h-[18px] rounded-sm bg-banana transition-[left] duration-700" style={{ left: `calc(${pct}% - 1px)` }} />
@@ -156,12 +156,12 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
       {(pending > 0 || units > 0) && (
         <div className="flex gap-[5px] -mt-1">
           {pending > 0 && (
-            <span className="rounded-md bg-emerald-400/15 px-2 py-[3px] text-[9.5px] font-extrabold tracking-[1px] text-emerald-300">
+            <span className="rounded-md bg-emerald-400/15 px-2 py-[3px] text-[10.5px] font-extrabold tracking-[1px] text-emerald-300">
               {pending} PENDING
             </span>
           )}
           {units > 0 && (
-            <span className="rounded-md bg-white/[0.08] px-2 py-[3px] text-[9.5px] font-extrabold tracking-[1px] text-white/70">
+            <span className="rounded-md bg-white/[0.08] px-2 py-[3px] text-[10.5px] font-extrabold tracking-[1px] text-white/70">
               {unitsCopy(units).toUpperCase()} TOWARD A FREE SPIN
             </span>
           )}
@@ -336,11 +336,11 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       {/* Live state */}
       <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[11px] font-extrabold tracking-[2px] text-emerald-300">RIGHT NOW · DRAFT {view.position} OF THE WINDOW</span>
-          {view.tier && <span className="text-[11px] font-bold tabular-nums text-white/70">{plural(view.draftsLeftInTier, 'draft')} left</span>}
+          <span className="text-[12px] font-extrabold tracking-[2px] text-emerald-300">RIGHT NOW · DRAFT {view.position} OF THE WINDOW</span>
+          {view.tier && <span className="text-[12px] font-bold tabular-nums text-white/70">{plural(view.draftsLeftInTier, 'draft')} left</span>}
         </div>
         <p className="mt-1 text-2xl font-black text-white leading-tight">{view.tier ? tierLabel(view.tier) : 'Zone closed'}</p>
-        <p className="text-[13px] text-white/65 leading-snug">
+        <p className="text-[14px] text-white/65 leading-snug">
           {view.tier === 1 && 'Every paid draft that fills now earns a Free Spin on the Banana Wheel.'}
           {view.tier === 2 && 'Every paid draft that fills now earns half a Free Spin. Two in this window make one.'}
           {view.tier === 3 && 'Every paid draft that fills now earns a third of a Free Spin. Three in this window make one.'}

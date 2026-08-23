@@ -349,12 +349,16 @@ export function PromoLive({
   const accent = promoAccent(promo.type);
   const t = size === 'lg' ? 'text-[13px]' : size === 'md' ? 'text-[12px]' : 'text-[11px]';
   const sm = size === 'lg' ? 'text-[10px] tracking-[1.6px]' : 'text-[8.5px] tracking-[0.9px]';
-  const Stat = ({ v, l, ready }: { v: React.ReactNode; l?: string; ready?: boolean }) => (
+  // One notch up — the Banana Zone footer is the promo's whole pitch, so it
+  // reads bigger than the other cards' footers (Boris 2026-08-22).
+  const tBig = size === 'lg' ? 'text-[16px]' : size === 'md' ? 'text-[15px]' : 'text-[14px]';
+  const smBig = size === 'lg' ? 'text-[11.5px] tracking-[1.6px]' : 'text-[10px] tracking-[0.9px]';
+  const Stat = ({ v, l, ready, big }: { v: React.ReactNode; l?: string; ready?: boolean; big?: boolean }) => (
     // Value + label wrap as WHOLE units (label drops to its own line when
     // tight) — never clip mid-word (Boris 2026-08-18: "RESETS ONCE…" cut off).
-    <span className={`${t} font-extrabold tabular-nums inline-flex flex-wrap items-baseline gap-x-1.5 leading-tight ${ready ? 'text-banana' : 'text-white'} ${className}`}>
+    <span className={`${big ? tBig : t} font-extrabold tabular-nums inline-flex flex-wrap items-baseline gap-x-1.5 leading-tight ${ready ? 'text-banana' : 'text-white'} ${className}`}>
       <span className="whitespace-nowrap">{v}</span>
-      {l && !hideLabel && <small className={`${sm} font-extrabold text-white/45 whitespace-nowrap`}>{l}</small>}
+      {l && !hideLabel && <small className={`${big ? smBig : sm} font-extrabold text-white/45 whitespace-nowrap`}>{l}</small>}
     </span>
   );
   if (hasVisibleClaim) return <Stat v="Ready to claim" ready />;
@@ -401,12 +405,12 @@ export function PromoLive({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) return <Stat v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
+      if (!bz) return <Stat big v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
       const pend = bz.pending.filter((e) => e.eligible).length;
-      if (bz.tier === 1) return <Stat v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 2) return <Stat v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 3) return <Stat v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      return <Stat v="Zone closed" l="OPENS WHEN JP HITS" />;
+      if (bz.tier === 1) return <Stat big v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 2) return <Stat big v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 3) return <Stat big v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      return <Stat big v="Zone closed" l="OPENS WHEN JP HITS" />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;
