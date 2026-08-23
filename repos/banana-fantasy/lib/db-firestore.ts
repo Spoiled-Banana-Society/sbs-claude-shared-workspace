@@ -6,7 +6,7 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/li
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { MINT_PROMO_END_MS, promoWeekendActive } from '@/lib/promoWindow';
+import { MINT_PROMO_END_MS, PICK_PROMOS_END_MS, promoWeekendActive } from '@/lib/promoWindow';
 import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
@@ -3282,6 +3282,9 @@ export async function notifyPick10FounderSkip(userId: string, draftId: string): 
 }
 
 export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string, slot = 10): Promise<Promo | null> {
+  // RETIRED (Richard 2026-08-23, PICK_PROMOS_END_MS) — no new credits. Earned
+  // spins stay claimable; the card hides once they're claimed (promoFilter).
+  if (Date.now() >= PICK_PROMOS_END_MS) return null;
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
@@ -3429,6 +3432,10 @@ export async function recordPickChase(
     let won = 0;
     let resetChase = false;
     if (!activeChase) {
+      // RETIRED (Richard 2026-08-23, PICK_PROMOS_END_MS): no NEW chases. A
+      // chase whose clock was already running takes the branch below and can
+      // still pay until its own 24h timer expires — nothing earned is cut off.
+      if (Date.now() >= PICK_PROMOS_END_MS) return { won: 0, changed: false };
       // Start a fresh chase — this draft sets the target.
       mc.chaseTargetSlot = slot;
       mc.chaseRunLength = 1;

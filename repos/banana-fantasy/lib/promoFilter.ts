@@ -14,7 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
-import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, eliminatorLive, eliminatorRetired } from '@/lib/promoWindow';
+import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, PICK_PROMOS_END_MS, eliminatorLive, eliminatorRetired } from '@/lib/promoWindow';
 import { isBuyBonusActive } from '@/lib/api/config';
 
 /**
@@ -286,6 +286,20 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       // new-player offer (the logged-out promos payload carries it).
       if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
+    }
+    // Pick 10 + Match Your Pick RETIRED at PICK_PROMOS_END_MS (Richard
+    // 2026-08-23, see promoWindow.ts for the data verdict). Same
+    // survive-if-owed shape as the mint retirement above: the card stays only
+    // for a user holding an earned-but-unclaimed spin — plus, for Match Your
+    // Pick, a chase clock already running (it may still pay until it expires).
+    if (p.type === 'pick-10' && Date.now() >= PICK_PROMOS_END_MS) {
+      const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+      if (!owed) return false;
+    }
+    if (p.type === 'pick-chase' && Date.now() >= PICK_PROMOS_END_MS) {
+      const owed = (p.claimCount || 0) > 0 || p.claimable === true;
+      const liveChase = !!p.timerEndTime && new Date(p.timerEndTime).getTime() > Date.now();
+      if (!owed && !liveChase) return false;
     }
     // Kickoff Weekend Buy 2 → FREE SPIN is time-boxed: after the Sunday-night
     // cutoff (isBuyBonusActive) the card hides on its own — EXCEPT for users

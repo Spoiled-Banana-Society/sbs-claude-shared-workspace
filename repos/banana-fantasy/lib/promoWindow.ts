@@ -36,6 +36,22 @@ export function promoWeekendActive(now: number = Date.now()): boolean {
  */
 export const MINT_PROMO_END_MS = Date.UTC(2026, 6, 28, 7, 0, 0); // Jul 28 2026, 12:00 AM PT
 
+/**
+ * Pick 10 + Match Your Pick RETIRED (Richard 2026-08-23). Data verdict: both
+ * are volume rebates, not incentives — Pick 10 pays a passive ~10% lottery on
+ * seats already taken, and 69% of Match Your Pick spins went to whales whose
+ * drafting the jackpot already motivates; neither shows join lift (4-in-24's
+ * stop-at-4 cliff persisting through the chase era is the tell). From this
+ * instant: no new Pick 10 credits, no NEW chases started (a chase clock
+ * already running may finish and pay). Cards survive only while a spin is
+ * earned-but-unclaimed or a chase timer is still live.
+ *
+ * ⚠️ Set in the PAST on purpose — the retirement is DEPLOY-TRIGGERED (same
+ * pattern as ELIMINATOR_END_MS): Richard said remove them NOW, not on a clock,
+ * so the constant records when the call was made and the deploy enforces it.
+ */
+export const PICK_PROMOS_END_MS = Date.UTC(2026, 7, 23, 22, 0, 0); // Aug 23 2026, 3:00 PM PT — already past at deploy
+
 /** Banana Draw's final draw fires at noon PT Jul 31 (5th and last seat).
  *  After this instant the promo card retires; cycle docs and per-user Banana
  *  ledgers are kept forever. */

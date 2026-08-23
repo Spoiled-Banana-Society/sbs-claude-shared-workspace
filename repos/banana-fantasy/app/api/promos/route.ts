@@ -284,7 +284,7 @@ export async function GET(req: Request) {
         if (bzIdx !== -1) {
           // Seeded per-user docs carry launch copy — keep every surface on the
           // current line (Boris 2026-08-23), same pattern as ATB/Drop.
-          promos[bzIdx].description = 'Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.';
+          promos[bzIdx].description = 'Jackpot just hit? Enter the Banana Zone — every filled paid draft earns Free Spins.';
         }
         if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
           const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
