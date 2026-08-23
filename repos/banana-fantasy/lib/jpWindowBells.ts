@@ -43,11 +43,6 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   const { isBonusZoneEnabled } = await import('@/lib/bonusZone');
   if (await isBonusZoneEnabled()) return runBonusZoneBells(db, { filled, rollingStart, windowStart, position });
 
-  // Zone OFF ≠ spin promo back ON. The 10/5-spin Jackpot Hit bells are retired
-  // for good (Boris 2026-08-22) — flipping the zone flag must produce silence,
-  // never resurrect the old broadcast.
-  return { ok: true, skip: 'legacy-spin-bells-retired', windowStart, position };
-
   // Which tier is live right now?
   let tier: 10 | 5 | null = null;
   if (position >= 1 && position <= JP_TEN_SPIN_THROUGH) tier = 10;
