@@ -50,6 +50,11 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
   // Live view from the global stream; the /api/promos snapshot is the
   // first-paint fallback so the card never renders empty.
   const live = data?.bonusZone;
+  // "Closed" is only ever asserted from REAL data (tier === null in an actual
+  // view). Before the stream's first push with no snapshot, we show a neutral
+  // syncing state — the card must never claim the zone is closed while it's
+  // actually live.
+  const hasView = Boolean(live || bz);
   const tier = (live ? live.tier : bz?.tier) ?? null;
   const position = (live ? live.position : bz?.position) ?? 0;
   const draftsLeftInTier = (live ? live.draftsLeftInTier : bz?.draftsLeftInTier) ?? 0;
@@ -64,6 +69,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
   const claimCount = promo.claimCount || 0;
 
   const bandState = (band: 1 | 2 | 3): 'live' | 'dead' | 'future' => {
+    if (!hasView) return 'future'; // syncing — never paint tiers as burned without data
     if (tier === null) return 'dead';
     if (band === tier) return 'live';
     return band < tier ? 'dead' : 'future';
@@ -93,7 +99,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-black/25 px-3 py-1.5 text-[10px] font-extrabold tracking-[1.6px] whitespace-nowrap">
               <i className={`w-[7px] h-[7px] rounded-full ${tier ? 'bg-emerald-300 promo-ping' : 'bg-white/40'}`} />
-              {tier ? `LIVE · DRAFT ${position} OF THE WINDOW` : 'ZONE CLOSED'}
+              {tier ? `LIVE · DRAFT ${position} OF THE WINDOW` : hasView ? 'ZONE CLOSED' : 'SYNCING…'}
             </span>
             <button
               type="button"
@@ -122,9 +128,9 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
               </>
             ) : (
               <>
-                <div className="text-[44px] sm:text-[52px] font-extrabold leading-none tabular-nums text-white/35">0</div>
+                <div className="text-[44px] sm:text-[52px] font-extrabold leading-none tabular-nums text-white/35">{hasView ? 0 : '—'}</div>
                 <div className="mt-1 text-[10px] font-extrabold tracking-[1.6px] text-white/55 uppercase">
-                  zone closed — reopens at next Jackpot
+                  {hasView ? 'zone closed — reopens at next Jackpot' : 'connecting…'}
                 </div>
               </>
             )}
@@ -161,7 +167,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
               </button>
             ) : (
               <div className="text-[12.5px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
-                {tier === null ? <span className="text-white/50">Zone closed</span> : `${fillsNeeded} more = Free Spin`}
+                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
               </div>
             )}
           </div>
