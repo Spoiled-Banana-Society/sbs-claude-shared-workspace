@@ -121,7 +121,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     // Banana X Mindshare (Richard 2026-08-13): nav label is just "X" — the
     // live attention board. Text link, not an icon (his pick over icon-row).
-    { href: '/mindshare', label: 'X', tooltip: 'Banana X Mindshare: top 25 win every Thursday night', auth: false },
+    { href: '/mindshare', label: 'Hype', tooltip: 'Banana Hype: top 25 win every Thursday night', auth: false },
     // FAQ shown for ALL users on desktop (Boris 2026-07-23), right after Promos
     // — links to the same /faq page as the profile-dropdown FAQ.
     { href: '/faq', label: 'FAQ', tooltip: 'How SBS works', auth: false },
@@ -239,7 +239,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     a banana pill so adding funds is the one thing that pops.
                     Whole dollars only (Richard 7/21 — cents pushed the avatar
                     off-screen on iPhone). */}
-                {DEPOSITS_ENABLED && isLoggedIn && user && (
+                {DEPOSITS_ENABLED && isLoggedIn && user && !user.draftBlocked && (
                   <button
                     onClick={() => setShowAddFunds(true)}
                     aria-label={`Balance: $${(user.usdcBalance ?? 0).toFixed(2)} — add funds`}
@@ -277,7 +277,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                   {/* Deposit chip — DESKTOP. Right of the passes (Boris
                       2026-07-22), banana pill treatment so it reads as THE
                       money action on a busy header. */}
-                  {DEPOSITS_ENABLED && isLoggedIn && user && (
+                  {DEPOSITS_ENABLED && isLoggedIn && user && !user.draftBlocked && (
                     <Tooltip
                       content={
                         <div className="text-center">
@@ -372,6 +372,13 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
           </div>
         </div>
       </div>
+
+      {/* BONUS ZONE strip — PHONES ONLY. Phones have no room for a fourth pill
+          next to JACKPOT / HOF / passes / balance (Richard 2026-08-22), so the
+          zone rides as a slim full-width strip under the bar. Filled via a
+          portal from BatchProgressIndicator (one SSE stream feeds both); empty
+          while the switch is off or the zone is closed. */}
+      <div id="bonus-zone-mobile-slot" className="lg:hidden" />
 
       {/* Mount only while open — useFundWallet crashes when mounted at page
           level (see CLAUDE.md troubleshooting / BuyPassesModal precedent). */}

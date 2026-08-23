@@ -16,6 +16,7 @@ import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
 import { PromoMiniCard } from '@/components/promos/PromoMiniCard';
 import {
   BonusZonePill,
+  BonusZoneMobileBar,
   BonusZoneTooltipSection,
   BonusZoneLadder,
   BonusPendingGlyph,
@@ -65,7 +66,7 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Bonus Zone → FREE DRAFTS',
-    description: 'Jackpot just hit? That is the best time to draft. Early in every Jackpot window, paid drafts earn free drafts.',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     progressCurrent: 0,
@@ -217,7 +218,7 @@ export default function BonusZonePreviewPage() {
           </div>
         </header>
 
-        <Section title="1 · HEADER PILLS" note="The green pill sits left of JACKPOT. It hides when the zone is closed (70+). Desktop cut and phone cut.">
+        <Section title="1 · HEADER" note="Desktop: the green pill sits left of JACKPOT. Phone: no room for a fourth box, so the zone rides as a slim strip under the header. Both hide when the zone is closed (61+).">
           <div className="grid gap-4 md:grid-cols-2">
             <Frame label="DESKTOP (lg) — hover card below">
               <div className="flex items-center justify-between rounded-xl bg-[#111116] px-4 py-3">
@@ -236,14 +237,20 @@ export default function BonusZonePreviewPage() {
                 </div>
               </div>
             </Frame>
-            <Frame label="PHONE (375px)" w="max-w-[375px]">
-              <div className="flex items-center justify-between rounded-xl bg-[#111116] px-3 py-2.5">
+            <Frame label="PHONE (375px) — strip under the header" w="max-w-[375px]">
+              <div className="rounded-xl bg-[#111116] overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2.5">
                 <span className="text-white/40 text-xs">☰</span>
                 <div className="flex flex-row items-center gap-[3px]">
-                  <BonusZonePill view={view} compact />
                   <div className="flex flex-col items-center justify-center gap-[2px] rounded-[9px] border px-2 py-[5px] w-[68px] border-red-500/40 bg-red-500/[0.06]"><span className="text-[8px] font-extrabold text-red-400">JACKPOT</span><span className="text-[10.5px] font-extrabold text-red-400">{((1 / (100 - pos + 1)) * 100).toFixed(2)}%</span></div>
                   <div className="flex flex-col items-center justify-center gap-[2px] rounded-[9px] border px-2 py-[5px] w-[68px] border-[#D4AF37]/40 bg-[#D4AF37]/[0.06]"><span className="text-[8px] font-extrabold text-[#e6c35c]">HOF</span><span className="text-[10.5px] font-extrabold text-[#e6c35c]">{((3 / (100 - pos + 1)) * 100).toFixed(2)}%</span></div>
+                  <span className="ml-1 rounded-full border border-banana/50 bg-banana/10 px-1.5 py-[3px] text-[11px] font-bold text-white">$10 +</span>
+                  <span className="ml-1 h-6 w-6 rounded-full bg-banana/60" />
                 </div>
+              </div>
+              <div className="[&>a]:flex">
+                <BonusZoneMobileBar view={view} href="#" />
+              </div>
               </div>
             </Frame>
           </div>

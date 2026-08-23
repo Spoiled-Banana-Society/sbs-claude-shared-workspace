@@ -58,19 +58,40 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       </div>
     );
   }
+  // Live header: DESKTOP ONLY (lg+). Phones have no room for a fourth box next
+  // to JACKPOT / HOF / passes / balance (Richard 8/22) — there the zone rides
+  // as a slim strip under the header (BonusZoneMobileBar).
   return (
     <div
-      className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] lg:rounded-[10px] border px-1.5 lg:px-2 py-[5px] lg:py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[84px] lg:w-[124px]"
+      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[124px]"
       data-testid="bonus-zone-pill"
     >
-      <span className="text-[8px] lg:text-[9.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">
-        <span className="lg:hidden">BONUS · {left} LEFT</span>
-        <span className="hidden lg:inline">BONUS ZONE · {left} LEFT</span>
-      </span>
-      <span className="mt-[3px] text-[10.5px] lg:text-[12.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">
-        {tierShort(view.tier)}
-      </span>
+      <span className="text-[9.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BONUS ZONE · {left} LEFT</span>
+      <span className="mt-[3px] text-[12.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
     </div>
+  );
+}
+
+/**
+ * PHONE placement: a slim full-width strip under the header bar (stays with
+ * the sticky header). One line, tappable → the promo card. Hidden on lg+ where
+ * the pill takes over, and gone entirely when the zone is closed.
+ */
+export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: { view: BonusZoneViewLike; href?: string }) {
+  if (!view.enabled || !view.tier) return null;
+  const left = view.draftsLeftInTier;
+  return (
+    <a
+      href={href}
+      className="lg:hidden flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300"
+      data-testid="bonus-zone-mobile-bar"
+      aria-label={`Bonus Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      <span className="text-[10px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BONUS ZONE</span>
+      <span className="text-[11.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      <span className="text-[10px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
+    </a>
   );
 }
 

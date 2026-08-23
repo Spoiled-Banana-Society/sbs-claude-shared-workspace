@@ -6,7 +6,8 @@ import type { BatchProgress } from '@/lib/api/leagues';
 import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
-import { BonusZonePill, BonusZoneTooltipSection } from '@/components/bonusZone/BonusZoneUI';
+import { createPortal } from 'react-dom';
+import { BonusZonePill, BonusZoneMobileBar, BonusZoneTooltipSection } from '@/components/bonusZone/BonusZoneUI';
 
 const HEAT_TRIGGER_PCT = 10; // a live special starts pulsing once ITS odds hit 10%
 const HEAT_MAX_PCT = 35;     // …ramping to full intensity by ~35% (a near-lock)
@@ -97,6 +98,10 @@ export function BatchProgressIndicator() {
   // Reveal-gated view: X/100 live at fill; JP/HOF count + odds held until each
   // draft's slot machine lands (refresh-proof, server-anchored reveal times).
   const gated = useRevealGated(data);
+  // Phone strip target (Header renders the slot under the bar). Looked up once
+  // after mount — the slot is a sibling, not a child, so it needs a portal.
+  const [mobileSlot, setMobileSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setMobileSlot(document.getElementById('bonus-zone-mobile-slot')); }, []);
 
   if (!isLoggedIn || !data || !gated) return null;
 
@@ -288,6 +293,7 @@ export function BatchProgressIndicator() {
                 Reveal-gated server-side off the same `pre` window the red pill
                 uses, so the two can never disagree. */}
             {data.bonusZone && <BonusZonePill view={data.bonusZone} />}
+            {data.bonusZone && mobileSlot && createPortal(<BonusZoneMobileBar view={data.bonusZone} />, mobileSlot)}
             {pills.map((p) => (
               <React.Fragment key={p.key}>
                 {/* One pill, same design on every screen — smaller screens get

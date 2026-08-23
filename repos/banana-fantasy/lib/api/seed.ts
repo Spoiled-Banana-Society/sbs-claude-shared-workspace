@@ -718,7 +718,7 @@ const seedPromos: Promo[] = [
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Bonus Zone → FREE DRAFTS',
-    description: 'Jackpot just hit? That is the best time to draft. Early in every Jackpot window, paid drafts earn free drafts.',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
