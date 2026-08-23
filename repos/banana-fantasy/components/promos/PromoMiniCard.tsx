@@ -10,7 +10,7 @@ import React from 'react';
 import type { Promo } from '@/types';
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { promoKickerLines, promoName } from '@/lib/promoTheme';
-import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
+import { firstPurchaseRedesign } from '@/lib/firstPurchaseCopy';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -59,7 +59,7 @@ export function PromoMiniCard({
     >
       {/* Colored block: kicker left, indicator right */}
       <div className="relative shrink-0 h-[96px]">
-        <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} align="right" className="h-full w-full" />
+        <PromoSwatch promo={promo} size="md" wallet={wallet} isClaimed={isClaimed} fpVariant={fpVariant} align="right" className="h-full w-full" />
         <div className="absolute inset-0 z-[1] flex items-center justify-between gap-2 px-3.5 pointer-events-none">
           {/* Two deliberate lines, capped to the swatch's reserved left
               column: quiet qualifier on top, the PRIZE bigger underneath —
@@ -82,14 +82,32 @@ export function PromoMiniCard({
       <div className="flex flex-col gap-1.5 flex-1 min-h-0 px-3.5 pt-3 pb-3.5 overflow-hidden">
         <h4 className="text-[14.5px] font-extrabold text-white leading-tight tracking-[-.2px]">{promoName(promo)}</h4>
         {isFp ? (
-          <div className="text-[11px] leading-snug text-[#c9c9d2] line-clamp-4">
-            {fpShowNewPlayerTag && (
-              <span className="block text-[9px] font-extrabold uppercase tracking-[1.4px] text-white/80 mb-0.5">New players</span>
-            )}
-            {firstPurchaseCardLines(fpVariant, promo.description).slice(0, 2).map((line) => (
-              <span key={line} className="block">{line}</span>
-            ))}
-          </div>
+          (() => {
+            const r = firstPurchaseRedesign(fpVariant);
+            return (
+              <div className="text-[11px] leading-snug text-[#c9c9d2]">
+                {fpShowNewPlayerTag && (
+                  <span className="block text-[9px] font-extrabold uppercase tracking-[1.4px] text-white/80 mb-0.5">New players</span>
+                )}
+                <span className="block font-bold text-white">{r.line1}</span>
+                <span className="block mt-[2px]">{r.line2}</span>
+                <div className="mt-2 grid grid-cols-3 gap-1">
+                  {r.ladder.map((rung) => (
+                    <div key={rung.buy} className={`relative text-center rounded-lg py-[6px] px-[2px] border ${rung.max ? 'border-banana/55 bg-banana/[.07]' : 'border-white/[.14] bg-white/[0.05]'}`}>
+                      {rung.max && (
+                        <span className="absolute -top-[6px] left-1/2 -translate-x-1/2 rounded-full border border-banana/45 bg-[#14141a] px-[5px] text-[6px] font-extrabold tracking-[.16em] text-banana">MAX</span>
+                      )}
+                      <i className="block not-italic text-[8.5px] font-black tracking-[.06em] text-white whitespace-nowrap">{rung.buy}</i>
+                      <b className="block text-[11px] font-extrabold leading-[1.1] mt-[1px] text-banana whitespace-nowrap">{rung.get.replace(' Free', '')}</b>
+                    </div>
+                  ))}
+                </div>
+                {r.showBonus && (
+                  <span className="block mt-2 text-[10.5px]">Plus a <b className="text-banana">Bonus Spin</b> with every pass.</span>
+                )}
+              </div>
+            );
+          })()
         ) : promo.type === 'bonus-zone' && promo.modalContent?.bonusZone ? (
           /* Compact SPOTLIGHT mirror (Boris 2026-08-23): as much of the big
              card as fits — description, then your fill sockets + the target. */

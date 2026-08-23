@@ -223,6 +223,7 @@ export function PromoSwatch({
   sweepDelayS = 0,
   isClaimed = false,
   align = 'center',
+  fpVariant = 'new',
 }: {
   promo: Promo;
   size?: Size;
@@ -234,6 +235,8 @@ export function PromoSwatch({
   isClaimed?: boolean;
   /** 'right' leaves room on the left for an overlaid kicker (mini cards). */
   align?: 'center' | 'right';
+  /** First-purchase deal shown in the corner (page-computed variant). */
+  fpVariant?: 'new' | 'returning';
 }) {
   const mc = promo.modalContent || ({} as Promo['modalContent']);
   let inner: React.ReactNode;
@@ -284,7 +287,10 @@ export function PromoSwatch({
       break;
     }
     case 'first-purchase':
-      inner = <Big n="3" label="SPINS PER PASS" size={size} />;
+      // Redesign (Boris 2026-08-23): corner states the variant's actual deal.
+      inner = fpVariant === 'returning'
+        ? <Big n="1" label={size === 'lg' ? 'SPIN PER 2 PASSES' : 'PER 2 PASSES'} size={size} />
+        : <Big n="2" label={size === 'lg' ? 'FREE SPINS PER PASS' : 'SPINS PER PASS'} size={size} />;
       break;
     case 'new-user':
       // Mini cards (md/sm) are too narrow for the full label next to the

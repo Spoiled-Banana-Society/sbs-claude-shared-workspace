@@ -15,6 +15,8 @@ import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
 import { BananaZoneSpotlight } from '@/components/bonusZone/BananaZoneSpotlight';
+import { FirstPurchaseSpotlight } from '@/components/promos/FirstPurchaseSpotlight';
+import { firstPurchaseRedesign } from '@/lib/firstPurchaseCopy';
 import { useAuth } from '@/hooks/useAuth';
 
 // ─── Per-promo secondary indicators (under the one-liner) ───────────────────
@@ -96,19 +98,18 @@ function JackpotCycle({ promo }: { promo: Promo }) {
 }
 
 function FirstBuyLadder({ variant }: { variant: 'new' | 'returning' }) {
-  // NEW players: 2 free drafts guaranteed per pass (2 promo spins × min wedge).
-  // RETURNING: classic — 2 passes = 1 spin. Last rung wears MAX (Boris 2026-08-19).
-  const rungs = variant === 'new'
-    ? [{ buy: 'BUY 1', n: '2', l: 'GTD DRAFTS' }, { buy: 'BUY 10', n: '20', l: 'GTD DRAFTS' }, { buy: 'BUY 20', n: '40', l: 'GTD DRAFTS', max: true }]
-    : [{ buy: 'BUY 2', n: '1', l: 'SPIN' }, { buy: 'BUY 10', n: '5', l: 'SPINS' }, { buy: 'BUY 20', n: '10', l: 'SPINS', max: true }];
+  // 2026-08-23 redesign (Boris): spins language on every rung — white action
+  // line, banana reward line, quiet MAX tag on the top rung.
+  const r = firstPurchaseRedesign(variant);
   return (
     <div className="grid grid-cols-3 gap-1 mt-1">
-      {rungs.map((r) => (
-        <div key={r.buy} className={`text-center rounded-lg bg-white/[0.08] text-white py-[4px] px-[2px] ${r.max ? 'border border-banana/60' : ''}`}>
-          <span className={`block h-[8px] leading-[8px] text-[6.5px] font-black tracking-[1.4px] ${r.max ? 'text-[#ffcf3d]' : 'text-transparent'}`}>MAX</span>
-          <i className="block not-italic text-[7.5px] font-extrabold tracking-[1.2px] text-white/85 mt-[1px] whitespace-nowrap">{r.buy}</i>
-          <b className="block text-[13px] font-extrabold leading-[1.1] mt-[1px]">= {r.n}</b>
-          <small className="block text-[6.5px] font-extrabold tracking-[1px] text-white/80 mt-[1px] whitespace-nowrap">{r.l}</small>
+      {r.ladder.map((rung) => (
+        <div key={rung.buy} className={`relative text-center rounded-lg py-[7px] px-[2px] border ${rung.max ? 'border-banana/55 bg-banana/[.07]' : 'border-white/[.14] bg-white/[0.06]'}`}>
+          {rung.max && (
+            <span className="absolute -top-[6px] left-1/2 -translate-x-1/2 rounded-full border border-banana/45 bg-[#14141a] px-[5px] text-[6px] font-extrabold tracking-[.16em] text-banana">MAX</span>
+          )}
+          <i className="block not-italic text-[8.5px] font-black tracking-[.08em] text-white whitespace-nowrap">{rung.buy}</i>
+          <b className="block text-[11.5px] font-extrabold leading-[1.15] mt-[2px] text-banana whitespace-nowrap">{rung.get.replace(' Free', '')}</b>
         </div>
       ))}
     </div>
@@ -189,7 +190,7 @@ export function PromoLongCard({
     >
       <div className="promo-spec" />
       <div className="grid grid-cols-[96px_1fr] sm:grid-cols-[128px_1fr] flex-1 min-h-[168px]">
-        <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
+        <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} fpVariant={fpVariant} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
         <div className="flex flex-col gap-1.5 min-w-0 px-4 sm:px-[18px] pt-3.5 pb-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-extrabold tracking-[2px] min-w-0 leading-[1.35]" style={{ color: accent }}>{promoKicker(promo)}</span>
@@ -354,13 +355,25 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
       />
     );
   }
+  // First Purchase wears the 2026-08-23 redesign spotlight (Boris sign-off).
+  if (promo.type === 'first-purchase') {
+    return (
+      <FirstPurchaseSpotlight
+        promo={promo}
+        variant={fpVariant}
+        hasVisibleClaim={hasVisibleClaim}
+        onClaim={onClaim}
+        onOpenModal={onOpenModal}
+      />
+    );
+  }
   const isNu = promo.type === 'new-user';
   const rules = promoRules(promo);
   const isAtb = promo.type === 'around-the-banana';
   const atb = promo.modalContent?.aroundTheBanana;
   const hits = atb?.slotsHit ?? [];
   const seatsLeft = Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0));
-  const isFp = promo.type === 'first-purchase';
+  const isFp = (promo.type as string) === 'first-purchase';
 
   let kicker = promoKicker(promo);
   let line: React.ReactNode = promo.description;

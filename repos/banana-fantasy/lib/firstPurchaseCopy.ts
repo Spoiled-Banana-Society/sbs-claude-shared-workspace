@@ -170,35 +170,59 @@ export function firstPurchaseBuyLine(variant: FirstPurchasePitch, quantity: numb
  * whitespace-nowrap, so keep them short. The card TITLE carries the headline
  * ("Buy 1, Get 2 Drafts Free" / "Buy 2, Get 1 Draft Free") server-side.
  */
+/**
+ * The 2026-08-23 redesign copy (Boris sign-off) — ONE structure for both
+ * variants: deal line, spin-guarantee line, a BUY ladder in SPINS, and a
+ * single Bonus Spin gift line (shown only while Spin-on-Purchase is live, so
+ * the card can never promise a bonus the server isn't granting). All numbers
+ * stay pinned to the same promoMath the grants pay with.
+ */
+export interface FirstPurchaseRedesign {
+  line1: string;
+  line2: string;
+  ladder: Array<{ buy: string; get: string; max?: boolean }>;
+  cornerN: string;
+  cornerL: string;
+  showBonus: boolean;
+}
+
+export function firstPurchaseRedesign(variant: FirstPurchaseVariant): FirstPurchaseRedesign {
+  const line2 = `Every Spin wins 1 Free Draft guaranteed — up to ${MAX_WEDGE_DRAFTS}.`;
+  if (variant === 'returning') {
+    return {
+      line1: 'Every 2 passes you buy = 1 Free Spin.',
+      line2,
+      ladder: [
+        { buy: 'BUY 2', get: '1 Free Spin' },
+        { buy: 'BUY 10', get: '5 Free Spins' },
+        { buy: 'BUY 20', get: '10 Free Spins', max: true },
+      ],
+      cornerN: '1',
+      cornerL: 'SPIN PER 2 PASSES',
+      showBonus: SPIN_ON_PURCHASE_UI_ENABLED,
+    };
+  }
+  return {
+    line1: 'Every pass in your first order = 2 Free Spins.',
+    line2,
+    ladder: [
+      { buy: 'BUY 1', get: '2 Free Spins' },
+      { buy: 'BUY 10', get: '20 Free Spins' },
+      { buy: 'BUY 20', get: '40 Free Spins', max: true },
+    ],
+    cornerN: '2',
+    cornerL: 'FREE SPINS PER PASS',
+    showBonus: SPIN_ON_PURCHASE_UI_ENABLED,
+  };
+}
+
 export function firstPurchaseCardLines(
   variant: FirstPurchaseVariant,
-  /**
-   * The promo's SERVER-built description. Preferred source: only the server
-   * knows both halves of the Spin-on-Purchase flag, so only the server can say
-   * whether Bonus Spins count toward the ceiling. Falling back to client-side
-   * math would let the card quote 41 while the server quotes 60.
-   */
-  serverDescription?: string,
+  /** Kept for call-site compatibility; the redesign copy is the source now. */
+  _serverDescription?: string,
 ): string[] {
-  if (variant === 'returning') {
-    return [
-      'Every 2 Passes = 1 Free Spin',
-      'Each Spin wins 1+ Free Drafts',
-    ];
-  }
-  // Server description is one ' · '-separated line per card row, optionally
-  // carrying the logged-out "New players:" label (the card renders that as its
-  // own tag). Single-row descriptions are normal — the card is deliberately one
-  // line (Richard 2026-07-30: the separate spin-count row was noise, "from the
-  // wheel" on the numbers line says it in three words).
-  const parts = (serverDescription ?? '')
-    .replace(/^\s*new players:\s*/i, '')
-    .split(' · ')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (parts.length > 0) return parts;
-
-  return firstPurchaseCardRows(newPlayerFirstBuy(1));
+  const r = firstPurchaseRedesign(variant);
+  return [r.line1, r.line2];
 }
 
 /**

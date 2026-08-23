@@ -62,7 +62,7 @@ export function promoKicker(promo: Promo): string {
     case 'referral': return 'FREE SPINS · WHEN FRIENDS BUY';
     case 'pick-10': return 'FREE SPIN';
     case 'jackpot': return 'FREE SPINS';
-    case 'first-purchase': return 'FREE DRAFTS · EVERY PASS';
+    case 'first-purchase': return 'FREE SPINS · FIRST PURCHASE';
     case 'new-user': return 'NEW USER · FREE DRAFT';
     case 'mint': return 'BUY 10 · FREE SPIN';
     case 'buy-bonus': return 'KICKOFF · FREE SPIN';
@@ -95,7 +95,7 @@ export function promoKickerLines(promo: Promo): { top: string; big: string } {
     case 'referral': return { top: 'FRIENDS BUY', big: 'FREE SPINS' };
     case 'jackpot': return { top: 'WHEN JP HITS', big: 'FREE SPINS' };
     case 'new-user': return { top: 'NEW USER', big: 'FREE DRAFT' };
-    case 'first-purchase': return { top: 'EVERY PASS', big: 'FREE DRAFTS' };
+    case 'first-purchase': return { top: 'FIRST PURCHASE', big: 'FREE SPINS' };
     case 'bonus-zone': return { top: 'BANANA ZONE', big: 'FREE SPINS' };
     default: {
       const [a, b] = promoKicker(promo).split(' · ');
