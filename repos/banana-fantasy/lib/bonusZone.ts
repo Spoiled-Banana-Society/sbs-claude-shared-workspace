@@ -222,7 +222,11 @@ export async function readBonusZoneConfig(opts: { fresh?: boolean } = {}): Promi
         if (typeof d.launchAtIso === 'string' && d.launchAtIso) cfg.launchAtIso = d.launchAtIso;
         if (Number.isFinite(d.tier1Through) && (d.tier1Through as number) > 0) cfg.tier1Through = Number(d.tier1Through);
         if (Number.isFinite(d.tier2Through) && (d.tier2Through as number) >= cfg.tier1Through) cfg.tier2Through = Number(d.tier2Through);
-        cfg.tier3Through = Number.isFinite(d.tier3Through) && (d.tier3Through as number) >= cfg.tier2Through ? Number(d.tier3Through) : cfg.tier2Through;
+        // Absent → the code default (60). (A leftover "collapse to tier 2" rule
+        // from the two-band draft shipped live for ~10 min on 8/22 and closed the
+        // zone at 40 — config now pins all three explicitly, belt and braces.)
+        if (Number.isFinite(d.tier3Through) && (d.tier3Through as number) >= cfg.tier2Through) cfg.tier3Through = Number(d.tier3Through);
+        if (cfg.tier3Through < cfg.tier2Through) cfg.tier3Through = cfg.tier2Through;
         if (Array.isArray(d.grandfatherTokenIds)) {
           cfg.grandfatherTokenIds = Array.from(new Set([...cfg.grandfatherTokenIds, ...d.grandfatherTokenIds.map(String)]));
         }
