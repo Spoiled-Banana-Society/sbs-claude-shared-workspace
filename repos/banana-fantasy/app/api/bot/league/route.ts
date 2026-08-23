@@ -548,8 +548,10 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // No odds line (all batch specials hit) → just the name; the repeat-🍌
     // ledger below keeps end-of-batch texts unique for X, which is what the
     // old 40-banana slot ladder used to do.
-    const zoneTail = !isFilled && bonusZoneLine ? `\n${bonusZoneLine}` : '';
-    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}${zoneTail}` : `${namePart}${zoneTail ? `\n${zoneTail}` : ''}`;
+    // Banana Zone gets its own blank line under the odds (Richard 2026-08-22:
+    // back-to-back lines read cramped in the Discord/X pings).
+    const zoneTail = !isFilled && bonusZoneLine ? `\n\n${bonusZoneLine}` : '';
+    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}${zoneTail}` : `${namePart}${zoneTail}`;
 
     let displayName = base;
     // The activity snapshot is appended to the SERVED text but never to `base`,
