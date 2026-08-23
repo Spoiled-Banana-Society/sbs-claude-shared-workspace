@@ -277,13 +277,37 @@ export function PromoSwatch({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      // Mirrors the SPOTLIGHT hierarchy (Boris 2026-08-23): the corner is the
-      // drafts-left countdown; the deal line lives in the card footer. The old
-      // "3+1" shorthand read as cryptic on its own — retired.
       if (!bz) { inner = <Big n="🍌" label="FREE SPINS" size={size} />; break; }
-      inner = bz.tier
-        ? <Big n={bz.draftsLeftInTier} label={size === 'lg' ? `DRAFTS LEFT AT BUY ${bz.tier} GET 1` : 'DRAFTS LEFT'} size={size} />
-        : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
+      if (!bz.tier) { inner = <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />; break; }
+      if (size === 'lg') {
+        inner = <Big n={bz.draftsLeftInTier} label={`DRAFTS LEFT AT BUY ${bz.tier} GET 1`} size={size} />;
+        break;
+      }
+      // Mini/carousel card (Boris 2026-08-23): your fill sockets live in the
+      // art, top-right — the drafts-left count moved to the card footer.
+      {
+        const credit = bz.tier === 1 ? 6 : bz.tier === 2 ? 3 : 2;
+        const slots = Math.ceil(6 / credit);
+        const units = bz.unitsThisWindow ?? 0;
+        const filled = Math.min(slots, Math.floor(units / credit));
+        const part = units - filled * credit > 0 && filled < slots;
+        inner = (
+          <span className="inline-flex gap-1.5">
+            {Array.from({ length: slots }, (_, i) => (
+              <span
+                key={i}
+                className={`w-[26px] h-[26px] rounded-full flex items-center justify-center text-[12px] ${
+                  i < filled ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.5)]'
+                    : i === filled && part ? 'border-2 border-banana/60 bg-banana/[.08]'
+                      : 'border-2 border-dashed border-white/45 bg-black/20'
+                }`}
+              >
+                <span className={i < filled ? '' : 'opacity-80 grayscale-[.5] brightness-[.8]'}>🍌</span>
+              </span>
+            ))}
+          </span>
+        );
+      }
       break;
     }
     case 'first-purchase':
@@ -412,10 +436,12 @@ export function PromoLive({
       const bz = mc.bonusZone;
       if (!bz) return <Stat big v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
       const pend = bz.pending.filter((e) => e.eligible).length;
-      if (bz.tier === 1) return <Stat big v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 2) return <Stat big v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 3) return <Stat big v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      return <Stat big v="Zone closed" l="OPENS WHEN JP HITS" />;
+      if (!bz.tier) return <Stat big v="Zone closed" l="OPENS WHEN JP HITS" />;
+      // Deal lives at the TOP of the card now (Boris 2026-08-23) — the footer
+      // carries the countdown.
+      return <Stat big
+        v={<span style={{ color: accent }}>{bz.draftsLeftInTier} {bz.draftsLeftInTier === 1 ? 'Draft' : 'Drafts'} Left</span>}
+        l={pend > 0 ? `${pend} PENDING · AT BUY ${bz.tier} GET 1` : `AT BUY ${bz.tier} GET 1`} />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;
