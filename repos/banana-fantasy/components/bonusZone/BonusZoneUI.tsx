@@ -88,6 +88,7 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
   return (
     <Tooltip
       position="bottom"
+      className="block w-full lg:hidden"
       content={
         <div className="w-[250px] py-0.5">
           <div className="mb-1 flex items-baseline justify-between">
@@ -99,14 +100,14 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
       }
     >
       <div
-        className="lg:hidden flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300 cursor-default"
+        className="flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300 cursor-default"
         data-testid="bonus-zone-mobile-bar"
         aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
       >
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
         <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        <span className="text-[11px] font-bold tracking-[0.08em] leading-none text-white/70 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
+        <span className="text-[11px] font-extrabold tracking-[0.08em] leading-none text-emerald-300/90 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
       </div>
     </Tooltip>
   );
