@@ -59,14 +59,14 @@ const RULES =
   + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1 Spin. Leave the lobby and nothing pays.\n'
   + '• Paid passes only. Free passes never earn spins. Passes bought with the First Purchase promo do not count.\n'
   + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
-  + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. Every spin wins at least 1 free draft. No limit.';
+  + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. No limit.';
 
 function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
   return {
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Banana Zone → FREE SPINS',
-    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins. Every spin wins at least 1 free draft.',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     progressCurrent: 0,
@@ -357,10 +357,10 @@ export default function BonusZonePreviewPage() {
 
         <Section title="7 · BELLS" note="Broadcast bells (replace the 10 spin / 5 spin Jackpot Watch bells) and the two personal payout bells. Spins land as a Claim on the card, like every other promo.">
           <div className="grid gap-3 md:grid-cols-2">
-            <Bell title="🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin" message="Every paid draft that fills in the next 20 drafts earns a FREE SPIN. Then Buy 2 Get 1 Spin through draft 40 and Buy 3 Get 1 Spin through 60. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🍌 Banana Zone: Buy 2 Get 1 Spin" message="Every 2 paid drafts that fill in the next 20 drafts earn a FREE SPIN. Drops to Buy 3 Get 1 Spin at draft 41. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🍌 Banana Zone: Buy 3 Get 1 Spin, last call" message="Every 3 paid drafts that fill in the next 20 drafts earn a FREE SPIN. The zone closes at draft 60 of the window. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🍌 Banana Zone: Free Spin earned" message="Your Buy 1 Get 1 Spin draft filled. Claim your Free Spin on the Banana Zone card. Every spin wins at least 1 free draft." link="/promos?promo=bonus-zone · the drafter" />
+            <Bell title="🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin" message="Every paid draft that fills in the next 20 drafts earns a FREE SPIN. Then Buy 2 Get 1 Spin through draft 40 and Buy 3 Get 1 Spin through 60. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Buy 2 Get 1 Spin" message="Every 2 paid drafts that fill in the next 20 drafts earn a FREE SPIN. Drops to Buy 3 Get 1 Spin at draft 41. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Buy 3 Get 1 Spin, last call" message="Every 3 paid drafts that fill in the next 20 drafts earn a FREE SPIN. The zone closes at draft 60 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Free Spin earned" message="Your Buy 1 Get 1 Spin draft filled. Claim your Free Spin on the Banana Zone card." link="/promos?promo=bonus-zone · the drafter" />
             <Bell title="🍌 Banana Zone: 1 of 2 toward a Free Spin" message="Your Buy 2 Get 1 Spin draft filled. One more Buy 2 Get 1 Spin draft before the Jackpot hits and the Free Spin is yours." link="/promos?promo=bonus-zone · the drafter" />
           </div>
         </Section>

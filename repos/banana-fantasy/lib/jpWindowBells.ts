@@ -162,20 +162,20 @@ async function runBonusZoneBells(
         title: '🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin',
         message: `Every paid draft that fills in the next ${left} drafts earns a FREE SPIN. `
           + (t3.through > t2.through
-            ? `Then Buy 2 Get 1 Spin through draft ${t2.through} and Buy 3 Get 1 Spin through ${t3.through}. Every spin wins at least 1 free draft. Tap for the rules.`
-            : `Then Buy 2 Get 1 Spin through draft ${t2.through}. Every spin wins at least 1 free draft. Tap for the rules.`),
+            ? `Then Buy 2 Get 1 Spin through draft ${t2.through} and Buy 3 Get 1 Spin through ${t3.through}. Tap for the rules.`
+            : `Then Buy 2 Get 1 Spin through draft ${t2.through}. Tap for the rules.`),
       }
     : live.tier === 2
       ? {
           title: '🍌 Banana Zone: Buy 2 Get 1 Spin',
           message: `Every 2 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
             + (t3.through > t2.through ? `Drops to Buy 3 Get 1 Spin at draft ${t2.through + 1}. ` : `The zone closes at draft ${t2.through} of the window. `)
-            + 'Every spin wins at least 1 free draft. Tap for the rules.',
+            + 'Tap for the rules.',
         }
       : {
           title: '🍌 Banana Zone: Buy 3 Get 1 Spin, last call',
           message: `Every 3 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
-            + `The zone closes at draft ${t3.through} of the window. Every spin wins at least 1 free draft. Tap for the rules.`,
+            + `The zone closes at draft ${t3.through} of the window. Tap for the rules.`,
         };
 
   const { createNotificationForWallets } = await import('@/lib/queueNotifications');

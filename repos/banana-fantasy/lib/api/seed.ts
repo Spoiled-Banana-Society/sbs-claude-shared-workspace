@@ -718,7 +718,7 @@ const seedPromos: Promo[] = [
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Banana Zone → FREE SPINS',
-    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins. Every spin wins at least 1 free draft.',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
@@ -738,7 +738,7 @@ const seedPromos: Promo[] = [
         + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1 Spin. Leave the lobby and nothing pays.\n'
         + '• Paid passes only. Free passes never earn spins. Passes bought with the First Purchase promo do not count.\n'
         + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
-        + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. Every spin wins at least 1 free draft. No limit.',
+        + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. No limit.',
     },
   },
   {

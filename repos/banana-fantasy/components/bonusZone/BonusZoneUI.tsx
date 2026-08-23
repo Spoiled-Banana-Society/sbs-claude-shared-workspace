@@ -111,8 +111,7 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
         {view.tier === 2 && `Every 2 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. ${end > t2 ? `Then Buy 3 Get 1 Spin through ${end}.` : `Zone closes at draft ${t2}.`}`}
         {view.tier === 3 && `Every 3 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. Zone closes at draft ${end}.`}
         {!view.tier && `Opens the moment the Jackpot hits: Buy 1 Get 1 Spin for drafts 1 to ${view.tier1Through}, Buy 2 Get 1 Spin through ${t2}.`}
-        {' '}Every spin wins at least 1 free draft.
-      </p>
+              </p>
       <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, view.position)}%`, background: 'linear-gradient(90deg,#0f766e,#34d399)' }} />
       </div>
@@ -346,8 +345,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
           {view.tier === 2 && 'Every paid draft that fills now earns half a Free Spin. Two in this window make one.'}
           {view.tier === 3 && 'Every paid draft that fills now earns a third of a Free Spin. Three in this window make one.'}
           {!view.tier && 'The zone reopens the moment the Jackpot hits. Buy 1 Get 1 Spin from draft 1.'}
-          {' '}Every spin wins at least 1 free draft.
-        </p>
+                  </p>
         <BonusZoneLadder view={view} />
       </div>
 

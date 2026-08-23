@@ -777,7 +777,7 @@ async function notifyBonusPaid(wallet: string, draftId: string, count: number, l
     await createNotification(wallet, {
       type: 'promo',
       title: count === 1 ? '🍌 Banana Zone: Free Spin earned' : `🍌 Banana Zone: ${count} Free Spins earned`,
-      message: `Your ${label} draft filled. Claim your Free Spin on the Banana Zone card. Every spin wins at least 1 free draft.`,
+      message: `Your ${label} draft filled. Claim your Free Spin on the Banana Zone card.`,
       link: '/promos?promo=bonus-zone',
       dedupeKey: `bonus-zone-paid-${draftId}`,
       icon: 'sparkles',
