@@ -629,8 +629,9 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
   const db = getAdminFirestore();
   const out: SettleOutcome[] = [];
 
-  // Any pending records at all? (cheap exit for lobbies nobody recorded on)
-  const pendingSnap = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', '==', 'pending').limit(1).get();
+  // Any settleable records at all? (cheap exit for lobbies nobody recorded on).
+  // Parked (position_unresolved) records count — the minute cron re-runs them.
+  const pendingSnap = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', 'in', ['pending', 'position_unresolved']).limit(1).get();
   if (pendingSnap.empty) return [];
 
   const fill = await fillPositionForDraft(draftId, cfg);

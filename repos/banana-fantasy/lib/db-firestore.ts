@@ -3377,8 +3377,8 @@ const PICK_CHASE_SEEN_LEDGER_MAX = 60;    // idempotency ledger cap per user
  *     the chase RESETS so the next filled draft sets a new target. Miss → keep
  *     chasing (target + timer unchanged).
  *
- * FREE and paid drafts both count (no paid-gate) — safe at the 5-spin cap (a
- * chase costs ~10 drafts and pays back ≤5, so it can't print). Idempotent per
+ * Paid-gated via promoCreditAllowed below (free drafts counted only during
+ * the launch weekend window, which auto-reverted Jul 26). Idempotent per
  * (user, draftId) via a capped seen-ledger. Requires the pick-chase promo doc
  * to already exist (real seeded users) — bots have no promo docs, so they
  * no-op naturally; callers also pre-exclude bots.

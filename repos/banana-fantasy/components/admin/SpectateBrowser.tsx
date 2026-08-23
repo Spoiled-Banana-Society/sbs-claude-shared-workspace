@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { LiveActivityMini } from '@/components/admin/LiveActivityMini';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { bananaPlaceholderName } from '@/utils/helpers';
@@ -282,11 +283,23 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     // Boris 2026-07-03: FILLING lobbies on top, the one closest to full
     // first; started drafts below. Within each group keep the API's
     // newest-first order (Array.sort is stable).
-    // Richard 2026-08-15: FAST drafts above SLOW inside each group.
     if (a.filling !== b.filling) return a.filling ? -1 : 1;
-    if (a.speed !== b.speed) return a.speed === 'fast' ? -1 : 1;
     if (a.filling && b.filling) return (b.numPlayers ?? 0) - (a.numPlayers ?? 0);
     return 0;
+  });
+
+  // Richard 2026-08-22: fast and slow drafts live in their own boxes (fast
+  // on top), same treatment as the Special Drafts panel — which retired the
+  // old fast-above-slow sort line and the Speed column. Under the fast/slow
+  // filter only the matching box renders; under jackpot/hof an empty speed
+  // box is noise, so it's hidden.
+  const speedBoxes = ([
+    { key: 'fast', title: 'Fast Drafts', rows: filtered.filter(d => d.speed === 'fast') },
+    { key: 'slow', title: 'Slow Drafts', rows: filtered.filter(d => d.speed === 'slow') },
+  ] as const).filter(b => {
+    if (filter === 'fast' || filter === 'slow') return filter === b.key;
+    if (filter === 'all') return true;
+    return b.rows.length > 0;
   });
 
   // Resolve banana names for everyone in a filling lobby (+ the current drafter)
@@ -369,28 +382,41 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
       </div>
 
 
+      {speedBoxes.length === 0 && !loading && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-10 text-center text-gray-500 text-sm">
+          No active drafts.
+        </div>
+      )}
+      {/* Richard 2026-08-22: the last 5 things that happened sit right under
+          the Fast Drafts box, above Slow Drafts (phones + desktop). When the
+          fast box is filtered away it leads the list instead. */}
+      {speedBoxes[0]?.key !== 'fast' && <LiveActivityMini enabled={enabled} />}
+      {speedBoxes.map(({ key, title, rows }) => (
+      <React.Fragment key={key}>
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+        <div className="px-4 py-2 bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 font-medium border-b border-white/[0.04]">
+          {title} ({rows.length})
+        </div>
         <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm min-w-[720px]">
-          <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
+        <table className="w-full text-left text-sm min-w-[680px]">
+          <thead className="bg-white/[0.02] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
               <th className="px-4 py-3 font-medium">Draft</th>
               <th className="px-4 py-3 font-medium">Type</th>
-              <th className="px-4 py-3 font-medium">Speed</th>
               <th className="px-4 py-3 font-medium">Pick / Filling</th>
               <th className="px-4 py-3 font-medium">On the clock / In lobby</th>
               <th className="px-4 py-3 font-medium text-right">Watch</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && !loading && (
+            {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
-                  No active drafts.
+                <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                  No {key} drafts right now.
                 </td>
               </tr>
             )}
-            {filtered.map(d => {
+            {rows.map(d => {
               const pill = levelPillStyle(d.level);
               return (
                 <tr key={d.draftId} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
@@ -406,7 +432,6 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       {pill.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-300 capitalize">{d.speed}</td>
                   <td className="px-4 py-3 text-gray-300">
                     {d.filling ? (
                       <div className="flex items-center gap-2">
@@ -516,6 +541,9 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
         </table>
         </div>
       </div>
+      {key === 'fast' && <LiveActivityMini enabled={enabled} />}
+      </React.Fragment>
+      ))}
 
       {queues && (() => {
         const specialRounds = (['jackpot', 'hof', 'jackhof'] as const)

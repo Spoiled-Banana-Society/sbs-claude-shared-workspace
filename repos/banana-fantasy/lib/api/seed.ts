@@ -507,7 +507,7 @@ const seedPromos: Promo[] = [
         + '11 packs win something. Every other pack is empty.\n'
         + '\n'
         + 'HOW IT WORKS\n'
-        + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
+        + '• Every PAID draft you FILL earns 1 sealed pack. Free and wheel drafts earn none.\n'
         + '• Packs stay sealed all day. At 9:00 PM PT they unlock.\n'
         + '• Open one at a time, or open the whole stack at once.\n'
         + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'
@@ -592,7 +592,7 @@ const seedPromos: Promo[] = [
     // Card copy (Boris 2026-08-17): 2-line clamp on every surface — sentence two
     // must measure ≤ "Cover all 10 pick slots and win a" in Inter or it clips.
     // Existing per-user docs are re-stamped live in app/api/promos/route.ts.
-    description: 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid and free drafts count.',
+    description: 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.',
     ctaText: 'View Drafts',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
@@ -607,8 +607,9 @@ const seedPromos: Promo[] = [
       title: 'Around The Banana → Jackpot Seat',
       explanation:
         // Eligibility is the FIRST thing on the card (Richard 2026-08-11:
-        // "make it high up there") — paid AND free both count, any order.
-        '• PAID and FREE drafts BOTH count.\n'
+        // "make it high up there") — PAID only since 2026-08-22 (Boris: every
+        // promo is paid-gated; free counted at launch per Richard 2026-08-11).
+        '• PAID drafts only — free and wheel drafts don\'t count.\n'
         + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
         + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
         + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'

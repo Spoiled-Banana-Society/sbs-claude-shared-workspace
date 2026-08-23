@@ -156,8 +156,9 @@ export async function getAtbWinners(): Promise<AtbWinner[]> {
  * Credit one revealed draft slot toward a user's lap Around The Banana.
  * Called from reveal-complete + refresh-draft for EVERY human seat with that
  * seat's slot (1–10). Idempotent per (user, draftId) via a capped seen-ledger.
- * PAID and FREE drafts both count (Richard 2026-08-11). Bots have no promo
- * docs, so they no-op naturally; callers also pre-exclude bots.
+ * PAID drafts only (Boris 2026-08-22 — every promo is paid-gated; free
+ * counted at launch per Richard 2026-08-11). Bots have no promo docs, so they
+ * no-op naturally; callers also pre-exclude bots.
  *
  * The 10/10 completion and the winners[] append happen in ONE transaction on
  * both docs — the first ATB_SEATS_TOTAL completers take the seats, everyone
@@ -168,13 +169,18 @@ export async function recordAroundTheBanana(
   draftId: string,
   draftName: string,
   slot: number,
+  opts?: { skipPaidGate?: boolean },
 ): Promise<void> {
   if (!atbActive()) return;
   if (!Number.isInteger(slot) || slot < 1 || slot > 10) return;
-  // PAID and FREE drafts BOTH count (Richard 2026-08-11, launch day) — no
-  // promoCreditAllowed gate. That's safe here because both callers derive
-  // (owner, slot) from the server's OWN Go draft order, never from client
-  // input, so there is no forged-draftId path for the gate to catch.
+  // PAID drafts only (Boris 2026-08-22) — the same shared gate daily-drafts /
+  // pick-10 / pick-chase use, so every promo flips together. Admin grants pass
+  // skipPaidGate: their synthetic draftIds have no pass stamp and no roster,
+  // so the gate would (correctly) deny them.
+  if (!opts?.skipPaidGate) {
+    const { promoCreditAllowed } = await import('@/lib/db-firestore');
+    if (!(await promoCreditAllowed(userId, draftId, undefined, 'around-the-banana'))) return;
+  }
 
   const db = getAdminFirestore();
   const promoRef = db.collection('v2_users').doc(userId)

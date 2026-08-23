@@ -376,7 +376,7 @@ export default function DropPage() {
             <p className="mt-3 text-sm text-white/40">
               {justLocked
                 ? 'The drop is live…'
-                : <>Paid draft = <b className="text-white/70">2 packs</b> · Free draft = <b className="text-white/70">1 pack</b></>}
+                : <>Every <b className="text-white/70">paid draft</b> you fill = <b className="text-white/70">1 pack</b></>}
             </p>
           </>
         ) : (
@@ -385,7 +385,7 @@ export default function DropPage() {
               {sealed > 0
                 ? 'Your packs are ready.'
                 : state?.next
-                  ? 'All opened — keep filling drafts and your next stack rips at 9:00 PM PT.'
+                  ? 'All opened — keep filling paid drafts and your next stack rips at 9:00 PM PT.'
                   : 'All opened. Back tomorrow.'}
             </p>
             {/* Same countdown treatment as the pre-drop state, now pointed at
@@ -396,7 +396,7 @@ export default function DropPage() {
                   {countdown}
                 </p>
                 <p className="mt-3 text-sm text-white/40">
-                  until the next drop — every draft you fill adds to that stack.
+                  until the next drop — every paid draft you fill adds to that stack.
                 </p>
               </>
             )}
@@ -416,12 +416,12 @@ export default function DropPage() {
                   {' '}&middot; {state?.status === 'earning' ? 'unlocks tonight at 9:00 PM PT' : 'ready to rip'}
                 </>
               ) : (
-                <>No packs yet &middot; every draft you fill adds to the pile</>
+                <>No packs yet &middot; every paid draft you fill adds to the pile</>
               )}
             </p>
             {state?.status === 'earning' && (
               <span className="mt-4 inline-flex items-center gap-2 rounded-xl border border-banana/25 bg-banana/[0.06] px-4 py-2 text-[12px] text-white/60">
-                Fill another draft → <b className="text-banana">+2 packs</b> land on the pile
+                Fill another paid draft → <b className="text-banana">+1 pack</b> lands on the pile
               </span>
             )}
           </div>

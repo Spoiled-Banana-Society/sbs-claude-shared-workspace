@@ -15,8 +15,10 @@
 // Only FILLED drafts pay. Entering earns nothing: leaving a filling lobby
 // refunds the pass, so crediting on entry is farmable — enter, earn, leave,
 // repeat, free. Buying a pass earns nothing either; the reward is for PLAYING.
-export const PACKS_PAID_FILL = 2;
-export const PACKS_FREE_FILL = 1;
+// PAID drafts only (Boris 2026-08-22): 1 paid fill = 1 pack, free/wheel earn
+// nothing — every promo is paid-gated now. (Launch rates were paid 2 / free 1.)
+export const PACKS_PAID_FILL = 1;
+export const PACKS_FREE_FILL = 0;
 
 export function packsForFill(passType: 'free' | 'paid'): number {
   return passType === 'paid' ? PACKS_PAID_FILL : PACKS_FREE_FILL;
@@ -225,7 +227,7 @@ export function dropExplanationFor(nightId: string): string {
     + `${winningPacksForNight(nightId)} packs win something. Every other pack is empty.\n`
     + '\n'
     + 'HOW IT WORKS\n'
-    + '• Every draft you FILL earns sealed packs — paid 2, free 1.\n'
+    + '• Every PAID draft you FILL earns 1 sealed pack. Free and wheel drafts earn none.\n'
     + '• Packs stay sealed all day. At 9:00 PM PT they unlock.\n'
     + '• Open one at a time, or open the whole stack at once.\n'
     + '• Gold in the tear means you hit something — but not what. The card stops face-down and waits for YOU to flip it.\n'

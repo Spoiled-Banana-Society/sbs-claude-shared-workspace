@@ -807,7 +807,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         </>
       ) : (
         <p className="text-sm text-text-secondary">
-          Fill a draft to earn your first packs — paid 2, free 1.
+          Fill a paid draft to earn your first pack — every paid fill is 1 pack.
         </p>
       )}
       <Button

@@ -172,8 +172,8 @@ export async function POST(req: NextRequest) {
           passType: passType === 'paid' ? 'paid' : 'free',
         }).catch((err) => logger.warn('eliminator.fill_credit_failed', { draftId, wallet, err: String(err) }));
 
-        // THE DROP: a filled draft earns sealed packs for tonight's 8pm drop.
-        // Paid 2, free 1. Awarded HERE and nowhere else — entering must never
+        // THE DROP: a filled draft earns sealed packs for tonight's drop.
+        // Paid 1, free 0 — paid drafts only (Boris 2026-08-22). Awarded HERE and nowhere else — entering must never
         // award, because leaving a filling lobby refunds the pass and that
         // makes enter/earn/leave/repeat free and unbounded.
         //

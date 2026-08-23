@@ -26,7 +26,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   user_returned: 'Logged in',
 };
 
-const TYPE_COLOR: Record<ActivityEventType, string> = {
+export const TYPE_COLOR: Record<ActivityEventType, string> = {
   pass_purchased: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
   pass_granted: 'text-[#F3E216] bg-yellow-500/10 border-yellow-500/30',
   spin_won: 'text-purple-300 bg-purple-500/10 border-purple-500/30',
@@ -73,7 +73,7 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
 /** pass_granted covers three real sources — label by which one it was.
  *  (It used to blanket-say "Admin grant", making every wheel-prize mint look
  *  like a manual freebie — Boris 2026-07-03.) */
-function typeLabelFor(e: LiveActivityEvent): string {
+export function typeLabelFor(e: LiveActivityEvent): string {
   if (e.type === 'pass_granted') {
     const s = String(e.metadata?.source ?? '');
     if (s === 'wheel_spin_mint') return 'Wheel prize mint';
@@ -94,7 +94,7 @@ function basescanTxUrl(hash: string | null): string | null {
   return `https://basescan.org/tx/${hash}`;
 }
 
-function relativeTime(createdAt: number | null, iso: string): string {
+export function relativeTime(createdAt: number | null, iso: string): string {
   const ms = createdAt ?? Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const diff = Date.now() - ms;

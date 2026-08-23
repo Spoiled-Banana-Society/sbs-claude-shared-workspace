@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     const beforeSlots = (before.atbSlotsHit as number[] | undefined) ?? [];
 
     const draftId = `admin-grant-${Date.now()}`;
-    await recordAroundTheBanana(wallet, draftId, `Admin grant (${body.reason ?? 'no reason given'})`, slot);
+    await recordAroundTheBanana(wallet, draftId, `Admin grant (${body.reason ?? 'no reason given'})`, slot, { skipPaidGate: true });
 
     const after = (await ref.get()).data()?.modalContent as Record<string, unknown> | undefined;
     const seats = await getAtbSeatCount();
