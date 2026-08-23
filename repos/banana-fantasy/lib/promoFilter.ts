@@ -317,19 +317,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   const bonusZoneShowing = filtered.some((p) => p.type === 'bonus-zone');
   const gated = filtered.filter((p) => {
     if (p.type === 'jackpot' && bonusZoneShowing) return false;
-    // Bonus Zone no-stack (Richard 2026-08-22): "on top of promos, but only if
-    // you don't have new user / first purchase" — while either conversion
-    // card is showing, the zone card hides (those purchases aren't eligible
-    // anyway). Survives if the user already has a lock or an earned pass, so
-    // nothing pending is ever hidden.
-    if (p.type === 'bonus-zone') {
-      const bz = p.modalContent?.bonusZone;
-      const owed = (bz?.pending?.length ?? 0) > 0 || (bz?.earned ?? 0) > 0 || (bz?.unitsThisWindow ?? 0) > 0;
-      if (owed) return true;
-      if (conversionCardShowing) return false;
-      if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
-      return true;
-    }
+    // Bonus Zone shows for EVERYONE while the switch is on (Richard
+    // 2026-08-23) — the launch no-stack gate vs the conversion cards is
+    // REVERSED; the sort below still keeps it just under those cards. Do not
+    // re-add a conversionCardShowing hide here.
+    if (p.type === 'bonus-zone') return true;
     if (p.type !== 'buy-bonus') return true;
     const owed = (p.claimCount || 0) > 0 || p.claimable === true;
     if (owed) return true;

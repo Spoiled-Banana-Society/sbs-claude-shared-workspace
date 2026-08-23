@@ -65,9 +65,9 @@ export function PromoMiniCard({
               column: quiet qualifier on top, the PRIZE bigger underneath —
               no mid-phrase wraps (Boris 2026-08-19). */}
           {(() => { const k = promoKickerLines(promo); const bzOneLine = promo.type === 'bonus-zone'; const bzTier = bzOneLine ? promo.modalContent?.bonusZone?.tier : null; return (
-            <span className={`promo-tx block ${bzOneLine ? 'max-w-[128px]' : 'max-w-[92px]'}`}>
+            <span className={`promo-tx block ${bzOneLine ? 'max-w-[112px] shrink-0' : 'max-w-[92px]'}`}>
               {k.top && !bzOneLine && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
-              <span className={`block text-[14px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px] ${bzOneLine ? 'whitespace-nowrap' : ''}`}>{k.big}</span>
+              <span className={`block font-extrabold text-white leading-[1.15] mt-[2px] ${bzOneLine ? 'whitespace-nowrap text-[13px] tracking-[.5px]' : 'text-[14px] tracking-[1px]'}`}>{k.big}</span>
               {bzOneLine && bzTier && (
                 <span className="block text-[10.5px] font-extrabold tracking-[.4px] text-emerald-300 leading-[1.2] mt-[3px] whitespace-nowrap">Buy {bzTier} Get 1 Spin</span>
               )}

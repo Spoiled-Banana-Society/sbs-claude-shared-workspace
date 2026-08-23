@@ -292,11 +292,11 @@ export function PromoSwatch({
         const filled = Math.min(slots, Math.floor(units / credit));
         const part = units - filled * credit > 0 && filled < slots;
         inner = (
-          <span className="inline-flex gap-1.5">
+          <span className="inline-flex gap-1 shrink-0">
             {Array.from({ length: slots }, (_, i) => (
               <span
                 key={i}
-                className={`w-[26px] h-[26px] rounded-full flex items-center justify-center text-[12px] ${
+                className={`w-[21px] h-[21px] rounded-full flex items-center justify-center text-[10px] ${
                   i < filled ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.5)]'
                     : i === filled && part ? 'border-2 border-banana/60 bg-banana/[.08]'
                       : 'border-2 border-dashed border-white/45 bg-black/20'
