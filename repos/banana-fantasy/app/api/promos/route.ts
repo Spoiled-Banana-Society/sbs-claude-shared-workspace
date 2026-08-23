@@ -96,6 +96,22 @@ export async function GET(req: Request) {
         // card on the current copy (Boris 2026-08-17). Same string on the
         // carousel, sidebar and /promos card.
         atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.';
+        // Rules text lives on the seeded per-user doc too — restamp it so the
+        // modal matches the paid-only era (Boris 2026-08-22), same as the card.
+        atb.modalContent.explanation =
+          '• PAID drafts only — free and wheel drafts don\'t count.\n'
+          + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
+          + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
+          + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'
+          + '• 10 seats total. When they\'re gone, they\'re gone — the card shows how many are left.\n'
+          + '• Any number of drafts counts. Repeat slots don\'t hurt you, only new slots move you forward.\n'
+          + '• Drafts count when they FILL and reveal, not when you enter.\n'
+          + '\n'
+          + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+          + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+          + '\n'
+          + '• One seat per player.\n'
+          + '• One account per person — more than one account makes you ineligible to win prizes.';
         const { getAtbSeatCount } = await import('@/lib/aroundTheBanana');
         const seats = await getAtbSeatCount();
         const mc = atb.modalContent as unknown as Record<string, unknown>;
@@ -134,7 +150,7 @@ export async function GET(req: Request) {
           .map((r) => `${r.count} ${r.kind === 'jackhof' ? 'JackHOF' : r.kind === 'hof' ? 'HOF' : 'Jackpot'} seat${r.count === 1 ? '' : 's'}`);
         const spins = spinsForNight(nightId);
         const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
-        drop.description = `Draft, earn packs. Open at 9 PM.\nDaily: ${prizeLine}.`;
+        drop.description = `Paid drafts earn packs. Open at 9 PM.\nDaily: ${prizeLine}.`;
         drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
       }
     } catch { /* copy refresh is decoration — promos still return */ }
