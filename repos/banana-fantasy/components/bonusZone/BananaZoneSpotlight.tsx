@@ -94,7 +94,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
             <h3 className="text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px]">
               Free <span className="text-banana">Spins</span>
             </h3>
-            <div className="mt-1.5 text-[13px] font-extrabold tracking-[4px] text-white/90">BANANA ZONE</div>
+            <div className="mt-1.5 text-[15px] sm:text-[17px] font-black tracking-[5px] text-banana [text-shadow:0_0_16px_rgba(255,207,61,.55)]">BANANA ZONE</div>
           </div>
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-black/25 px-3 py-1.5 text-[10px] font-extrabold tracking-[1.6px] whitespace-nowrap">
@@ -137,7 +137,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
           </div>
           <div className="hidden min-[480px]:block w-px h-[74px] bg-banana/30" />
           <div className="text-center flex flex-col items-center gap-2">
-            <div className="text-[9.5px] font-extrabold tracking-[2.6px] text-white/60 uppercase">Your Fills</div>
+            <div className="text-[9.5px] font-extrabold tracking-[2.6px] text-white/60 uppercase">Your Filled Drafts</div>
             <div className="inline-flex gap-2.5">
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
