@@ -484,7 +484,7 @@ const seedPromos: Promo[] = [
     id: 'drop',
     type: 'drop',
     title: 'THE DROP → JACKHOF SEAT',
-    description: 'Fill drafts, earn packs. Open them at 9PM.',
+    description: 'Draft. Earn packs. Paid drafts only.',
     ctaText: 'Open your packs',
     ctaLink: '/drop',
     backgroundColor: '#2a2a35',
