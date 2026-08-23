@@ -30,8 +30,8 @@ export interface BonusZoneViewLike {
   tier3Through?: number;
 }
 
-export const tierShort = (tier: BzTier) => (tier === 1 ? 'BUY 1 GET 1' : tier === 2 ? 'BUY 2 GET 1' : tier === 3 ? 'BUY 3 GET 1' : 'CLOSED');
-export const tierLabel = (tier: BzTier) => (tier === 1 ? 'Buy 1 Get 1' : tier === 2 ? 'Buy 2 Get 1' : tier === 3 ? 'Buy 3 Get 1' : 'Zone closed');
+export const tierShort = (tier: BzTier) => (tier === 1 ? 'BUY 1 GET 1 SPIN' : tier === 2 ? 'BUY 2 GET 1 SPIN' : tier === 3 ? 'BUY 3 GET 1 SPIN' : 'CLOSED');
+export const tierLabel = (tier: BzTier) => (tier === 1 ? 'Buy 1 Get 1 Spin' : tier === 2 ? 'Buy 2 Get 1 Spin' : tier === 3 ? 'Buy 3 Get 1 Spin' : 'Zone closed');
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const zoneEnd = (v: BonusZoneViewLike) => Math.max(v.tier2Through, v.tier3Through ?? 0);
 /** Sixths of a free draft → "1 of 2", "2 of 3", else a percentage. */
@@ -52,8 +52,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   // the live header lets the lg: breakpoints decide, same as the lane pills.
   if (compact) {
     return (
-      <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[84px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
-        <span className="text-[8px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA · {left} LEFT</span>
+      <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[108px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
+        <span className="text-[8px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
         <span className="mt-[3px] text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
       </div>
     );
@@ -63,7 +63,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   // as a slim strip under the header (BonusZoneMobileBar).
   return (
     <div
-      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[124px]"
+      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[150px]"
       data-testid="bonus-zone-pill"
     >
       <span className="text-[9.5px] font-extrabold tracking-[0.07em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} LEFT</span>
@@ -107,10 +107,11 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
         {view.tier && <span className="text-[12px] font-semibold tabular-nums text-emerald-400">{view.draftsLeftInTier} left</span>}
       </div>
       <p className="text-[10.5px] leading-snug text-text-secondary">
-        {view.tier === 1 && `Every paid draft you enter in the next ${plural(view.draftsLeftInTier, 'draft')} earns a free draft when it fills. Then Buy 2 Get 1 through draft ${t2}.`}
-        {view.tier === 2 && `Every 2 paid drafts you enter in the next ${plural(view.draftsLeftInTier, 'draft')} earn a free draft when they fill. ${end > t2 ? `Then Buy 3 Get 1 through ${end}.` : `Zone closes at draft ${t2}.`}`}
-        {view.tier === 3 && `Every 3 paid drafts you enter in the next ${plural(view.draftsLeftInTier, 'draft')} earn a free draft when they fill. Zone closes at draft ${end}.`}
-        {!view.tier && `Opens the moment the Jackpot hits: Buy 1 Get 1 for drafts 1 to ${view.tier1Through}, Buy 2 Get 1 through ${t2}.`}
+        {view.tier === 1 && `Every paid draft that fills in the next ${plural(view.draftsLeftInTier, 'draft')} earns a Free Spin. Then Buy 2 Get 1 Spin through draft ${t2}.`}
+        {view.tier === 2 && `Every 2 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. ${end > t2 ? `Then Buy 3 Get 1 Spin through ${end}.` : `Zone closes at draft ${t2}.`}`}
+        {view.tier === 3 && `Every 3 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. Zone closes at draft ${end}.`}
+        {!view.tier && `Opens the moment the Jackpot hits: Buy 1 Get 1 Spin for drafts 1 to ${view.tier1Through}, Buy 2 Get 1 Spin through ${t2}.`}
+        {' '}Every spin wins at least 1 free draft.
       </p>
       <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, view.position)}%`, background: 'linear-gradient(90deg,#0f766e,#34d399)' }} />
@@ -132,9 +133,9 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
   const t3 = zoneEnd(view);
   const pct = Math.min(100, Math.max(0, view.position));
   const bands: Array<{ from: number; to: number; l1: string; l2: string; on: boolean; cls: string }> = [
-    { from: 0, to: t1, l1: 'BUY 1 GET 1', l2: `DRAFTS 1 TO ${t1}`, on: view.tier === 1, cls: 'bg-emerald-400' },
-    { from: t1, to: t2, l1: 'BUY 2 GET 1', l2: `${t1 + 1} TO ${t2}`, on: view.tier === 2, cls: 'bg-emerald-400/55' },
-    ...(t3 > t2 ? [{ from: t2, to: t3, l1: 'BUY 3 GET 1', l2: `${t2 + 1} TO ${t3}`, on: view.tier === 3, cls: 'bg-emerald-400/35' }] : []),
+    { from: 0, to: t1, l1: '1 SPIN PER DRAFT', l2: `DRAFTS 1 TO ${t1}`, on: view.tier === 1, cls: 'bg-emerald-400' },
+    { from: t1, to: t2, l1: '1 SPIN PER 2', l2: `${t1 + 1} TO ${t2}`, on: view.tier === 2, cls: 'bg-emerald-400/55' },
+    ...(t3 > t2 ? [{ from: t2, to: t3, l1: '1 SPIN PER 3', l2: `${t2 + 1} TO ${t3}`, on: view.tier === 3, cls: 'bg-emerald-400/35' }] : []),
     { from: t3, to: 100, l1: 'NO BONUS', l2: `${t3 + 1} TO 100`, on: view.enabled && view.tier === null, cls: 'bg-white/[0.10]' },
   ];
   return (
@@ -162,7 +163,7 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
           )}
           {units > 0 && (
             <span className="rounded-md bg-white/[0.08] px-2 py-[3px] text-[9.5px] font-extrabold tracking-[1px] text-white/70">
-              {unitsCopy(units).toUpperCase()} TOWARD A FREE DRAFT
+              {unitsCopy(units).toUpperCase()} TOWARD A FREE SPIN
             </span>
           )}
         </div>
@@ -177,7 +178,7 @@ export interface BonusLockLike { tier: 1 | 2 | 3; label: string; credit: number;
 
 export function ineligibleCopy(reason: string): string {
   switch (reason) {
-    case 'free_pass': return 'Free passes never earn Banana Zone.';
+    case 'free_pass': return 'Free passes never earn Banana Zone spins.';
     case 'pre_launch': return 'This pass was bought before Banana Zone started.';
     case 'first_purchase': return 'This pass came with the First Purchase promo.';
     case 'granted': return 'This pass was a reward, not a purchase.';
@@ -194,11 +195,11 @@ export function ineligibleCopy(reason: string): string {
  */
 export function BonusPendingGlyph({ lock }: { lock: BonusLockLike }) {
   const tip = lock.eligible
-    ? `Banana Zone: this seat pays by the window position this draft FILLS at. Right now that is ${lock.label} (${lock.tier === 1 ? 'a free draft' : lock.tier === 2 ? 'half a free draft' : 'a third of a free draft'}). Leave and nothing pays.`
+    ? `Banana Zone: this seat pays by the window position this draft FILLS at. Right now that is ${lock.label} (${lock.tier === 1 ? 'a Free Spin' : lock.tier === 2 ? 'half a Free Spin' : 'a third of a Free Spin'}). Leave and nothing pays.`
     : `Banana Zone: nothing pays on this seat. ${ineligibleCopy(lock.reason)}`;
   return (
     <Tooltip content={tip}>
-      <span className={`inline-flex flex-shrink-0 ${lock.eligible ? 'text-emerald-400/85' : 'text-white/30'}`} aria-label={lock.eligible ? 'Banana Zone free draft pending' : 'Banana Zone not eligible'} data-testid="bonus-zone-glyph">
+      <span className={`inline-flex flex-shrink-0 ${lock.eligible ? 'text-emerald-400/85' : 'text-white/30'}`} aria-label={lock.eligible ? 'Banana Zone Free Spin pending' : 'Banana Zone not eligible'} data-testid="bonus-zone-glyph">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 sm:w-3.5 sm:h-3.5">
           {/* ticket */}
           <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2.2a2.3 2.3 0 0 0 0 4.6V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3.2a2.3 2.3 0 0 0 0-4.6V7zm6 1v8h1.6V8H9zm3.4 0v8H14V8h-1.6z" />
@@ -229,8 +230,8 @@ export function BonusZoneEntryLine({ status, buyingSeat, firstPurchaseApplies }:
   const v = status.view;
   const left = plural(v.draftsLeftInTier, 'draft');
   const earns = v.tier === 1
-    ? `earns a free draft if it fills inside the next ${left}`
-    : v.tier === 2 ? `earns half a free draft if it fills inside the next ${left}` : `earns a third of a free draft if it fills inside the next ${left}`;
+    ? `earns a Free Spin if it fills inside the next ${left}`
+    : v.tier === 2 ? `earns half a Free Spin if it fills inside the next ${left}` : `earns a third of a Free Spin if it fills inside the next ${left}`;
   if (buyingSeat) {
     if (firstPurchaseApplies) return null; // First Purchase wins; that purchase is not zone-eligible
     return (
@@ -255,7 +256,7 @@ export function BonusZoneEntryLine({ status, buyingSeat, firstPurchaseApplies }:
       )}
       {(status.unitsThisWindow ?? 0) > 0 && v.tier !== 1 && (
         <span className="block text-white/60">
-          You have {unitsCopy(status.unitsThisWindow ?? 0)} banked this window.{(status.unitsThisWindow ?? 0) + (v.tier === 2 ? 3 : 2) >= 6 ? ' This fill completes the free draft.' : ''}
+          You have {unitsCopy(status.unitsThisWindow ?? 0)} banked this window.{(status.unitsThisWindow ?? 0) + (v.tier === 2 ? 3 : 2) >= 6 ? ' This fill completes the spin.' : ''}
         </span>
       )}
     </p>
@@ -288,10 +289,10 @@ export function bonusLockedToastCopy(lock: BonusLockLike): { title: string; mess
     return { title: 'Seat taken. No Banana Zone on this pass', message: ineligibleCopy(lock.reason) };
   }
   return lock.tier === 1
-    ? { title: 'Seat taken. Banana Zone: Buy 1 Get 1', message: 'Fills inside the band and a free draft lands in your passes. The tier is set by where it fills.' }
+    ? { title: 'Seat taken. Banana Zone: Buy 1 Get 1 Spin', message: 'Fills inside the band and a Free Spin lands on your Banana Zone card. The tier is set by where it fills.' }
     : lock.tier === 2
-      ? { title: 'Seat taken. Banana Zone: Buy 2 Get 1', message: 'Fills inside the band and half a free draft banks. Two in the same Jackpot window make one.' }
-      : { title: 'Seat taken. Banana Zone: Buy 3 Get 1', message: 'Fills inside the band and a third of a free draft banks. Three in the same Jackpot window make one.' };
+      ? { title: 'Seat taken. Banana Zone: Buy 2 Get 1 Spin', message: 'Fills inside the band and half a Free Spin banks. Two in the same Jackpot window make one.' }
+      : { title: 'Seat taken. Banana Zone: Buy 3 Get 1 Spin', message: 'Fills inside the band and a third of a Free Spin banks. Three in the same Jackpot window make one.' };
 }
 
 // ─── Promo modal body ────────────────────────────────────────────────────────
@@ -341,10 +342,11 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
         </div>
         <p className="mt-1 text-2xl font-black text-white leading-tight">{view.tier ? tierLabel(view.tier) : 'Zone closed'}</p>
         <p className="text-[13px] text-white/65 leading-snug">
-          {view.tier === 1 && 'Every paid draft you enter now earns a free draft when it fills.'}
-          {view.tier === 2 && 'Every paid draft you enter now earns half a free draft when it fills. Two in this window make one.'}
-          {view.tier === 3 && 'Every paid draft you enter now earns a third of a free draft when it fills. Three in this window make one.'}
-          {!view.tier && 'The zone reopens the moment the Jackpot hits. Buy 1 Get 1 from draft 1.'}
+          {view.tier === 1 && 'Every paid draft that fills now earns a Free Spin on the Banana Wheel.'}
+          {view.tier === 2 && 'Every paid draft that fills now earns half a Free Spin. Two in this window make one.'}
+          {view.tier === 3 && 'Every paid draft that fills now earns a third of a Free Spin. Three in this window make one.'}
+          {!view.tier && 'The zone reopens the moment the Jackpot hits. Buy 1 Get 1 Spin from draft 1.'}
+          {' '}Every spin wins at least 1 free draft.
         </p>
         <BonusZoneLadder view={view} />
       </div>
@@ -352,7 +354,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       {/* Your stats */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { v: data?.earned ?? 0, l: 'FREE DRAFTS EARNED' },
+          { v: data?.earned ?? 0, l: 'FREE SPINS EARNED' },
           { v: pendingEligible.length, l: 'PENDING ON FILLS' },
           { v: (data?.unitsThisWindow ?? 0) > 0 ? unitsCopy(data?.unitsThisWindow ?? 0) : 0, l: 'BANKED THIS WINDOW' },
         ].map((s) => (
@@ -398,7 +400,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
               <li key={`${h.draftId}-${h.settledAtIso ?? ''}`} className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px]">
                 <span className="text-white/80">{draftName(h.draftId)} <span className="text-white/35">· {h.label}</span></span>
                 <span className={h.status === 'paid' ? 'font-bold text-emerald-300' : h.status === 'half' ? 'text-white/70' : 'text-amber-300'}>
-                  {h.status === 'paid' ? '+1 free draft' : h.status === 'half' ? unitsCopy(h.unitsAfter ?? 3) : 'retrying'}
+                  {h.status === 'paid' ? '+1 Free Spin' : h.status === 'half' ? unitsCopy(h.unitsAfter ?? 3) : 'retrying'}
                 </span>
               </li>
             ))}

@@ -356,7 +356,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       const lane = laneViewFromTracker(trackerData as Parameters<typeof laneViewFromTracker>[0]);
       if (lane.rolling) {
         const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
-        if (v.tier) bonusZoneLine = `🟢 BANANA ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
+        if (v.tier) bonusZoneLine = `🍌 BANANA ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
       }
     }
   } catch { /* decoration */ }

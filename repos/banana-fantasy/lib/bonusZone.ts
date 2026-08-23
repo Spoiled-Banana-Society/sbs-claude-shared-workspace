@@ -83,9 +83,12 @@ export function tierInfo(tier: BonusZoneTier, cfg?: Partial<TierCfg>): BonusZone
   const t1 = cfg?.tier1Through ?? BZ_TIER1_THROUGH;
   const t2 = cfg?.tier2Through ?? BZ_TIER2_THROUGH;
   const t3 = cfg?.tier3Through ?? BZ_TIER3_THROUGH;
-  if (tier === 1) return { tier: 1, label: 'Buy 1 Get 1', short: 'BUY 1 GET 1', credit: 1, units: 6, through: t1 };
-  if (tier === 2) return { tier: 2, label: 'Buy 2 Get 1', short: 'BUY 2 GET 1', credit: 0.5, units: 3, through: t2 };
-  return { tier: 3, label: 'Buy 3 Get 1', short: 'BUY 3 GET 1', credit: 1 / 3, units: 2, through: t3 };
+  // The "1" you get is a FREE SPIN on the Banana Wheel (Richard 8/22) — paid
+  // like every other promo (claimable on the card), and every promo spin wins
+  // at least 1 free draft.
+  if (tier === 1) return { tier: 1, label: 'Buy 1 Get 1 Spin', short: 'BUY 1 GET 1 SPIN', credit: 1, units: 6, through: t1 };
+  if (tier === 2) return { tier: 2, label: 'Buy 2 Get 1 Spin', short: 'BUY 2 GET 1 SPIN', credit: 0.5, units: 3, through: t2 };
+  return { tier: 3, label: 'Buy 3 Get 1 Spin', short: 'BUY 3 GET 1 SPIN', credit: 1 / 3, units: 2, through: t3 };
 }
 
 /** Which tier a 1-indexed Jackpot window position falls in (null = none). */
@@ -452,8 +455,8 @@ export interface BonusZoneEntry {
   reason: string;
   /** Fill-time outcome. */
   settledAtIso?: string;
-  grantedTokenIds?: string[];
-  grantTxHash?: string;
+  /** Free Spins credited (claimable on the card). */
+  spins?: number;
   /** For partial credits: banked sixths after this fill (6 = minted). */
   unitsAfter?: number;
   error?: string;
@@ -532,36 +535,38 @@ export async function getBonusZoneEntry(wallet: string, draftId: string): Promis
   return snap.exists ? (snap.data() as BonusZoneEntry) : null;
 }
 
-// ── Grant (the free pass) ───────────────────────────────────────────────────
+// ── Credit (the Free Spin) ──────────────────────────────────────────────────
+
+export const BANANA_ZONE_PROMO_ID = 'bonus-zone';
 
 /**
- * Mint + register `count` FREE passes (free origin, not sellable mid-season,
- * never earns the bonus again). Same recipe as admin grant-drafts.
+ * Credit `count` Free Spins as CLAIMABLE on the user's Banana Zone promo card —
+ * the same path every other promo pays through (claimPromo's generic branch:
+ * claimable + claimCount → wheelSpins). Creates the per-user promo doc from
+ * the seed if the lazy backfill hasn't run for them yet.
  */
-export async function grantBonusZonePasses(wallet: string, count: number, reason: string): Promise<{ tokenIds: string[]; txHash: string }> {
-  const { isAdminMintConfigured, reserveTokensToWallet } = await import('@/lib/onchain/adminMint');
-  if (!isAdminMintConfigured()) throw new Error('admin mint not configured');
+export async function creditBananaZoneSpins(wallet: string, count: number, reason: string): Promise<{ claimCount: number }> {
+  const db = getAdminFirestore();
   const w = wallet.toLowerCase();
-  const res = await reserveTokensToWallet({ to: w, count });
-  const tokenIds = res.tokenIds.map(String);
-  const { recordPassOrigins } = await import('@/lib/onchain/passOrigin');
-  await recordPassOrigins({ tokenIds: res.tokenIds, origin: 'admin_grant', ownerAtMint: w, txHash: res.txHash, reason: `bonus_zone:${reason}` });
-  const { registerMintedTokens } = await import('@/lib/onchain/reconcilePasses');
-  await registerMintedTokens(w, res.tokenIds, 'free');
-  const { buildActivityEventDoc } = await import('@/lib/activityEvents');
-  const { recountFromInventory } = await import('@/lib/passLedger');
-  const activityDoc = await buildActivityEventDoc({
-    type: 'pass_granted',
-    userId: w,
-    walletAddress: w,
-    paymentMethod: 'free',
-    quantity: count,
-    tokenIds,
-    txHash: res.txHash,
-    metadata: { source: 'bonus_zone', reason },
+  const { ensureUserSeeded } = await import('@/lib/db-firestore');
+  await ensureUserSeeded(w);
+  const ref = db.collection('v2_users').doc(w).collection('promos').doc(BANANA_ZONE_PROMO_ID);
+  const claimCount = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    let promo: Record<string, unknown>;
+    if (snap.exists) promo = snap.data() as Record<string, unknown>;
+    else {
+      const { getDefaultPromos } = await import('@/lib/api/seed');
+      const seed = getDefaultPromos().find((p) => p.id === BANANA_ZONE_PROMO_ID);
+      promo = seed ? JSON.parse(JSON.stringify(seed)) : { id: BANANA_ZONE_PROMO_ID, type: 'bonus-zone', modalContent: {} };
+    }
+    const next = Number(promo.claimCount ?? 0) + count;
+    tx.set(ref, { ...promo, claimable: true, claimCount: next, progressCurrent: 1, updatedAt: new Date().toISOString(), lastCreditReason: reason }, { merge: true });
+    return next;
   });
-  await recountFromInventory(w, activityDoc);
-  return { tokenIds, txHash: res.txHash };
+  const { pushStreamEventBg } = await import('@/lib/userEventStream');
+  pushStreamEventBg(w, 'notification', { source: 'banana-zone-credit' });
+  return { claimCount };
 }
 
 // ── Fill position (the truth the payout keys off) ───────────────────────────
@@ -597,7 +602,7 @@ export async function fillPositionForDraft(draftId: string, cfg: BonusZoneConfig
 export interface SettleOutcome {
   wallet: string;
   outcome: 'no_entry' | 'not_pending' | 'token_mismatch' | 'paid' | 'half' | 'grant_failed' | 'outside_zone' | 'position_unresolved' | 'error';
-  tokenIds?: string[];
+  spins?: number;
   units?: number;
   error?: string;
 }
@@ -669,10 +674,10 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
 
       if (paidTier.tier === 1) {
         try {
-          const g = await grantBonusZonePasses(wallet, 1, `t1:${draftId}`);
-          await ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
-          await notifyBonusPaid(wallet, draftId, g.tokenIds.length, paidTier.label);
-          out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds });
+          await creditBananaZoneSpins(wallet, 1, `t1:${draftId}`);
+          await ref.set({ status: 'paid', spins: 1, settledAtIso: new Date().toISOString() }, { merge: true });
+          await notifyBonusPaid(wallet, draftId, 1, paidTier.label);
+          out.push({ wallet, outcome: 'paid', spins: 1 });
         } catch (err) {
           await ref.set({ status: 'grant_failed', error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
           logger.error('bonus_zone.grant_failed', { context: { draftId, wallet, err: (err as Error).message } });
@@ -704,10 +709,10 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
         continue;
       }
       try {
-        const g = await grantBonusZonePasses(wallet, 1, `t${paidTier.tier}:${draftId}`);
-        await ref.set({ status: 'paid', unitsAfter: after, grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString() }, { merge: true });
-        await notifyBonusPaid(wallet, draftId, g.tokenIds.length, paidTier.label);
-        out.push({ wallet, outcome: 'paid', tokenIds: g.tokenIds, units: after });
+        await creditBananaZoneSpins(wallet, 1, `t${paidTier.tier}:${draftId}`);
+        await ref.set({ status: 'paid', unitsAfter: after, spins: 1, settledAtIso: new Date().toISOString() }, { merge: true });
+        await notifyBonusPaid(wallet, draftId, 1, paidTier.label);
+        out.push({ wallet, outcome: 'paid', spins: 1, units: after });
       } catch (err) {
         await ref.set({ status: 'grant_failed', unitsAfter: after, error: (err as Error).message, retryable: true, owed: 1, settledAtIso: new Date().toISOString() }, { merge: true });
         logger.error('bonus_zone.grant_failed', { context: { draftId, wallet, err: (err as Error).message } });
@@ -749,9 +754,9 @@ export async function retryFailedBonusZoneGrants(max = 5): Promise<number> {
     });
     if (!claimed) continue;
     try {
-      const g = await grantBonusZonePasses(e.wallet, e.owed ?? 1, `retry:${e.draftId}`);
-      await doc.ref.set({ status: 'paid', grantedTokenIds: g.tokenIds, grantTxHash: g.txHash, settledAtIso: new Date().toISOString(), error: FieldValue.delete() }, { merge: true });
-      await notifyBonusPaid(e.wallet, e.draftId, g.tokenIds.length, e.paidLabel ?? e.label);
+      await creditBananaZoneSpins(e.wallet, e.owed ?? 1, `retry:${e.draftId}`);
+      await doc.ref.set({ status: 'paid', spins: e.owed ?? 1, settledAtIso: new Date().toISOString(), error: FieldValue.delete() }, { merge: true });
+      await notifyBonusPaid(e.wallet, e.draftId, e.owed ?? 1, e.paidLabel ?? e.label);
       done++;
     } catch (err) {
       await doc.ref.set({ status: 'grant_failed', error: (err as Error).message }, { merge: true });
@@ -767,8 +772,8 @@ async function notifyBonusPaid(wallet: string, draftId: string, count: number, l
     const { createNotification } = await import('@/lib/queueNotifications');
     await createNotification(wallet, {
       type: 'promo',
-      title: count === 1 ? '🟢 Banana Zone: your free draft landed' : `🟢 Banana Zone: ${count} free drafts landed`,
-      message: `Your ${label} draft filled, so your free draft pass is in your passes now. Use it on any draft.`,
+      title: count === 1 ? '🍌 Banana Zone: Free Spin earned' : `🍌 Banana Zone: ${count} Free Spins earned`,
+      message: `Your ${label} draft filled. Claim your Free Spin on the Banana Zone card. Every spin wins at least 1 free draft.`,
       link: '/promos?promo=bonus-zone',
       dedupeKey: `bonus-zone-paid-${draftId}`,
       icon: 'sparkles',
@@ -780,22 +785,22 @@ async function notifyBonusPaid(wallet: string, draftId: string, count: number, l
 
 /** "1 of 2", "2 of 3", or a percentage when halves and thirds are mixed. */
 export function progressCopy(units: number): string {
-  if (units <= 0) return '0 toward a free draft';
-  if (units === 3) return '1 of 2 toward a free draft';
-  if (units === 2) return '1 of 3 toward a free draft';
-  if (units === 4) return '2 of 3 toward a free draft';
-  return `${Math.round((units / BZ_UNITS_PER_PASS) * 100)}% of the way to a free draft`;
+  if (units <= 0) return '0 toward a Free Spin';
+  if (units === 3) return '1 of 2 toward a Free Spin';
+  if (units === 2) return '1 of 3 toward a Free Spin';
+  if (units === 4) return '2 of 3 toward a Free Spin';
+  return `${Math.round((units / BZ_UNITS_PER_PASS) * 100)}% of the way to a Free Spin`;
 }
 
 async function notifyBonusPartial(wallet: string, draftId: string, windowStart: number, label: string, units: number): Promise<void> {
   try {
     const { createNotification } = await import('@/lib/queueNotifications');
     const left = BZ_UNITS_PER_PASS - units;
-    const more = left <= 2 ? 'One more Buy 3 Get 1 draft' : left <= 3 ? 'One more Buy 2 Get 1 draft (or two Buy 3 Get 1)' : 'A couple more Banana Zone drafts';
+    const more = left <= 2 ? 'One more Buy 3 Get 1 Spin draft' : left <= 3 ? 'One more Buy 2 Get 1 Spin draft (or two Buy 3 Get 1 Spin)' : 'A couple more Banana Zone drafts';
     await createNotification(wallet, {
       type: 'promo',
-      title: `🟢 Banana Zone: ${progressCopy(units)}`,
-      message: `Your ${label} draft filled. ${more} before the Jackpot hits and the free draft is yours.`,
+      title: `🍌 Banana Zone: ${progressCopy(units)}`,
+      message: `Your ${label} draft filled. ${more} before the Jackpot hits and the Free Spin is yours.`,
       link: '/promos?promo=bonus-zone',
       dedupeKey: `bonus-zone-part-${draftId}-${windowStart}`,
       icon: 'sparkles',
@@ -816,7 +821,7 @@ export interface BonusZoneWalletStatus {
   unitsThisWindow: number;
   /** Free drafts earned all-time from the zone. */
   earned: number;
-  history: Array<{ draftId: string; label: string; status: BonusEntryStatus; settledAtIso?: string; grantedTokenIds?: string[]; unitsAfter?: number }>;
+  history: Array<{ draftId: string; label: string; status: BonusEntryStatus; settledAtIso?: string; unitsAfter?: number }>;
 }
 
 export async function getBonusZoneWalletStatus(wallet: string, opts: { includePasses?: boolean } = {}): Promise<BonusZoneWalletStatus> {
@@ -838,7 +843,7 @@ export async function getBonusZoneWalletStatus(wallet: string, opts: { includePa
   const settled = entries
     .filter((e) => e.status === 'paid' || e.status === 'half' || e.status === 'grant_failed')
     .sort((a, b) => String(b.settledAtIso ?? '').localeCompare(String(a.settledAtIso ?? '')));
-  const earned = settled.reduce((s, e) => s + (e.status === 'paid' ? (e.grantedTokenIds?.length ?? 1) : 0), 0);
+  const earned = settled.reduce((s, e) => s + (e.status === 'paid' ? (e.spins ?? 1) : 0), 0);
   // History shows the tier that actually PAID (fill position), not the projection.
   for (const e of settled) if (e.paidLabel) e.label = e.paidLabel;
   const reasons: Record<string, number> = {};
@@ -849,14 +854,14 @@ export async function getBonusZoneWalletStatus(wallet: string, opts: { includePa
     pending,
     unitsThisWindow: progSnap?.exists ? Number((progSnap.data() as { units?: number }).units ?? 0) : 0,
     earned,
-    history: settled.slice(0, 30).map((e) => ({ draftId: e.draftId, label: e.label, status: e.status, settledAtIso: e.settledAtIso, grantedTokenIds: e.grantedTokenIds, unitsAfter: e.unitsAfter })),
+    history: settled.slice(0, 30).map((e) => ({ draftId: e.draftId, label: e.label, status: e.status, settledAtIso: e.settledAtIso, unitsAfter: e.unitsAfter })),
   };
 }
 
 /** Plain-English reason for an ineligible pass (entry modal / row tooltip). */
 export function ineligibleReasonCopy(reason: string): string {
   switch (reason) {
-    case 'free_pass': return 'Free passes never earn Banana Zone.';
+    case 'free_pass': return 'Free passes never earn Banana Zone spins.';
     case 'pre_launch': return 'This pass was bought before Banana Zone started.';
     case 'first_purchase': return 'This pass came with the First Purchase promo.';
     case 'granted': return 'This pass was a reward, not a purchase.';

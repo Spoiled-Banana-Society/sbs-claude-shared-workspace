@@ -274,7 +274,7 @@ export function PromoSwatch({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) { inner = <Big n="1+1" label="FREE DRAFTS" size={size} />; break; }
+      if (!bz) { inner = <Big n="1+1" label="FREE SPINS" size={size} />; break; }
       inner = bz.tier === 1
         ? <Big n="1+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
         : bz.tier === 2
@@ -401,11 +401,11 @@ export function PromoLive({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) return <Stat v="Buy 1 Get 1" l="FIRST 20 DRAFTS" />;
+      if (!bz) return <Stat v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
       const pend = bz.pending.filter((e) => e.eligible).length;
-      if (bz.tier === 1) return <Stat v={<span style={{ color: accent }}>Buy 1 Get 1</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 2) return <Stat v={<span style={{ color: accent }}>Buy 2 Get 1</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 3) return <Stat v={<span style={{ color: accent }}>Buy 3 Get 1</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 1) return <Stat v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 2) return <Stat v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 3) return <Stat v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       return <Stat v="Zone closed" l="OPENS WHEN JP HITS" />;
     }
     case 'first-purchase':

@@ -41,9 +41,9 @@ describe('bonus zone tiers (Richard 2026-08-22 FINAL: 1-20 Buy 1 Get 1, 21-40 Bu
     expect(bonusZoneTierForPosition(30)?.units).toBe(3);
     expect(bonusZoneTierForPosition(50)?.credit).toBeCloseTo(1 / 3);
     expect(bonusZoneTierForPosition(50)?.units).toBe(2);
-    expect(bonusZoneTierForPosition(5)?.label).toBe('Buy 1 Get 1');
-    expect(bonusZoneTierForPosition(30)?.label).toBe('Buy 2 Get 1');
-    expect(bonusZoneTierForPosition(50)?.label).toBe('Buy 3 Get 1');
+    expect(bonusZoneTierForPosition(5)?.label).toBe('Buy 1 Get 1 Spin');
+    expect(bonusZoneTierForPosition(30)?.label).toBe('Buy 2 Get 1 Spin');
+    expect(bonusZoneTierForPosition(50)?.label).toBe('Buy 3 Get 1 Spin');
     expect(BZ_UNITS_PER_PASS).toBe(6);
   });
 
@@ -60,9 +60,9 @@ describe('bonus zone tiers (Richard 2026-08-22 FINAL: 1-20 Buy 1 Get 1, 21-40 Bu
   });
 
   it('progress copy', () => {
-    expect(progressCopy(3)).toBe('1 of 2 toward a free draft');
-    expect(progressCopy(2)).toBe('1 of 3 toward a free draft');
-    expect(progressCopy(4)).toBe('2 of 3 toward a free draft');
+    expect(progressCopy(3)).toBe('1 of 2 toward a Free Spin');
+    expect(progressCopy(2)).toBe('1 of 3 toward a Free Spin');
+    expect(progressCopy(4)).toBe('2 of 3 toward a Free Spin');
     expect(progressCopy(5)).toMatch(/83%/);
   });
 });

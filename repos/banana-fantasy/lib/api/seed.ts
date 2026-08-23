@@ -717,8 +717,8 @@ const seedPromos: Promo[] = [
     // the viewer is an admin). Copy rule: no dashes in posted copy.
     id: 'bonus-zone',
     type: 'bonus-zone',
-    title: 'Banana Zone → FREE DRAFTS',
-    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
+    title: 'Banana Zone → FREE SPINS',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins. Every spin wins at least 1 free draft.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
@@ -727,18 +727,18 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Banana Zone → FREE DRAFTS',
+      title: 'Banana Zone → FREE SPINS',
       explanation:
         '• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first 60 drafts of every window.\n'
-        + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
-        + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
-        + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
-        + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
+        + '• Drafts 1 to 20: Buy 1 Get 1 Spin. Every paid draft you enter earns a Free Spin when it fills.\n'
+        + '• Drafts 21 to 40: Buy 2 Get 1 Spin. Every paid draft earns half a Free Spin.\n'
+        + '• Drafts 41 to 60: Buy 3 Get 1 Spin. Every paid draft earns a third of a Free Spin.\n'
+        + '• Halves and thirds add up inside the same window and pay out the moment they make a whole spin. Leftovers are lost when the Jackpot hits.\n'
         + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
-        + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1. Leave the lobby and nothing pays.\n'
-        + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
+        + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1 Spin. Leave the lobby and nothing pays.\n'
+        + '• Paid passes only. Free passes never earn spins. Passes bought with the First Purchase promo do not count.\n'
         + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
-        + '• Free drafts land in your passes automatically. No claim button, no limit.',
+        + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. Every spin wins at least 1 free draft. No limit.',
     },
   },
   {

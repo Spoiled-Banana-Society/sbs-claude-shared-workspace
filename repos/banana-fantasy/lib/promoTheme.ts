@@ -73,7 +73,7 @@ export function promoKicker(promo: Promo): string {
     case 'banana-draw': return 'JACKHOF SEAT';
     case 'eliminator': return 'JACKHOF SEAT';
     case 'banana-vault': return 'JACKPOT SEAT';
-    case 'bonus-zone': return 'FREE DRAFTS · COLD ZONE';
+    case 'bonus-zone': return 'FREE SPINS · AFTER EVERY JACKPOT';
     default: return 'PROMO';
   }
 }
@@ -96,7 +96,7 @@ export function promoKickerLines(promo: Promo): { top: string; big: string } {
     case 'jackpot': return { top: 'WHEN JP HITS', big: 'FREE SPINS' };
     case 'new-user': return { top: 'NEW USER', big: 'FREE DRAFT' };
     case 'first-purchase': return { top: 'EVERY PASS', big: 'FREE DRAFTS' };
-    case 'bonus-zone': return { top: 'BANANA ZONE', big: 'FREE DRAFTS' };
+    case 'bonus-zone': return { top: 'BANANA ZONE', big: 'FREE SPINS' };
     default: {
       const [a, b] = promoKicker(promo).split(' · ');
       return b ? { top: b, big: a } : { top: '', big: a };

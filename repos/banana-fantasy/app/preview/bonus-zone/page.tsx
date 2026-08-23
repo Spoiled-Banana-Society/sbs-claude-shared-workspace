@@ -39,7 +39,7 @@ function viewFor(position: number): BonusZoneViewLike {
   return {
     enabled: true,
     tier,
-    label: tier === 1 ? 'Buy 1 Get 1' : tier === 2 ? 'Buy 2 Get 1' : tier === 3 ? 'Buy 3 Get 1' : null,
+    label: tier === 1 ? 'Buy 1 Get 1 Spin' : tier === 2 ? 'Buy 2 Get 1 Spin' : tier === 3 ? 'Buy 3 Get 1 Spin' : null,
     position,
     draftsLeftInTier: tier === 1 ? T1 - position + 1 : tier === 2 ? T2 - position + 1 : tier === 3 ? T3 - position + 1 : 0,
     draftsLeftInZone: Math.max(0, T3 - position + 1),
@@ -51,22 +51,22 @@ function viewFor(position: number): BonusZoneViewLike {
 
 const RULES =
   '• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first 60 drafts of every window.\n'
-  + '• Drafts 1 to 20: Buy 1 Get 1. Every paid draft you enter earns a free draft when it fills.\n'
-  + '• Drafts 21 to 40: Buy 2 Get 1. Every paid draft earns half a free draft.\n'
-  + '• Drafts 41 to 60: Buy 3 Get 1. Every paid draft earns a third of a free draft.\n'
-  + '• Halves and thirds add up inside the same window and pay out the moment they make a whole free draft. Leftovers are lost when the Jackpot hits.\n'
+  + '• Drafts 1 to 20: Buy 1 Get 1 Spin. Every paid draft you enter earns a Free Spin when it fills.\n'
+  + '• Drafts 21 to 40: Buy 2 Get 1 Spin. Every paid draft earns half a Free Spin.\n'
+  + '• Drafts 41 to 60: Buy 3 Get 1 Spin. Every paid draft earns a third of a Free Spin.\n'
+  + '• Halves and thirds add up inside the same window and pay out the moment they make a whole spin. Leftovers are lost when the Jackpot hits.\n'
   + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
-  + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1. Leave the lobby and nothing pays.\n'
-  + '• Paid passes only. Free passes never earn free drafts. Passes bought with the First Purchase promo do not count.\n'
+  + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1 Spin. Leave the lobby and nothing pays.\n'
+  + '• Paid passes only. Free passes never earn spins. Passes bought with the First Purchase promo do not count.\n'
   + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
-  + '• Free drafts land in your passes automatically. No claim button, no limit.';
+  + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. Every spin wins at least 1 free draft. No limit.';
 
 function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
   return {
     id: 'bonus-zone',
     type: 'bonus-zone',
-    title: 'Banana Zone → FREE DRAFTS',
-    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns free drafts.',
+    title: 'Banana Zone → FREE SPINS',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins. Every spin wins at least 1 free draft.',
     ctaText: 'Draft now',
     ctaLink: '/draft',
     progressCurrent: 0,
@@ -74,7 +74,7 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
     isNew: true,
     featured: true,
     modalContent: {
-      title: 'Banana Zone → FREE DRAFTS',
+      title: 'Banana Zone → FREE SPINS',
       explanation: RULES,
       bonusZone: {
         tier: view.tier,
@@ -89,18 +89,18 @@ function promoFor(view: BonusZoneViewLike, rich: boolean): Promo {
         paidPasses: 5,
         pending: rich
           ? [
-              { draftId: '2026-fast-draft-712', tier: 1, label: 'Buy 1 Get 1', credit: 1, eligible: true, reason: 'post_launch' },
-              { draftId: '2026-slow-draft-131', tier: 2, label: 'Buy 2 Get 1', credit: 0.5, eligible: true, reason: 'grandfathered' },
-              { draftId: '2026-fast-draft-713', tier: 1, label: 'Buy 1 Get 1', credit: 1, eligible: false, reason: 'pre_launch' },
+              { draftId: '2026-fast-draft-712', tier: 1, label: 'Buy 1 Get 1 Spin', credit: 1, eligible: true, reason: 'post_launch' },
+              { draftId: '2026-slow-draft-131', tier: 2, label: 'Buy 2 Get 1 Spin', credit: 0.5, eligible: true, reason: 'grandfathered' },
+              { draftId: '2026-fast-draft-713', tier: 1, label: 'Buy 1 Get 1 Spin', credit: 1, eligible: false, reason: 'pre_launch' },
             ]
           : [],
         unitsThisWindow: rich ? 3 : 0,
         earned: rich ? 4 : 0,
         history: rich
           ? [
-              { draftId: '2026-fast-draft-709', label: 'Buy 1 Get 1', status: 'paid', settledAtIso: '2026-08-22T18:02:00Z' },
-              { draftId: '2026-fast-draft-704', label: 'Buy 2 Get 1', status: 'half', settledAtIso: '2026-08-22T16:40:00Z', unitsAfter: 3 },
-              { draftId: '2026-fast-draft-701', label: 'Buy 1 Get 1', status: 'paid', settledAtIso: '2026-08-22T15:11:00Z' },
+              { draftId: '2026-fast-draft-709', label: 'Buy 1 Get 1 Spin', status: 'paid', settledAtIso: '2026-08-22T18:02:00Z' },
+              { draftId: '2026-fast-draft-704', label: 'Buy 2 Get 1 Spin', status: 'half', settledAtIso: '2026-08-22T16:40:00Z', unitsAfter: 3 },
+              { draftId: '2026-fast-draft-701', label: 'Buy 1 Get 1 Spin', status: 'paid', settledAtIso: '2026-08-22T15:11:00Z' },
             ]
           : [],
       },
@@ -191,10 +191,10 @@ export default function BonusZonePreviewPage() {
   const [rich, setRich] = useState(true);
   const view = useMemo(() => viewFor(pos), [pos]);
   const promo = useMemo(() => promoFor(view, rich), [view, rich]);
-  const t1Lock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1, eligible: true, reason: 'post_launch' };
-  const t3Lock = { tier: 3 as const, label: 'Buy 3 Get 1', credit: 1 / 3, eligible: true, reason: 'post_launch' };
-  const t2Lock = { tier: 2 as const, label: 'Buy 2 Get 1', credit: 0.5, eligible: true, reason: 'grandfathered' };
-  const badLock = { tier: 1 as const, label: 'Buy 1 Get 1', credit: 1, eligible: false, reason: 'pre_launch' };
+  const t1Lock = { tier: 1 as const, label: 'Buy 1 Get 1 Spin', credit: 1, eligible: true, reason: 'post_launch' };
+  const t3Lock = { tier: 3 as const, label: 'Buy 3 Get 1 Spin', credit: 1 / 3, eligible: true, reason: 'post_launch' };
+  const t2Lock = { tier: 2 as const, label: 'Buy 2 Get 1 Spin', credit: 0.5, eligible: true, reason: 'grandfathered' };
+  const badLock = { tier: 1 as const, label: 'Buy 1 Get 1 Spin', credit: 1, eligible: false, reason: 'pre_launch' };
   const status: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 5, eligibleCount: rich ? 3 : 5, ineligibleReasons: rich ? { pre_launch: 2 } : {} }, unitsThisWindow: rich ? 3 : 0 };
   const statusNone: BonusZoneStatusLike = { enabled: true, view, passes: { paidTotal: 4, eligibleCount: 0, ineligibleReasons: { pre_launch: 3, first_purchase: 1 } }, unitsThisWindow: 0 };
   const noop = () => {};
@@ -355,13 +355,13 @@ export default function BonusZonePreviewPage() {
           </Frame>
         </Section>
 
-        <Section title="7 · BELLS" note="Broadcast bells (replace the 10 spin / 5 spin Jackpot Watch bells) and the two personal payout bells.">
+        <Section title="7 · BELLS" note="Broadcast bells (replace the 10 spin / 5 spin Jackpot Watch bells) and the two personal payout bells. Spins land as a Claim on the card, like every other promo.">
           <div className="grid gap-3 md:grid-cols-2">
-            <Bell title="🟢 Jackpot hit. Banana Zone is ON: Buy 1 Get 1" message="Every paid draft you enter in the next 20 drafts earns a FREE draft when it fills. Then Buy 2 Get 1 through draft 40 and Buy 3 Get 1 through 60. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Banana Zone: Buy 2 Get 1" message="Every 2 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. Drops to Buy 3 Get 1 at draft 41. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Banana Zone: Buy 3 Get 1, last call" message="Every 3 paid drafts you enter in the next 20 drafts earn a FREE draft when they fill. The zone closes at draft 60 of the window. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
-            <Bell title="🟢 Banana Zone: your free draft landed" message="Your Buy 1 Get 1 draft filled, so your free draft pass is in your passes now. Use it on any draft." link="/promos?promo=bonus-zone · the drafter" />
-            <Bell title="🟢 Banana Zone: 1 of 2 toward a free draft" message="Your Buy 2 Get 1 draft filled. One more Buy 2 Get 1 draft before the Jackpot hits and the free draft is yours." link="/promos?promo=bonus-zone · the drafter" />
+            <Bell title="🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin" message="Every paid draft that fills in the next 20 drafts earns a FREE SPIN. Then Buy 2 Get 1 Spin through draft 40 and Buy 3 Get 1 Spin through 60. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Buy 2 Get 1 Spin" message="Every 2 paid drafts that fill in the next 20 drafts earn a FREE SPIN. Drops to Buy 3 Get 1 Spin at draft 41. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Buy 3 Get 1 Spin, last call" message="Every 3 paid drafts that fill in the next 20 drafts earn a FREE SPIN. The zone closes at draft 60 of the window. Every spin wins at least 1 free draft. Tap for the rules." link="/promos?promo=bonus-zone · everyone" />
+            <Bell title="🍌 Banana Zone: Free Spin earned" message="Your Buy 1 Get 1 Spin draft filled. Claim your Free Spin on the Banana Zone card. Every spin wins at least 1 free draft." link="/promos?promo=bonus-zone · the drafter" />
+            <Bell title="🍌 Banana Zone: 1 of 2 toward a Free Spin" message="Your Buy 2 Get 1 Spin draft filled. One more Buy 2 Get 1 Spin draft before the Jackpot hits and the Free Spin is yours." link="/promos?promo=bonus-zone · the drafter" />
           </div>
         </Section>
 
@@ -369,7 +369,7 @@ export default function BonusZonePreviewPage() {
           <Frame label="FILL BOT POST" w="max-w-md">
             <pre className="whitespace-pre-wrap font-sans text-[13.5px] leading-relaxed text-white/85">{`3 more to fill BBB #${817 + pos}
 
-✅ HOF - ${((3 / (100 - pos + 1)) * 100).toFixed(2)}% Jackpot - ${((1 / (100 - pos + 1)) * 100).toFixed(2)}%${view.tier ? `\n🟢 BANANA ZONE: ${view.label} · ${view.draftsLeftInTier} ${view.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left` : ''}`}</pre>
+✅ HOF - ${((3 / (100 - pos + 1)) * 100).toFixed(2)}% Jackpot - ${((1 / (100 - pos + 1)) * 100).toFixed(2)}%${view.tier ? `\n🍌 BANANA ZONE: ${view.label} · ${view.draftsLeftInTier} ${view.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left` : ''}`}</pre>
           </Frame>
         </Section>
 
