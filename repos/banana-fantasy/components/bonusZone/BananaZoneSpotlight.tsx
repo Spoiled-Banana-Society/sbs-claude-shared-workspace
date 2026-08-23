@@ -77,8 +77,8 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
 
   const bands: Array<{ band: 1 | 2 | 3; deal: string; range: string }> = [
     { band: 1, deal: 'BUY 1 GET 1', range: 'DRAFTS 1–20' },
-    { band: 2, deal: 'BUY 2 GET 1', range: '21–40' },
-    { band: 3, deal: 'BUY 3 GET 1', range: '41–60' },
+    { band: 2, deal: 'BUY 2 GET 1', range: 'DRAFTS 21–40' },
+    { band: 3, deal: 'BUY 3 GET 1', range: 'DRAFTS 41–60' },
   ];
 
   return (
@@ -96,19 +96,13 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
             </h3>
             <div className="mt-1.5 text-[15px] sm:text-[17px] font-black tracking-[5px] text-banana [text-shadow:0_0_16px_rgba(255,207,61,.55)]">BANANA ZONE</div>
           </div>
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-black/25 px-3 py-1.5 text-[10px] font-extrabold tracking-[1.6px] whitespace-nowrap">
-              <i className={`w-[7px] h-[7px] rounded-full ${tier ? 'bg-emerald-300 promo-ping' : 'bg-white/40'}`} />
-              {tier ? `LIVE · DRAFT ${position} OF THE WINDOW` : hasView ? 'ZONE CLOSED' : 'SYNCING…'}
-            </span>
-            <button
-              type="button"
-              onClick={onOpenModal}
-              className="promo-tx text-[10px] font-extrabold tracking-[1px] text-white/70 hover:text-white whitespace-nowrap"
-            >
-              DETAILS ▾
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenModal}
+            className="promo-tx text-[10px] font-extrabold tracking-[1px] text-white/70 hover:text-white whitespace-nowrap"
+          >
+            DETAILS ▾
+          </button>
         </div>
 
         {/* story */}
@@ -124,6 +118,10 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 </div>
                 <div className="mt-1 text-[10px] font-extrabold tracking-[1.6px] text-white/70 uppercase">
                   drafts left at {label}
+                </div>
+                <div className="mt-1 inline-flex items-center gap-1.5 text-[9.5px] font-extrabold tracking-[1.4px] text-white/55 uppercase">
+                  <i className="w-[6px] h-[6px] rounded-full bg-emerald-300 promo-ping" />
+                  Live · window draft {position} of 60
                 </div>
               </>
             ) : (
