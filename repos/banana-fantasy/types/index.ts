@@ -390,7 +390,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana' | 'banana-vault';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'spin-share' | 'founder-draft' | 'first-purchase' | 'pick-chase' | 'banana-draw' | 'eliminator' | 'drop' | 'around-the-banana' | 'banana-vault' | 'bonus-zone';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -494,6 +494,25 @@ export interface Promo {
     };
     /** Jackpot promo: most recent draw (social proof in the modal). */
     latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
+    /** BONUS ZONE: live tier + this user's locks, stamped at read time. */
+    bonusZone?: {
+      tier: 1 | 2 | 3 | null;
+      label: string | null;
+      position: number;
+      draftsLeftInTier: number;
+      draftsLeftInZone: number;
+      tier1Through: number;
+      tier2Through: number;
+      tier3Through: number;
+      /** Eligible unused paid passes / total unused paid passes (null = unknown). */
+      eligiblePasses: number | null;
+      paidPasses: number | null;
+      pending: Array<{ draftId: string; tier: 1 | 2 | 3; label: string; credit: number; eligible: boolean; reason: string }>;
+      /** Sixths of a free draft banked this window (½ = 3, ⅓ = 2; 6 mints). */
+      unitsThisWindow: number;
+      earned: number;
+      history: Array<{ draftId: string; label: string; status: string; settledAtIso?: string; unitsAfter?: number }>;
+    };
     /** Banana Draw: live cycle state, stamped at read time. Everything here
      *  resets every 24h EXCEPT `allTime`, which is the permanent ledger. */
     bananaDraw?: {

@@ -253,6 +253,46 @@ export async function GET(req: Request) {
       }
     } catch { /* best-effort */ }
 
+    // 🟢 BONUS ZONE (Richard 2026-08-22) — replaces Jackpot Hit. Ships dark:
+    // the card is stripped unless the zone switch is ON (admins see it dark
+    // for preview); while ON the jackpot card is stripped instead. Live tier +
+    // this user's locks/earned/half are stamped for the card, modal and
+    // entry modal. Best-effort — promos always return.
+    try {
+      const { readBonusZoneConfig, getBonusZoneWalletStatus } = await import('@/lib/bonusZone');
+      const { isWalletAdmin } = await import('@/lib/adminAllowlist');
+      const cfg = await readBonusZoneConfig();
+      const adminPreview = isWalletAdmin(userId);
+      const bzIdx = promos.findIndex((p) => p.type === 'bonus-zone');
+      if (cfg.enabled || adminPreview) {
+        if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
+          const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
+          promos[bzIdx].modalContent.bonusZone = {
+            tier: st.view.tier,
+            label: st.view.label,
+            position: st.view.position,
+            draftsLeftInTier: st.view.draftsLeftInTier,
+            draftsLeftInZone: st.view.draftsLeftInZone,
+            tier1Through: st.view.tier1Through,
+            tier2Through: st.view.tier2Through,
+            tier3Through: st.view.tier3Through,
+            eligiblePasses: st.passes?.eligibleCount ?? null,
+            paidPasses: st.passes?.paidTotal ?? null,
+            pending: st.pending.map((e) => ({ draftId: e.draftId, tier: e.tier, label: e.label, credit: e.credit, eligible: e.eligible, reason: e.reason })),
+            unitsThisWindow: st.unitsThisWindow,
+            earned: st.earned,
+            history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, unitsAfter: h.unitsAfter })),
+          };
+        }
+        if (cfg.enabled) {
+          const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
+          if (jpIdx !== -1) promos.splice(jpIdx, 1);
+        }
+      } else if (bzIdx !== -1) {
+        promos.splice(bzIdx, 1);
+      }
+    } catch { /* live stamp is decoration */ }
+
     return json(promos, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

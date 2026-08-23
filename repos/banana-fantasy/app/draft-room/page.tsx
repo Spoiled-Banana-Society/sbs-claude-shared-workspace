@@ -1,6 +1,7 @@
 "use client"
 
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { BonusLeaveWarning } from '@/components/bonusZone/BonusZoneUI';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
@@ -3106,6 +3107,7 @@ function DraftRoomContent() {
             <p className="text-white/60 mb-6">
               Are you sure you want to leave <span className="text-white font-medium">{contestName}</span>? Your draft pass will be returned.
             </p>
+            <BonusLeaveWarning lock={draftId ? draftStore.getDraft(draftId)?.bonusZone : null} />
             <div className="flex gap-3">
               <button
                 onClick={() => setShowLeaveConfirm(false)}

@@ -18,6 +18,8 @@ import { API_CONFIG } from '@/lib/api/config';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { BananaDrawReveal } from '@/components/promos/BananaDrawReveal';
 import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
+import { BonusZoneModalContent } from '@/components/bonusZone/BonusZoneUI';
+import { promoRules } from '@/lib/promoTheme';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -1687,8 +1689,15 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  // BONUS ZONE: live tier ladder + this user's locks/earned + the rules.
+  const renderBonusZoneContent = () => (
+    <BonusZoneModalContent data={promo.modalContent?.bonusZone} rules={promoRules(promo)} />
+  );
+
   const renderPromoContent = () => {
     switch (promo.type) {
+      case 'bonus-zone':
+        return renderBonusZoneContent();
       case 'daily-drafts':
         return renderDailyDraftsContent();
       case 'pick-10':

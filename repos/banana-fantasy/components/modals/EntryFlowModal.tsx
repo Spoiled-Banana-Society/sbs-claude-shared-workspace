@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNextLobbyFill } from '@/hooks/useNextLobbyFill';
 import { LobbyFillBar } from '@/components/drafting/LobbyFillBar';
 import { getActivePrivateLeague, type ActivePrivateLeague } from '@/lib/privateLeagueSession';
+import { BonusZoneEntryLine, BonusZoneConfirmLine, type BonusZoneStatusLike } from '@/components/bonusZone/BonusZoneUI';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -85,6 +86,22 @@ export function EntryFlowModal({
   // Only polls while the speed step is actually on screen — the pass-type step
   // has nothing lane-specific to show, since paid and free share lobbies.
   const nextLobby = useNextLobbyFill(isOpen && step === 'speed' && !privateMode);
+
+  // BANANA ZONE (ships dark): one status read per open — what this seat earns
+  // right now + whether the wallet's paid passes qualify. Deps are stable
+  // scalars only (Rule #0: never a Privy callback in a fetching effect).
+  const [bonusZone, setBonusZone] = useState<BonusZoneStatusLike | null>(null);
+  const walletForZone = user?.walletAddress ?? null;
+  useEffect(() => {
+    if (!isOpen) { setBonusZone(null); return; }
+    let cancelled = false;
+    const q = walletForZone ? `?wallet=${encodeURIComponent(walletForZone)}&passes=1` : '';
+    fetch(`/api/bonus-zone/status${q}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => { if (!cancelled && body) setBonusZone(body as BonusZoneStatusLike); })
+      .catch(() => { /* decoration */ });
+    return () => { cancelled = true; };
+  }, [isOpen, walletForZone]);
 
   const hasPaid = paidPasses > 0;
   const hasFree = freePasses > 0;
@@ -260,6 +277,8 @@ export function EntryFlowModal({
                     {buyingSeat && fpOfferLine && (
                       <p className="text-banana/70 text-xs mt-0.5">{fpOfferLine}</p>
                     )}
+                    {/* BANANA ZONE: what this seat earns right now (ships dark). */}
+                    <BonusZoneEntryLine status={bonusZone} buyingSeat={buyingSeat} firstPurchaseApplies={!!fpOfferLine} />
                   </div>
                   <p className={`text-3xl font-bold ${hasPaid || buyingSeat ? 'text-banana' : 'text-white/40'}`}>
                     {buyingSeat ? `$${ENTRY_PRICE_USD}` : paidPasses}
@@ -345,6 +364,7 @@ export function EntryFlowModal({
                   Using <span className="text-banana font-semibold">{selectedPassType === 'paid' ? 'Paid Draft Pass' : 'Free Draft Pass'}</span>
                 </p>
               )}
+              {selectedPassType !== 'free' && !(payingWithBalance && fpOfferLine) && <BonusZoneConfirmLine status={bonusZone} />}
             </div>
 
             <div className="space-y-4">

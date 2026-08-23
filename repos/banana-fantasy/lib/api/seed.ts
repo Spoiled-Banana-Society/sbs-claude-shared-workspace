@@ -712,6 +712,36 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    // 🟢 BANANA ZONE (Richard 2026-08-22) — replaces Jackpot Hit below. Ships
+    // dark: /api/promos strips it unless system_config/bonusZone.enabled (or
+    // the viewer is an admin). Copy rule: no dashes in posted copy.
+    id: 'bonus-zone',
+    type: 'bonus-zone',
+    title: 'Banana Zone → FREE SPINS',
+    description: 'Jackpot just hit? Early in every Jackpot window, every paid draft you enter earns Free Spins.',
+    ctaText: 'Draft now',
+    ctaLink: '/draft',
+    backgroundColor: '#2a2a35',
+    progressCurrent: 0,
+    progressMax: 1,
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'Banana Zone → FREE SPINS',
+      explanation:
+        '• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first 60 drafts of every window.\n'
+        + '• Drafts 1 to 20: Buy 1 Get 1 Spin. Every paid draft you enter earns a Free Spin when it fills.\n'
+        + '• Drafts 21 to 40: Buy 2 Get 1 Spin. Every paid draft earns half a Free Spin.\n'
+        + '• Drafts 41 to 60: Buy 3 Get 1 Spin. Every paid draft earns a third of a Free Spin.\n'
+        + '• Halves and thirds add up inside the same window. The moment they make a whole spin, you get it. Leftovers are lost when the Jackpot hits.\n'
+        + '• Draft 61 and up: no bonus. The Jackpot odds sell themselves from here.\n'
+        + '• Your tier is set by the position the draft FILLS at, not where you enter. Enter at draft 18 and fill at 22 and it pays Buy 2 Get 1 Spin. Leave the lobby and nothing pays.\n'
+        + '• Paid passes only. Free passes never earn spins. Passes bought with the First Purchase promo do not count.\n'
+        + '• Fast and slow drafts both count. Wheel drafts and private leagues do not.\n'
+        + '• Spins land on this card the moment the draft fills. Tap Claim and spin the Banana Wheel. No limit.',
+    },
+  },
+  {
     id: '4',
     type: 'jackpot',
     title: 'Jackpot Hit → FREE SPIN',

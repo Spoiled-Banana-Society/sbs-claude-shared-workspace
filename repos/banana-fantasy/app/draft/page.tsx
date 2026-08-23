@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { BonusLeaveWarning } from '@/components/bonusZone/BonusZoneUI';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
@@ -453,6 +454,7 @@ export default function DraftingPage() {
             <p className="text-white/60 mb-6">
               Are you sure you want to leave <span className="text-white font-medium">{exitingDraft.contestName}</span>? Your draft pass will be returned.
             </p>
+            <BonusLeaveWarning lock={exitingDraft.bonusZone} />
             <div className="flex gap-3">
               <button
                 onClick={() => setExitingDraft(null)}

@@ -36,6 +36,18 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   const { windowStart } = replayJpLane(jpIds.map(Number), rollingStart, filled);
   const position = filled - windowStart + 1;
 
+  // BANANA ZONE replaces the Jackpot Hit spin promo (Richard 2026-08-22): while
+  // the zone is ON this loop announces the zone's tiers instead of spin bands,
+  // and drains any free-draft grants that failed at fill. Same once-per-window-
+  // per-tier markers, same reveal gate.
+  const { isBonusZoneEnabled } = await import('@/lib/bonusZone');
+  if (await isBonusZoneEnabled()) return runBonusZoneBells(db, { filled, rollingStart, windowStart, position });
+
+  // Zone OFF ≠ spin promo back ON. The 10/5-spin Jackpot Hit bells are retired
+  // for good (Boris 2026-08-22) — flipping the zone flag must produce silence,
+  // never resurrect the old broadcast.
+  return { ok: true, skip: 'legacy-spin-bells-retired', windowStart, position };
+
   // Which tier is live right now?
   let tier: 10 | 5 | null = null;
   if (position >= 1 && position <= JP_TEN_SPIN_THROUGH) tier = 10;
@@ -98,4 +110,89 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   await markerRef.set({ sentTo: wallets.length }, { merge: true });
   logger.info('jp_window_bells.sent', { windowStart, tier, position, sentTo: wallets.length });
   return { ok: true, sent: tier, windowStart, position, sentTo: wallets.length };
+}
+
+/**
+ * Banana Zone bells (Richard 2026-08-22) — the zone's two announce moments:
+ *   • A Jackpot hits → window resets → "Banana Zone is ON: Buy 1 Get 1 for the
+ *     next N drafts" (tier 1 band of the new window). Waits for the hit's
+ *     jackpot_draws doc so it can never beat the slot-machine reveal.
+ *   • The window reaches tier 2 / tier 3 with no hit → "Buy 2 Get 1 for the
+ *     next N" / "Buy 3 Get 1 for the next N".
+ * Past the zone: silence. Audience = every non-bot account.
+ */
+async function runBonusZoneBells(
+  db: FirebaseFirestore.Firestore,
+  lane: { filled: number; rollingStart: number; windowStart: number; position: number },
+): Promise<Record<string, unknown>> {
+  const { readBonusZoneConfig, bonusZoneTierForPosition, tierInfo, retryFailedBonusZoneGrants } = await import('@/lib/bonusZone');
+  const cfg = await readBonusZoneConfig();
+  // Drain failed grants first — owed passes must never wait on a bell.
+  const retried = await retryFailedBonusZoneGrants().catch(() => 0);
+
+  const { filled, rollingStart, windowStart, position } = lane;
+  // Position of the NEXT draft to fill — that's what the pill advertises.
+  const live = bonusZoneTierForPosition(position + 1, cfg);
+  if (!live) return { ok: true, skip: 'zone-closed', windowStart, position, retried };
+
+  if (live.tier === 1) {
+    if (windowStart <= rollingStart) return { ok: true, skip: 'first-window', windowStart, retried };
+    const revealed = await db.collection('jackpot_draws').where('draftNo', '==', windowStart - 1).limit(1).get();
+    if (revealed.empty) return { ok: true, skip: 'hit-not-revealed', windowStart, retried };
+  }
+
+  const markerRef = db.collection('jp_window_bells').doc(`${windowStart}-bz${live.tier}`);
+  try {
+    await markerRef.create({ windowStart, tier: `bz${live.tier}`, position, filled, atIso: new Date().toISOString() });
+  } catch {
+    return { ok: true, skip: 'already-sent', windowStart, tier: live.tier, retried };
+  }
+
+  const left = live.through - position; // drafts still in this tier, counting the next one
+  if (left <= 0) return { ok: true, skip: 'band-exhausted', windowStart, tier: live.tier, retried };
+
+  const [usersSnap, botsSnap] = await Promise.all([
+    db.collection('v2_users').select().get(),
+    db.collection('botWallets').select().get(),
+  ]);
+  const bots = new Set(botsSnap.docs.map((d) => d.id.toLowerCase()));
+  const wallets = usersSnap.docs
+    .map((d) => d.id.toLowerCase())
+    .filter((w) => /^0x[0-9a-f]{40}$/.test(w) && !bots.has(w));
+
+  const t2 = tierInfo(2, cfg);
+  const t3 = tierInfo(3, cfg);
+  const bell = live.tier === 1
+    ? {
+        title: '🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin',
+        message: `Every paid draft that fills in the next ${left} drafts earns a FREE SPIN. `
+          + (t3.through > t2.through
+            ? `Then Buy 2 Get 1 Spin through draft ${t2.through} and Buy 3 Get 1 Spin through ${t3.through}. Tap for the rules.`
+            : `Then Buy 2 Get 1 Spin through draft ${t2.through}. Tap for the rules.`),
+      }
+    : live.tier === 2
+      ? {
+          title: '🍌 Banana Zone: Buy 2 Get 1 Spin',
+          message: `Every 2 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
+            + (t3.through > t2.through ? `Drops to Buy 3 Get 1 Spin at draft ${t2.through + 1}. ` : `The zone closes at draft ${t2.through} of the window. `)
+            + 'Tap for the rules.',
+        }
+      : {
+          title: '🍌 Banana Zone: Buy 3 Get 1 Spin, last call',
+          message: `Every 3 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
+            + `The zone closes at draft ${t3.through} of the window. Tap for the rules.`,
+        };
+
+  const { createNotificationForWallets } = await import('@/lib/queueNotifications');
+  await createNotificationForWallets(wallets, {
+    type: 'promo',
+    ...bell,
+    link: '/promos?promo=bonus-zone',
+    dedupeKey: `bonus-zone-${live.tier}-${windowStart}`,
+    icon: 'sparkles',
+  });
+
+  await markerRef.set({ sentTo: wallets.length }, { merge: true });
+  logger.info('bonus_zone_bells.sent', { windowStart, tier: live.tier, position, sentTo: wallets.length });
+  return { ok: true, sent: `bz${live.tier}`, windowStart, position, sentTo: wallets.length, retried };
 }

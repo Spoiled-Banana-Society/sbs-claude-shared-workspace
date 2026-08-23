@@ -344,6 +344,23 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
+  // BANANA ZONE line (ships dark — empty while the switch is off). Rides under
+  // the odds on FILLING lobbies only: the zone is about the NEXT draft to fill,
+  // so the just-filled ping never carries it. Reveal-gated off the same
+  // tracker view as the header pill, so it can't move before the slot lands.
+  let bonusZoneLine = '';
+  try {
+    const { readBonusZoneConfig, laneViewFromTracker, bonusZoneViewForLane } = await import('@/lib/bonusZone');
+    const bzCfg = await readBonusZoneConfig();
+    if (bzCfg.enabled) {
+      const lane = laneViewFromTracker(trackerData as Parameters<typeof laneViewFromTracker>[0]);
+      if (lane.rolling) {
+        const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
+        if (v.tier) bonusZoneLine = `🍌 BANANA ZONE: ${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
+      }
+    }
+  } catch { /* decoration */ }
+
   // (The old slot-keyed 🍌 ladder that used to stand in when the odds line
   // was absent is GONE — by slot ~179 it had grown into a 40-banana wall
   // (2026-07-18). Its only job was keeping end-of-batch texts unique for X,
@@ -531,7 +548,8 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // No odds line (all batch specials hit) → just the name; the repeat-🍌
     // ledger below keeps end-of-batch texts unique for X, which is what the
     // old 40-banana slot ladder used to do.
-    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
+    const zoneTail = !isFilled && bonusZoneLine ? `\n${bonusZoneLine}` : '';
+    const base = draftOddsLine ? `${namePart}\n\n${draftOddsLine}${zoneTail}` : `${namePart}${zoneTail ? `\n${zoneTail}` : ''}`;
 
     let displayName = base;
     // The activity snapshot is appended to the SERVED text but never to `base`,

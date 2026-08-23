@@ -272,6 +272,18 @@ export function PromoSwatch({
       else inner = <Big n="1:100" label="JACKPOT ODDS" size={size} />;
       break;
     }
+    case 'bonus-zone': {
+      const bz = mc.bonusZone;
+      if (!bz) { inner = <Big n="1+1" label="FREE SPINS" size={size} />; break; }
+      inner = bz.tier === 1
+        ? <Big n="1+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+        : bz.tier === 2
+          ? <Big n="2+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+          : bz.tier === 3
+            ? <Big n="3+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
+            : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
+      break;
+    }
     case 'first-purchase':
       inner = <Big n="3" label="SPINS PER PASS" size={size} />;
       break;
@@ -386,6 +398,15 @@ export function PromoLive({
       if (cyc.reward >= 10) return <Stat v={<span style={{ color: accent }}>10-spin window</span>} l={`${cyc.tenLeft} ${cyc.tenLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       if (cyc.reward >= 5) return <Stat v={<span style={{ color: accent }}>5-spin window</span>} l={`${cyc.fiveLeft} ${cyc.fiveLeft === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
       return <Stat v="Windows closed" l="RESETS ONCE JP HITS" />;
+    }
+    case 'bonus-zone': {
+      const bz = mc.bonusZone;
+      if (!bz) return <Stat v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
+      const pend = bz.pending.filter((e) => e.eligible).length;
+      if (bz.tier === 1) return <Stat v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 2) return <Stat v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      if (bz.tier === 3) return <Stat v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
+      return <Stat v="Zone closed" l="OPENS WHEN JP HITS" />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;

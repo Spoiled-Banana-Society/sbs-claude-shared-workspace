@@ -35,6 +35,11 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'first-purchase', // biggest conversion lever: free user → paying user
   'buy-bonus',      // 🏈 Kickoff Weekend "Buy 2 → FREE SPIN" — time-gated
                     // below; auto-hides after endsAtMs (unclaimed spins keep it)
+  // 🟢 BONUS ZONE (Richard 2026-08-22) — the cold-zone free-draft ladder that
+  // REPLACES Jackpot Hit. Sits on TOP of the page for everyone who isn't
+  // looking at a conversion card (no-stack rule below); the server only ships
+  // it while system_config/bonusZone.enabled (admins see it dark for preview).
+  'bonus-zone',
   // 🍌 Around The Banana — LAUNCHED 2026-08-11, RETIRED 2026-08-15 at 20/20 seats,
   // RELAUNCHED 2026-08-17 (Boris) for round three: seats 21-30, a fresh 0/10 lap for
   // everyone, one more ATB-only Jackpot lobby. Loops every 10 seats.
@@ -307,7 +312,24 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // render. Survives if owed (claimable spins are always reachable); admin
   // preview exempt so we can inspect the card regardless.
   const conversionCardShowing = filtered.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
+  // BONUS ZONE replaces Jackpot Hit: never show both (the server already drops
+  // the jackpot card while the zone is on; this is the belt to that brace).
+  const bonusZoneShowing = filtered.some((p) => p.type === 'bonus-zone');
   const gated = filtered.filter((p) => {
+    if (p.type === 'jackpot' && bonusZoneShowing) return false;
+    // Bonus Zone no-stack (Richard 2026-08-22): "on top of promos, but only if
+    // you don't have new user / first purchase" — while either conversion
+    // card is showing, the zone card hides (those purchases aren't eligible
+    // anyway). Survives if the user already has a lock or an earned pass, so
+    // nothing pending is ever hidden.
+    if (p.type === 'bonus-zone') {
+      const bz = p.modalContent?.bonusZone;
+      const owed = (bz?.pending?.length ?? 0) > 0 || (bz?.earned ?? 0) > 0 || (bz?.unitsThisWindow ?? 0) > 0;
+      if (owed) return true;
+      if (conversionCardShowing) return false;
+      if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
+      return true;
+    }
     if (p.type !== 'buy-bonus') return true;
     const owed = (p.claimCount || 0) > 0 || p.claimable === true;
     if (owed) return true;
@@ -327,6 +349,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     const aConv = convRank(a);
     const bConv = convRank(b);
     if (aConv !== bConv) return bConv - aConv;
+    // -0.5. BONUS ZONE pins above the featured card (Richard 2026-08-22: "on
+    //       top of promos") — behind only the conversion pair.
+    const aBz = a.type === 'bonus-zone' ? 1 : 0;
+    const bBz = b.type === 'bonus-zone' ? 1 : 0;
+    if (aBz !== bBz) return bBz - aBz;
     // 0. Featured promo is pinned next, above everything else —
     //    it's the limited-time card we're actively pushing.
     const featuredType = activeFeaturedType();
@@ -361,6 +388,9 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // carousel, drafting sidebar, /promos) stays in sync.
   return sorted.map((p) => {
     if (p.type === 'first-purchase') return { ...p, isNew: true };
+    // BONUS ZONE is a launch — NEW ribbon forced on every surface until the
+    // novelty fades (drop this line then).
+    if (p.type === 'bonus-zone') return { ...p, isNew: true, featured: true };
     // New-user welcome card carries the NEW ribbon too (Boris 2026-07-12) —
     // forced here so already-seeded accounts match fresh seeds.
     if (p.type === 'new-user') return { ...p, isNew: true };

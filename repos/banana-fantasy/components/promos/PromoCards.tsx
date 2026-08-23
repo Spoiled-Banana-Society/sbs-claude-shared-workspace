@@ -7,6 +7,7 @@
 // highlight; mobile stacks to one column and keeps the same block-left shape.
 
 import React, { useEffect, useRef, useState } from 'react';
+import { BonusZoneLadder } from '@/components/bonusZone/BonusZoneUI';
 import type { Promo } from '@/types';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { promoAccent, promoHueStyle, promoKicker, promoName, promoRules } from '@/lib/promoTheme';
@@ -118,6 +119,11 @@ function Extra({ promo, fpVariant }: { promo: Promo; fpVariant: 'new' | 'returni
     case 'pick-chase': return <ChaseLadder promo={promo} />;
     case 'referral': return <ReferralMilestones promo={promo} />;
     case 'jackpot': return <JackpotCycle promo={promo} />;
+    case 'bonus-zone': {
+      const bz = promo.modalContent?.bonusZone;
+      if (!bz) return null;
+      return <BonusZoneLadder view={{ enabled: true, ...bz }} pending={bz.pending.filter((e) => e.eligible).length} units={bz.unitsThisWindow} />;
+    }
     case 'first-purchase': return <FirstBuyLadder variant={fpVariant} />;
     default: return null;
   }

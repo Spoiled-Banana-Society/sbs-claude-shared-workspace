@@ -136,6 +136,11 @@ export async function GET(req: Request) {
   if (!authed(req)) return jsonError('Unauthorized', 401);
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
 
+  // RETIRED (Boris 2026-08-22): the Jackpot Hit 10/5-spin promo is replaced by
+  // Banana Zone (lib/bonusZone.ts). This route is off every schedule; the guard
+  // stays so a stray manual call can never broadcast the dead promo again.
+  return json({ ok: true, retired: 'jackpot-hit-spin-bells — replaced by Banana Zone' });
+
   const db = getAdminFirestore();
   const summary: Record<string, unknown> = {};
 

@@ -22,7 +22,7 @@ export const PROMO_HUES: Record<PromoType, PromoHue> = {
   'drop':              { a: '#e5731f', b: '#4d1c06' },
   'daily-drafts':      { a: '#c98f00', b: '#4a3300' },
   'pick-chase':        { a: '#0aa3c7', b: '#04304d' },
-  'referral':          { a: '#1f9d55', b: '#08361d' },
+  'referral':          { a: '#d63fb0', b: '#460b36' }, // took Jackpot Hit's magenta when Banana Zone replaced it (Richard 8/22) — green is the zone's now
   'pick-10':           { a: '#8b63e6', b: '#28104f' },
   'jackpot':           { a: '#d63fb0', b: '#460b36' },
   'first-purchase':    { a: '#3ddc84', b: '#0b3f24' }, // mint — Boris 2026-08-19 redesign
@@ -36,6 +36,7 @@ export const PROMO_HUES: Record<PromoType, PromoHue> = {
   'banana-draw':       { a: '#ef6c37', b: '#4a1a06' },
   'eliminator':        { a: '#ef6c37', b: '#4a1a06' },
   'banana-vault':      { a: '#fbbf24', b: '#4a3300' },
+  'bonus-zone':        { a: '#34d399', b: '#063d2b' }, // zone green — the cold-zone free-draft ladder
 };
 
 /** Inline style carrying the hue pair for `.promo-grad` (+ optional sweep delay). */
@@ -72,6 +73,7 @@ export function promoKicker(promo: Promo): string {
     case 'banana-draw': return 'JACKHOF SEAT';
     case 'eliminator': return 'JACKHOF SEAT';
     case 'banana-vault': return 'JACKPOT SEAT';
+    case 'bonus-zone': return 'FREE SPINS · AFTER EVERY JACKPOT';
     default: return 'PROMO';
   }
 }
@@ -94,6 +96,7 @@ export function promoKickerLines(promo: Promo): { top: string; big: string } {
     case 'jackpot': return { top: 'WHEN JP HITS', big: 'FREE SPINS' };
     case 'new-user': return { top: 'NEW USER', big: 'FREE DRAFT' };
     case 'first-purchase': return { top: 'EVERY PASS', big: 'FREE DRAFTS' };
+    case 'bonus-zone': return { top: 'BANANA ZONE', big: 'FREE SPINS' };
     default: {
       const [a, b] = promoKicker(promo).split(' · ');
       return b ? { top: b, big: a } : { top: '', big: a };
@@ -135,6 +138,7 @@ export function promoCta(promo: Promo, opts: { canOpenPacks?: boolean } = {}): {
     case 'founder-draft': return { label: 'View drafts', href: '/draft' };
     case 'eliminator': return { label: 'Draft', href: '/draft' };
     case 'banana-draw': return { label: 'Draft', href: '/draft' };
+    case 'bonus-zone': return { label: 'Draft now', href: '/draft' };
     default: return null;
   }
 }

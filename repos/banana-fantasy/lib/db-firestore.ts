@@ -3867,7 +3867,11 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
   // window position is how BBB #349 over-paid. The skipped draw doc keeps the
   // `positionUnresolved` flag so it can be found and hand-run if it was real.
   const { position, draftNo } = await getJackpotDraftPosition(draftId, displayName);
-  const reward = position === null ? 0 : jackpotSpinReward(position);
+  // BONUS ZONE replaces the Jackpot Hit spin promo (Richard 2026-08-22): while
+  // the zone is ON the early-hit spin draw pays nothing — the draw doc is still
+  // written (noSpinDraw) so every consumer keeps skipping it cleanly.
+  const bonusZoneOn = await import('@/lib/bonusZone').then((m) => m.isBonusZoneEnabled()).catch(() => false);
+  const reward = position === null || bonusZoneOn ? 0 : jackpotSpinReward(position);
 
   // Slots 51–100 of the batch award NO bonus spins (Boris 2026-06-30). Skip the
   // spin draw entirely: no winner pick, no spin credit, NO bells, no on-chain

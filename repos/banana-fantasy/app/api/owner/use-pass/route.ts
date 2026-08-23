@@ -87,6 +87,24 @@ export async function POST(req: Request) {
       // token) + the draft_entered feed row. Self-correcting by construction.
       const counts = await recountFromInventory(userId, activityDoc);
       runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
+      // BONUS ZONE (ships dark): LOCK the live tier onto this seat — nothing is
+      // credited here (see the warning above: entry-crediting is farmable).
+      // The lock only records what the pill showed when the seat was taken;
+      // the free draft pays from the draft-filled webhook, and leaving voids
+      // it. Awaited so the client can show "Locked: Buy 1 Get 1" instantly;
+      // a failure never affects the join.
+      let bonusZone: unknown = null;
+      if (leagueId) {
+        try {
+          const { lockBonusZoneEntry } = await import('@/lib/bonusZone');
+          const lock = await lockBonusZoneEntry({ wallet: userId, draftId: leagueId, passTypeHint: passType });
+          bonusZone = lock.locked && lock.entry
+            ? { locked: true, tier: lock.entry.tier, label: lock.entry.label, credit: lock.entry.credit, position: lock.entry.position, eligible: lock.entry.eligible, reason: lock.entry.reason, tokenId: lock.entry.tokenId }
+            : { locked: false, skipped: lock.skipped ?? null };
+        } catch (err) {
+          logger.warn('use-pass.bonus_zone_lock_failed', { userId, leagueId, err: (err as Error).message });
+        }
+      }
       return json({
         success: true,
         joined: true,
@@ -94,6 +112,7 @@ export async function POST(req: Request) {
         decremented: true,
         draftPasses: counts.draftPasses,
         freeDrafts: counts.freeDrafts,
+        bonusZone,
       });
     }
 

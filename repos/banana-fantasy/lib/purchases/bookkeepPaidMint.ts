@@ -260,6 +260,23 @@ export async function bookkeepPaidMint(ctx: PaidMintContext): Promise<PaidMintBo
     // 6b. One free bonus spin per paid pass. Dark unless SPIN_ON_PURCHASE=1.
     //     Never granted for the reward draft — bonus spins ride paid seats only.
     await grantPurchaseSpins(userId, quantity);
+    // 6c. BONUS ZONE pass-level stamp (see card-mint — KEEP IN SYNC): a
+    //     purchase that used the First Purchase promo is excluded from the zone.
+    try {
+      const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+      await stampPurchasedTokens({
+        tokenIds: mintResult.tokenIds.map(String),
+        wallet: userId,
+        excluded: promoAwards.firstPurchaseSpinsEarned > 0,
+        reason: promoAwards.firstPurchaseSpinsEarned > 0 ? 'first_purchase' : 'purchase',
+      });
+      // Card fee reward passes count too (Richard 8/22).
+      if (rewardTokenIds.length > 0) {
+        await stampPurchasedTokens({ tokenIds: rewardTokenIds.map(String), wallet: userId, excluded: false, reason: 'card_fee_reward' });
+      }
+    } catch (stampErr) {
+      logger.warn('paidMint.bonus_zone_stamp_failed', { userId, err: (stampErr as Error).message });
+    }
   }
 
   // Onramp audit: log a tx_completed entry so admin dashboard shows successful

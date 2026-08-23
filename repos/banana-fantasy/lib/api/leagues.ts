@@ -323,6 +323,9 @@ export interface BatchProgress {
   // carries RollingStartDraft and that draft has been reached — its presence
   // is what flips the header to the dual-counter UI. Absent → legacy batches.
   lanes?: import('@/lib/rollingLanes').RollingLanes;
+  // BONUS ZONE live tier for the NEXT draft (ships dark; absent while the
+  // zone switch is off). Drives the green header pill + entry modal line.
+  bonusZone?: import('@/lib/bonusZone').BonusZoneView;
 }
 
 /**

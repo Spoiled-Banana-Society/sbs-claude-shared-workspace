@@ -572,6 +572,25 @@ export async function POST(req: Request) {
       // ⚠️ This route duplicates bookkeepPaidMint's bookkeeping rather than
       // calling it — the same grant lives there. KEEP IN SYNC.
       await grantPurchaseSpins(userId, quantity);
+      // BONUS ZONE pass-level stamp: a purchase that used the First Purchase
+      // promo is excluded from the zone (Richard 2026-08-22); everything else
+      // bought after launch is eligible. Stamped at checkout so eligibility is
+      // a fact, never a heuristic. KEEP IN SYNC with bookkeepPaidMint.
+      try {
+        const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+        await stampPurchasedTokens({
+          tokenIds: mintResult.tokenIds.map(String),
+          wallet: userId,
+          excluded: promoAwards.firstPurchaseSpinsEarned > 0,
+          reason: promoAwards.firstPurchaseSpinsEarned > 0 ? 'first_purchase' : 'purchase',
+        });
+        // Card fee reward passes count too (Richard 8/22).
+        if (rewardTokenIds.length > 0) {
+          await stampPurchasedTokens({ tokenIds: rewardTokenIds.map(String), wallet: userId, excluded: false, reason: 'card_fee_reward' });
+        }
+      } catch (stampErr) {
+        logger.warn('card-mint.bonus_zone_stamp_failed', { userId, err: (stampErr as Error).message });
+      }
     }
 
     // Onramp audit: log a tx_completed entry so admin dashboard
