@@ -27,18 +27,18 @@ import { promoHueStyle } from '@/lib/promoTheme';
 
 const STORY = (
   <>
-    <p className="text-[15px] leading-[1.55] text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,.35)]">
-      Jackpot just hit? Enter the Banana Zone — every paid draft you enter earns Free Spins.
+    <p className="text-[15.5px] leading-[1.5] text-white font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+      Jackpot just hit? Enter the Banana Zone — every paid draft earns Free Spins.
     </p>
-    <div className="mt-2.5 max-w-[340px] divide-y divide-white/15">
+    <div className="mt-2.5 max-w-[340px] divide-y divide-white/20">
       {[
         ['Buy 1 Get 1 Spin', 'Drafts 1–20'],
         ['Buy 2 Get 1 Spin', 'Drafts 21–40'],
         ['Buy 3 Get 1 Spin', 'Drafts 41–60'],
       ].map(([deal, range]) => (
-        <div key={deal} className="flex items-baseline justify-between gap-4 py-[6px] text-[14.5px] leading-[1.35] [text-shadow:0_1px_2px_rgba(0,0,0,.35)]">
-          <b className="text-white font-bold">{deal}</b>
-          <span className="text-white/90 text-[13.5px] font-bold tracking-[.4px] whitespace-nowrap">{range}</span>
+        <div key={deal} className="flex items-baseline justify-between gap-4 py-[7px] text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+          <b className="text-white font-extrabold">{deal}</b>
+          <span className="text-white text-[14px] font-bold tracking-[.4px] whitespace-nowrap">{range}</span>
         </div>
       ))}
     </div>
@@ -102,8 +102,8 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
         {/* header row */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="promo-tx min-w-0">
-            <h3 className="text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px]">
-              Free <span className="text-banana">Spins</span>
+            <h3 className="text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px] text-banana [text-shadow:0_0_24px_rgba(255,207,61,.35)]">
+              Free Spins
             </h3>
             <div className="mt-1.5 text-[15px] sm:text-[16px] font-extrabold tracking-[5px] text-white">BANANA ZONE</div>
           </div>
@@ -127,7 +127,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 <div className="text-[44px] sm:text-[52px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_22px_rgba(255,207,61,.5)]">
                   {draftsLeftInTier}
                 </div>
-                <div className="mt-1 text-[10px] font-extrabold tracking-[1.6px] text-white/70 uppercase">
+                <div className="mt-1 text-[10.5px] font-extrabold tracking-[1.6px] text-white/85 uppercase">
                   drafts left at {label}
                 </div>
 
@@ -143,7 +143,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
           </div>
           <div className="hidden min-[480px]:block w-px h-[74px] bg-banana/30" />
           <div className="text-center flex flex-col items-center gap-2">
-            <div className="text-[10.5px] font-extrabold tracking-[2.6px] text-white/75 uppercase">Your Filled Drafts</div>
+            <div className="text-[11px] font-extrabold tracking-[2.6px] text-white/90 uppercase">Your Filled Drafts</div>
             <div className="inline-flex gap-3">
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
