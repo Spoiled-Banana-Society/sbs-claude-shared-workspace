@@ -52,8 +52,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   // the live header lets the lg: breakpoints decide, same as the lane pills.
   if (compact) {
     return (
-      <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-1.5 py-[5px] w-[108px] border-emerald-400/45 bg-emerald-400/[0.07]" data-testid="bonus-zone-pill">
-        <span className="text-[8px] font-extrabold tracking-[0.06em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
+      <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-2.5 py-[5px] border-emerald-400/40 bg-emerald-400/[0.06]" data-testid="bonus-zone-pill">
+        <span className="text-[7.5px] font-extrabold tracking-[0.04em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
         <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
       </div>
     );
@@ -63,11 +63,11 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
   // as a slim strip under the header (BonusZoneMobileBar).
   return (
     <div
-      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-2 py-[6px] border-emerald-400/45 bg-emerald-400/[0.07] w-[168px]"
+      className="hidden lg:flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[10px] border px-3.5 py-[6px] border-emerald-400/40 bg-emerald-400/[0.06]"
       data-testid="bonus-zone-pill"
     >
-      <span className="text-[9px] font-extrabold tracking-[0.06em] leading-none text-emerald-300 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
-      <span className="mt-[3px] text-[12.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      <span className="text-[8.5px] font-extrabold tracking-[0.05em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
+      <span className="mt-[3px] text-[12px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
     </div>
   );
 }

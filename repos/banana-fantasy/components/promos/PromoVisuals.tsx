@@ -274,14 +274,13 @@ export function PromoSwatch({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) { inner = <Big n="1+1" label="FREE SPINS" size={size} />; break; }
-      inner = bz.tier === 1
-        ? <Big n="1+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
-        : bz.tier === 2
-          ? <Big n="2+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
-          : bz.tier === 3
-            ? <Big n="3+1" label={`${bz.draftsLeftInTier} DRAFTS LEFT`} size={size} />
-            : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
+      // Mirrors the SPOTLIGHT hierarchy (Boris 2026-08-23): the corner is the
+      // drafts-left countdown; the deal line lives in the card footer. The old
+      // "3+1" shorthand read as cryptic on its own — retired.
+      if (!bz) { inner = <Big n="🍌" label="FREE SPINS" size={size} />; break; }
+      inner = bz.tier
+        ? <Big n={bz.draftsLeftInTier} label={size === 'lg' ? `DRAFTS LEFT AT BUY ${bz.tier} GET 1` : 'DRAFTS LEFT'} size={size} />
+        : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
       break;
     }
     case 'first-purchase':

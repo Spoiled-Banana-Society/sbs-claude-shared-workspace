@@ -64,10 +64,10 @@ export function PromoMiniCard({
           {/* Two deliberate lines, capped to the swatch's reserved left
               column: quiet qualifier on top, the PRIZE bigger underneath —
               no mid-phrase wraps (Boris 2026-08-19). */}
-          {(() => { const k = promoKickerLines(promo); return (
-            <span className="promo-tx block max-w-[92px]">
+          {(() => { const k = promoKickerLines(promo); const bzOneLine = promo.type === 'bonus-zone'; return (
+            <span className={`promo-tx block ${bzOneLine ? 'max-w-[118px]' : 'max-w-[92px]'}`}>
               {k.top && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
-              <span className="block text-[14px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px]">{k.big}</span>
+              <span className={`block text-[14px] font-extrabold tracking-[1px] text-white leading-[1.15] mt-[2px] ${bzOneLine ? 'whitespace-nowrap' : ''}`}>{k.big}</span>
             </span>
           ); })()}
         </div>
@@ -90,6 +90,42 @@ export function PromoMiniCard({
               <span key={line} className="block">{line}</span>
             ))}
           </div>
+        ) : promo.type === 'bonus-zone' && promo.modalContent?.bonusZone ? (
+          /* Compact SPOTLIGHT mirror (Boris 2026-08-23): as much of the big
+             card as fits — description, then your fill sockets + the target. */
+          (() => {
+            const bz = promo.modalContent.bonusZone;
+            const credit = bz.tier === 1 ? 6 : bz.tier === 2 ? 3 : 2;
+            const slots = bz.tier ? Math.ceil(6 / credit) : 3;
+            const units = bz.unitsThisWindow ?? 0;
+            const filled = Math.min(slots, Math.floor(units / credit));
+            const part = units - filled * credit > 0 && filled < slots;
+            const need = Math.max(1, Math.ceil((6 - units) / credit));
+            return (
+              <>
+                <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-3 whitespace-pre-line overflow-hidden">{promo.description}</p>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span className="inline-flex gap-1.5">
+                    {Array.from({ length: slots }, (_, i) => (
+                      <span
+                        key={i}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[13px] ${
+                          i < filled ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.5)]'
+                            : i === filled && part ? 'border-2 border-banana/60 bg-banana/[.08]'
+                              : 'border-2 border-dashed border-white/40 bg-black/20'
+                        }`}
+                      >
+                        <span className={i < filled ? '' : 'opacity-80 grayscale-[.5] brightness-[.8]'}>🍌</span>
+                      </span>
+                    ))}
+                  </span>
+                  <span className="text-[9.5px] font-extrabold tracking-[.6px] uppercase text-banana leading-tight">
+                    {bz.tier ? `${need} more = Free Spin` : 'Back next JP'}
+                  </span>
+                </div>
+              </>
+            );
+          })()
         ) : (
           <>
             <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-4 whitespace-pre-line overflow-hidden">{promo.description}</p>
