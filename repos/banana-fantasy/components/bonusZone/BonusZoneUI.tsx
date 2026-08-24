@@ -68,7 +68,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-2.5 py-[5px] border-emerald-400/40 bg-emerald-400/[0.06]" data-testid="bonus-zone-pill">
         <span className="text-[7.5px] font-extrabold tracking-[0.04em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
         <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[7.5px] tracking-[0.04em]" />}
+        {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[9px] tracking-[0.04em]" />}
       </div>
     );
   }
@@ -84,7 +84,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       <span className="mt-[3px] text-[12px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
       {/* Third line while ZONE PACKS is live: the JackHOF seats hidden in this
           tier's packs (Richard 8/24, option A). Absent = pill stays 2 lines. */}
-      {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[8.5px] tracking-[0.05em]" />}
+      {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[10.5px] tracking-[0.05em]" />}
     </div>
   );
 }
