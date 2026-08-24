@@ -87,11 +87,11 @@ export function HypeCard({ className = '' }: { className?: string }) {
       <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-[9.5px] sm:text-[11.5px] font-extrabold tracking-[1.2px] sm:tracking-[2px] text-[#22d3ee] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">JACKHOF SEAT + MORE<span className="hidden sm:inline"> · WEEKLY</span></span>
-          <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1px] sm:tracking-[1.1px] uppercase text-white/55 whitespace-nowrap shrink-0">Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
+          <span className="text-[9.5px] sm:text-[10.5px] font-extrabold tracking-[1px] sm:tracking-[1.1px] uppercase text-white/80 whitespace-nowrap shrink-0">Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
         </div>
         <h4 className="text-[17px] font-extrabold text-white tracking-[-.2px] leading-tight">Banana Hype</h4>
         <p className="text-[11.5px] leading-[1.45] text-[#d5dbe4]">
-          Post, QRT and reply about SBS on X — the more you engage, the bigger your <b className="text-banana font-extrabold">mindshare</b>, your share of this week&apos;s conversation. Top 25 win prizes in our weekly leaderboard.
+          Post, QRT and reply about SBS on X — the more you engage, the bigger your <b className="text-white font-extrabold">mindshare</b>, your share of this week&apos;s conversation. <b className="text-banana font-extrabold">Top 25 win prizes in our weekly leaderboard.</b>
         </p>
 
         {/* top 6: 1–3 down the left column, 4–6 down the right */}
@@ -109,10 +109,10 @@ export function HypeCard({ className = '' }: { className?: string }) {
 
         {/* the whole ladder — everyone sees what every rank pays */}
         <div className="flex flex-wrap gap-1">
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–10 · HOF SEAT</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">11–25 · 1 FREE SPIN</span>
+          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
+          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
+          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–10 · HOF SEAT</span>
+          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">11–25 · 1 FREE SPIN</span>
         </div>
 
         {/* no X linked → the way in; linked → your live standing */}
@@ -124,20 +124,20 @@ export function HypeCard({ className = '' }: { className?: string }) {
             tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); linkTwitter(); } }}
           >
-            <span className="text-[10.5px] font-extrabold text-[#ffe08a]">Connect your X to start earning mindshare.</span>
-            <span className="text-[10px] font-black tracking-[.5px] text-black bg-banana rounded-full px-2.5 py-1 whitespace-nowrap">CONNECT X</span>
+            <span className="text-[10px] font-extrabold text-[#ffe08a]">Connect your X to start earning mindshare.</span>
+            <span className="text-[9.5px] font-black tracking-[.5px] text-black bg-banana rounded-full px-2.5 py-1 whitespace-nowrap">CONNECT X</span>
           </div>
         ) : null}
 
         <div className="mt-auto flex items-center justify-between gap-2 rounded-xl border border-white/25 bg-white/[.05] px-3 py-2">
-          <span className="min-w-0 text-[10px] font-extrabold tracking-[.5px] uppercase text-white leading-snug">
+          <span className="min-w-0 text-[9.5px] font-extrabold tracking-[.5px] uppercase text-white/90 leading-snug">
             {you?.linked && you.rank
               ? <>You · <b className="text-banana">#{you.rank}</b> · {you.pct}%{yourZone ? <> — <b className="text-banana">{yourZone}</b> zone</> : null}</>
               : you?.linked
                 ? <>You · not on the board yet — post to enter</>
                 : <>Full top 25 + live feed on the board</>}
           </span>
-          <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10.5px] font-extrabold text-black whitespace-nowrap">See the board →</span>
+          <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black whitespace-nowrap">See the board →</span>
         </div>
       </div>
     </div>
