@@ -103,7 +103,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
   return (
     <section
       className="promo-grad promo-sweep promo-rise rounded-[24px] p-6 sm:p-8 text-white"
-      style={promoHueStyle('bonus-zone', 0)}
+      // Deeper green than the shared zone hue (Boris 2026-08-24): every ink on
+      // this card — banana, orange, white, emerald — reads a step crisper.
+      style={{ ...promoHueStyle('bonus-zone', 0), '--pa': '#1e6f47', '--pb': '#062419' } as React.CSSProperties}
       aria-label="Banana Zone — featured promo"
     >
       <div className="relative z-[1]">
@@ -162,7 +164,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               return (
                 <div key={band} className={`text-center rounded-[12px] px-1 pt-2.5 pb-2 uppercase font-extrabold leading-[1.25] ${
                   st === 'live'
-                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] shadow-[0_0_18px_rgba(52,211,153,.4)] bz-fire'
+                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] shadow-[0_0_18px_rgba(52,211,153,.4)] bz-fire'
                     : 'text-[12px] text-white/70 border border-white/[.14] bg-black/25'
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
@@ -362,7 +364,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 key={band}
                 className={`relative overflow-hidden text-center rounded-[14px] px-1.5 pt-3 pb-2.5 uppercase font-extrabold leading-[1.25] transition-all duration-300 ${
                   st === 'live'
-                    ? 'text-[16px] sm:text-[18px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] scale-[1.04] shadow-[0_0_24px_rgba(52,211,153,.45)] bz-fire'
+                    ? 'text-[16px] sm:text-[18px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] scale-[1.04] shadow-[0_0_24px_rgba(52,211,153,.45)] bz-fire'
                     : st === 'dead'
                       ? 'text-[14px] sm:text-[16px] text-white/55 border border-white/10 bg-black/25'
                       : 'text-[14px] sm:text-[16px] text-white border border-white/[.18] bg-black/[.28]'
