@@ -808,8 +808,8 @@ body {
    the next fill socket pulses gold; the CLAIM button pulses. All three stop
    under prefers-reduced-motion via the global override below. */
 @keyframes bz-fire {
-  0%, 100% { box-shadow: 0 0 14px rgba(52, 211, 153, 0.45), 0 0 0 0 rgba(52, 211, 153, 0.35); }
-  50% { box-shadow: 0 0 26px rgba(52, 211, 153, 0.8), 0 0 0 5px rgba(52, 211, 153, 0); }
+  0%, 100% { box-shadow: 0 0 10px rgba(52, 211, 153, 0.18); }
+  50% { box-shadow: 0 0 16px rgba(52, 211, 153, 0.32); }
 }
 @keyframes bz-sheen {
   0% { transform: translateX(-70%); }
@@ -823,13 +823,18 @@ body {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
-.bz-fire { animation: bz-fire 1.8s ease-in-out infinite; }
+.bz-fire { animation: bz-fire 3.6s ease-in-out infinite; }
 /* The chip's own white sheen retired (Boris 2026-08-24) — the card-wide
    promo-sweep is the ONE light pass now, uniform and subtle; the chip keeps
    its glow pulse only. */
 .bz-fire::before { content: none; }
-.bz-nextup { animation: bz-nextup 1.6s ease-in-out infinite; }
-.bz-claimpulse { animation: bz-claimpulse 1.2s ease-in-out infinite; }
+@keyframes bz-breathe {
+  0%, 100% { text-shadow: 0 0 14px rgba(255, 207, 61, 0.35); }
+  50% { text-shadow: 0 0 26px rgba(255, 207, 61, 0.6); }
+}
+.bz-breathe { animation: bz-breathe 4.2s ease-in-out infinite; }
+.bz-nextup { animation: bz-nextup 2.6s ease-in-out infinite; }
+.bz-claimpulse { animation: bz-claimpulse 2s ease-in-out infinite; }
 /* YOUR PACKS pack art: always a little alive — a quiet breath while empty,
    a golden bob + glow pulse once the wallet actually holds packs. */
 @keyframes bz-pack-idle {
@@ -843,5 +848,5 @@ body {
 .bz-pack-idle { animation: bz-pack-idle 4s ease-in-out infinite; }
 .bz-pack-hot { animation: bz-pack-hot 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .bz-fire, .bz-fire::before, .bz-nextup, .bz-claimpulse, .bz-pack-idle, .bz-pack-hot { animation: none; }
+  .bz-fire, .bz-fire::before, .bz-breathe, .bz-nextup, .bz-claimpulse, .bz-pack-idle, .bz-pack-hot { animation: none; }
 }

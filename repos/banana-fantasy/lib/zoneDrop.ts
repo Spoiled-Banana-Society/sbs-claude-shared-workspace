@@ -128,6 +128,13 @@ export function bandSpecs(cfg: BonusZoneConfig): BandSpec[] {
   ]).filter((b) => b.tickets > 0 && b.toPos >= b.fromPos);
 }
 
+/** Seats hidden in the packs of the given zone tier (null = no band / closed).
+ *  Header pill + phone strip print this next to the deal (Richard 8/24). */
+export function packSeatsForTier(tier: 1 | 2 | 3 | null, cfg: BonusZoneConfig): number | null {
+  if (!tier) return null;
+  return bandSpecs(cfg).find((b) => b.band === tier)?.tickets ?? null;
+}
+
 export function bandForPosition(position: number, cfg: BonusZoneConfig): BandSpec | null {
   return bandSpecs(cfg).find((b) => position >= b.fromPos && position <= b.toPos) ?? null;
 }

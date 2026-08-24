@@ -164,7 +164,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               return (
                 <div key={band} className={`text-center rounded-[12px] px-1 pt-2.5 pb-2 uppercase font-extrabold leading-[1.25] ${
                   st === 'live'
-                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] shadow-[0_0_18px_rgba(52,211,153,.4)] bz-fire'
+                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] shadow-[0_0_10px_rgba(52,211,153,.2)] bz-fire'
                     : 'text-[12px] text-white/70 border border-white/[.14] bg-black/25'
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
@@ -185,7 +185,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Draft {segDone} of {segSize}</span>
               )}
             </span>
-            <span className="text-[34px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_18px_rgba(255,207,61,.5)]">
+            <span className="bz-breathe text-[34px] font-extrabold leading-none tabular-nums text-banana">
               {tier ? draftsLeftInTier : hasView ? 0 : '—'}
             </span>
           </div>
@@ -268,7 +268,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               Drafts Left at Buy {tier ?? 1} Get 1 Spin
             </div>
             {tier ? (
-              <div className="text-[44px] sm:text-[48px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_22px_rgba(255,207,61,.5)]">
+              <div className="bz-breathe text-[44px] sm:text-[48px] font-extrabold leading-none tabular-nums text-banana">
                 {draftsLeftInTier}
               </div>
             ) : (
@@ -364,7 +364,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 key={band}
                 className={`relative overflow-hidden text-center rounded-[14px] px-1.5 pt-3 pb-2.5 uppercase font-extrabold leading-[1.25] transition-all duration-300 ${
                   st === 'live'
-                    ? 'text-[16px] sm:text-[18px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] scale-[1.04] shadow-[0_0_24px_rgba(52,211,153,.45)] bz-fire'
+                    ? 'text-[16px] sm:text-[18px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#0d5c40] via-[#084a33] to-[#053524] scale-[1.04] shadow-[0_0_12px_rgba(52,211,153,.22)] bz-fire'
                     : st === 'dead'
                       ? 'text-[14px] sm:text-[16px] text-white/55 border border-white/10 bg-black/25'
                       : 'text-[14px] sm:text-[16px] text-white border border-white/[.18] bg-black/[.28]'

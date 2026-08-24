@@ -46,6 +46,8 @@ function viewFor(position: number): BonusZoneViewLike {
     tier1Through: T1,
     tier2Through: T2,
     tier3Through: T3,
+    // Zone packs live: 6 seats in band 1, 4 in band 2 (lib/zoneDrop TICKETS_BY_BAND).
+    packSeats: tier === 1 ? 6 : tier === 2 ? 4 : null,
   };
 }
 

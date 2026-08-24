@@ -28,6 +28,19 @@ export interface BonusZoneViewLike {
   tier2Through: number;
   /** Dormant third band when equal to tier2Through. */
   tier3Through?: number;
+  /** JackHOF seats in this tier's packs; present only while zone packs are live. */
+  packSeats?: number | null;
+}
+
+/** "6 JACKHOF" in the header's own colors (JACK red, HOF gold), white count. */
+export function JackHofSeats({ n, seats = false, className = '' }: { n: number; seats?: boolean; className?: string }) {
+  return (
+    <span className={`font-extrabold leading-none whitespace-nowrap ${className}`}>
+      <span className="text-white/90 tabular-nums">{n} </span>
+      <span className="text-red-400">JACK</span><span className="text-[#e6c35c]">HOF</span>
+      {seats && <span className="text-white/85">{n === 1 ? ' SEAT' : ' SEATS'}</span>}
+    </span>
+  );
 }
 
 export const tierShort = (tier: BzTier) => (tier === 1 ? 'BUY 1 GET 1 SPIN' : tier === 2 ? 'BUY 2 GET 1 SPIN' : tier === 3 ? 'BUY 3 GET 1 SPIN' : 'CLOSED');
@@ -55,6 +68,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-2.5 py-[5px] border-emerald-400/40 bg-emerald-400/[0.06]" data-testid="bonus-zone-pill">
         <span className="text-[7.5px] font-extrabold tracking-[0.04em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
         <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[7.5px] tracking-[0.04em]" />}
       </div>
     );
   }
@@ -68,6 +82,9 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
     >
       <span className="text-[8.5px] font-extrabold tracking-[0.05em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
       <span className="mt-[3px] text-[12px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+      {/* Third line while ZONE PACKS is live: the JackHOF seats hidden in this
+          tier's packs (Richard 8/24, option A). Absent = pill stays 2 lines. */}
+      {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="mt-[3px] text-[8.5px] tracking-[0.05em]" />}
     </div>
   );
 }
@@ -100,14 +117,20 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
       }
     >
       <div
-        className="flex items-center justify-center gap-2 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-3 py-[5px] text-emerald-300 cursor-default"
+        className="flex items-center justify-center gap-1.5 w-full border-t border-emerald-400/25 bg-emerald-400/[0.09] px-2 py-[5px] text-emerald-300 cursor-default"
         data-testid="bonus-zone-mobile-bar"
-        aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${left} drafts left`}
+        aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${view.packSeats ? `${view.packSeats} JackHOF seats in packs, ` : ''}${left} drafts left`}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-        <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
-        <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        <span className="text-[11px] font-extrabold tracking-[0.08em] leading-none text-emerald-300/90 whitespace-nowrap">{left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT</span>
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+        <span className="text-[9.5px] font-extrabold tracking-[0.05em] leading-none whitespace-nowrap">BANANA ZONE</span>
+        {/* One line on every phone. Order (Richard 8/24): name, drafts left,
+            the deal, then the JackHOF seats. "DRAFTS" always spelled out
+            (Boris 8/24) — the whole strip sized down so it still never wraps. */}
+        <span className="text-[9.5px] font-extrabold tracking-[0.03em] leading-none text-emerald-300/90 whitespace-nowrap">
+          {left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT
+        </span>
+        <span className="text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        {!!view.packSeats && <JackHofSeats n={view.packSeats} className="text-[9.5px] tracking-[0.02em]" />}
       </div>
     </Tooltip>
   );

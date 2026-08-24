@@ -122,6 +122,10 @@ export interface BonusZoneView {
   tier1Through: number;
   tier2Through: number;
   tier3Through: number;
+  /** JackHOF seats hidden in this tier's packs — stamped by the stream ONLY
+   *  while the zone packs switch is on (same gate as the card row), absent
+   *  otherwise so the header can never advertise packs early. */
+  packSeats?: number | null;
 }
 
 /**
