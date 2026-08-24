@@ -72,20 +72,15 @@ export function HypeCard({ className = '' }: { className?: string }) {
       tabIndex={0}
       onClick={goBoard}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goBoard(); } }}
-      className={`promo-rise relative grid grid-cols-1 sm:grid-cols-[110px_1fr] overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#131318] cursor-pointer select-none text-left
+      className={`promo-rise relative grid grid-cols-[96px_1fr] sm:grid-cols-[110px_1fr] overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#131318] cursor-pointer select-none text-left
         transition-[box-shadow,transform] duration-150 hover:-translate-y-[3px] hover:shadow-[0_16px_36px_rgba(0,0,0,.45)] active:scale-[.985] ${className}`}
     >
-      {/* rail — the prize IS the headline. Side column on desktop, a
-          horizontal strip across the top on phones (mock sign-off). */}
-      <div className="hidden sm:flex flex-col items-center justify-center gap-1.5 px-2 py-4 text-center bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
-        <span className="text-[8.5px] font-extrabold tracking-[1.4px] text-white/75">1ST PLACE WINS A</span>
-        <span className="text-[17px] font-extrabold leading-[1.15] text-white">JACKHOF<br />SEAT</span>
-        <span className="text-[8.5px] font-extrabold tracking-[1.4px] text-[#67e8f9]">EVERY WEEK</span>
-      </div>
-      <div className="flex sm:hidden items-center gap-2.5 px-3.5 py-2.5 bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
-        <span className="text-[8.5px] font-extrabold tracking-[1.2px] text-white/75 whitespace-nowrap">1ST PLACE WINS A</span>
-        <span className="text-[13.5px] font-extrabold text-white whitespace-nowrap">JACKHOF SEAT</span>
-        <span className="ml-auto text-[8.5px] font-extrabold tracking-[1.2px] text-[#67e8f9] whitespace-nowrap">EVERY WEEK</span>
+      {/* rail — the prize IS the headline. Left column at every size, same
+          as the other long cards' swatch column (Boris 2026-08-24). */}
+      <div className="flex flex-col items-center justify-center gap-1.5 px-2 py-4 text-center bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
+        <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1.2px] sm:tracking-[1.4px] text-white/75">1ST PLACE WINS A</span>
+        <span className="text-[15px] sm:text-[17px] font-extrabold leading-[1.15] text-white">JACKHOF<br />SEAT</span>
+        <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1.2px] sm:tracking-[1.4px] text-[#67e8f9]">EVERY WEEK</span>
       </div>
 
       <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
@@ -134,15 +129,15 @@ export function HypeCard({ className = '' }: { className?: string }) {
           </div>
         ) : null}
 
-        <div className="mt-auto pt-1 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-extrabold tracking-[.5px] uppercase text-white/80">
+        <div className="mt-auto flex items-center justify-between gap-2 rounded-xl border border-white/25 bg-white/[.05] px-3 py-2">
+          <span className="min-w-0 text-[10px] font-extrabold tracking-[.5px] uppercase text-white leading-snug">
             {you?.linked && you.rank
               ? <>You · <b className="text-banana">#{you.rank}</b> · {you.pct}%{yourZone ? <> — <b className="text-banana">{yourZone}</b> zone</> : null}</>
               : you?.linked
                 ? <>You · not on the board yet — post to enter</>
                 : <>Full top 25 + live feed on the board</>}
           </span>
-          <span className="shrink-0 rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-black">See the board →</span>
+          <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10.5px] font-extrabold text-black whitespace-nowrap">See the board →</span>
         </div>
       </div>
     </div>

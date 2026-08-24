@@ -326,6 +326,31 @@ async function removeTransferredOutFromGoApi(wallet: string, tokenIds: string[])
  * webhook on real BBB4 transfers in/out. Not called from balance-read
  * paths.
  */
+/**
+ * Has this on-chain token ALREADY been drafted with (by anyone)? Two cheap,
+ * independent signals, either is enough: the engine's own card metadata
+ * carries the roster (22 attributes vs 7 for a bare pass), and the marketplace
+ * index classifies it 'team'. Fails CLOSED on read errors (treat as drafted)
+ * — a missed legit pass is recoverable on the next reconcile; a phantom pass
+ * is a free draft.
+ */
+async function isAlreadyDraftedTeam(tokenId: string): Promise<boolean> {
+  try {
+    const db = getAdminFirestore();
+    const [meta, idx] = await Promise.all([
+      db.collection('draftTokenMetadata').doc(tokenId).get(),
+      db.collection('marketplace_index').doc(tokenId).get(),
+    ]);
+    const attrs = (meta.data() as { Attributes?: unknown[] } | undefined)?.Attributes;
+    if (Array.isArray(attrs) && attrs.some((a) => /^(QB|RB|WR|TE|DST)\d*$/i.test(String((a as { Trait_Type?: string })?.Trait_Type ?? '')))) return true;
+    if ((idx.data() as { status?: string } | undefined)?.status === 'team') return true;
+    return false;
+  } catch (err) {
+    logger.warn('reconcile.drafted_check_failed', { tokenId, err: (err as Error).message });
+    return true;
+  }
+}
+
 export async function reconcilePassesForWallet(wallet: string): Promise<ReconcileResult> {
   const w = wallet.toLowerCase();
   const db = getAdminFirestore();
@@ -353,7 +378,22 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   //    - staleInGo: an AVAILABLE record whose on-chain id the wallet no longer
   //      owns → transferred out. DELETE BY cardId (the doc key), so a legit
   //      synthetic-cardId pass whose on-chain id IS owned is never wrongly cut.
-  const missingFromGo = ownedNumericIds.filter((n) => !knownToGo.has(String(n)));
+  const missingCandidates = ownedNumericIds.filter((n) => !knownToGo.has(String(n)));
+  // DRAFTED-TEAM GUARD (2026-08-24): a token this wallet holds on-chain that
+  // Go doesn't know FOR THIS WALLET is not automatically a spendable pass — it
+  // can be another wallet's DRAFTED TEAM that changed hands (marketplace buy /
+  // OTC transfer). Registering it minted the buyer a brand-new pass: 7 team
+  // sales became fresh drafts (GatorMAB ×6 from $10-25 team buys, AkFF BBB #879
+  // from a $9 team). Team ownership moves with the NFT (marketplace league-
+  // ownership); the draft itself was already played. Skip and log.
+  const missingFromGo: number[] = [];
+  for (const n of missingCandidates) {
+    if (await isAlreadyDraftedTeam(String(n))) {
+      logger.warn('reconcile.skip_drafted_team_transfer', { wallet: w, tokenId: n });
+      continue;
+    }
+    missingFromGo.push(n);
+  }
   const staleInGo = goAvailable
     .filter((r) => r.onchainId && !ownedSet.has(r.onchainId))
     .map((r) => r.cardId);
