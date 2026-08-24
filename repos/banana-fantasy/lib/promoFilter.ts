@@ -245,18 +245,13 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // else requires an account to even have progress, so it's noise.
     if (opts.isLoggedIn === false && !LOGGED_OUT_PROMO_TYPES.has(p.type)) return false;
     // Buy 10 → FREE SPIN retirement — FINAL-LAP model (Boris 2026-07-27):
-    // from the cutoff, the card survives ONLY for users mid-bar (≥1/10) or
-    // holding an unclaimed spin. They finish their current 10, claim, and
-    // the bar wraps to 0/10 with nothing claimable — which makes this same
-    // check hide it forever. Fresh users (0/10) lose it at the cutoff.
+    // final lap ENDED (Boris 2026-08-23): the card now renders only while a
+    // spin is actually owed. Mid-bar progress still accrues server-side, so
+    // a user who completes their 10 becomes owed and the card resurfaces
+    // claimable — nothing earned is stranded, it just stops advertising.
     if (p.type === 'mint' && Date.now() >= MINT_PROMO_END_MS) {
-      const midLap = (p.progressCurrent || 0) >= 1;
       const owed = (p.claimCount || 0) > 0 || p.claimable === true;
-      if (!midLap && !owed) return false;
-      // Admin view (Boris 2026-08-17): retired promos regular users no longer
-      // get must not linger on the admin's own cards — no final-lap grace for
-      // admins (an owed spin still shows so nothing earned is hidden).
-      if (opts.isAdminPreview && !owed) return false;
+      if (!owed) return false;
     }
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
