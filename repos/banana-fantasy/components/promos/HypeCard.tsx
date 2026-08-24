@@ -108,11 +108,11 @@ export function HypeCard({ className = '' }: { className?: string }) {
         )}
 
         {/* the whole ladder — everyone sees what every rank pays */}
-        <div className="flex flex-wrap gap-1">
-          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
-          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
-          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–10 · HOF SEAT</span>
-          <span className="text-[9.5px] sm:text-[10.5px] font-black tracking-[.7px] rounded-full px-2.5 py-[5px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">11–25 · 1 FREE SPIN</span>
+        <div className="flex flex-wrap justify-center gap-1.5">
+          <span className="text-[10px] sm:text-[11px] font-black tracking-[.7px] rounded-full px-3 py-[6px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
+          <span className="text-[10px] sm:text-[11px] font-black tracking-[.7px] rounded-full px-3 py-[6px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
+          <span className="text-[10px] sm:text-[11px] font-black tracking-[.7px] rounded-full px-3 py-[6px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–10 · HOF SEAT</span>
+          <span className="text-[10px] sm:text-[11px] font-black tracking-[.7px] rounded-full px-3 py-[6px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">11–25 · 1 FREE SPIN</span>
         </div>
 
         {/* no X linked → the way in; linked → your live standing */}
