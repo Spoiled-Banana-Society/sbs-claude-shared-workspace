@@ -123,13 +123,14 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
       >
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         <span className="text-[11px] font-extrabold tracking-[0.12em] leading-none whitespace-nowrap">BANANA ZONE</span>
-        <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        {/* One line on every phone: with the seats in, "DRAFTS" goes so the
-            strip never wraps (Richard 8/24, option A). */}
-        {!!view.packSeats && <JackHofSeats n={view.packSeats} className="text-[11px] tracking-[0.06em]" />}
+        {/* One line on every phone. Order (Richard 8/24): name, drafts left,
+            the deal, then the JackHOF seats. With the seats in, "DRAFTS" goes
+            so the strip never wraps. */}
         <span className="text-[11px] font-extrabold tracking-[0.08em] leading-none text-emerald-300/90 whitespace-nowrap">
           {left} {view.packSeats ? 'LEFT' : `${left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`}
         </span>
+        <span className="text-[13px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        {!!view.packSeats && <JackHofSeats n={view.packSeats} className="text-[11px] tracking-[0.06em]" />}
       </div>
     </Tooltip>
   );
