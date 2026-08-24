@@ -132,11 +132,8 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           </p>
           {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it
               reads as the prize world, not this promo's mechanics */}
-          <p className="hidden min-[560px]:block mt-1.5 text-[13.5px] leading-[1.5] font-semibold whitespace-nowrap text-[#ff9838] [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
+          <p className="hidden min-[560px]:block mt-1.5 text-[13.5px] leading-[1.5] font-semibold whitespace-nowrap text-[#ffa94d] font-bold [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
             JackHOF — win the league and go straight to the Finals, plus you compete for added prizes.
-          </p>
-          <p className="mt-1.5 text-[13.5px] leading-[1.5] font-semibold text-white/85 [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
-            Win your JackHOF league → skip straight to the <b className="text-white">Finals</b> and play for <b className="text-banana">added prizes</b>.
           </p>
           <div className="mt-2.5 max-w-[470px] hidden min-[560px]:block">
             {rows.map((r) => (
@@ -156,7 +153,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         {/* MOBILE (<560px): sectioned layout — chips, then YOUR SPINS and
             YOUR PACKS split by full-width dividers. Same data, zero cram. */}
         <div className="min-[560px]:hidden">
-          <p className="mt-1.5 text-[12px] leading-[1.5] font-semibold whitespace-nowrap text-[#ff9838] [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
+          <p className="mt-1.5 text-[12px] leading-[1.5] font-semibold whitespace-nowrap text-[#ffa94d] font-bold [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
             JackHOF — win the league → Finals + added prizes.
           </p>
           <div className={`mt-3 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
