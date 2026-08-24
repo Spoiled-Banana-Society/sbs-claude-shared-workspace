@@ -207,7 +207,7 @@ export default function NotificationsPage() {
                               {config.label}
                             </span>
                           </div>
-                          <p className="text-white/40 text-xs mt-1 leading-relaxed">{notif.message}</p>
+                          <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{notif.message}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {!notif.read && <div className="w-2.5 h-2.5 rounded-full bg-banana" />}
