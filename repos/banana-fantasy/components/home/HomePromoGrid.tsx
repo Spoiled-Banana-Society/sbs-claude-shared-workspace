@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
+import { HypeCard } from '@/components/promos/HypeCard';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
@@ -126,6 +127,9 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
       {/* The /promos rectangle cards: two columns on desktop, one on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+        {/* Banana Hype rides the grid as a display card (board-driven, no
+            per-user promo doc) — first cell, blue is its color. */}
+        <HypeCard />
         {sortedPromos.filter((p) => p.type !== 'bonus-zone').map((promo, i) => (
           <PromoLongCard
             key={promo.id}

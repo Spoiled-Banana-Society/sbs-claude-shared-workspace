@@ -12,6 +12,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { PromoSpotlight, PromoLongCard } from '@/components/promos/PromoCards';
+import { HypeCard } from '@/components/promos/HypeCard';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo } from '@/types';
 
@@ -417,6 +418,7 @@ export default function PromosPage() {
             ))}
             {longs.length > 0 && (
               <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3.5 ${showSpot ? 'mt-4' : ''}`}>
+                <HypeCard />
                 {longs.map((promo, i) => (
                   <PromoLongCard
                     key={promo.id}

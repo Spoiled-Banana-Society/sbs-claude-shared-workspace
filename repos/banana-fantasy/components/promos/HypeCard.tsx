@@ -1,0 +1,150 @@
+'use client';
+
+// Banana Hype as a promo card (Boris 2026-08-24, layout C "prize-first" from
+// the mock sign-off): the weekly mindshare race surfaces in the promo grids
+// (home + /promos) instead of hiding on its own nav page. Blue is Hype's
+// color the way green is the zone's. The card is the trailer — "See the
+// board →" opens /mindshare, the full existing page (treemap, complete
+// top 25 with prize tiers, live feed). Nothing here replaces that page.
+//
+// Live data: /api/mindshare/board?wallet= (tiles + the viewer's own row),
+// pulled on mount, focus and a slow interval — the board itself only moves
+// on the 5-minute scan cron, so no stream needed. Prize ladder mirrors
+// lib/mindshare's weekly prizes: 1st JackHOF · 2–3 Jackpot · 4–6 HOF ·
+// 7–15 three spins · 16–25 one spin. Week resets Thursday 9pm ET (verified
+// against the week doc's endsAtMs).
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+
+interface Tile { handle: string; display: string; pct: number; rank: number }
+interface You { handle: string | null; linked: boolean; rank: number | null; pct: number }
+interface Board { tiles: Tile[]; you: You | null }
+
+/** Rank chip color by prize tier — same accents as the /mindshare board. */
+const rankChip = (rank: number) =>
+  rank === 1 ? 'bg-gradient-to-br from-[#ef4444] to-[#D4AF37] text-white'
+    : rank <= 3 ? 'bg-[#ef4444] text-white'
+      : rank <= 6 ? 'bg-[#D4AF37] text-[#1a1206]'
+        : rank <= 15 ? 'bg-[#a855f7] text-white'
+          : 'bg-teal-400 text-[#042f2a]';
+
+const prizeZone = (rank: number) =>
+  rank === 1 ? 'JACKHOF SEAT' : rank <= 3 ? 'JACKPOT SEAT' : rank <= 6 ? 'HOF SEAT' : rank <= 15 ? '3 SPINS' : rank <= 25 ? '1 SPIN' : null;
+
+export function HypeCard({ className = '' }: { className?: string }) {
+  const router = useRouter();
+  const { user, isTwitterVerified, linkTwitter } = useAuth();
+  const wallet = user?.walletAddress ?? null;
+  const [board, setBoard] = useState<Board | null>(null);
+  const dead = useRef(false);
+
+  const pull = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/mindshare/board${wallet ? `?wallet=${wallet}` : ''}`, { cache: 'no-store' });
+      const d = (await res.json()) as Board;
+      if (!dead.current && Array.isArray(d.tiles)) setBoard(d);
+    } catch { /* card is decoration over /mindshare — keep last good state */ }
+  }, [wallet]);
+
+  useEffect(() => {
+    dead.current = false;
+    void pull();
+    const onFocus = () => { void pull(); };
+    window.addEventListener('focus', onFocus);
+    const t = setInterval(() => { void pull(); }, 5 * 60_000);
+    return () => { dead.current = true; window.removeEventListener('focus', onFocus); clearInterval(t); };
+  }, [pull]);
+
+  const top = board?.tiles.slice(0, 6) ?? [];
+  const you = board?.you ?? null;
+  const yourZone = you?.rank ? prizeZone(you.rank) : null;
+  const goBoard = () => router.push('/mindshare');
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={goBoard}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goBoard(); } }}
+      className={`promo-rise relative grid grid-cols-1 sm:grid-cols-[110px_1fr] overflow-hidden rounded-[20px] border border-cyan-300/25 cursor-pointer select-none text-left
+        bg-[radial-gradient(120%_140%_at_85%_-10%,#14548a_0%,#0d3a63_45%,#081f38_100%)]
+        transition-[box-shadow,transform] duration-150 hover:-translate-y-[3px] hover:shadow-[0_16px_36px_rgba(0,0,0,.45)] active:scale-[.985] ${className}`}
+    >
+      {/* rail — the prize IS the headline. Side column on desktop, a
+          horizontal strip across the top on phones (mock sign-off). */}
+      <div className="hidden sm:flex flex-col items-center justify-center gap-1.5 px-2 py-4 text-center bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
+        <span className="text-[8.5px] font-extrabold tracking-[1.4px] text-white/75">1ST PLACE WINS A</span>
+        <span className="text-[17px] font-extrabold leading-[1.15] text-white">JACKHOF<br />SEAT</span>
+        <span className="text-[8.5px] font-extrabold tracking-[1.4px] text-[#67e8f9]">EVERY WEEK</span>
+      </div>
+      <div className="flex sm:hidden items-center gap-2.5 px-3.5 py-2.5 bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
+        <span className="text-[8.5px] font-extrabold tracking-[1.2px] text-white/75 whitespace-nowrap">1ST PLACE WINS A</span>
+        <span className="text-[13.5px] font-extrabold text-white whitespace-nowrap">JACKHOF SEAT</span>
+        <span className="ml-auto text-[8.5px] font-extrabold tracking-[1.2px] text-[#67e8f9] whitespace-nowrap">EVERY WEEK</span>
+      </div>
+
+      <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-[9.5px] font-extrabold tracking-[1.6px] text-[#22d3ee] whitespace-nowrap">POST ABOUT SBS ON X</span>
+          <span className="text-[8.5px] font-extrabold tracking-[1.1px] uppercase text-white/55 whitespace-nowrap">Weekly · Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <h4 className="text-[15px] font-extrabold text-white tracking-[-.2px]">Banana Hype</h4>
+          <span className="rounded-full bg-banana px-2 py-[2px] text-[8.5px] font-black tracking-[1.2px] text-black">NEW</span>
+        </div>
+        <p className="text-[11.5px] leading-[1.45] text-[#d5dbe4]">
+          Your <b className="text-banana font-extrabold">mindshare</b> = your share of the SBS conversation this week. Top 25 win — seats down to spins.
+        </p>
+
+        {/* top 6: 1–3 down the left column, 4–6 down the right */}
+        {top.length > 0 && (
+          <div className="grid grid-cols-2 grid-rows-3 grid-flow-col gap-x-4 gap-y-[4px]">
+            {top.map((t) => (
+              <div key={t.rank} className="flex items-center gap-[7px] min-w-0 text-[11px] font-bold">
+                <span className={`w-[20px] h-[20px] rounded-[6px] inline-flex items-center justify-center text-[10px] font-black shrink-0 ${rankChip(t.rank)}`}>{t.rank}</span>
+                <span className="text-white whitespace-nowrap overflow-hidden text-ellipsis">@{t.handle}</span>
+                <span className="ml-auto text-[#67e8f9] font-extrabold tabular-nums shrink-0">{t.pct}%</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* the whole ladder — everyone sees what every rank pays */}
+        <div className="flex flex-wrap gap-1">
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–6 · HOF SEAT</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#a855f7]/55 text-[#d3b0f7] bg-black/25">7–15 · 3 SPINS</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">16–25 · 1 SPIN</span>
+        </div>
+
+        {/* no X linked → the way in; linked → your live standing */}
+        {!isTwitterVerified ? (
+          <div
+            className="flex items-center justify-between gap-2 rounded-xl border border-banana/45 bg-banana/[.07] px-3 py-2"
+            onClick={(e) => { e.stopPropagation(); linkTwitter(); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); linkTwitter(); } }}
+          >
+            <span className="text-[10.5px] font-extrabold text-[#ffe08a]">Connect your X to start earning mindshare.</span>
+            <span className="text-[10px] font-black tracking-[.5px] text-black bg-banana rounded-full px-2.5 py-1 whitespace-nowrap">CONNECT X</span>
+          </div>
+        ) : null}
+
+        <div className="mt-auto pt-1 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-extrabold tracking-[.5px] uppercase text-white/80">
+            {you?.linked && you.rank
+              ? <>You · <b className="text-banana">#{you.rank}</b> · {you.pct}%{yourZone ? <> — <b className="text-banana">{yourZone}</b> zone</> : null}</>
+              : you?.linked
+                ? <>You · not on the board yet — post to enter</>
+                : <>Full top 25 + live feed on the board</>}
+          </span>
+          <span className="shrink-0 rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-black">See the board →</span>
+        </div>
+      </div>
+    </div>
+  );
+}

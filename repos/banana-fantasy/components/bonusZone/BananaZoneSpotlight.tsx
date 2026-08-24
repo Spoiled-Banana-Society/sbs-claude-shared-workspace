@@ -129,7 +129,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         {/* intro + deal rows — ranges and seats from the live config */}
         <div className="promo-tx mt-3 max-w-[58ch]">
           <p className="text-[15.5px] leading-[1.5] text-[rgba(255,255,255,.92)] font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-            Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana">Free Spins</b> and
+            Jackpot just hit? Enter the Banana Zone — paid draft fills earn <b className="text-banana">Free Spins</b> and
             sealed <b className="text-banana">Packs</b>{totalSeats ? <>, with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
           </p>
           {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it

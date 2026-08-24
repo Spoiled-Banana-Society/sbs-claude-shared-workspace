@@ -176,7 +176,7 @@ export function PromoMiniCard({
                   })}
                 </div>
                 <p className="text-[11.5px] leading-snug text-[#c9c9d2]">
-                  Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana font-extrabold">Free Spins</b> and
+                  Jackpot just hit? Enter the Banana Zone — paid draft fills earn <b className="text-banana font-extrabold">Free Spins</b> and
                   sealed <b className="text-banana font-extrabold">Packs</b>{totalSeats !== null ? <>, with <b className="text-banana font-extrabold whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
                 </p>
                 {tier !== null && zonePacks.openable === 0 && (
