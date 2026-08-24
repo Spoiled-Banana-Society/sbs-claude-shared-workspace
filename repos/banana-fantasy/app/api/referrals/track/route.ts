@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { referrerCode, referredUserId, referredUsername } = body;
+    const { referrerCode, referredUserId, referredUsername, source } = body;
 
     if (!referrerCode || !referredUserId) {
       return NextResponse.json({ error: 'Missing referrerCode or referredUserId' }, { status: 400 });
@@ -95,6 +95,22 @@ export async function POST(req: NextRequest) {
       referredUserId,
       referredUsername || `User${referredUserId}`,
     );
+
+    // Channel evidence (Boris 2026-08-24): stamp where the referral CLICK
+    // happened onto the referred user — t.co referrer / X in-app UA proves
+    // "came from X". Best-effort, write-only; never blocks the link.
+    if ((result as { success?: boolean }).success && source && typeof source === 'object') {
+      try {
+        await db.collection('v2_users').doc(referredUserId).set({
+          referralSource: {
+            referrer: String((source as { referrer?: unknown }).referrer ?? '').slice(0, 300),
+            userAgent: String((source as { userAgent?: unknown }).userAgent ?? '').slice(0, 300),
+            capturedAtMs: Number((source as { capturedAtMs?: unknown }).capturedAtMs) || 0,
+            recordedAtMs: Date.now(),
+          },
+        }, { merge: true });
+      } catch { /* metadata only */ }
+    }
 
     return NextResponse.json({
       ...result,

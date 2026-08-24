@@ -212,8 +212,22 @@ const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // idempotent server-side, so the existing "retry on every login when the user
 // has no referrer" logic now reliably attributes once the code is durable.
 function storeReferralCode(code: string) {
-  try { localStorage.setItem(REFERRAL_CODE_KEY, JSON.stringify({ code, ts: Date.now() })); } catch { /* storage blocked */ }
+  // Channel evidence rides along (Boris 2026-08-24): the page referrer (X
+  // clicks arrive via t.co) and the UA (X's in-app browser names itself)
+  // captured AT CLICK TIME, so a later signup can prove where the referral
+  // came from. Write-only metadata — never used in any gate.
+  const ref = typeof document !== 'undefined' ? String(document.referrer || '').slice(0, 300) : '';
+  const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 300) : '';
+  try { localStorage.setItem(REFERRAL_CODE_KEY, JSON.stringify({ code, ts: Date.now(), ref, ua })); } catch { /* storage blocked */ }
   try { sessionStorage.setItem(REFERRAL_CODE_KEY, code); } catch { /* storage blocked */ }
+}
+function readReferralSource(): { referrer: string; userAgent: string; capturedAtMs: number } | null {
+  try {
+    const raw = localStorage.getItem(REFERRAL_CODE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts?: number; ref?: string; ua?: string };
+    return { referrer: parsed.ref ?? '', userAgent: parsed.ua ?? '', capturedAtMs: parsed.ts ?? 0 };
+  } catch { return null; }
 }
 function readReferralCode(): string | null {
   // Same-tab value wins (freshest), then fall back to durable localStorage
@@ -680,6 +694,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             referrerCode: refCode,
             referredUserId: id,
             referredUsername: username,
+            source: readReferralSource(),
           }),
         })
           .then(() => clearReferralCode())
