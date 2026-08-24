@@ -1,76 +1,81 @@
 'use client';
 
-// Banana Zone SPOTLIGHT — the featured card on /promos (Boris 2026-08-23,
-// signed off from the interactive mock). Layout, top to bottom:
+// Banana Zone SPOTLIGHT v2 — Free Spins + JackHOF Seats (Boris 2026-08-24,
+// signed off from the interactive packs-edition mock). Layout, top to bottom:
 //
-//   FREE SPINS / BANANA ZONE          [● LIVE · DRAFT N OF THE WINDOW]
-//   one-paragraph story (final copy, tier ranges spelled out)
-//   ┌──────────────────┬──────────────────────────────┐
-//   │  17              │  YOUR FILLS                  │
-//   │  DRAFTS LEFT AT  │  🍌 🍌 ◌   1 more = Free Spin│
-//   │  BUY 3 GET 1     │  [CLAIM SPIN] when claimable │
-//   └──────────────────┴──────────────────────────────┘
-//   [BUY 1 GET 1] [BUY 2 GET 1] [● LIVE BUY 3 GET 1]   ← fire on the live one
+//   Free Spins + JackHOF Seats / BANANA ZONE            DETAILS ▾
+//   intro: paid fills earn Free Spins and sealed Packs, 10 seats inside
+//   deal rows: Buy N Get 1 Spin · Drafts a–b · N JACKHOF SEATS
+//   ┌──────────────┬────────────────────┬──────────────────┐
+//   │ DRAFTS LEFT… │ YOUR FILLED DRAFTS │ YOUR PACKS       │
+//   │      6       │  🍌 ◌  CLAIM SPIN  │ [pack ×7] unlock │
+//   └──────────────┴────────────────────┴──────────────────┘
+//   [BUY 1 GET 1 SPIN · live]  [BUY 2 GET 1 SPIN]
 //
-// Real-time: the window view (tier / position / drafts left) rides the SAME
-// SSE stream as the header pills (useBatchProgress → data.bonusZone), so this
-// card moves the moment any draft's reveal lands — every page, no polling.
-// The user's own units/claimable ride /api/promos, which usePromos refetches
-// on every user-event stream ping (their fill, their credit) and on focus.
-// CLAIM goes through the page's standard onClaim → claimPromo → the same
-// ClaimSuccessModal confetti celebration every other promo uses.
+// Everything band-shaped derives from the LIVE config (tier1/2/3Through on
+// the SSE view, packBands stamped by /api/promos while the drop switch is
+// on) — a re-tier by Richard moves every surface with zero code change.
+// Real-time: window state rides useBatchProgress (same stream as the header
+// pills); the user's units ride /api/promos (usePromos refetches on stream
+// pings); the user's pack counts ride useZonePacks (same trigger). Ripping
+// packs happens in the modal's pack room — Open here just opens the modal.
 
 import React from 'react';
 import type { Promo } from '@/types';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
+import { useZonePacks } from '@/hooks/useZonePacks';
 import { promoHueStyle } from '@/lib/promoTheme';
-
-// Deal rows + tier ranges derive from the LIVE config (tier1/2/3Through in
-// the view) — Richard re-tiers the zone by editing system_config/bonusZone
-// (e.g. the 8/23 25/50 two-band config), so nothing here is hardcoded. A
-// collapsed third tier (tier3Through == tier2Through) renders two bands.
-interface ZoneBandRow { band: 1 | 2 | 3; buy: number; from: number; to: number }
-const bandRows = (t1: number, t2: number, t3: number): ZoneBandRow[] => {
-  const end = Math.max(t2, t3);
-  return [
-    { band: 1, buy: 1, from: 1, to: t1 },
-    { band: 2, buy: 2, from: t1 + 1, to: t2 },
-    ...(end > t2 ? [{ band: 3 as const, buy: 3, from: t2 + 1, to: end }] : []),
-  ];
-};
+import { SealedPack } from '@/components/promos/PackVisuals';
 
 /** Units of a spin one paid fill banks at each tier (spin = 6 units). */
 const UNITS = 6;
 const creditFor = (tier: 1 | 2 | 3) => (tier === 1 ? 6 : tier === 2 ? 3 : 2);
 
+interface BandRow { band: 1 | 2 | 3; buy: number; from: number; to: number; seats: number | null }
+const bandRows = (
+  t1: number, t2: number, t3: number,
+  packBands: Array<{ from: number; to: number; seats: number }> | null,
+): BandRow[] => {
+  const end = Math.max(t2, t3);
+  const rows: BandRow[] = [
+    { band: 1, buy: 1, from: 1, to: t1, seats: null },
+    { band: 2, buy: 2, from: t1 + 1, to: t2, seats: null },
+    ...(end > t2 ? [{ band: 3 as const, buy: 3, from: t2 + 1, to: end, seats: null }] : []),
+  ];
+  // Seats print only while ZONE PACKS is live (packBands stamped) — matched
+  // by range so a re-tier can never mispair a band with its seat count.
+  if (packBands) for (const r of rows) {
+    r.seats = packBands.find((p) => p.from === r.from && p.to === r.to)?.seats ?? null;
+  }
+  return rows;
+};
+
 export interface BananaZoneSpotlightProps {
   promo: Promo;
+  wallet: string | null;
   hasVisibleClaim: boolean;
   onClaim: () => void;
   onOpenModal: () => void;
 }
 
-export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenModal }: BananaZoneSpotlightProps) {
+export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, onOpenModal }: BananaZoneSpotlightProps) {
   const bz = promo.modalContent?.bonusZone;
   const { data } = useBatchProgress();
+  const packs = useZonePacks(wallet);
   // Live view from the global stream; the /api/promos snapshot is the
-  // first-paint fallback so the card never renders empty.
+  // first-paint fallback so the card never renders empty. "Closed" is only
+  // ever asserted from REAL data — before any data we show a syncing state.
   const live = data?.bonusZone;
-  // "Closed" is only ever asserted from REAL data (tier === null in an actual
-  // view). Before the stream's first push with no snapshot, we show a neutral
-  // syncing state — the card must never claim the zone is closed while it's
-  // actually live.
   const hasView = Boolean(live || bz);
   const tier = (live ? live.tier : bz?.tier) ?? null;
   const draftsLeftInTier = (live ? live.draftsLeftInTier : bz?.draftsLeftInTier) ?? 0;
-  const label = tier ? `Buy ${tier} Get 1` : null;
-  const t1 = (live?.tier1Through ?? bz?.tier1Through) ?? 20;
-  const t2 = (live?.tier2Through ?? bz?.tier2Through) ?? 40;
-  const t3 = (live?.tier3Through ?? bz?.tier3Through) ?? 60;
-  const rows = bandRows(t1, t2, t3);
-  // JackHOF seats per batch (ZONE PACKS, Richard 8/23) — stamped on the promo
-  // payload only while the zone-drop switch is on; printed on the tier chips.
+  const position = (live ? live.position : bz?.position) ?? 0;
+  const t1 = (live?.tier1Through ?? bz?.tier1Through) ?? 25;
+  const t2 = (live?.tier2Through ?? bz?.tier2Through) ?? 50;
+  const t3 = (live?.tier3Through ?? bz?.tier3Through) ?? 50;
   const packBands = (bz as { packBands?: Array<{ from: number; to: number; seats: number }> } | undefined)?.packBands ?? null;
+  const rows = bandRows(t1, t2, t3, packBands);
+  const totalSeats = packBands ? packBands.reduce((n, b) => n + b.seats, 0) : null;
 
   const units = bz?.unitsThisWindow ?? 0;
   const credit = tier ? creditFor(tier) : 2;
@@ -79,6 +84,10 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
   const hasPartial = units - filled * credit > 0 && filled < slots;
   const fillsNeeded = Math.max(1, Math.ceil((UNITS - units) / credit));
   const claimCount = promo.claimCount || 0;
+  // Progress within the LIVE deal segment ("DRAFT 19 OF 25").
+  const segSize = tier === 1 ? t1 : tier === 2 ? t2 - t1 : Math.max(1, t3 - t2);
+  const segDone = tier === 1 ? position : tier === 2 ? position - t1 : position - t2;
+  const unlockAt = tier === 1 ? t1 : Math.max(t2, t3);
 
   const bandState = (band: 1 | 2 | 3): 'live' | 'dead' | 'future' => {
     if (!hasView) return 'future'; // syncing — never paint tiers as burned without data
@@ -97,8 +106,8 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
         {/* header row */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="promo-tx min-w-0">
-            <h3 className="text-[30px] sm:text-[40px] font-extrabold leading-[1] tracking-[-.8px] text-banana">
-              Free Spins
+            <h3 className="text-[25px] sm:text-[34px] font-extrabold leading-[1.05] tracking-[-.8px] text-banana">
+              Free Spins <span className="text-white/55 font-bold">+</span> JackHOF Seats
             </h3>
             <div className="mt-1.5 text-[15px] sm:text-[16px] font-extrabold tracking-[5px] text-white">BANANA ZONE</div>
           </div>
@@ -111,46 +120,51 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
           </button>
         </div>
 
-        {/* story */}
-        <div className="promo-tx mt-3 max-w-[56ch]">
-          <p className="text-[15.5px] leading-[1.5] text-white font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-            Jackpot just hit? Enter the Banana Zone — every filled paid draft earns Free Spins.
+        {/* intro + deal rows — ranges and seats from the live config */}
+        <div className="promo-tx mt-3 max-w-[58ch]">
+          <p className="text-[15.5px] leading-[1.5] text-[rgba(255,255,255,.92)] font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+            Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana">Free Spins</b> and
+            sealed <b className="text-banana">Packs</b>{totalSeats ? <>, with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
           </p>
-          <div className="mt-2.5 max-w-[340px] divide-y divide-white/20">
+          <div className="mt-2.5 max-w-[470px]">
             {rows.map((r) => (
-              <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-                <b className="text-white font-extrabold">Buy {r.buy} Get 1 Spin</b>
-                <span className="text-white text-[14px] font-bold tracking-[.4px] whitespace-nowrap">Drafts {r.from}–{r.to}</span>
+              <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] border-t border-white/20 first:border-t-0 text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+                <b className="text-white font-extrabold whitespace-nowrap">Buy {r.buy} Get 1 Spin</b>
+                <span className="flex items-baseline gap-3 whitespace-nowrap">
+                  <span className="text-[rgba(235,245,240,.85)] text-[14px] font-bold tracking-[.4px]">Drafts {r.from}–{r.to}</span>
+                  {r.seats !== null && (
+                    <span className="text-banana text-[12px] font-black tracking-[.6px]">{r.seats} JACKHOF SEATS</span>
+                  )}
+                </span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* combined panel: countdown | your fills */}
-        <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] grid grid-cols-1 min-[480px]:grid-cols-[1fr_1px_1.2fr] items-center gap-4 px-5 py-4">
-          <div className="text-center">
+        {/* combined panel — three columns on a strict shared grid so headers,
+            visuals and footer lines all align (Boris 2026-08-24) */}
+        <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] grid grid-cols-1 min-[560px]:grid-cols-[1fr_1px_1.1fr_1px_1.2fr] items-start gap-3.5 px-5 py-4">
+          {/* col 1 — countdown */}
+          <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
+            <div className="self-start text-[10.5px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.88)]">
+              Drafts Left at Buy {tier ?? 1} Get 1 Spin
+            </div>
             {tier ? (
-              <>
-                <div className="text-[44px] sm:text-[52px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_22px_rgba(255,207,61,.5)]">
-                  {draftsLeftInTier}
-                </div>
-                <div className="mt-1 text-[10.5px] font-extrabold tracking-[1.6px] text-white/85 uppercase">
-                  drafts left at {label}
-                </div>
-
-              </>
+              <div className="text-[44px] sm:text-[48px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_22px_rgba(255,207,61,.5)]">
+                {draftsLeftInTier}
+              </div>
             ) : (
-              <>
-                <div className="text-[44px] sm:text-[52px] font-extrabold leading-none tabular-nums text-white/35">{hasView ? 0 : '—'}</div>
-                <div className="mt-1 text-[10px] font-extrabold tracking-[1.6px] text-white/55 uppercase">
-                  {hasView ? 'zone closed — reopens at next Jackpot' : 'connecting…'}
-                </div>
-              </>
+              <div className="text-[44px] font-extrabold leading-none tabular-nums text-white/35">{hasView ? 0 : '—'}</div>
             )}
+            <div className="self-start text-[10px] font-extrabold tracking-[1.3px] uppercase text-[rgba(235,245,240,.7)]">
+              {tier ? `Draft ${segDone} of ${segSize}` : hasView ? 'Reopens at next Jackpot' : 'Connecting…'}
+            </div>
           </div>
-          <div className="hidden min-[480px]:block w-px h-[74px] bg-banana/30" />
-          <div className="text-center flex flex-col items-center gap-2">
-            <div className="text-[11px] font-extrabold tracking-[2.6px] text-white/90 uppercase">Your Filled Drafts</div>
+          <div className="hidden min-[560px]:block w-px self-stretch bg-banana/30" />
+
+          {/* col 2 — fills + claim */}
+          <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
+            <div className="self-start text-[11px] font-extrabold tracking-[2.6px] uppercase text-[rgba(235,245,240,.88)]">Your Filled Drafts</div>
             <div className="inline-flex gap-3">
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
@@ -159,7 +173,7 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 return (
                   <span
                     key={i}
-                    className={`w-[52px] h-[52px] sm:w-[58px] sm:h-[58px] rounded-full flex items-center justify-center text-[25px] sm:text-[28px] transition-all duration-300 ${
+                    className={`w-[50px] h-[50px] rounded-full flex items-center justify-center text-[24px] transition-all duration-300 ${
                       on ? 'border-[3px] border-banana bg-banana/15 shadow-[0_0_18px_rgba(255,207,61,.65)] scale-[1.04]'
                         : part ? 'border-[3px] border-banana/60 bg-banana/[.08]'
                           : `border-[3px] border-dashed border-white/45 bg-black/20 ${next ? 'bz-nextup' : ''}`
@@ -170,49 +184,79 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 );
               })}
             </div>
-            {hasVisibleClaim && claimCount > 0 ? (
-              <button
-                type="button"
-                onClick={onClaim}
-                className="promo-glow mt-0.5 rounded-full bg-banana px-5 py-2.5 text-[12.5px] font-extrabold tracking-[1px] text-black uppercase bz-claimpulse hover:-translate-y-px active:scale-[.97] transition-transform"
-              >
-                {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
-              </button>
-            ) : (
-              <div className="text-[14px] sm:text-[15px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
-                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
-              </div>
-            )}
+            <div className="self-start">
+              {hasVisibleClaim && claimCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={onClaim}
+                  className="promo-glow rounded-full bg-banana px-5 py-2.5 text-[12.5px] font-extrabold tracking-[1px] text-black uppercase bz-claimpulse hover:-translate-y-px active:scale-[.97] transition-transform"
+                >
+                  {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
+                </button>
+              ) : (
+                <div className="text-[14px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
+                  {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="hidden min-[560px]:block w-px self-stretch bg-banana/30" />
+
+          {/* col 3 — packs (count badge on the pack; ripping lives in the modal) */}
+          <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
+            <div className="self-start text-[11px] font-extrabold tracking-[2.6px] uppercase text-[rgba(235,245,240,.88)]">Your Packs</div>
+            <div className={`relative ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5]' : ''}`}>
+              <SealedPack w={70} />
+              {packs.sealed > 0 && (
+                <span className="absolute -top-[7px] -right-[10px] min-w-[24px] h-[24px] rounded-full bg-banana text-black text-[13px] font-black flex items-center justify-center px-1.5 shadow-[0_2px_8px_rgba(0,0,0,.5)]">
+                  {packs.sealed}
+                </span>
+              )}
+            </div>
+            <div className="self-start">
+              {packs.openable > 0 ? (
+                <button
+                  type="button"
+                  onClick={onOpenModal}
+                  className="rounded-full bg-gradient-to-br from-[#7ff0c3] to-[#34d399] px-5 py-2.5 text-[12.5px] font-black tracking-[1px] text-[#04231a] uppercase bz-claimpulse hover:-translate-y-px active:scale-[.97] transition-transform"
+                >
+                  Open {packs.openable} Pack{packs.openable === 1 ? '' : 's'}
+                </button>
+              ) : packs.sealed > 0 ? (
+                <div className="text-[11.5px] font-extrabold tracking-[.9px] uppercase whitespace-nowrap text-banana">
+                  Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span>
+                </div>
+              ) : (
+                <div className="text-[11.5px] font-bold text-white/50">Fill a paid zone draft → 1 Pack</div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* tier chips — fire on the live one */}
+        {/* tier chips — deep emerald live so white + banana copy stays loud */}
         <div className={`mt-3.5 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-          {rows.map(({ band, buy, from, to }, i) => {
+          {rows.map(({ band, buy, from, to, seats }) => {
             const st = bandState(band);
-            const deal = `BUY ${buy} GET 1`;
-            const range = `DRAFTS ${from}–${to}`;
-            const seats = packBands?.[i]?.seats ?? null;
             return (
               <div
                 key={band}
-                className={`relative overflow-hidden text-center rounded-xl px-1 pt-2.5 pb-2 uppercase font-extrabold leading-[1.2] transition-all duration-300 ${
+                className={`relative overflow-hidden text-center rounded-[14px] px-1.5 pt-3 pb-2.5 uppercase font-extrabold leading-[1.25] transition-all duration-300 ${
                   st === 'live'
-                    ? 'text-[13px] sm:text-[15px] text-[#04231a] border border-emerald-300 bg-gradient-to-br from-[#7ff0c3] via-[#34d399] to-[#0fa371] scale-[1.05] bz-fire'
+                    ? 'text-[16px] sm:text-[18px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] scale-[1.04] shadow-[0_0_24px_rgba(52,211,153,.45)] bz-fire'
                     : st === 'dead'
-                      ? 'text-[12px] sm:text-[13.5px] text-white/60 border border-white/10 bg-black/25'
-                      : 'text-[12px] sm:text-[13.5px] text-white/80 border border-white/15 bg-black/25'
+                      ? 'text-[14px] sm:text-[16px] text-white/55 border border-white/10 bg-black/25'
+                      : 'text-[14px] sm:text-[16px] text-white border border-white/[.18] bg-black/[.28]'
                 }`}
               >
-                {deal}
-                <em className={`block not-italic mt-0.5 text-[9px] sm:text-[10px] font-extrabold tracking-[1.4px] ${
-                  st === 'live' ? 'text-[#04231a]/80' : 'text-white/45'
-                }`}>{range}</em>
-                {st === 'live' && (
-                  <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#04231a]/85">● LIVE</span>
-                )}
+                BUY {buy} GET <span className="text-banana">1 SPIN</span>
+                <em className={`block not-italic mt-[3px] text-[10px] sm:text-[11px] font-extrabold tracking-[1.6px] ${
+                  st === 'live' ? 'text-white/65' : 'text-white/45'
+                }`}>DRAFTS {from}–{to}</em>
                 {seats !== null && (
-                  <span className={`block mt-0.5 text-[9px] sm:text-[10px] font-black tracking-[.8px] ${st === 'live' ? 'text-[#04231a]' : 'text-banana'}`}>📦 {seats} JACKHOF SEATS</span>
+                  <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>
+                )}
+                {st === 'live' && (
+                  <span className="block mt-0.5 text-[9px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>
                 )}
               </div>
             );

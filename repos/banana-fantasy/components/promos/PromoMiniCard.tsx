@@ -13,6 +13,8 @@ import { promoKickerLines, promoName } from '@/lib/promoTheme';
 import { firstPurchaseRedesign } from '@/lib/firstPurchaseCopy';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useAuth } from '@/hooks/useAuth';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
+import { useZonePacks } from '@/hooks/useZonePacks';
 
 export interface PromoMiniCardProps {
   promo: Promo;
@@ -44,7 +46,13 @@ export function PromoMiniCard({
   const passive = promo.type === 'pick-10' || promo.type === 'jackpot';
   const isFp = promo.type === 'first-purchase';
   const isNu = promo.type === 'new-user';
+  const isBz = promo.type === 'bonus-zone';
   const { isTwitterVerified, linkTwitter } = useAuth();
+  // Banana Zone rides the same live stream as the header pills so the deal
+  // tiles flip the moment the window rolls (or the JP hits); pack counts ride
+  // their own status pull, re-fetched on the user-event stream ping.
+  const { data: bp } = useBatchProgress();
+  const zonePacks = useZonePacks(isBz ? wallet : null);
   return (
     <div
       role="button"
@@ -64,15 +72,30 @@ export function PromoMiniCard({
           {/* Two deliberate lines, capped to the swatch's reserved left
               column: quiet qualifier on top, the PRIZE bigger underneath —
               no mid-phrase wraps (Boris 2026-08-19). */}
-          {(() => { const k = promoKickerLines(promo); const bzOneLine = promo.type === 'bonus-zone'; const bzTier = bzOneLine ? promo.modalContent?.bonusZone?.tier : null; return (
-            <span className={`promo-tx block ${bzOneLine ? 'max-w-[112px] shrink-0' : 'max-w-[92px]'}`}>
-              {k.top && !bzOneLine && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
-              <span className={`block font-extrabold text-white leading-[1.15] mt-[2px] ${bzOneLine ? 'whitespace-nowrap text-[13px] tracking-[.5px]' : 'text-[14px] tracking-[1px]'}`}>{k.big}</span>
-              {bzOneLine && bzTier && (
-                <span className="block text-[10.5px] font-extrabold tracking-[.4px] text-emerald-300 leading-[1.2] mt-[3px] whitespace-nowrap">Buy {bzTier} Get 1 Spin</span>
-              )}
-            </span>
-          ); })()}
+          {(() => {
+            const k = promoKickerLines(promo);
+            if (isBz) {
+              const mc = promo.modalContent?.bonusZone;
+              const tier = bp?.bonusZone?.tier ?? mc?.tier ?? null;
+              const bands = (mc as { packBands?: Array<{ from: number; to: number; seats: number }> } | undefined)?.packBands;
+              const t1 = bp?.bonusZone?.tier1Through ?? mc?.tier1Through ?? 25;
+              const seats = bands?.find((b) => (tier === 1 ? b.from === 1 : b.from === t1 + 1))?.seats ?? null;
+              return (
+                <span className="promo-tx block max-w-[118px] shrink-0">
+                  <span className="block font-extrabold text-white leading-[1.15] whitespace-nowrap text-[14px] tracking-[.8px]">FREE SPINS</span>
+                  {seats !== null && tier !== null && (
+                    <span className="block text-[10px] font-black tracking-[.7px] text-banana leading-[1.2] mt-[4px] whitespace-nowrap">+ {seats} JACKHOF SEATS</span>
+                  )}
+                </span>
+              );
+            }
+            return (
+              <span className="promo-tx block max-w-[92px]">
+                {k.top && <span className="block text-[8.5px] font-extrabold tracking-[1.3px] text-white/75 leading-[1.3]">{k.top}</span>}
+                <span className="block font-extrabold text-white leading-[1.15] mt-[2px] text-[14px] tracking-[1px]">{k.big}</span>
+              </span>
+            );
+          })()}
         </div>
         {promo.isNew && (
           <span className="absolute top-2 right-2 z-[2] rounded-full bg-banana px-2 py-[3px] text-[9px] font-black tracking-[1.4px] text-black">
@@ -112,18 +135,98 @@ export function PromoMiniCard({
             );
           })()
         ) : promo.type === 'bonus-zone' && promo.modalContent?.bonusZone ? (
-          /* Compact SPOTLIGHT mirror (Boris 2026-08-23): as much of the big
-             card as fits — description, then your fill sockets + the target. */
+          /* Compact SPOTLIGHT mirror v2 (Boris 2026-08-24): micro deal table
+             (live band highlighted), the Jackpot-hit intro, your fill sockets,
+             then the live stats + pack-unlock rule. All band data from the
+             live config so a re-tier moves this card too. */
           (() => {
             const bz = promo.modalContent.bonusZone;
-            const credit = bz.tier === 1 ? 6 : bz.tier === 2 ? 3 : 2;
+            const tier = bp?.bonusZone?.tier ?? bz.tier ?? null;
+            const t1 = bp?.bonusZone?.tier1Through ?? bz.tier1Through ?? 25;
+            const t2 = bp?.bonusZone?.tier2Through ?? bz.tier2Through ?? 50;
+            const t3 = bp?.bonusZone?.tier3Through ?? bz.tier3Through ?? 50;
+            const end = Math.max(t2, t3);
+            const draftsLeft = bp?.bonusZone?.draftsLeftInTier ?? bz.draftsLeftInTier ?? 0;
+            const bands = (bz as { packBands?: Array<{ from: number; to: number; seats: number }> }).packBands ?? null;
+            const totalSeats = bands ? bands.reduce((n, b) => n + b.seats, 0) : null;
+            const rows: Array<[number, number, number]> = [[1, 1, t1], [2, t1 + 1, t2], ...(end > t2 ? [[3, t2 + 1, end] as [number, number, number]] : [])];
+            const credit = tier === 1 ? 6 : tier === 2 ? 3 : 2;
             const units = bz.unitsThisWindow ?? 0;
+            const slots = tier ? Math.ceil(6 / credit) : 0;
+            const filledN = Math.min(slots, Math.floor(units / credit));
             const need = Math.max(1, Math.ceil((6 - units) / credit));
+            const unlockAt = tier === 1 ? t1 : end;
             return (
               <>
-                <p className="text-[11.5px] leading-snug text-[#c9c9d2] line-clamp-3 whitespace-pre-line overflow-hidden">{promo.description}</p>
-                <div className="mt-1 text-[10px] font-extrabold tracking-[.6px] uppercase text-banana leading-tight">
-                  {bz.tier ? `${need} more = Free Spin` : 'Back next JP'}
+                <div className="flex flex-col gap-[3px]">
+                  {rows.map(([b, f, to]) => {
+                    const on = b === tier;
+                    const seats = bands?.find((p) => p.from === f)?.seats ?? null;
+                    return (
+                      <div key={b} className={`flex flex-col gap-[2px] rounded-lg px-2.5 py-[5px] pr-3.5 border ${on ? 'bg-emerald-400/[.12] border-emerald-300/45' : 'border-white/[.08] opacity-70'}`}>
+                        <div className={`font-extrabold whitespace-nowrap ${on ? 'text-[12.5px] text-emerald-300' : 'text-[10.5px] text-white/85'}`}>
+                          Buy {b} Get <span className="text-banana">1 Spin</span>
+                        </div>
+                        <div className="text-[8px] font-extrabold tracking-[.25px] whitespace-nowrap">
+                          <span className="text-[rgba(235,245,240,.7)]">DRAFTS {f}–{to}</span>
+                          {seats !== null && <span className="text-banana"> · {seats} JACKHOF SEATS</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[11.5px] leading-snug text-[#c9c9d2]">
+                  Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana font-extrabold">Free Spins</b> and
+                  sealed <b className="text-banana font-extrabold">Packs</b>{totalSeats !== null ? <>, with <b className="text-banana font-extrabold whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
+                </p>
+                {tier !== null && zonePacks.openable === 0 && (
+                  <div className="flex items-center gap-2">
+                    {Array.from({ length: slots }, (_, i) => (
+                      <span key={i} className={`w-[22px] h-[22px] rounded-full inline-flex items-center justify-center text-[11px] ${
+                        i < filledN ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.55)]' : 'border-2 border-dashed border-white/40 bg-black/20'
+                      }`}><span className={i < filledN ? '' : 'opacity-70 grayscale-[.5]'}>🍌</span></span>
+                    ))}
+                    <span className="text-[10.5px] font-extrabold tracking-[.5px] uppercase text-banana">
+                      {hasVisibleClaim ? 'Spin ready' : `${need} more = Free Spin`}
+                    </span>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-x-2 gap-y-[2px] text-[10px] font-extrabold tracking-[.5px] uppercase text-[rgba(235,245,240,.85)]">
+                  {zonePacks.openable > 0 ? (
+                    <span className="whitespace-nowrap"><b className="text-banana">{zonePacks.openable} PACKS READY</b> — SEATS INSIDE</span>
+                  ) : tier !== null ? (
+                    <>
+                      <span className="whitespace-nowrap"><b className="text-banana">{draftsLeft}</b> DRAFTS LEFT</span>
+                      <span className="whitespace-nowrap"><b className="text-banana">{zonePacks.sealed}</b> PACK{zonePacks.sealed === 1 ? '' : 'S'} SEALED</span>
+                    </>
+                  ) : (
+                    <span className="whitespace-nowrap text-white/55">ZONE REOPENS WHEN THE JP HITS</span>
+                  )}
+                </div>
+                {tier !== null && zonePacks.openable === 0 && (
+                  <span className="block text-[9.5px] leading-[1.5] font-extrabold tracking-[.4px] uppercase text-[rgba(235,245,240,.55)]">
+                    {zonePacks.sealed > 0 ? `Packs unlock at ${unlockAt} drafts or when the JP hits` : 'Every paid fill = 1 sealed Pack'}
+                  </span>
+                )}
+                <div className={`mt-auto pt-1 ${hasVisibleClaim && zonePacks.openable > 0 ? 'grid grid-cols-2 gap-2' : ''}`}>
+                  {hasVisibleClaim && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onClaim(e); }}
+                      className="promo-glow w-full rounded-full bg-banana px-3 py-2 text-[11px] font-extrabold text-black uppercase tracking-[.5px] active:scale-[.97] transition-transform"
+                    >
+                      {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim Spin'}
+                    </button>
+                  )}
+                  {zonePacks.openable > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onOpen(); }}
+                      className="w-full rounded-full bg-gradient-to-br from-[#7ff0c3] to-[#34d399] px-3 py-2 text-[11px] font-black text-[#04231a] uppercase tracking-[.5px] active:scale-[.97] transition-transform"
+                    >
+                      Open Packs
+                    </button>
+                  )}
                 </div>
               </>
             );
@@ -156,7 +259,7 @@ export function PromoMiniCard({
               Buy Drafts
             </a>
           </div>
-        ) : (
+        ) : isBz ? null : (
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 min-h-[30px]">
           <div className="min-w-0 flex-1">
             <PromoLive promo={promo} size="md" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} hideLabel={hasVisibleClaim} />

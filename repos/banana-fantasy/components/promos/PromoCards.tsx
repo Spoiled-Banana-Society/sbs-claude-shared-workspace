@@ -356,6 +356,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
     return (
       <BananaZoneSpotlight
         promo={promo}
+        wallet={wallet}
         hasVisibleClaim={hasVisibleClaim}
         onClaim={onClaim}
         onOpenModal={onOpenModal}

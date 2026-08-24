@@ -185,8 +185,15 @@ export default function DropPage() {
     // Wait for the drop state before judging — a redirect on the loading
     // frame would boot pack holders too. No wallet = nothing to open.
     if (wallet && sealedAnywhere === null) return;
+    // ⚠️ NEVER redirect while the reveal ceremony is running or queued —
+    // sealed hits 0 the moment the server opens the packs, which is BEFORE
+    // the animations play. The first version yanked open-all users to the
+    // promo mid-sequence and skipped every reveal (Vertig0 + esparks1111,
+    // final Drop night 9:13pm 8/23 — prizes were credited, just never
+    // shown). The page removes itself only once the last reveal is done.
+    if (opening || reveal !== null || queue.length > 0) return;
     if (!wallet || sealedAnywhere === 0) router.replace('/promos?promo=bonus-zone');
-  }, [zoneOn, wallet, sealedAnywhere, router]);
+  }, [zoneOn, wallet, sealedAnywhere, router, opening, reveal, queue.length]);
 
   // Before 9pm this counts to tonight's unlock. AFTER the drop it counts to the
   // NEXT one — the page went blank on time once everything was opened, which is

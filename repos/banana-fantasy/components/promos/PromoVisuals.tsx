@@ -9,6 +9,8 @@
 // 'md' (home carousel / draft sidebar), 'sm' (modal header strip).
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { SealedPack } from '@/components/promos/PackVisuals';
+import { useZonePacks } from '@/hooks/useZonePacks';
 import type { Promo } from '@/types';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { useDropMe } from '@/hooks/useDropMe';
@@ -283,31 +285,10 @@ export function PromoSwatch({
         inner = <Big n={bz.draftsLeftInTier} label={`DRAFTS LEFT AT BUY ${bz.tier} GET 1`} size={size} />;
         break;
       }
-      // Mini/carousel card (Boris 2026-08-23): your fill sockets live in the
-      // art, top-right — the drafts-left count moved to the card footer.
-      {
-        const credit = bz.tier === 1 ? 6 : bz.tier === 2 ? 3 : 2;
-        const slots = Math.ceil(6 / credit);
-        const units = bz.unitsThisWindow ?? 0;
-        const filled = Math.min(slots, Math.floor(units / credit));
-        const part = units - filled * credit > 0 && filled < slots;
-        inner = (
-          <span className="inline-flex gap-1 shrink-0">
-            {Array.from({ length: slots }, (_, i) => (
-              <span
-                key={i}
-                className={`w-[21px] h-[21px] rounded-full flex items-center justify-center text-[10px] ${
-                  i < filled ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.5)]'
-                    : i === filled && part ? 'border-2 border-banana/60 bg-banana/[.08]'
-                      : 'border-2 border-dashed border-white/45 bg-black/20'
-                }`}
-              >
-                <span className={i < filled ? '' : 'opacity-80 grayscale-[.5] brightness-[.8]'}>🍌</span>
-              </span>
-            ))}
-          </span>
-        );
-      }
+      // Mini/carousel card (Boris 2026-08-24): the sealed Banana Pack with
+      // this wallet's count badge lives in the art — fill sockets moved into
+      // the card body. Same pack people rip in the modal's pack room.
+      inner = <ZonePackCorner wallet={wallet} />;
       break;
     }
     case 'first-purchase':
@@ -457,6 +438,20 @@ export function PromoLive({
       if (isClaimed) return <Stat v="✓ Claimed" />;
       return null;
   }
+}
+
+function ZonePackCorner({ wallet }: { wallet: string | null }) {
+  const packs = useZonePacks(wallet);
+  return (
+    <span className={`relative inline-block shrink-0 mr-1 ${packs.sealed === 0 ? 'opacity-45 grayscale-[.5]' : ''}`}>
+      <SealedPack w={44} />
+      {packs.sealed > 0 && (
+        <span className="absolute -top-[6px] -right-[8px] min-w-[20px] h-[20px] rounded-full bg-banana text-black text-[11px] font-black flex items-center justify-center px-1 shadow-[0_2px_6px_rgba(0,0,0,.45)]">
+          {packs.sealed}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function DropLive({ size, wallet }: { size: Size; wallet: string | null }) {
