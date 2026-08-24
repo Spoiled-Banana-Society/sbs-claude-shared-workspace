@@ -103,14 +103,31 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
         </button>
       </div>
 
-      {/* Banana Zone is the FEATURED card (Boris 2026-08-24) — but the
-          conversion cards outrank EVERYTHING (Boris 2026-08-14): a viewer
-          with a new-user or first-purchase card gets those on top, and the
-          zone stays a regular grid card beneath them. */}
+      {/* Onboarding first, full-width and stacked (Boris 2026-08-24): a
+          viewer with new-user / first-purchase cards gets each as its own
+          spotlight row — nothing beside them — then the normal grid. Without
+          them, the Banana Zone takes the featured spot instead. */}
       {(() => {
-        const hasConversion = sortedPromos.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
+        const ONBOARD = new Set(['new-user', 'first-purchase']);
+        const convs = sortedPromos.filter((p) => ONBOARD.has(p.type));
+        if (convs.length > 0) {
+          return convs.map((p) => (
+            <div key={p.id} className="mb-3.5">
+              <PromoSpotlight
+                promo={p}
+                wallet={user?.walletAddress ?? null}
+                isClaimed={isClaimed(p)}
+                hasVisibleClaim={hasVisibleClaim(p)}
+                onOpenModal={() => setSelectedPromo(p)}
+                onClaim={() => void handleClaim(p)}
+                fpVariant={fpVariant}
+                fpShowNewPlayerTag={fpShowNewPlayerTag}
+              />
+            </div>
+          ));
+        }
         const zone = sortedPromos.find((p) => p.type === 'bonus-zone');
-        if (!zone || hasConversion) return null;
+        if (!zone) return null;
         return (
           <div className="mb-3.5">
             <PromoSpotlight
@@ -129,7 +146,8 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
       {/* The /promos rectangle cards: two columns on desktop, one on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        {sortedPromos.filter((p) => p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase')).flatMap((promo, i) => [
+        {sortedPromos.filter((p) => p.type !== 'new-user' && p.type !== 'first-purchase'
+          && (p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase'))).flatMap((promo, i) => [
           /* Banana Hype rides as the THIRD card (Boris 2026-08-24). */
           ...(i === 2 ? [<HypeCard key="hype" />] : []),
           (
@@ -147,7 +165,8 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
           />
           ),
         ])}
-        {sortedPromos.filter((p) => p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase')).length <= 2 && <HypeCard />}
+        {sortedPromos.filter((p) => p.type !== 'new-user' && p.type !== 'first-purchase'
+          && (p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase'))).length <= 2 && <HypeCard />}
       </div>
 
       <PromoModal
