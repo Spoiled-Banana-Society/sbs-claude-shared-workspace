@@ -7,7 +7,6 @@ import { PromoModal } from '../modals/PromoModal';
 import { PromoLongCard } from '@/components/promos/PromoCards';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
-import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 
 interface HomePromoGridProps {
@@ -57,7 +56,6 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
     flagsKnown: isBalanceLoaded,
     isLoggedIn,
     hasVisibleClaim,
-    isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
 
   // First-purchase copy variant — same rule as the carousel and /promos.

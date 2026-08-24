@@ -260,7 +260,7 @@ export function ZonePacks() {
           ) : pileCount > 0 ? (
             <>
               <b className="text-white">{pileCount} sealed pack{pileCount === 1 ? '' : 's'}</b>
-              {' '}&middot; they open the moment draft {liveBand?.toPos} fills
+              {' '}&middot; open at draft {liveBand?.toPos}, or instantly if the Jackpot hits
             </>
           ) : (
             <>No packs yet &middot; every paid Banana Zone draft you fill earns 1</>

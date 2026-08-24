@@ -19,7 +19,6 @@ import { useDepositEntry } from '@/hooks/useDepositEntry';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
-import { isWalletAdmin } from '@/lib/adminAllowlist';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
@@ -214,7 +213,6 @@ export function useDraftingPageState() {
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
         return true;
       },
-      isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
   }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, isLoggedIn, user?.walletAddress]);
   const promoCount = promos.length;

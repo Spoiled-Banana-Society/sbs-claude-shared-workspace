@@ -159,9 +159,9 @@ export function zonePackRulesExplanation(cfg: BonusZoneConfig): string {
     + '📦 PACKS\n'
     + '• Every paid draft that fills in the zone also earns 1 sealed pack. Open your packs right here on this card.\n'
     + seatLines.join('\n') + '\n'
-    + '• Packs unlock the moment their batch is done: draft 25 fills and the first batch opens, draft 50 fills and the second opens. No waiting for a set time.\n'
+    + `• Packs unlock the moment their batch is done, OR the moment the Jackpot hits, whichever comes first. Draft ${specs[0]?.toPos ?? 25} fills and the first batch opens; draft ${zoneEnd} fills and the second opens. No set times.\n`
+    + '• Jackpot hits early? The live batch opens right then with the packs it has, all its seats still inside. A hit never voids anything.\n'
     + '• Seats are dealt from randomness committed before the batch began. Opening only reveals what was already decided.\n'
-    + '• Jackpot hits early? The live batch opens immediately with the packs it has. A hit never voids anything.\n'
     + '• Sealed packs never expire.\n'
     + '\n'
     + '• Your tier is set by the position the draft FILLS at, not where you enter. Leave the lobby and nothing pays.\n'
@@ -302,7 +302,7 @@ async function writePackEarnedNoti(userId: string, bandId: string, spec: BandSpe
     type: 'promo',
     icon: '🎫',
     title: '📦 Pack earned — Banana Zone',
-    message: `Your Banana Zone draft filled and earned a sealed pack. ${spec.tickets} JackHOF seat${spec.tickets === 1 ? '' : 's'} are hiding in the packs from drafts ${spec.fromPos} to ${spec.toPos}. You hold ${total} pack${total === 1 ? '' : 's'} in this batch. Packs open the moment draft ${spec.toPos} fills.`,
+    message: `Your Banana Zone draft filled and earned a sealed pack. ${spec.tickets} JackHOF seat${spec.tickets === 1 ? '' : 's'} are hiding in the packs from drafts ${spec.fromPos} to ${spec.toPos}. You hold ${total} pack${total === 1 ? '' : 's'} in this batch. Packs open the moment draft ${spec.toPos} fills, or instantly if the Jackpot hits first.`,
     link: '/promos?promo=bonus-zone',
     read: false,
     createdAt: FieldValue.serverTimestamp(),

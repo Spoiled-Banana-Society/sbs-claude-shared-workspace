@@ -6,7 +6,6 @@ import { PromoModal } from '../modals/PromoModal';
 import { PromoMiniCard } from '@/components/promos/PromoMiniCard';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
-import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 
 interface PromoCarouselProps {
@@ -77,7 +76,6 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     flagsKnown: isBalanceLoaded,
     isLoggedIn,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
-    isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
 
   // First-purchase card body copy tracks the server-computed variant (new /

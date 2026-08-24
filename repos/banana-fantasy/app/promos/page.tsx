@@ -9,7 +9,6 @@ import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
-import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { API_CONFIG } from '@/lib/api/config';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { PromoSpotlight, PromoLongCard } from '@/components/promos/PromoCards';
@@ -97,7 +96,6 @@ export default function PromosPage() {
       flagsKnown: isBalanceLoaded,
       isLoggedIn,
       hasVisibleClaim,
-      isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promos, isBB3Holder, newUserPromoClaimed, user?.hasSpunWheel, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, isLoggedIn, user?.walletAddress]);

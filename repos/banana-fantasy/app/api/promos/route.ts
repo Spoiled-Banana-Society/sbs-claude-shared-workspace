@@ -285,11 +285,11 @@ export async function GET(req: Request) {
     // entry modal. Best-effort — promos always return.
     try {
       const { readBonusZoneConfig, getBonusZoneWalletStatus } = await import('@/lib/bonusZone');
-      const { isWalletAdmin } = await import('@/lib/adminAllowlist');
       const cfg = await readBonusZoneConfig();
-      const adminPreview = isWalletAdmin(userId);
       const bzIdx = promos.findIndex((p) => p.type === 'bonus-zone');
-      if (cfg.enabled || adminPreview) {
+      // Admin wallets get NO dark preview here — the live payload is identical
+      // for everyone (Boris 2026-08-23); dark-zone preview lives at /preview/bonus-zone.
+      if (cfg.enabled) {
         if (bzIdx !== -1) {
           // Seeded per-user docs carry launch copy — keep every surface on the
           // current line (Boris 2026-08-23), same pattern as ATB/Drop.
@@ -333,10 +333,8 @@ export async function GET(req: Request) {
             history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, unitsAfter: h.unitsAfter })),
           };
         }
-        if (cfg.enabled) {
-          const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
-          if (jpIdx !== -1) promos.splice(jpIdx, 1);
-        }
+        const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
+        if (jpIdx !== -1) promos.splice(jpIdx, 1);
       } else if (bzIdx !== -1) {
         promos.splice(bzIdx, 1);
       }

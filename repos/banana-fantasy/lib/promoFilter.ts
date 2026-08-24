@@ -214,9 +214,10 @@ interface FilterOpts {
    */
   hasVisibleClaim?: (p: Promo) => boolean;
   /**
-   * True when the viewing wallet is on the admin allowlist. Unlocks the
-   * ADMIN_PREVIEW_PROMO_TYPES so admins can see a not-yet-public promo
-   * live on the site. Regular users are unaffected.
+   * UNUSED on live surfaces (Boris 2026-08-23): admin wallets must render
+   * the site exactly as a regular user with the same account state — no
+   * extra cards, no stricter hiding. Not-yet-public promos are previewed on
+   * /preview/* (admin-gated), never by passing true here.
    */
   isAdminPreview?: boolean;
 }
