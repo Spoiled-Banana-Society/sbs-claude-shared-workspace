@@ -68,8 +68,7 @@ export function HypeCard({ className = '' }: { className?: string }) {
       tabIndex={0}
       onClick={goBoard}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goBoard(); } }}
-      className={`promo-rise relative grid grid-cols-1 sm:grid-cols-[110px_1fr] overflow-hidden rounded-[20px] border border-cyan-300/25 cursor-pointer select-none text-left
-        bg-[radial-gradient(120%_140%_at_85%_-10%,#14548a_0%,#0d3a63_45%,#081f38_100%)]
+      className={`promo-rise relative grid grid-cols-1 sm:grid-cols-[110px_1fr] overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#131318] cursor-pointer select-none text-left
         transition-[box-shadow,transform] duration-150 hover:-translate-y-[3px] hover:shadow-[0_16px_36px_rgba(0,0,0,.45)] active:scale-[.985] ${className}`}
     >
       {/* rail — the prize IS the headline. Side column on desktop, a
@@ -87,15 +86,12 @@ export function HypeCard({ className = '' }: { className?: string }) {
 
       <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[9.5px] font-extrabold tracking-[1.6px] text-[#22d3ee] whitespace-nowrap">POST ABOUT SBS ON X</span>
+          <span className="text-[11.5px] font-extrabold tracking-[2px] text-[#22d3ee] whitespace-nowrap">JACKHOF SEAT + MORE · WEEKLY</span>
           <span className="text-[8.5px] font-extrabold tracking-[1.1px] uppercase text-white/55 whitespace-nowrap">Weekly · Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
         </div>
-        <div className="flex items-center gap-2">
-          <h4 className="text-[15px] font-extrabold text-white tracking-[-.2px]">Banana Hype</h4>
-          <span className="rounded-full bg-banana px-2 py-[2px] text-[8.5px] font-black tracking-[1.2px] text-black">NEW</span>
-        </div>
+        <h4 className="text-[17px] font-extrabold text-white tracking-[-.2px] leading-tight">Banana Hype</h4>
         <p className="text-[11.5px] leading-[1.45] text-[#d5dbe4]">
-          Your <b className="text-banana font-extrabold">mindshare</b> = your share of the SBS conversation this week. Top 25 win — seats down to spins.
+          Post, QRT and reply about SBS on X — the more you engage, the bigger your <b className="text-banana font-extrabold">mindshare</b>, your share of this week&apos;s conversation. Top 25 win every Thursday, seats down to spins.
         </p>
 
         {/* top 6: 1–3 down the left column, 4–6 down the right */}

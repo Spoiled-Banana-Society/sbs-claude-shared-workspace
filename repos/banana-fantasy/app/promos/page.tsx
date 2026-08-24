@@ -418,8 +418,9 @@ export default function PromosPage() {
             ))}
             {longs.length > 0 && (
               <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3.5 ${showSpot ? 'mt-4' : ''}`}>
-                <HypeCard />
-                {longs.map((promo, i) => (
+                {longs.flatMap((promo, i) => [
+                  ...(i === 2 ? [<HypeCard key="hype" />] : []),
+                  (
                   <PromoLongCard
                     key={promo.id}
                     promo={promo}
@@ -432,7 +433,9 @@ export default function PromosPage() {
                     fpVariant={fpVariant}
                     fpShowNewPlayerTag={fpShowNewPlayerTag}
                   />
-                ))}
+                  ),
+                ])}
+                {longs.length <= 2 && <HypeCard />}
               </div>
             )}
           </>

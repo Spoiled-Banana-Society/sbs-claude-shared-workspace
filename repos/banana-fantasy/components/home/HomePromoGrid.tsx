@@ -127,10 +127,10 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
       {/* The /promos rectangle cards: two columns on desktop, one on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        {/* Banana Hype rides the grid as a display card (board-driven, no
-            per-user promo doc) — first cell, blue is its color. */}
-        <HypeCard />
-        {sortedPromos.filter((p) => p.type !== 'bonus-zone').map((promo, i) => (
+        {sortedPromos.filter((p) => p.type !== 'bonus-zone').flatMap((promo, i) => [
+          /* Banana Hype rides as the THIRD card (Boris 2026-08-24). */
+          ...(i === 2 ? [<HypeCard key="hype" />] : []),
+          (
           <PromoLongCard
             key={promo.id}
             promo={promo}
@@ -143,7 +143,9 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
             fpVariant={fpVariant}
             fpShowNewPlayerTag={fpShowNewPlayerTag}
           />
-        ))}
+          ),
+        ])}
+        {sortedPromos.filter((p) => p.type !== 'bonus-zone').length <= 2 && <HypeCard />}
       </div>
 
       <PromoModal
