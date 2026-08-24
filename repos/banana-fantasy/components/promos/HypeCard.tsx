@@ -77,16 +77,18 @@ export function HypeCard({ className = '' }: { className?: string }) {
     >
       {/* rail — the prize IS the headline. Left column at every size, same
           as the other long cards' swatch column (Boris 2026-08-24). */}
-      <div className="flex flex-col items-center justify-center gap-1.5 px-2 py-4 text-center bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
+      <div className="flex flex-col items-center justify-center gap-2 sm:gap-1.5 px-2 py-4 text-center bg-[radial-gradient(130%_150%_at_20%_-10%,#0e7490_0%,#0b4a66_45%,#072338_100%)]">
+        <span className="h-px w-5 bg-white/25" aria-hidden />
         <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1.2px] sm:tracking-[1.4px] text-white/75">1ST PLACE WINS A</span>
-        <span className="text-[15px] sm:text-[17px] font-extrabold leading-[1.15] text-white">JACKHOF<br />SEAT</span>
+        <span className="text-[17px] font-extrabold leading-[1.15] text-white">JACKHOF<br />SEAT</span>
         <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1.2px] sm:tracking-[1.4px] text-[#67e8f9]">EVERY WEEK</span>
+        <span className="h-px w-5 bg-white/25" aria-hidden />
       </div>
 
       <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[11.5px] font-extrabold tracking-[2px] text-[#22d3ee] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">JACKHOF SEAT + MORE · WEEKLY</span>
-          <span className="text-[8.5px] font-extrabold tracking-[1.1px] uppercase text-white/55 whitespace-nowrap shrink-0">Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
+          <span className="text-[9.5px] sm:text-[11.5px] font-extrabold tracking-[1.2px] sm:tracking-[2px] text-[#22d3ee] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">JACKHOF SEAT + MORE<span className="hidden sm:inline"> · WEEKLY</span></span>
+          <span className="text-[8px] sm:text-[8.5px] font-extrabold tracking-[1px] sm:tracking-[1.1px] uppercase text-white/55 whitespace-nowrap shrink-0">Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
         </div>
         <h4 className="text-[17px] font-extrabold text-white tracking-[-.2px] leading-tight">Banana Hype</h4>
         <p className="text-[11.5px] leading-[1.45] text-[#d5dbe4]">
