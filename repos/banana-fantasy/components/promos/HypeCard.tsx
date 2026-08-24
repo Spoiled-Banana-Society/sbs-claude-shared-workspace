@@ -57,10 +57,14 @@ export function HypeCard({ className = '' }: { className?: string }) {
     return () => { dead.current = true; window.removeEventListener('focus', onFocus); clearInterval(t); };
   }, [pull]);
 
+  // Logged-out surfaces show ONLY the conversion cards (Boris standing rule)
+  // — Hype needs an account + linked X anyway, so it waits for login.
   const top = board?.tiles.slice(0, 6) ?? [];
   const you = board?.you ?? null;
   const yourZone = you?.rank ? prizeZone(you.rank) : null;
   const goBoard = () => router.push('/mindshare');
+
+  if (!user) return null;
 
   return (
     <div

@@ -433,6 +433,8 @@ export async function classifyAvailablePasses(wallet: string, cfg: BonusZoneConf
 // ── Entries: lock at entry, void on leave, pay at fill ──────────────────────
 
 export const BONUS_ZONE_ENTRIES = 'bonus_zone_entries';
+/** House-bot registry (lib/botMint) — read here by name so the zone never imports the on-chain mint graph. */
+const BOT_COLLECTION = 'botWallets';
 export const BONUS_ZONE_PROGRESS = 'bonus_zone_progress';
 
 export type BonusEntryStatus = 'pending' | 'ineligible' | 'left' | 'settling' | 'paid' | 'half' | 'grant_failed' | 'closed' | 'position_unresolved';
@@ -467,6 +469,8 @@ export interface BonusZoneEntry {
   /** For partial credits: banked sixths after this fill (6 = minted). */
   unitsAfter?: number;
   error?: string;
+  /** Lock was created at FILL by healMissingBonusZoneLocks (no client lock ever landed). */
+  healedAtFill?: boolean;
 }
 
 export function entryDocId(draftId: string, wallet: string): string {
@@ -615,6 +619,61 @@ export interface SettleOutcome {
 }
 
 /**
+ * Seats taken with NO zone lock at all. The lock is written by the client's
+ * post-join /api/owner/use-pass call, which never fires when the Go join
+ * succeeds but the client's 20s timeout wins the race (Apevine, BBB #870: the
+ * engine seated them at 00:21:06, the client logged "join timed out ×3, nothing
+ * spent", the draft filled with them in it) or when the non-blocking
+ * bookkeeping request is simply dropped (Bananza, BBB #874). Both paid drafts
+ * earned nothing from the zone. The seat is real either way, so record the
+ * lock HERE at fill time from engine truth — the paid tier is decided at fill
+ * anyway, so nothing is lost by locking late.
+ *
+ * HUMANS ONLY: house bots join straight through Go and have never held a lock
+ * (0 of 154 entries on 8/24) — creating one would start paying bots zone
+ * spins. Free passes never pay, so only a resolved PAID token gets a record.
+ * `create()` (not set) so a concurrent client lock can never be clobbered.
+ */
+async function healMissingBonusZoneLocks(draftId: string, wallets: string[], cfg: BonusZoneConfig): Promise<void> {
+  const db = getAdminFirestore();
+  let view: BonusZoneView | null = null;
+  for (const raw of wallets) {
+    const wallet = raw.toLowerCase();
+    const ref = db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet));
+    if ((await ref.get()).exists) continue;
+    const bot = await db.collection(BOT_COLLECTION).doc(wallet).get().catch(() => null);
+    if (bot?.exists && (bot.data() as { isBot?: boolean }).isBot === true) continue;
+    const tok = await resolveTokenInDraft(wallet, draftId);
+    if (!tok?.tokenId || tok.passType !== 'paid') continue;
+    const elig = await classifyPassForBonusZone(wallet, tok.tokenId, 'paid', cfg);
+    if (!view) view = await readBonusZoneView();
+    const t = tierInfo(view.tier ?? 3, cfg);
+    const entry: BonusZoneEntry = {
+      draftId,
+      wallet,
+      tokenId: tok.tokenId,
+      tier: view.tier ?? t.tier,
+      label: view.tier ? t.label : 'Zone closed',
+      credit: view.tier ? t.credit : 0,
+      units: view.tier ? t.units : 0,
+      position: view.position,
+      windowStart: view.windowStart,
+      lockedAtIso: new Date().toISOString(),
+      status: elig.eligible ? 'pending' : 'ineligible',
+      eligible: elig.eligible,
+      reason: elig.reason,
+      healedAtFill: true,
+    };
+    try {
+      await ref.create(entry);
+      logger.info('bonus_zone.lock_healed_at_fill', { context: { draftId, wallet, tokenId: tok.tokenId, eligible: elig.eligible, reason: elig.reason } });
+    } catch {
+      /* already exists — a client lock landed between our read and create; theirs wins */
+    }
+  }
+}
+
+/**
  * Called from the draft-filled webhook (the one RELIABLE fill observer). The
  * tier is decided HERE from the draft's real window position. For every wallet
  * with a pending record on this draft: verify the engine still has that wallet
@@ -628,6 +687,12 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
   if (!cfg.enabled || !isFirestoreConfigured() || !isBonusZoneDraftId(draftId)) return [];
   const db = getAdminFirestore();
   const out: SettleOutcome[] = [];
+
+  // Seats with NO lock at all get one here, from engine truth (see
+  // healMissingBonusZoneLocks) — BEFORE the cheap exit so they settle below.
+  await healMissingBonusZoneLocks(draftId, wallets, cfg).catch((err) => {
+    logger.warn('bonus_zone.lock_heal_failed', { context: { draftId, err: (err as Error).message } });
+  });
 
   // Any settleable records at all? (cheap exit for lobbies nobody recorded on).
   // Parked (position_unresolved) records count — the minute cron re-runs them.
