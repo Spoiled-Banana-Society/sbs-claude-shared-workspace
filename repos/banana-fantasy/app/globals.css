@@ -824,14 +824,10 @@ body {
   50% { transform: scale(1.05); }
 }
 .bz-fire { animation: bz-fire 1.8s ease-in-out infinite; }
-.bz-fire::before {
-  content: "";
-  position: absolute;
-  inset: -30%;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.45) 50%, transparent 58%);
-  animation: bz-sheen 2.2s ease-in-out infinite;
-  pointer-events: none;
-}
+/* The chip's own white sheen retired (Boris 2026-08-24) — the card-wide
+   promo-sweep is the ONE light pass now, uniform and subtle; the chip keeps
+   its glow pulse only. */
+.bz-fire::before { content: none; }
 .bz-nextup { animation: bz-nextup 1.6s ease-in-out infinite; }
 .bz-claimpulse { animation: bz-claimpulse 1.2s ease-in-out infinite; }
 /* YOUR PACKS pack art: always a little alive — a quiet breath while empty,
