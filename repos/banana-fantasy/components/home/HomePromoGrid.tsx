@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
-import { PromoLongCard } from '@/components/promos/PromoCards';
+import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
@@ -102,9 +102,31 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
         </button>
       </div>
 
+      {/* Banana Zone is the FEATURED card (Boris 2026-08-24): the /promos
+          spotlight sits full-width above the grid — same pattern as /promos,
+          so no grid card is "missing" its swatch rail. */}
+      {(() => {
+        const zone = sortedPromos.find((p) => p.type === 'bonus-zone');
+        if (!zone) return null;
+        return (
+          <div className="mb-3.5">
+            <PromoSpotlight
+              promo={zone}
+              wallet={user?.walletAddress ?? null}
+              isClaimed={isClaimed(zone)}
+              hasVisibleClaim={hasVisibleClaim(zone)}
+              onOpenModal={() => setSelectedPromo(zone)}
+              onClaim={() => void handleClaim(zone)}
+              fpVariant={fpVariant}
+              fpShowNewPlayerTag={fpShowNewPlayerTag}
+            />
+          </div>
+        );
+      })()}
+
       {/* The /promos rectangle cards: two columns on desktop, one on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        {sortedPromos.map((promo, i) => (
+        {sortedPromos.filter((p) => p.type !== 'bonus-zone').map((promo, i) => (
           <PromoLongCard
             key={promo.id}
             promo={promo}

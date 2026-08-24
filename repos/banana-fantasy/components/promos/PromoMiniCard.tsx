@@ -197,7 +197,7 @@ export function PromoMiniCard({
                   ) : tier !== null ? (
                     <>
                       <span className="whitespace-nowrap"><b className="text-banana">{draftsLeft}</b> DRAFTS LEFT</span>
-                      <span className="whitespace-nowrap"><b className="text-banana">{zonePacks.sealed}</b> PACK{zonePacks.sealed === 1 ? '' : 'S'} SEALED</span>
+                      <span className="whitespace-nowrap"><b className="text-banana">{zonePacks.sealed}</b> PACK{zonePacks.sealed === 1 ? '' : 'S'}</span>
                     </>
                   ) : (
                     <span className="whitespace-nowrap text-white/55">ZONE REOPENS WHEN THE JP HITS</span>

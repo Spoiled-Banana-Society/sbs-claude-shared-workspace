@@ -19,6 +19,10 @@
 // pills); the user's units ride /api/promos (usePromos refetches on stream
 // pings); the user's pack counts ride useZonePacks (same trigger). Ripping
 // packs happens in the modal's pack room — Open here just opens the modal.
+//
+// Two layouts in one card (Boris 2026-08-24): >=560px keeps the deal rows +
+// three-column panel; under 560px the card becomes SECTIONS with dividers —
+// intro, chips, YOUR SPINS, YOUR PACKS — so nothing crams (mock sign-off).
 
 import React from 'react';
 import type { Promo } from '@/types';
@@ -126,7 +130,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana">Free Spins</b> and
             sealed <b className="text-banana">Packs</b>{totalSeats ? <>, with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
           </p>
-          <div className="mt-2.5 max-w-[470px]">
+          <div className="mt-2.5 max-w-[470px] hidden min-[560px]:block">
             {rows.map((r) => (
               <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] border-t border-white/20 first:border-t-0 text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
                 <b className="text-white font-extrabold whitespace-nowrap">Buy {r.buy} Get 1 Spin</b>
@@ -141,9 +145,98 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           </div>
         </div>
 
+        {/* MOBILE (<560px): sectioned layout — chips, then YOUR SPINS and
+            YOUR PACKS split by full-width dividers. Same data, zero cram. */}
+        <div className="min-[560px]:hidden">
+          <div className={`mt-3 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            {rows.map(({ band, buy, from, to, seats }) => {
+              const st = bandState(band);
+              return (
+                <div key={band} className={`text-center rounded-[12px] px-1 pt-2.5 pb-2 uppercase font-extrabold leading-[1.25] ${
+                  st === 'live'
+                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] shadow-[0_0_18px_rgba(52,211,153,.4)]'
+                    : 'text-[12px] text-white/70 border border-white/[.14] bg-black/25'
+                }`}>
+                  BUY {buy} GET <span className="text-banana">1 SPIN</span>
+                  <em className="block not-italic mt-[2px] text-[9px] font-extrabold tracking-[1.3px] text-white/50">DRAFTS {from}–{to}</em>
+                  {seats !== null && <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{seats} JACKHOF SEATS</span>}
+                  {st === 'live' && <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="h-px bg-white/[.16] -mx-6 my-4" />
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] font-extrabold tracking-[2px] uppercase text-[rgba(235,245,240,.75)]">Your Spins</span>
+            {tier !== null && (
+              <span className="text-[10px] font-extrabold tracking-[.8px] uppercase text-banana whitespace-nowrap">{draftsLeftInTier} Drafts Left · Draft {segDone} of {segSize}</span>
+            )}
+          </div>
+          <div className="mt-2.5 flex items-center justify-between gap-3">
+            <span className="inline-flex gap-2.5">
+              {Array.from({ length: slots }, (_, i) => {
+                const on = i < filled;
+                const part = i === filled && hasPartial;
+                return (
+                  <span key={i} className={`w-[44px] h-[44px] rounded-full flex items-center justify-center text-[21px] ${
+                    on ? 'border-[3px] border-banana bg-banana/15 shadow-[0_0_14px_rgba(255,207,61,.6)]'
+                      : part ? 'border-[3px] border-banana/60 bg-banana/[.08]'
+                        : 'border-[3px] border-dashed border-white/45 bg-black/20'
+                  }`}><span className={on ? '' : 'opacity-80 grayscale-[.5] brightness-[.85]'}>🍌</span></span>
+                );
+              })}
+            </span>
+            {hasVisibleClaim && claimCount > 0 ? (
+              <button
+                type="button"
+                onClick={onClaim}
+                className="promo-glow rounded-full bg-banana px-[18px] py-2.5 text-[11.5px] font-extrabold tracking-[.8px] text-black uppercase bz-claimpulse active:scale-[.97] transition-transform"
+              >
+                {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
+              </button>
+            ) : (
+              <span className="text-[12px] font-extrabold tracking-[.6px] uppercase text-banana text-right">
+                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
+              </span>
+            )}
+          </div>
+
+          <div className="h-px bg-white/[.16] -mx-6 my-4" />
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] font-extrabold tracking-[2px] uppercase text-[rgba(235,245,240,.75)]">Your Packs</span>
+            {packs.sealed > 0 && packs.openable === 0 && (
+              <span className="text-[10px] font-extrabold tracking-[.8px] uppercase text-banana">{packs.sealed} Packs</span>
+            )}
+          </div>
+          <div className="mt-2.5 flex items-center justify-between gap-3">
+            <span className={`relative inline-block ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5]' : ''}`}>
+              <SealedPack w={46} />
+              {packs.sealed > 0 && (
+                <span className="absolute -top-[6px] -right-[8px] min-w-[20px] h-[20px] rounded-full bg-banana text-black text-[11px] font-black flex items-center justify-center px-1 shadow-[0_2px_6px_rgba(0,0,0,.45)]">{packs.sealed}</span>
+              )}
+            </span>
+            {packs.openable > 0 ? (
+              <button
+                type="button"
+                onClick={onOpenModal}
+                className="rounded-full bg-gradient-to-br from-[#7ff0c3] to-[#34d399] px-[18px] py-2.5 text-[11.5px] font-black tracking-[.8px] text-[#04231a] uppercase bz-claimpulse active:scale-[.97] transition-transform"
+              >
+                Open {packs.openable} Pack{packs.openable === 1 ? '' : 's'}
+              </button>
+            ) : (
+              <span className="text-right text-[10px] font-extrabold tracking-[.6px] uppercase leading-[1.6] text-[rgba(235,245,240,.75)]">
+                {packs.sealed > 0
+                  ? <>Unlock at {unlockAt} Drafts<br /><span className="text-white">or when the JP hits</span></>
+                  : 'Fill a paid draft → 1 Pack'}
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* combined panel — three columns on a strict shared grid so headers,
             visuals and footer lines all align (Boris 2026-08-24) */}
-        <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] grid grid-cols-1 min-[560px]:grid-cols-[1fr_1px_1.1fr_1px_1.2fr] items-start gap-3.5 px-5 py-4">
+        <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] hidden min-[560px]:grid min-[560px]:grid-cols-[1fr_1px_1.1fr_1px_1.2fr] items-start gap-3.5 px-5 py-4">
           {/* col 1 — countdown */}
           <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
             <div className="self-start text-[10.5px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.88)]">
@@ -234,7 +327,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         </div>
 
         {/* tier chips — deep emerald live so white + banana copy stays loud */}
-        <div className={`mt-3.5 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+        <div className={`mt-3.5 hidden min-[560px]:grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
           {rows.map(({ band, buy, from, to, seats }) => {
             const st = bandState(band);
             return (
