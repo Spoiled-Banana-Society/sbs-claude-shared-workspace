@@ -450,7 +450,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
 
   return (
     <section
-      className={`promo-grad promo-sweep promo-rise rounded-[24px] p-6 sm:p-8 text-white ${hasVisibleClaim ? 'ring-2 ring-banana' : ''}`}
+      className={`promo-grad promo-sweep promo-rise transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[0_20px_48px_rgba(0,0,0,.5)] active:scale-[.99] rounded-[24px] p-6 sm:p-8 text-white ${hasVisibleClaim ? 'ring-2 ring-banana' : ''}`}
       style={promoHueStyle(promo.type, 0)}
       aria-label={`${promoName(promo)} — featured promo`}
     >

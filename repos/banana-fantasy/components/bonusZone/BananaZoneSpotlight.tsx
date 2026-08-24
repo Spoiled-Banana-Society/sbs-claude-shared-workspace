@@ -102,7 +102,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
 
   return (
     <section
-      className="promo-grad promo-sweep promo-rise rounded-[24px] p-6 sm:p-8 text-white"
+      className="promo-grad promo-sweep promo-rise transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[0_20px_48px_rgba(0,0,0,.5)] active:scale-[.99] rounded-[24px] p-6 sm:p-8 text-white"
       // Deeper green than the shared zone hue (Boris 2026-08-24): every ink on
       // this card — banana, orange, white, emerald — reads a step crisper.
       style={{ ...promoHueStyle('bonus-zone', 0), '--pa': '#1e6f47', '--pb': '#062419' } as React.CSSProperties}
