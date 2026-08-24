@@ -95,7 +95,7 @@ export function HypeCard({ className = '' }: { className?: string }) {
         </div>
         <h4 className="text-[17px] font-extrabold text-white tracking-[-.2px] leading-tight">Banana Hype</h4>
         <p className="text-[11.5px] leading-[1.45] text-[#d5dbe4]">
-          Post, QRT and reply about SBS on X — the more you engage, the bigger your <b className="text-banana font-extrabold">mindshare</b>, your share of this week&apos;s conversation. Top 25 win every Thursday, seats down to spins.
+          Post, QRT and reply about SBS on X — the more you engage, the bigger your <b className="text-banana font-extrabold">mindshare</b>, your share of this week&apos;s conversation. Top 25 win prizes in our weekly leaderboard.
         </p>
 
         {/* top 6: 1–3 down the left column, 4–6 down the right */}
