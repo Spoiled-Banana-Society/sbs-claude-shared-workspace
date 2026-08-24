@@ -103,12 +103,14 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
         </button>
       </div>
 
-      {/* Banana Zone is the FEATURED card (Boris 2026-08-24): the /promos
-          spotlight sits full-width above the grid — same pattern as /promos,
-          so no grid card is "missing" its swatch rail. */}
+      {/* Banana Zone is the FEATURED card (Boris 2026-08-24) — but the
+          conversion cards outrank EVERYTHING (Boris 2026-08-14): a viewer
+          with a new-user or first-purchase card gets those on top, and the
+          zone stays a regular grid card beneath them. */}
       {(() => {
+        const hasConversion = sortedPromos.some((p) => p.type === 'new-user' || p.type === 'first-purchase');
         const zone = sortedPromos.find((p) => p.type === 'bonus-zone');
-        if (!zone) return null;
+        if (!zone || hasConversion) return null;
         return (
           <div className="mb-3.5">
             <PromoSpotlight
@@ -127,7 +129,7 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
       {/* The /promos rectangle cards: two columns on desktop, one on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        {sortedPromos.filter((p) => p.type !== 'bonus-zone').flatMap((promo, i) => [
+        {sortedPromos.filter((p) => p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase')).flatMap((promo, i) => [
           /* Banana Hype rides as the THIRD card (Boris 2026-08-24). */
           ...(i === 2 ? [<HypeCard key="hype" />] : []),
           (
@@ -145,7 +147,7 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
           />
           ),
         ])}
-        {sortedPromos.filter((p) => p.type !== 'bonus-zone').length <= 2 && <HypeCard />}
+        {sortedPromos.filter((p) => p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase')).length <= 2 && <HypeCard />}
       </div>
 
       <PromoModal
