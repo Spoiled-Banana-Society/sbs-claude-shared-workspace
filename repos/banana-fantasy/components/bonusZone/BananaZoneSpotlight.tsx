@@ -167,12 +167,22 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           </div>
 
           <div className="h-px bg-white/[.16] -mx-6 my-4" />
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-[10px] font-extrabold tracking-[2px] uppercase text-[rgba(235,245,240,.75)]">Your Spins</span>
-            {tier !== null && (
-              <span className="text-[10px] font-extrabold tracking-[.8px] uppercase text-banana whitespace-nowrap">{draftsLeftInTier} Drafts Left · Draft {segDone} of {segSize}</span>
-            )}
+          {/* section 1 — mirrors desktop box 1: the countdown owns its row */}
+          <div className="flex items-center justify-between gap-3">
+            <span>
+              <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">Drafts Left at Buy {tier ?? 1} Get 1 Spin</span>
+              {tier !== null && (
+                <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.6)]">Draft {segDone} of {segSize}</span>
+              )}
+            </span>
+            <span className="text-[34px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_18px_rgba(255,207,61,.5)]">
+              {tier ? draftsLeftInTier : hasView ? 0 : '—'}
+            </span>
           </div>
+
+          <div className="h-px bg-white/[.16] -mx-6 my-4" />
+          {/* section 2 — mirrors desktop box 2 */}
+          <span className="block text-[10px] font-extrabold tracking-[2px] uppercase text-[rgba(235,245,240,.85)]">Your Filled Drafts</span>
           <div className="mt-2.5 flex items-center justify-between gap-3">
             <span className="inline-flex gap-2.5">
               {Array.from({ length: slots }, (_, i) => {
