@@ -2,6 +2,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, type RollingLanes } from '@/lib/rollingLanes';
 import { bonusZoneViewForLane, readBonusZoneConfig, type BonusZoneConfig, type BonusZoneView } from '@/lib/bonusZone';
+import { readZoneDropConfig, packSeatsForTier } from '@/lib/zoneDrop';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -51,7 +52,16 @@ const REVEAL_OFFSET_SEC = 39;
  * Critical: this is what users see in the JP/HOF "X remaining" header.
  * The IDs themselves stay sealed during a batch (anti-frontrunning).
  */
-function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: BonusZoneConfig): BatchProgress {
+/** Zone config + packs switch, both cached in their libs; never throws. */
+async function readZoneInputs(): Promise<[BonusZoneConfig | undefined, boolean]> {
+  const [bz, zp] = await Promise.all([
+    readBonusZoneConfig().catch(() => undefined),
+    readZoneDropConfig().then((c) => c.enabled).catch(() => false),
+  ]);
+  return [bz, zp];
+}
+
+function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: BonusZoneConfig, zonePacksOn = false): BatchProgress {
   const d = data ?? {};
   const filled = Number(d.FilledLeaguesCount ?? d.filledLeaguesCount ?? 0) || 0;
   const jpIds: number[] = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
@@ -163,6 +173,9 @@ function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: Bonu
   if (lanes && bzConfig?.enabled) {
     const jpView = lanes.jp.pre ?? lanes.jp;
     bonusZone = bonusZoneViewForLane(jpView.windowStart, filled - unrevealedIds.size, bzConfig);
+    // JackHOF seats in this tier's packs — only while ZONE PACKS is live, so
+    // the pill and the promo card flip together and never disagree.
+    if (zonePacksOn) bonusZone.packSeats = packSeatsForTier(bonusZone.tier, bzConfig);
   }
 
   return {
@@ -237,7 +250,7 @@ export async function GET(req: Request) {
       try {
         const snap = await trackerRef.get();
         const data = snap.exists ? (snap.data() ?? {}) : {};
-        send('snapshot', buildPayload(data, await readBonusZoneConfig().catch(() => undefined)));
+        send('snapshot', buildPayload(data, ...(await readZoneInputs())));
         firstSnapshotSent = true;
       } catch (err) {
         logger.warn('batchProgress.stream.initial_failed', { err: (err as Error).message });
@@ -252,7 +265,7 @@ export async function GET(req: Request) {
           const data = snap.exists ? (snap.data() ?? {}) : {};
           // Config read is a 20s in-memory cache — one Firestore read per
           // instance per 20s, not per tracker update.
-          void readBonusZoneConfig().catch(() => undefined).then((bz) => send('update', buildPayload(data, bz)));
+          void readZoneInputs().then(([bz, packsOn]) => send('update', buildPayload(data, bz, packsOn)));
         },
         (err) => {
           logger.warn('batchProgress.stream.snapshot_err', { err: err.message });
