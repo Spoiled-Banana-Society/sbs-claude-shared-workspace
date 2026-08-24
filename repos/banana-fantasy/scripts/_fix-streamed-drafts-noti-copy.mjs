@@ -13,7 +13,7 @@ if (!m) { console.error('no SA'); process.exit(1); }
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(Buffer.from(m[1], 'base64').toString('utf8'))) });
 const db = admin.firestore();
 
-const TITLE = '🍌 SBS streamed drafts with Best Ball legends this week';
+const TITLE = 'SBS streamed drafts with Justin Herzig + Felix Castro this Tuesday and Wednesday';
 const MESSAGE = "Tuesday 9:30PM ET — Felix Castro, DK Best Ball Milly winner, drafts SBS live on his stream.\nWednesday 9PM ET — Founder Draft with Justin Herzig, best ball's GOAT and SBS advisor.\nTap to learn more.";
 
 const snap = await db.collection('marketplace_notifications').where('dedupeKey', '==', 'streamed-drafts-herzig-castro').get();

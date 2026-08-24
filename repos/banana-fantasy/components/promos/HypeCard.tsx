@@ -26,12 +26,11 @@ interface Board { tiles: Tile[]; you: You | null }
 const rankChip = (rank: number) =>
   rank === 1 ? 'bg-gradient-to-br from-[#ef4444] to-[#D4AF37] text-white'
     : rank <= 3 ? 'bg-[#ef4444] text-white'
-      : rank <= 6 ? 'bg-[#D4AF37] text-[#1a1206]'
-        : rank <= 15 ? 'bg-[#a855f7] text-white'
-          : 'bg-teal-400 text-[#042f2a]';
+      : rank <= 10 ? 'bg-[#D4AF37] text-[#1a1206]'
+        : 'bg-teal-400 text-[#042f2a]';
 
 const prizeZone = (rank: number) =>
-  rank === 1 ? 'JACKHOF SEAT' : rank <= 3 ? 'JACKPOT SEAT' : rank <= 6 ? 'HOF SEAT' : rank <= 15 ? '3 SPINS' : rank <= 25 ? '1 SPIN' : null;
+  rank === 1 ? 'JACKHOF SEAT' : rank <= 3 ? 'JACKPOT SEAT' : rank <= 10 ? 'HOF SEAT' : rank <= 25 ? '1 FREE SPIN' : null;
 
 export function HypeCard({ className = '' }: { className?: string }) {
   const router = useRouter();
@@ -112,9 +111,8 @@ export function HypeCard({ className = '' }: { className?: string }) {
         <div className="flex flex-wrap gap-1">
           <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37] text-[#ffd977] bg-gradient-to-br from-[#ef4444]/25 to-[#D4AF37]/25">1ST · JACKHOF SEAT</span>
           <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#ef4444]/60 text-[#fca5a5] bg-black/25">2–3 · JACKPOT SEAT</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–6 · HOF SEAT</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#a855f7]/55 text-[#d3b0f7] bg-black/25">7–15 · 3 SPINS</span>
-          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">16–25 · 1 SPIN</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-[#D4AF37]/55 text-[#e7c766] bg-black/25">4–10 · HOF SEAT</span>
+          <span className="text-[8px] font-black tracking-[.6px] rounded-full px-2 py-[3px] whitespace-nowrap border border-teal-400/55 text-[#7ce8dc] bg-black/25">11–25 · 1 FREE SPIN</span>
         </div>
 
         {/* no X linked → the way in; linked → your live standing */}
