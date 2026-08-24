@@ -423,10 +423,21 @@ async function rescoreWeek(weekId: string, nowMs: number): Promise<{ tiles: numb
   const db = getAdminFirestore();
   const snap = await db.collection(WEEKS_COLLECTION).doc(weekId).collection('tweets').get();
   const byAuthor = new Map<string, { handle: string; perDay: Map<string, number[]>; tweets: number }>();
+  const bonusByAuthor = new Map<string, number>();
   for (const doc of snap.docs) {
     const t = doc.data() as RawTweet;
     const key = t.authorHandle.toLowerCase();
     if (EXCLUDED_HANDLES.has(key)) continue;
+    // Manual bonus docs (paying-referral credits, Boris 2026-08-24): flat
+    // points added OUTSIDE tweet scoring — no engagement math, no day decay,
+    // not counted as a tweet. Written ONLY by hand with Boris's explicit
+    // sign-off, never by any automated path.
+    const bonus = Number((t as unknown as { manualBonusPts?: number }).manualBonusPts) || 0;
+    if (bonus > 0) {
+      bonusByAuthor.set(key, (bonusByAuthor.get(key) ?? 0) + bonus);
+      if (!byAuthor.has(key)) byAuthor.set(key, { handle: t.authorHandle, perDay: new Map(), tweets: 0 });
+      continue;
+    }
     const pts = tweetPoints(t, nowMs);
     let a = byAuthor.get(key);
     if (!a) { a = { handle: t.authorHandle, perDay: new Map(), tweets: 0 }; byAuthor.set(key, a); }
@@ -439,7 +450,7 @@ async function rescoreWeek(weekId: string, nowMs: number): Promise<{ tiles: numb
   const batch = db.batch();
   let written = 0;
   for (const [key, a] of byAuthor) {
-    let attention = 0;
+    let attention = bonusByAuthor.get(key) ?? 0;
     for (const arr of a.perDay.values()) {
       arr.sort((x, y) => y - x);
       arr.forEach((pts, i) => { attention += pts / (1 + W.dayDecay * i); });

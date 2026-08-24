@@ -56,6 +56,7 @@ export async function GET() {
       ]);
       for (const d of [...recentSnap.docs, ...houseSnap.docs]) {
         if (d.id.startsWith('rt-')) continue; // synthetic RT credit, not a tweet
+        if (d.id.startsWith('refbonus-')) continue; // manual referral-bonus credit, not a tweet
         const t = d.data();
         const handle = String(t.authorHandle ?? '').trim();
         const text = String(t.text ?? '');
