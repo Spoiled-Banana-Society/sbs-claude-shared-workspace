@@ -66,12 +66,15 @@ function ReferralMilestones({ promo }: { promo: Promo }) {
   const hist = promo.modalContent?.referralHistory || [];
   const best = (k: 'bought1' | 'bought4' | 'bought10') => hist.some((e) => e.rewards?.[k] === 'claimed' || e.rewards?.[k] === 'claim');
   const cells: [string, string, boolean][] = [['Buys 1 pass', '+1 SPIN', best('bought1')], ['Buys 4', '+1 SPIN', best('bought4')], ['Buys 10', '+1 SPIN', best('bought10')]];
+  // The tiles own the card's leftover height (Boris 2026-08-24): flex-1 on
+  // the wrapper centers them in whatever space the grid row leaves, so a
+  // short card next to a tall neighbor never shows a dead bottom half.
   return (
-    <div className="flex gap-[5px] mt-1">
+    <div className="flex-1 flex items-center gap-[7px] mt-1 min-h-0">
       {cells.map(([l, r, on]) => (
-        <div key={l} className={`flex-1 text-center text-[10px] font-extrabold py-[5px] px-1 rounded-lg ${on ? 'bg-white/[0.14] text-white' : 'bg-white/[0.06] text-white/45'}`}>
+        <div key={l} className={`flex-1 text-center text-[12px] font-extrabold py-[13px] px-1 rounded-xl border ${on ? 'bg-white/[0.14] text-white border-white/20' : 'bg-white/[0.05] text-white/60 border-white/[0.09]'}`}>
           {l}
-          <small className="block text-[8px] tracking-[1px] opacity-85 mt-[1px]">{on ? '✓' : r}</small>
+          <small className="block text-[9.5px] tracking-[1.2px] opacity-90 mt-[3px]">{on ? '✓' : r}</small>
         </div>
       ))}
     </div>
