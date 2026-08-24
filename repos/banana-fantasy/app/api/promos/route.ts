@@ -293,7 +293,7 @@ export async function GET(req: Request) {
         if (bzIdx !== -1) {
           // Seeded per-user docs carry launch copy — keep every surface on the
           // current line (Boris 2026-08-23), same pattern as ATB/Drop.
-          promos[bzIdx].description = 'Jackpot just hit? Enter the Banana Zone — every filled paid draft earns Free Spins.';
+          promos[bzIdx].description = 'Jackpot just hit? Enter the Banana Zone — paid fills earn Free Spins and sealed Packs.';
         }
         if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
           const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
@@ -314,7 +314,11 @@ export async function GET(req: Request) {
               };
             })
             .catch(() => null);
-          if (zp) promos[bzIdx].modalContent.explanation = zp.explanation;
+          if (zp) {
+            promos[bzIdx].modalContent.explanation = zp.explanation;
+            const totalSeats = zp.bands.reduce((n, b) => n + b.seats, 0);
+            promos[bzIdx].description = `Jackpot just hit? Enter the Banana Zone — paid fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.`;
+          }
           promos[bzIdx].modalContent.bonusZone = {
             ...(zp ? { packBands: zp.bands } : {}),
             tier: st.view.tier,

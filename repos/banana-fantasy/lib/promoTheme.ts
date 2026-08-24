@@ -73,7 +73,7 @@ export function promoKicker(promo: Promo): string {
     case 'banana-draw': return 'JACKHOF SEAT';
     case 'eliminator': return 'JACKHOF SEAT';
     case 'banana-vault': return 'JACKPOT SEAT';
-    case 'bonus-zone': return 'FREE SPINS · AFTER EVERY JACKPOT';
+    case 'bonus-zone': return 'FREE SPINS + JACKHOF SEATS';
     default: return 'PROMO';
   }
 }
