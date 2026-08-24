@@ -25,25 +25,19 @@ import type { Promo } from '@/types';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { promoHueStyle } from '@/lib/promoTheme';
 
-const STORY = (
-  <>
-    <p className="text-[15.5px] leading-[1.5] text-white font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-      Jackpot just hit? Enter the Banana Zone — every filled paid draft earns Free Spins.
-    </p>
-    <div className="mt-2.5 max-w-[340px] divide-y divide-white/20">
-      {[
-        ['Buy 1 Get 1 Spin', 'Drafts 1–20'],
-        ['Buy 2 Get 1 Spin', 'Drafts 21–40'],
-        ['Buy 3 Get 1 Spin', 'Drafts 41–60'],
-      ].map(([deal, range]) => (
-        <div key={deal} className="flex items-baseline justify-between gap-4 py-[7px] text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-          <b className="text-white font-extrabold">{deal}</b>
-          <span className="text-white text-[14px] font-bold tracking-[.4px] whitespace-nowrap">{range}</span>
-        </div>
-      ))}
-    </div>
-  </>
-);
+// Deal rows + tier ranges derive from the LIVE config (tier1/2/3Through in
+// the view) — Richard re-tiers the zone by editing system_config/bonusZone
+// (e.g. the 8/23 25/50 two-band config), so nothing here is hardcoded. A
+// collapsed third tier (tier3Through == tier2Through) renders two bands.
+interface ZoneBandRow { band: 1 | 2 | 3; buy: number; from: number; to: number }
+const bandRows = (t1: number, t2: number, t3: number): ZoneBandRow[] => {
+  const end = Math.max(t2, t3);
+  return [
+    { band: 1, buy: 1, from: 1, to: t1 },
+    { band: 2, buy: 2, from: t1 + 1, to: t2 },
+    ...(end > t2 ? [{ band: 3 as const, buy: 3, from: t2 + 1, to: end }] : []),
+  ];
+};
 
 /** Units of a spin one paid fill banks at each tier (spin = 6 units). */
 const UNITS = 6;
@@ -70,6 +64,13 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
   const tier = (live ? live.tier : bz?.tier) ?? null;
   const draftsLeftInTier = (live ? live.draftsLeftInTier : bz?.draftsLeftInTier) ?? 0;
   const label = tier ? `Buy ${tier} Get 1` : null;
+  const t1 = (live?.tier1Through ?? bz?.tier1Through) ?? 20;
+  const t2 = (live?.tier2Through ?? bz?.tier2Through) ?? 40;
+  const t3 = (live?.tier3Through ?? bz?.tier3Through) ?? 60;
+  const rows = bandRows(t1, t2, t3);
+  // JackHOF seats per batch (ZONE PACKS, Richard 8/23) — stamped on the promo
+  // payload only while the zone-drop switch is on; printed on the tier chips.
+  const packBands = (bz as { packBands?: Array<{ from: number; to: number; seats: number }> } | undefined)?.packBands ?? null;
 
   const units = bz?.unitsThisWindow ?? 0;
   const credit = tier ? creditFor(tier) : 2;
@@ -85,12 +86,6 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
     if (band === tier) return 'live';
     return band < tier ? 'dead' : 'future';
   };
-
-  const bands: Array<{ band: 1 | 2 | 3; deal: string; range: string }> = [
-    { band: 1, deal: 'BUY 1 GET 1', range: 'DRAFTS 1–20' },
-    { band: 2, deal: 'BUY 2 GET 1', range: 'DRAFTS 21–40' },
-    { band: 3, deal: 'BUY 3 GET 1', range: 'DRAFTS 41–60' },
-  ];
 
   return (
     <section
@@ -117,7 +112,19 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
         </div>
 
         {/* story */}
-        <div className="promo-tx mt-3 max-w-[56ch]">{STORY}</div>
+        <div className="promo-tx mt-3 max-w-[56ch]">
+          <p className="text-[15.5px] leading-[1.5] text-white font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+            Jackpot just hit? Enter the Banana Zone — every filled paid draft earns Free Spins.
+          </p>
+          <div className="mt-2.5 max-w-[340px] divide-y divide-white/20">
+            {rows.map((r) => (
+              <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
+                <b className="text-white font-extrabold">Buy {r.buy} Get 1 Spin</b>
+                <span className="text-white text-[14px] font-bold tracking-[.4px] whitespace-nowrap">Drafts {r.from}–{r.to}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* combined panel: countdown | your fills */}
         <div className="mt-5 rounded-[18px] border-[1.5px] border-banana/50 bg-black/30 shadow-[0_0_22px_rgba(255,207,61,.13)] grid grid-cols-1 min-[480px]:grid-cols-[1fr_1px_1.2fr] items-center gap-4 px-5 py-4">
@@ -180,9 +187,12 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
         </div>
 
         {/* tier chips — fire on the live one */}
-        <div className="mt-3.5 grid grid-cols-3 gap-2">
-          {bands.map(({ band, deal, range }) => {
+        <div className={`mt-3.5 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+          {rows.map(({ band, buy, from, to }, i) => {
             const st = bandState(band);
+            const deal = `BUY ${buy} GET 1`;
+            const range = `DRAFTS ${from}–${to}`;
+            const seats = packBands?.[i]?.seats ?? null;
             return (
               <div
                 key={band}
@@ -201,8 +211,8 @@ export function BananaZoneSpotlight({ promo, hasVisibleClaim, onClaim, onOpenMod
                 {st === 'live' && (
                   <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#04231a]/85">● LIVE</span>
                 )}
-                {st === 'dead' && (
-                  <span className="block mt-0.5 text-[7.5px] font-extrabold tracking-[1.8px] text-white/35">BACK NEXT JP</span>
+                {seats !== null && (
+                  <span className={`block mt-0.5 text-[9px] sm:text-[10px] font-black tracking-[.8px] ${st === 'live' ? 'text-[#04231a]' : 'text-banana'}`}>📦 {seats} JACKHOF SEATS</span>
                 )}
               </div>
             );
