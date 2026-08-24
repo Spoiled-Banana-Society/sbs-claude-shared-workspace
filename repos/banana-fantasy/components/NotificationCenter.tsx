@@ -738,7 +738,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
                         )}
                       </div>
-                      <p className="text-text-muted text-[11px] mt-0.5 line-clamp-4 whitespace-pre-line leading-relaxed">
+                      <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
                         {notif.message}
                       </p>
                       <p className="text-text-muted/50 text-[10px] mt-1">{timeAgo(notif.createdAt)}</p>
