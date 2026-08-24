@@ -154,7 +154,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               return (
                 <div key={band} className={`text-center rounded-[12px] px-1 pt-2.5 pb-2 uppercase font-extrabold leading-[1.25] ${
                   st === 'live'
-                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] shadow-[0_0_18px_rgba(52,211,153,.4)]'
+                    ? 'text-[13px] text-white border-[1.5px] border-emerald-300 bg-gradient-to-br from-[#128a60] via-[#0b6a49] to-[#07523a] shadow-[0_0_18px_rgba(52,211,153,.4)] bz-fire'
                     : 'text-[12px] text-white/70 border border-white/[.14] bg-black/25'
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
@@ -188,11 +188,12 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
                 const part = i === filled && hasPartial;
+                const next = i === filled && !hasPartial && tier !== null;
                 return (
                   <span key={i} className={`w-[44px] h-[44px] rounded-full flex items-center justify-center text-[21px] ${
                     on ? 'border-[3px] border-banana bg-banana/15 shadow-[0_0_14px_rgba(255,207,61,.6)]'
                       : part ? 'border-[3px] border-banana/60 bg-banana/[.08]'
-                        : 'border-[3px] border-dashed border-white/45 bg-black/20'
+                        : `border-[3px] border-dashed border-white/45 bg-black/20 ${next ? 'bz-nextup' : ''}`
                   }`}><span className={on ? '' : 'opacity-80 grayscale-[.5] brightness-[.85]'}>🍌</span></span>
                 );
               })}
@@ -220,7 +221,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             )}
           </div>
           <div className="mt-2.5 flex items-center justify-between gap-3">
-            <span className={`relative inline-block ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5]' : ''}`}>
+            <span className={`relative inline-block ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5] bz-pack-idle' : 'bz-pack-hot'}`}>
               <SealedPack w={46} />
               {packs.sealed > 0 && (
                 <span className="absolute -top-[6px] -right-[8px] min-w-[20px] h-[20px] rounded-full bg-banana text-black text-[11px] font-black flex items-center justify-center px-1 shadow-[0_2px_6px_rgba(0,0,0,.45)]">{packs.sealed}</span>
@@ -308,7 +309,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* col 3 — packs (count badge on the pack; ripping lives in the modal) */}
           <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
             <div className="self-start text-[11px] font-extrabold tracking-[2.6px] uppercase text-[rgba(235,245,240,.88)]">Your Packs</div>
-            <div className={`relative ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5]' : ''}`}>
+            <div className={`relative ${packs.sealed === 0 ? 'opacity-40 grayscale-[.5] bz-pack-idle' : 'bz-pack-hot'}`}>
               <SealedPack w={70} />
               {packs.sealed > 0 && (
                 <span className="absolute -top-[7px] -right-[10px] min-w-[24px] h-[24px] rounded-full bg-banana text-black text-[13px] font-black flex items-center justify-center px-1.5 shadow-[0_2px_8px_rgba(0,0,0,.5)]">

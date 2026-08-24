@@ -826,6 +826,18 @@ body {
 }
 .bz-nextup { animation: bz-nextup 1.6s ease-in-out infinite; }
 .bz-claimpulse { animation: bz-claimpulse 1.2s ease-in-out infinite; }
+/* YOUR PACKS pack art: always a little alive — a quiet breath while empty,
+   a golden bob + glow pulse once the wallet actually holds packs. */
+@keyframes bz-pack-idle {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-1deg); }
+}
+@keyframes bz-pack-hot {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); filter: drop-shadow(0 0 4px rgba(255, 207, 61, .25)); }
+  50% { transform: translateY(-5px) rotate(1.5deg); filter: drop-shadow(0 0 14px rgba(255, 207, 61, .6)); }
+}
+.bz-pack-idle { animation: bz-pack-idle 4s ease-in-out infinite; }
+.bz-pack-hot { animation: bz-pack-hot 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .bz-fire, .bz-fire::before, .bz-nextup, .bz-claimpulse { animation: none; }
+  .bz-fire, .bz-fire::before, .bz-nextup, .bz-claimpulse, .bz-pack-idle, .bz-pack-hot { animation: none; }
 }
