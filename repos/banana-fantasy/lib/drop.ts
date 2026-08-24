@@ -24,7 +24,7 @@ import {
   poolForNight, totalSpinsForNight,
   type Prize, type PackRef,
 } from '@/lib/dropMath';
-import { prizeSummaryLine } from '@/lib/dropRates';
+import { prizeSummaryLine, dropEarningRetired, DROP_FINAL_NIGHT_ID } from '@/lib/dropRates';
 
 const NIGHTS = 'drop_nights';
 const PACKS = 'packs';
@@ -102,6 +102,10 @@ export function nightSeedDigest(seed: SealedDrawSeed, nightId: string): string {
 export async function ensureNight(nowMs = Date.now()) {
   const night = nightFor(nowMs);
   if (!isFirestoreConfigured()) return night;
+  // Retirement: no night is ever created after the final one — a doc that
+  // exists is a night that must eventually lock, and there is nothing left
+  // to lock it with prizes.
+  if (night.nightId > DROP_FINAL_NIGHT_ID) return night;
   const ref = getAdminFirestore().collection(NIGHTS).doc(night.nightId);
   if ((await ref.get()).exists) return night;
 
@@ -140,6 +144,9 @@ export async function awardPacksForFill(opts: {
 }): Promise<{ awarded: number; nightId: string }> {
   const userId = opts.userId.toLowerCase();
   const nowMs = opts.nowMs ?? Date.now();
+  // THE DROP retired after the 2026-08-23 night (Richard 8/23) — fills past
+  // that lock earn nothing here. Golden Tickets (lib/zoneDrop) take over.
+  if (dropEarningRetired(nowMs)) return { awarded: 0, nightId: DROP_FINAL_NIGHT_ID };
   const night = await ensureNight(nowMs);
   const count = packsForFill(opts.passType);
   if (!isFirestoreConfigured() || count <= 0) return { awarded: 0, nightId: night.nightId };

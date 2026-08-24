@@ -152,6 +152,15 @@ export async function GET(req: Request) {
         const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
         drop.description = `Draft. Earn packs. Paid drafts only.\nDaily: ${prizeLine}.`;
         drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
+        // FINAL NIGHT (Richard 8/23): tonight's 9pm opening is THE DROP's
+        // last — say so on the card for its remaining minutes. The card
+        // retires itself at the 9pm roll (dropEarningRetired in promoFilter),
+        // and packs live in the Banana Zone from here.
+        const { DROP_FINAL_NIGHT_ID } = await import('@/lib/dropRates');
+        if (nightId === DROP_FINAL_NIGHT_ID) {
+          drop.title = 'THE DROP → LAST ONE TONIGHT';
+          drop.description = `Tonight at 9:00 PM PT is the FINAL Drop. ${prizeLine} go out one last time. Rip everything. Packs live in the Banana Zone now.`;
+        }
       }
     } catch { /* copy refresh is decoration — promos still return */ }
 
@@ -288,7 +297,26 @@ export async function GET(req: Request) {
         }
         if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
           const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
+          // ZONE PACKS row + rules on the zone card — stamped only while the
+          // zone drop switch is on, so the card can never advertise it early.
+          // The rules overlay derives from the LIVE tier config, so the 25/50
+          // re-tier and the pack copy land in one flip.
+          const zp = await import('@/lib/zoneDrop')
+            .then(async ({ readZoneDropConfig, bandSpecs, zonePackRulesExplanation }) => {
+              if (!(await readZoneDropConfig()).enabled) return null;
+              const { readBonusZoneConfig } = await import('@/lib/bonusZone');
+              const zoneCfg = await readBonusZoneConfig();
+              return {
+                // Per-batch, not a bare total — "first window has 6, second
+                // has 4" must be legible on the card (Richard 8/23).
+                bands: bandSpecs(zoneCfg).map((s2) => ({ from: s2.fromPos, to: s2.toPos, seats: s2.tickets })),
+                explanation: zonePackRulesExplanation(zoneCfg),
+              };
+            })
+            .catch(() => null);
+          if (zp) promos[bzIdx].modalContent.explanation = zp.explanation;
           promos[bzIdx].modalContent.bonusZone = {
+            ...(zp ? { packBands: zp.bands } : {}),
             tier: st.view.tier,
             label: st.view.label,
             position: st.view.position,

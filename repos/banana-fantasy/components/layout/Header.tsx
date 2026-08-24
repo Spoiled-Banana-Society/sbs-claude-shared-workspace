@@ -328,8 +328,12 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
                   {/* THE DROP — pack opening room, right of the wheel (Richard
                       2026-08-07). Badge = every unopened pack across nights,
-                      via useDropMe (the Rule-#0-safe slow poll). */}
-                  <Tooltip
+                      via useDropMe (the Rule-#0-safe slow poll).
+                      RETIREMENT (Richard 8/23): THE DROP is done — the icon
+                      now exists ONLY while this user still holds sealed old
+                      packs, and vanishes with the last rip. Packs live in
+                      the Banana Zone promo now. */}
+                  {isLoggedIn && dropMe.totalSealed > 0 && (<Tooltip
                     content={
                       <div className="text-center">
                         <p className="font-semibold">The Drop</p>
@@ -355,7 +359,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         </span>
                       )}
                     </Link>
-                  </Tooltip>
+                  </Tooltip>)}
 
                   {/* Notifications */}
                   {isLoggedIn && <NotificationWidget />}

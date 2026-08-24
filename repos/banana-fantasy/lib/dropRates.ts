@@ -29,6 +29,21 @@ export function packsForFill(passType: 'free' | 'paid'): number {
 // window covers the whole 5-8pm activity peak plus the 8-9 hour; the countdown
 // rolls to a clean 24h at each 9pm open).
 export const DROP_HOUR_PT = 21;
+
+// ── Retirement ──────────────────────────────────────────────────────────────
+// THE DROP's 2026-08-23 night is its LAST (Richard 8/23) — Golden Tickets
+// inside the Banana Zone replace it. Fills after that night's 9pm lock earn
+// NO old-style packs, and no later night doc is ever created. Unopened packs
+// from any past night stay openable forever ("you never lose what you
+// earned") — the reveal room keeps serving them.
+export const DROP_FINAL_NIGHT_ID = '2026-08-23';
+
+/** True once earning is over — the first fill AFTER the final night's 9pm
+ *  lock (nightIdFor rolls to the next id at 9pm, so a plain string compare
+ *  against the final id is exact). */
+export function dropEarningRetired(nowMs = Date.now()): boolean {
+  return nightIdFor(nowMs) > DROP_FINAL_NIGHT_ID;
+}
 /** ⚠️ LEGACY (removed 2026-08-03): packs used to auto-open at midnight. They
  *  now stay sealed until the owner opens them — there is NO backstop, by
  *  Richard's call ("no backstop window at all"). The constant and the

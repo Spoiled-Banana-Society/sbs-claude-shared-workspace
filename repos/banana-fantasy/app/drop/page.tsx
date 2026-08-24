@@ -8,6 +8,9 @@ import { DropPackReveal, type RevealPrize } from '@/components/promos/DropPackRe
 import { nightlyPrizesFor, winningPacksForNight, spinsForNight, revealNightIdFor } from '@/lib/dropRates';
 import { Modal } from '@/components/ui/Modal';
 import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
+// Pack + pile visuals moved to a shared module (2026-08-23) so ZONE PACKS —
+// the pack room inside the Banana Zone promo — renders the exact same pack.
+import { SealedPack, PackPile } from '@/components/promos/PackVisuals';
 
 /**
  * THE DROP — the opening room.
@@ -84,107 +87,6 @@ function useCountdown(target: number | null): string {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/**
- * The sealed pack, straight from the DropPackReveal design — dark charcoal,
- * striped foil crimp, gold BANANA PACK band on the diagonal. `w` scales the
- * whole thing; 132 is the reference size the proportions were drawn at.
- */
-function SealedPack({ w = 112, dusty = false }: { w?: number; dusty?: boolean }) {
-  const s = w / 132;
-  return (
-    <div
-      className={`drop-sealed ${dusty ? 'drop-sealed-dusty' : ''}`}
-      style={{ width: w, height: Math.round(w * 1.43) }}
-    >
-      <div className="drop-sealed-crimp" style={{ height: Math.max(12, Math.round(18 * s)) }} />
-      <div
-        className="absolute left-0 right-0 flex flex-col items-center"
-        style={{ top: Math.round(38 * s), gap: Math.round(5 * s) }}
-      >
-        <Image
-          src="/sbs-logo-white-v2.png" alt="" width={36} height={36}
-          style={{ width: Math.round(36 * s), height: 'auto' }}
-        />
-        <span
-          className="font-black tracking-[0.2em] text-white/90"
-          style={{ fontSize: Math.max(9, Math.round(13 * s)) }}
-        >
-          SBS
-        </span>
-      </div>
-      <div className="drop-sealed-band" style={{ height: Math.round(28 * s), top: '60%' }}>
-        <span style={{ fontSize: Math.max(7, Math.round(11 * s)) }}>Banana Pack</span>
-      </div>
-      {w >= 108 && (
-        <span
-          className="absolute left-0 right-0 text-center font-extrabold uppercase tracking-[0.16em] text-white/50"
-          style={{ bottom: Math.round(12 * s), fontSize: 7 }}
-        >
-          1 prize inside
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** Fan layouts for 1–5 packs. Sides render first so the center sits on top. */
-const FANS: Record<number, Array<{ r: number; x: number; y: number }>> = {
-  1: [{ r: 0, x: 0, y: 0 }],
-  2: [{ r: -7, x: -34, y: 2 }, { r: 7, x: 34, y: 2 }],
-  3: [{ r: -10, x: -48, y: 4 }, { r: 10, x: 48, y: 4 }, { r: 0, x: 0, y: 0 }],
-  4: [{ r: -14, x: -68, y: 7 }, { r: 14, x: 68, y: 7 }, { r: -5, x: -26, y: 1 }, { r: 5, x: 26, y: 1 }],
-  5: [{ r: -14, x: -70, y: 7 }, { r: 14, x: 70, y: 7 }, { r: -7, x: -36, y: 2 }, { r: 7, x: 36, y: 2 }, { r: 0, x: 0, y: 0 }],
-};
-
-/**
- * The pile — your stack IS the page. Bobs gently all day, trembles through the
- * final minute, and takes the LOCKED stamp at zero.
- */
-function PackPile({ count, shaking, stamped }: { count: number; shaking: boolean; stamped: boolean }) {
-  const fan = FANS[Math.min(Math.max(count, 1), 5)];
-  const ghost = count === 0;
-  return (
-    <div className="relative mx-auto" style={{ height: 224, maxWidth: 340 }}>
-      {fan.map((f, i) => {
-        const center = f.r === 0 && f.x === 0;
-        const tf = `rotate(${f.r}deg) translateX(${f.x}px) translateY(${f.y}px)`;
-        return (
-          <div
-            key={i}
-            className={`absolute bottom-3 left-1/2 -ml-[56px] ${
-              shaking ? 'drop-pile-shake' : center ? 'drop-pile-bob' : ''}`}
-            style={{
-              ['--tf' as string]: tf,
-              transform: tf,
-              transformOrigin: '50% 90%',
-              opacity: ghost ? 0.35 : 1,
-              zIndex: center ? 3 : 1,
-              animationDuration: shaking ? `${0.42 + i * 0.05}s` : undefined,
-            }}
-          >
-            <SealedPack w={112} />
-          </div>
-        );
-      })}
-      {!ghost && (
-        <span
-          className="absolute z-[5] rounded-full bg-banana px-3.5 py-1 text-[15px] font-black text-black"
-          style={{ top: 2, right: 'calc(50% - 120px)', transform: 'rotate(6deg)' }}
-        >
-          ×{count}
-        </span>
-      )}
-      {stamped && (
-        <span className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
-          <span className="drop-stamp-in rounded-lg border-[3px] border-banana bg-[#020204]/85 px-6 py-2.5 text-lg font-black uppercase tracking-[0.14em] text-banana">
-            Locked · prizes inside
-          </span>
-        </span>
-      )}
-    </div>
-  );
-}
-
 /** Card colours per tier — mirrors TIER in DropPackReveal. */
 const CARD_TIER: Record<PullKind, { edge: string; top: string }> = {
   jackhof: { edge: '#ef6c37', top: '#3c1f0e' },
@@ -254,6 +156,37 @@ export default function DropPage() {
   }, [wallet]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // ZONE PACKS era (Richard 8/23 green light): THE DROP is retired. This
+  // page survives ONLY for someone still holding unopened old packs — they
+  // keep access until the last one is ripped, then the page removes itself
+  // (redirects to the zone promo, which also opens old packs in its vault).
+  // Everyone else is forwarded immediately. While the switch is off this
+  // no-ops and the legacy page renders as before.
+  const [zoneOn, setZoneOn] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/zone-drop/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        const z = await res.json() as { enabled?: boolean };
+        if (!dead && z.enabled) setZoneOn(true);
+      } catch { /* stay on the legacy page */ }
+    })();
+    return () => { dead = true; };
+  }, []);
+  const sealedAnywhere = state
+    ? (state.you?.sealed ?? 0) + (state.next?.sealed ?? 0)
+      + state.previous.reduce((s, p) => s + p.sealed, 0)
+    : null;
+  useEffect(() => {
+    if (!zoneOn) return;
+    // Wait for the drop state before judging — a redirect on the loading
+    // frame would boot pack holders too. No wallet = nothing to open.
+    if (wallet && sealedAnywhere === null) return;
+    if (!wallet || sealedAnywhere === 0) router.replace('/promos?promo=bonus-zone');
+  }, [zoneOn, wallet, sealedAnywhere, router]);
 
   // Before 9pm this counts to tonight's unlock. AFTER the drop it counts to the
   // NEXT one — the page went blank on time once everything was opened, which is

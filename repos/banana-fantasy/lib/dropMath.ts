@@ -129,6 +129,30 @@ export function assignPrizes(packs: PackRef[], seedHex: string, nightId: string)
   }));
 }
 
+/**
+ * GOLDEN TICKETS (Banana Zone) — assign a band's tickets across its packs.
+ *
+ * Identical deterministic shuffle to assignPrizes, label-scoped to the band so
+ * a band's draw can be recomputed from (seed, bandId, pack snapshot) alone.
+ * The first `tickets` packs in shuffle order each carry a JackHOF seat;
+ * every other pack is empty. Caller caps tickets at packs.length.
+ */
+export function assignGoldenTickets(packs: PackRef[], seedHex: string, bandId: string, tickets: number): Assignment[] {
+  const seed = seedHex.replace(/^0x/, '');
+  const ordered = [...packs]
+    .sort((a, b) => (a.packId < b.packId ? -1 : a.packId > b.packId ? 1 : 0))
+    .map((p) => ({
+      ...p,
+      key: crypto.createHash('sha256').update(`${seed}:zone-drop:${bandId}:${p.packId}`).digest('hex'),
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return ordered.map((p, i) => ({
+    packId: p.packId,
+    userId: p.userId,
+    prize: i < tickets ? { kind: 'jackhof' as const } : { kind: 'none' as const },
+  }));
+}
+
 /** Recompute one pack's prize from the published seed — the whole verification
  *  path in a single call. */
 export function verifyAssignment(

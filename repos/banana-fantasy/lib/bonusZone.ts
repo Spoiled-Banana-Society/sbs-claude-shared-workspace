@@ -631,15 +631,20 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
 
   // Any settleable records at all? (cheap exit for lobbies nobody recorded on).
   // Parked (position_unresolved) records count — the minute cron re-runs them.
-  const pendingSnap = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', 'in', ['pending', 'position_unresolved']).limit(1).get();
+  // 'ineligible' is included so no_purchase_record locks (instant-seat race —
+  // the purchase row lands seconds after the join) get re-classified below.
+  const pendingSnap = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', 'in', ['pending', 'position_unresolved', 'ineligible']).limit(1).get();
   if (pendingSnap.empty) return [];
 
   const fill = await fillPositionForDraft(draftId, cfg);
   if (!fill) {
     // DisplayName not there yet — park the records; the minute cron re-runs
-    // settlement for position_unresolved entries.
+    // settlement for position_unresolved entries. Park ONLY currently-pending
+    // entries: a blanket write here would overwrite 'left'/'ineligible' locks
+    // into a payable status.
+    const parkable = await db.collection(BONUS_ZONE_ENTRIES).where('draftId', '==', draftId).where('status', '==', 'pending').get().catch(() => null);
     const batch = db.batch();
-    for (const w of wallets) batch.set(db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, w.toLowerCase())), { status: 'position_unresolved', retryable: true }, { merge: true });
+    for (const d of parkable?.docs ?? []) batch.set(d.ref, { status: 'position_unresolved', retryable: true }, { merge: true });
     await batch.commit().catch(() => {});
     logger.warn('bonus_zone.position_unresolved', { context: { draftId } });
     return wallets.map((w) => ({ wallet: w.toLowerCase(), outcome: 'position_unresolved' as const }));
@@ -650,6 +655,20 @@ export async function settleBonusZoneFill(draftId: string, wallets: string[]): P
     const wallet = raw.toLowerCase();
     const ref = db.collection(BONUS_ZONE_ENTRIES).doc(entryDocId(draftId, wallet));
     try {
+      // Instant-seat race heal: the lock classifies at join time, but that
+      // flow writes the pass_purchased row seconds later (after USDC
+      // collection), so the lock can land 'no_purchase_record' on a real
+      // purchase. By fill time the truth exists — re-classify instead of
+      // trusting the stale verdict. Other ineligible reasons stand.
+      const pre = await ref.get();
+      const preData = pre.exists ? (pre.data() as BonusZoneEntry) : null;
+      if (preData?.status === 'ineligible' && preData.reason === 'no_purchase_record') {
+        const elig = await classifyPassForBonusZone(wallet, preData.tokenId, 'paid', cfg);
+        if (elig.eligible) {
+          await ref.set({ status: 'pending', eligible: true, reason: elig.reason, reclassifiedAtIso: new Date().toISOString() }, { merge: true });
+          logger.info('bonus_zone.reclassified', { context: { draftId, wallet, tokenId: preData.tokenId, reason: elig.reason } });
+        }
+      }
       // Claim (pending OR parked position_unresolved).
       const claimed = await db.runTransaction(async (tx) => {
         const s = await tx.get(ref);

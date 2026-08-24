@@ -235,6 +235,25 @@ export async function POST(req: Request) {
       logger.error('instant-mint.register_failed', { userId, tokenIds: mintResult.tokenIds, err: (e as Error).message });
     }
     mark('register');
+    // BONUS ZONE stamp MUST land before the response: the join that follows it
+    // locks the zone entry immediately, while the pass_purchased row is only
+    // written after USDC collection (seconds later). Unstamped + no purchase
+    // row = 'no_purchase_record' → the fill pays nothing (AkFF, fast-draft-765,
+    // 8/23 — every instant seat since Banana Zone launch hit this). Stamped
+    // eligible here; the background block re-stamps excluded if the purchase
+    // turns out to earn First Purchase spins or the collection fails.
+    try {
+      const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+      await stampPurchasedTokens({
+        tokenIds: mintResult.tokenIds.map(String),
+        wallet: userId,
+        excluded: false,
+        reason: 'instant_seat',
+      });
+    } catch (stampErr) {
+      logger.warn('instant-mint.bonus_zone_stamp_failed', { userId, err: (stampErr as Error).message });
+    }
+    mark('zone_stamp');
     runInBackground('instant-mint.pass-metadata', writeDraftPassMetadata(mintResult.tokenIds));
 
     // Do NOT await the counter recount: the Go engine is the join's real gate
@@ -319,8 +338,21 @@ export async function POST(req: Request) {
         }
         await notifyPassPurchased(userId, 1, mintResult.txHash).catch(() => {});
         if (isFirestoreConfigured()) {
-          await incrementMintPromos(userId, 1).catch((e) =>
-            logger.warn('instant-mint.promo_increment_failed', { userId, err: (e as Error).message }));
+          const promoAwards = await incrementMintPromos(userId, 1).catch((e) => {
+            logger.warn('instant-mint.promo_increment_failed', { userId, err: (e as Error).message });
+            return null;
+          });
+          // First Purchase promo purchases are excluded from the Banana Zone
+          // (Richard 8/22) — the pre-respond stamp said eligible, correct it.
+          if (promoAwards && promoAwards.firstPurchaseSpinsEarned > 0) {
+            const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+            await stampPurchasedTokens({
+              tokenIds: mintResult.tokenIds.map(String),
+              wallet: userId,
+              excluded: true,
+              reason: 'first_purchase',
+            }).catch((e) => logger.warn('instant-mint.bonus_zone_restamp_failed', { userId, err: (e as Error).message }));
+          }
           await incrementReferralPromos(userId, 1).catch((e) =>
             logger.warn('instant-mint.referral_increment_failed', { userId, err: (e as Error).message }));
           // One free Bonus Spin per paid pass. This route does its OWN paid-mint
@@ -356,6 +388,19 @@ export async function POST(req: Request) {
           } catch (recordErr) {
             logger.error('instant-mint.house_ate_record_failed', { userId, err: (recordErr as Error).message });
           }
+        }
+        // Money never landed → the pre-respond zone stamp overstated: this is
+        // a granted pass now, not a purchase. Flip it excluded.
+        try {
+          const { stampPurchasedTokens } = await import('@/lib/bonusZone');
+          await stampPurchasedTokens({
+            tokenIds: mintResult.tokenIds.map(String),
+            wallet: userId,
+            excluded: true,
+            reason: 'instant_seat_house_ate',
+          });
+        } catch (stampErr) {
+          logger.warn('instant-mint.bonus_zone_restamp_failed', { userId, err: (stampErr as Error).message });
         }
         // No pass_purchased event → revenue stays truthful. Activity shows a
         // grant-style event so the pass's origin is still traceable in admin.

@@ -150,16 +150,30 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
  * Replaces the old absolutely-positioned band labels, which overlapped on
  * narrow containers (words rendering on top of words).
  */
-export function ZoneTierChips({ view, small = false }: { view: BonusZoneViewLike; small?: boolean }) {
+export function ZoneTierChips({ view, small = false, packBands = null }: {
+  view: BonusZoneViewLike;
+  small?: boolean;
+  /** JackHOF seats per batch — printed ON the tier chips (Richard 8/23:
+   *  "putting 6 jackhof and 4 jackhof on the actual buttons"). */
+  packBands?: ReadonlyArray<{ from: number; to: number; seats: number }> | null;
+}) {
+  // A collapsed third tier (tier3Through == tier2Through, the 25/50 config)
+  // must not render — it produced a nonsense "BUY 3 GET 1 · DRAFTS 51–50"
+  // chip (caught by Richard on /preview/zone-drop, 2026-08-23). The dead
+  // chips' "BACK NEXT JP" label is gone too (Richard, same review).
   const bands: Array<{ band: 1 | 2 | 3; deal: string; range: string }> = [
     { band: 1, deal: 'BUY 1 GET 1', range: `DRAFTS 1–${view.tier1Through}` },
     { band: 2, deal: 'BUY 2 GET 1', range: `DRAFTS ${view.tier1Through + 1}–${view.tier2Through}` },
-    { band: 3, deal: 'BUY 3 GET 1', range: `DRAFTS ${view.tier2Through + 1}–${zoneEnd(view)}` },
+    ...(zoneEnd(view) > view.tier2Through
+      ? [{ band: 3 as const, deal: 'BUY 3 GET 1', range: `DRAFTS ${view.tier2Through + 1}–${zoneEnd(view)}` }]
+      : []),
   ];
+  const seatsFor = (i: number) => packBands?.[i]?.seats ?? null;
   return (
-    <div className="grid grid-cols-3 gap-1.5">
-      {bands.map(({ band, deal, range }) => {
+    <div className={`grid gap-1.5 ${bands.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+      {bands.map(({ band, deal, range }, i) => {
         const st: 'live' | 'dead' | 'future' = view.tier === null ? 'dead' : band === view.tier ? 'live' : band < view.tier ? 'dead' : 'future';
+        const seats = seatsFor(i);
         return (
           <div
             key={band}
@@ -171,8 +185,12 @@ export function ZoneTierChips({ view, small = false }: { view: BonusZoneViewLike
           >
             {deal}
             <em className={`block not-italic mt-0.5 font-extrabold tracking-[1px] ${small ? 'text-[7px]' : 'text-[8px]'} ${st === 'live' ? 'text-[#04231a]/80' : 'text-white/40'}`}>{range}</em>
+            {seats !== null && (
+              <span className={`block mt-0.5 font-black tracking-[0.8px] ${small ? 'text-[7.5px]' : 'text-[8.5px]'} ${st === 'live' ? 'text-[#04231a]' : 'text-banana'}`}>
+                📦 {seats} JACKHOF SEATS
+              </span>
+            )}
             {st === 'live' && <span className={`block mt-0.5 font-black tracking-[1.6px] text-[#04231a]/85 ${small ? 'text-[6.5px]' : 'text-[7px]'}`}>● LIVE</span>}
-            {st === 'dead' && <span className={`block mt-0.5 font-extrabold tracking-[1.4px] text-white/30 ${small ? 'text-[6px]' : 'text-[6.5px]'}`}>BACK NEXT JP</span>}
           </div>
         );
       })}
@@ -180,7 +198,16 @@ export function ZoneTierChips({ view, small = false }: { view: BonusZoneViewLike
   );
 }
 
-export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZoneViewLike; pending?: number; units?: number }) {
+export function BonusZoneLadder({ view, pending = 0, units = 0, packBands = null }: {
+  view: BonusZoneViewLike;
+  pending?: number;
+  units?: number;
+  /** JackHOF seats hidden per pack batch, with the batch's draft range —
+   *  stamped by /api/promos only while the zone drop switch is on, so the
+   *  row can never render early. Per-batch on purpose (Richard 8/23:
+   *  "make it knows first window has 6 then second window has 4"). */
+  packBands?: ReadonlyArray<{ from: number; to: number; seats: number }> | null;
+}) {
   const t1 = view.tier1Through;
   const t2 = view.tier2Through;
   const t3 = zoneEnd(view);
@@ -201,7 +228,8 @@ export function BonusZoneLadder({ view, pending = 0, units = 0 }: { view: BonusZ
       <div className="relative h-[6px]">
         <div className="absolute -top-[13px] w-[3px] h-[18px] rounded-sm bg-banana transition-[left] duration-700" style={{ left: `calc(${pct}% - 1px)` }} />
       </div>
-      <ZoneTierChips view={view} small />
+      <ZoneTierChips view={view} small packBands={packBands} />
+
       {(pending > 0 || units > 0) && (
         <div className="flex gap-[5px] mt-1.5">
           {pending > 0 && (
@@ -367,7 +395,20 @@ const draftName = (id: string) => {
   return m ? `${m[1] === 'slow' ? 'Slow' : 'Fast'} draft ${m[2]}` : id;
 };
 
-export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalData | undefined; rules: string[] }) {
+export function BonusZoneModalContent({ data, rules, packsMode = false, claimSlot = null }: {
+  data: BonusZoneModalData | undefined;
+  rules: string[];
+  /** ZONE PACKS era: the pack room above is the hero, so this collapses to
+   *  the essentials (live tier + stats) with everything else behind an ⓘ
+   *  (Richard 8/23: "that module is way too much... just put the most
+   *  important shit and top should be opening packs"). */
+  packsMode?: boolean;
+  /** The modal's CLAIM button, rendered right under the stats so the right
+   *  column needs no scrolling (Richard 8/23). */
+  claimSlot?: React.ReactNode;
+}) {
+  const [showAll, setShowAll] = React.useState(false);
+  const expanded = !packsMode || showAll;
   const view: BonusZoneViewLike = {
     enabled: true,
     tier: data?.tier ?? null,
@@ -411,7 +452,19 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
           </div>
         ))}
       </div>
-      {data && data.paidPasses !== null && data.eligiblePasses !== null && (
+      {claimSlot}
+
+      {packsMode && !showAll && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/[0.10] py-2.5 text-[12px] font-bold text-white/60 transition-colors hover:bg-white/[0.04] hover:text-white/80"
+        >
+          <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px]">i</span>
+          How it all works · your activity
+        </button>
+      )}
+
+      {expanded && data && data.paidPasses !== null && data.eligiblePasses !== null && (
         <p className="text-[12px] text-white/55">
           {data.paidPasses === 0
             ? 'You have no unused paid passes. New passes you buy are Banana Zone eligible.'
@@ -422,7 +475,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       )}
 
       {/* Pending locks */}
-      {(data?.pending?.length ?? 0) > 0 && (
+      {expanded && (data?.pending?.length ?? 0) > 0 && (
         <div>
           <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">YOUR SEATS IN LOBBIES STILL FILLING</p>
           <ul className="space-y-1">
@@ -439,7 +492,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       )}
 
       {/* History */}
-      {(data?.history?.length ?? 0) > 0 && (
+      {expanded && (data?.history?.length ?? 0) > 0 && (
         <div>
           <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">PAID OUT</p>
           <ul className="space-y-1">
@@ -456,7 +509,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
       )}
 
       {/* Rules */}
-      <div>
+      {expanded && (<div>
         <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">HOW IT WORKS</p>
         <ul className="space-y-1.5">
           {rules.map((r, i) => (
@@ -466,7 +519,7 @@ export function BonusZoneModalContent({ data, rules }: { data: BonusZoneModalDat
             </li>
           ))}
         </ul>
-      </div>
+      </div>)}
     </div>
   );
 }

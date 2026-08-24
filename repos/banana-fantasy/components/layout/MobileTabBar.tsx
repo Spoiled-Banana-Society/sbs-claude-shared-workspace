@@ -59,7 +59,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const tabs = [
+  const allTabs = [
     {
       href: '/draft',
       label: 'Draft',
@@ -180,6 +180,10 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
 
   const isActive = (tab: typeof tabs[0]) =>
     tab.matchPaths.some(p => pathname === p || pathname.startsWith(p + '/'));
+
+  // THE DROP retired (Richard 8/23): the Packs tab exists only while this
+  // user still holds sealed old packs — it disappears with the last rip.
+  const tabs = allTabs.filter((t) => t.href !== '/drop' || sealedPacks > 0);
 
   return (
     <nav

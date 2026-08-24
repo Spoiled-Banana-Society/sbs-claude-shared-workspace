@@ -309,7 +309,10 @@ export async function runDropSchedule(now = Date.now()): Promise<Record<string, 
  * with a number on their user doc and NO seat — nothing else in the app calls
  * joinQueue for them.
  */
-async function awardSpecialSeat(
+// Exported for GOLDEN TICKETS (lib/zoneDrop): a Golden Ticket is a JackHOF
+// seat and must settle through this exact path — mint, level stamp, promo
+// round, seat — so zone winners behave identically to drop winners.
+export async function awardSpecialSeat(
   winnerId: string, nightId: string, type: 'jackpot' | 'jackhof' | 'hof',
 ): Promise<void> {
   const db = getAdminFirestore();

@@ -19,6 +19,7 @@ import { deriveChaseState } from '@/lib/chasePromo';
 import { BananaDrawReveal } from '@/components/promos/BananaDrawReveal';
 import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 import { BonusZoneModalContent } from '@/components/bonusZone/BonusZoneUI';
+import { ZonePacks } from '@/components/bonusZone/ZonePacks';
 import { promoRules } from '@/lib/promoTheme';
 
 interface PromoModalProps {
@@ -1689,9 +1690,49 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  const zonePacksMode = promo.type === 'bonus-zone'
+    && !!(promo.modalContent?.bonusZone as { packBands?: unknown[] } | undefined)?.packBands;
+
   // BONUS ZONE: live tier ladder + this user's locks/earned + the rules.
+  // ZonePacks sits on top — the pack room lives INSIDE this modal (Richard
+  // 8/23, /drop is gone); it renders nothing while the zone drop switch is
+  // off, so the dark state is byte-identical to before.
+  // Packs-era layout (Richard 8/23): PACKS LEFT | ZONE RIGHT with a divider
+  // on desktop; phones stack and scroll. While dark, the plain single-column
+  // content renders exactly as before.
   const renderBonusZoneContent = () => (
-    <BonusZoneModalContent data={promo.modalContent?.bonusZone} rules={promoRules(promo)} />
+    zonePacksMode ? (
+      <div className="flex flex-col lg:flex-row">
+        <div className="lg:w-1/2 lg:pr-6">
+          <ZonePacks />
+        </div>
+        <div className="lg:w-1/2 lg:pl-6 lg:border-l lg:border-white/[0.10]">
+          <BonusZoneModalContent
+            data={promo.modalContent?.bonusZone}
+            rules={promoRules(promo)}
+            packsMode
+            claimSlot={(
+              <div className="pt-1">
+                <Button
+                  className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
+                  disabled={!canClaim}
+                  onClick={handleClaim}
+                >
+                  {claimButtonText}
+                </Button>
+                {!canClaim && (
+                  <p className="text-text-muted text-xs text-center mt-2">
+                    Spins land here the moment your zone drafts fill
+                  </p>
+                )}
+              </div>
+            )}
+          />
+        </div>
+      </div>
+    ) : (
+      <BonusZoneModalContent data={promo.modalContent?.bonusZone} rules={promoRules(promo)} />
+    )
   );
 
   const renderPromoContent = () => {
@@ -1755,7 +1796,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       isOpen={isOpen}
       onClose={onClose}
       title={modalTitle}
-      size="lg"
+      size={zonePacksMode ? '2xl' : 'lg'}
       sheetOnMobile
       header={(
         <PromoModalHeader
@@ -1768,8 +1809,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       )}
     >
       <div className="space-y-5">
-        {/* Explanation */}
-        <div className="text-text-secondary leading-relaxed">
+        {/* Explanation — for the ZONE PACKS era of the bonus-zone card this
+            wall moves entirely behind the ⓘ inside BonusZoneModalContent
+            (which renders the same rules), so opening the modal lands on the
+            PACKS first (Richard 8/23: "top should be opening packs"). */}
+        {!zonePacksMode && (<div className="text-text-secondary leading-relaxed">
           <div className="flex items-start gap-2">
             <p className="whitespace-pre-line flex-1">
               {promo.type === 'buy-bonus' ? (
@@ -1793,15 +1837,18 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               )}
             </p>
           </div>
-        </div>
+        </div>)}
 
         {/* Dynamic Content Based on Promo Type */}
         {renderPromoContent()}
 
         {/* Claim Button — hidden for THE DROP, which has nothing to claim here
             and carries its own CTA into the opening room. Leaving the generic
-            one made the modal dead-end on a disabled button (Richard). */}
-        <div className={`pt-4 border-t border-bg-tertiary ${promo.type === 'drop' ? 'hidden' : ''}`}>
+            one made the modal dead-end on a disabled button (Richard). In the
+            zone's packs layout it renders INSIDE the right column instead
+            (Richard 8/23: "shouldn't it be right side so they don't have to
+            scroll down"). */}
+        {!zonePacksMode && (<div className={`pt-4 border-t border-bg-tertiary ${promo.type === 'drop' ? 'hidden' : ''}`}>
           <Button
             className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
             disabled={!canClaim}
@@ -1814,7 +1861,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               Complete the requirements above to claim your reward
             </p>
           )}
-        </div>
+        </div>)}
       </div>
 
       {/* Claim Success Popup */}

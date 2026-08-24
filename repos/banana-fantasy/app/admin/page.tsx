@@ -330,6 +330,18 @@ export default function AdminPage() {
                 </button>
               );
             })}
+            {/* Always-on window into the LIVE site as a regular user sees it
+                (Boris 2026-08-23) — read-only /preview/promos in a new tab, so
+                the admin's own personalized cards never get in the way. */}
+            <a
+              href="/preview/promos"
+              target="_blank"
+              rel="noopener"
+              className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors text-emerald-300 hover:text-emerald-200 hover:bg-emerald-400/[0.06] border border-emerald-400/25 mt-2"
+            >
+              <span className="truncate">👁 View site as user</span>
+              <span className="shrink-0 text-[9px] font-bold tracking-[1px] text-emerald-400/70">LIVE ↗</span>
+            </a>
           </nav>
 
           <div className="px-5 py-4 border-t border-white/[0.06]">

@@ -15,6 +15,7 @@
 
 import type { Promo, PromoType } from '@/types';
 import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, PICK_PROMOS_END_MS, eliminatorLive, eliminatorRetired } from '@/lib/promoWindow';
+import { dropEarningRetired } from '@/lib/dropRates';
 import { isBuyBonusActive } from '@/lib/api/config';
 
 /**
@@ -287,6 +288,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       if (opts.flagsKnown === false && opts.isLoggedIn !== false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
     }
+    // THE DROP's card retires with its earning — the 2026-08-23 night is the
+    // last (Richard 8/23; Golden Tickets replace it inside the Banana Zone).
+    // Unopened packs stay reachable via /drop and their bells; the card just
+    // stops advertising a promo that no longer earns.
+    if (p.type === 'drop' && dropEarningRetired()) return false;
     // Pick 10 + Match Your Pick RETIRED at PICK_PROMOS_END_MS (Richard
     // 2026-08-23, see promoWindow.ts for the data verdict). Same
     // survive-if-owed shape as the mint retirement above: the card stays only

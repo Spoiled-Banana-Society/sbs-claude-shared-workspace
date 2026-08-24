@@ -230,6 +230,37 @@ export async function POST(req: NextRequest) {
         logger.warn('bonus_zone.fill_settle_failed', { draftId, err: String(err) });
       }
 
+      // GOLDEN TICKETS (Richard 8/23): every PAID seat in a zone fill earns
+      // one sealed pack toward the band's JackHOF Golden Tickets. FULLY
+      // switch-gated inside zoneDrop — nothing banks while dark (the band map
+      // depends on the zone tiers, which change at green light); the
+      // green-light backfill credits the window retroactively.
+      // Fill position resolved ONCE per draft; per-wallet pass types re-read
+      // from the token stamp (source of truth, same as every promo above).
+      try {
+        const { readBonusZoneConfig, fillPositionForDraft } = await import('@/lib/bonusZone');
+        const { awardGoldenPacksForFill, maybeLockDueBands, bandForPosition } = await import('@/lib/zoneDrop');
+        const zoneCfg = await readBonusZoneConfig();
+        const fillPos = await fillPositionForDraft(draftId, zoneCfg);
+        if (fillPos && bandForPosition(fillPos.position, zoneCfg)) {
+          await Promise.allSettled(wallets.map(async (w) => {
+            const wallet = w.toLowerCase();
+            const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
+            if (passType !== 'paid') return;
+            await awardGoldenPacksForFill({
+              userId: wallet, draftId, passType: 'paid',
+              position: fillPos.position, windowStart: fillPos.windowStart,
+              notify: true,
+            });
+          }));
+        }
+        // Band done (or passed)? Lock and assign — no-op while the switch is
+        // off, and the cron tick backstops a missed boundary.
+        if (fillPos) await maybeLockDueBands(fillPos.windowStart, fillPos.position);
+      } catch (err) {
+        logger.warn('zone_drop.fill_award_failed', { draftId, err: String(err) });
+      }
+
       // Wheel-won Jackpot/HOF queue drafts: the club badge unlocks when THIS
       // draft fills (Boris 2026-06-10 — not at the wheel-spin moment). The
       // type was never secret for queue drafts, so no reveal-timing concern.

@@ -9,10 +9,9 @@ import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
 import NextLobbyLine from '@/components/drafting/NextLobbyLine';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
-import { PromosSidebar } from '@/components/drafting/PromosSidebar';
-import { PromoCarousel } from '@/components/home/PromoCarousel';
+// Promos removed from this page (Richard 2026-08-23) — they live on /promos
+// and the homepage now. PromosSidebar / PromoCarousel imports dropped.
 import { Tooltip } from '@/components/ui/Tooltip';
-import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { AddFundsModal } from '@/components/modals/AddFundsModal';
 import { FirstPurchaseClaimModal, type ClaimVariant } from '@/components/modals/FirstPurchaseClaimModal';
@@ -28,7 +27,6 @@ const BuyPassesModal = dynamic(
   { ssr: false },
 );
 // useHistory moved to Standings page
-import { logger } from '@/lib/logger';
 import { formatCountdown, formatRelativeTime, useDraftingPageState } from '@/hooks/useDraftingPageState';
 import { useDraftAlertsConfigured } from '@/hooks/useDraftAlertsConfigured';
 
@@ -108,9 +106,6 @@ export default function DraftingPage() {
   const router = useRouter();
   const {
     contest,
-    promosQuery,
-    promos,
-    promoCount,
     isLoading,
     user,
     activeDrafts,
@@ -119,10 +114,6 @@ export default function DraftingPage() {
     creatingQueueDraft,
     exitingDraft,
     showBuyPasses,
-    selectedPromo,
-    claimedPromos,
-    claimSuccess,
-    promoIndex,
     showEntryFlow,
     joiningLobby,
     joinError,
@@ -137,7 +128,6 @@ export default function DraftingPage() {
     depositBuyError,
     clearDepositBuyError,
     handleDraftClick,
-    handleClaim,
     confirmExitDraft,
     getLiveState,
     setExitingDraft,
@@ -145,8 +135,6 @@ export default function DraftingPage() {
     showBuyFromBalance,
     setShowBuyFromBalance,
     handleBuyFromBalance,
-    setSelectedPromo,
-    setPromoIndex,
     setShowEntryFlow,
     setShowContestDetails,
     setInfoTopic,
@@ -166,12 +154,6 @@ export default function DraftingPage() {
   return (
     <>
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
-      {claimSuccess.show && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-banana text-black px-6 py-3 rounded-xl font-semibold shadow-lg animate-bounce">
-          +{claimSuccess.count} Spin{claimSuccess.count > 1 ? 's' : ''} Claimed!
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
         <div className="flex items-baseline gap-3">
           <div className="flex items-center gap-1.5">
@@ -392,43 +374,12 @@ export default function DraftingPage() {
             </>
           ) : null}
 
-          {/* Mobile-only: promos live in the desktop sidebar (hidden < lg).
-              On phones, use the SAME square promo carousel as the Spin page.
-              The VRF/proof seal moved into the draft-info modal's VRF tab
-              (Boris 2026-06-15), so promos own the spacing now — pushed well
-              down when there's an active draft so the lobby stays the focus. */}
-          {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className={`lg:hidden ${activeDrafts.length > 0 ? 'mt-32' : 'mt-9'}`}>
-              <PromoCarousel
-                heading="Promos"
-                promos={promosQuery.promos ?? []}
-                claimPromo={promosQuery.claimPromo}
-                onVerifyTweet={promosQuery.verifyTweetEngagement}
-                onGenerateReferralCode={promosQuery.generateReferralCode}
-              />
-            </div>
-          )}
+          {/* Promos removed from this page (Richard 2026-08-23) — the mobile
+              carousel and desktop PromosSidebar are gone; promos live on
+              /promos and the homepage. */}
         </div>
 
         <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4 mt-14">
-          <PromosSidebar
-            promos={promos}
-            promoIndex={promoIndex}
-            promoCount={promoCount}
-            loading={isLoading || promosQuery.isLoading || (!!user && promosQuery.promos === undefined)}
-            claimedPromos={claimedPromos}
-            onSelectPromo={setSelectedPromo}
-            onClaim={handleClaim}
-            onSelectIndex={setPromoIndex}
-            onPrev={() => {
-              if (promoCount === 0) return;
-              setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
-            }}
-            onNext={() => {
-              if (promoCount === 0) return;
-              setPromoIndex((promoIndex + 1) % promoCount);
-            }}
-          />
           <BatchProofBanner />
         </aside>
       </div>
@@ -578,20 +529,6 @@ export default function DraftingPage() {
       )}
 
       <DraftInfoModal isOpen={showDraftInfo} onClose={() => setShowDraftInfo(false)} contest={contest ?? null} />
-
-      <PromoModal
-        isOpen={!!selectedPromo}
-        onClose={() => setSelectedPromo(null)}
-        promo={selectedPromo}
-        onClaim={(promo) => {
-          logger.debug('Claiming promo:', promo.id);
-          setSelectedPromo(null);
-          void handleClaim(promo);
-        }}
-        isPromoClaimed={selectedPromo ? claimedPromos.has(selectedPromo.id) : false}
-        onVerifyTweet={promosQuery.verifyTweetEngagement}
-        onGenerateReferralCode={promosQuery.generateReferralCode}
-      />
     </div>
     </>
   );

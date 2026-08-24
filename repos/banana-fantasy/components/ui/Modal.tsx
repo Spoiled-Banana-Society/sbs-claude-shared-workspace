@@ -7,7 +7,7 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   title?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   /** Custom header (replaces the plain title bar). Receives nothing — render
    *  your own close button or rely on Escape / backdrop. */
   header?: React.ReactNode;
@@ -21,6 +21,8 @@ const sizeStyles = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
+  // Wide two-column modals (Banana Zone packs-era: packs | zone side by side).
+  '2xl': 'max-w-4xl',
 };
 
 export function Modal({ isOpen, onClose, children, title, size = 'md', header, sheetOnMobile = false }: ModalProps) {

@@ -7,7 +7,6 @@ const BananaWheel = dynamic(() => import('@/components/wheel/BananaWheel').then(
   ssr: false,
   loading: () => <div className="w-[300px] h-[300px] mx-auto bg-bg-tertiary rounded-full animate-pulse" />,
 });
-import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { WheelProofBanner } from '@/components/wheel/WheelProofBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchJson } from '@/lib/appApiClient';
@@ -15,7 +14,6 @@ import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { pushNotification } from '@/components/NotificationCenter';
 import { useWheelHistory, useSpin, type WheelSpinOutcome } from '@/hooks/useWheelData';
-import { usePromos } from '@/hooks/usePromos';
 import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
 import { useWheelSegments } from '@/hooks/useWheelSegments';
 import {
@@ -31,7 +29,6 @@ export default function BananaWheelPage() {
   const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil, freezeSpinReveal } = useAuth();
   const spinMutation = useSpin(user?.id);
   const queryClient = useQueryClient();
-  const promosQuery = usePromos({ userId: user?.id });
   const [queuedJP, setQueuedJP] = React.useState(0);
   const [queuedHOF, setQueuedHOF] = React.useState(0);
   const [queuedJackHOF, setQueuedJackHOF] = React.useState(0);
@@ -761,18 +758,8 @@ export default function BananaWheelPage() {
         </div>
       </div>
 
-      {/* Promo cards — the carousel renders its own heading. Tight gap now
-          that the "Earn spins by" list + extra heading are gone. */}
-      <section id="earn-spins" className="mt-8 lg:mt-14 scroll-mt-24">
-        <PromoCarousel
-          heading="Promos to Earn Spins"
-          promos={promosQuery.data ?? []}
-          autoPlay={false}
-          claimPromo={promosQuery.claimPromo}
-          onVerifyTweet={promosQuery.verifyTweetEngagement}
-          onGenerateReferralCode={promosQuery.generateReferralCode}
-        />
-      </section>
+      {/* Promo carousel removed (Richard 2026-08-23) — promos live on /promos
+          and the homepage now, not on the spin page. */}
 
       {/* Prize-odds popover (opened by the "i" next to the title). Transparent
           odds, one tap, framed as "every spin wins". */}

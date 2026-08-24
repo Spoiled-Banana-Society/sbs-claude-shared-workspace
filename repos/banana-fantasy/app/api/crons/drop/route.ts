@@ -47,11 +47,20 @@ export async function GET(req: Request) {
     logger.error('lane_guard.cron_failed', { err: (err as Error).message });
     return { ok: false };
   });
+  // GOLDEN TICKETS backstop — locks bands the webhook missed and resolves
+  // orphan bands after a Jackpot hit. No-ops entirely while its own switch
+  // (system_config/zoneDrop) is off; independent of the legacy drop schedule.
+  const zoneDrop = await import('@/lib/zoneDrop')
+    .then(({ zoneDropTick }) => zoneDropTick())
+    .catch((err) => {
+      logger.error('zone_drop.cron_failed', { err: (err as Error).message });
+      return { ok: false };
+    });
   if (ADMIN_PREVIEW_PROMO_TYPES.includes('drop')) {
-    return json({ ok: true, held: 'admin-preview', jpBells, buyBonusSweep, laneGuard });
+    return json({ ok: true, held: 'admin-preview', jpBells, buyBonusSweep, laneGuard, zoneDrop });
   }
   try {
-    return json({ ...(await runDropSchedule(Date.now())), jpBells, buyBonusSweep, laneGuard });
+    return json({ ...(await runDropSchedule(Date.now())), jpBells, buyBonusSweep, laneGuard, zoneDrop });
   } catch (err) {
     logger.error('drop.cron_failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);
