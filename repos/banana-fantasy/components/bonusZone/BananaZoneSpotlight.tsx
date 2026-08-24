@@ -208,7 +208,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               </button>
             ) : (
               <span className="text-[12px] font-extrabold tracking-[.6px] uppercase text-banana text-right">
-                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
+                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : units === 0 ? 'Fill a paid draft → Free Spin' : `${fillsNeeded} more = Free Spin`}
               </span>
             )}
           </div>
@@ -299,7 +299,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 </button>
               ) : (
                 <div className="text-[14px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
-                  {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : `${fillsNeeded} more = Free Spin`}
+                  {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : units === 0 ? 'Fill a paid draft → Free Spin' : `${fillsNeeded} more = Free Spin`}
                 </div>
               )}
             </div>

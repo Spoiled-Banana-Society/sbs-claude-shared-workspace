@@ -187,7 +187,7 @@ export function PromoMiniCard({
                       }`}><span className={i < filledN ? '' : 'opacity-70 grayscale-[.5]'}>🍌</span></span>
                     ))}
                     <span className="text-[10.5px] font-extrabold tracking-[.5px] uppercase text-banana">
-                      {hasVisibleClaim ? 'Spin ready' : `${need} more = Free Spin`}
+                      {hasVisibleClaim ? 'Spin ready' : units === 0 ? 'Fill a paid draft → Free Spin' : `${need} more = Free Spin`}
                     </span>
                   </div>
                 )}
