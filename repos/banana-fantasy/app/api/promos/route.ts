@@ -95,7 +95,7 @@ export async function GET(req: Request) {
         // 2-line card clamp truncated ("...and win a…") — keep every user's
         // card on the current copy (Boris 2026-08-17). Same string on the
         // carousel, sidebar and /promos card.
-        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.';
+        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.\nJackpot — win the league, go straight to the Finals.';
         // Rules text lives on the seeded per-user doc too — restamp it so the
         // modal matches the paid-only era (Boris 2026-08-22), same as the card.
         atb.modalContent.explanation =
@@ -317,7 +317,7 @@ export async function GET(req: Request) {
           if (zp) {
             promos[bzIdx].modalContent.explanation = zp.explanation;
             const totalSeats = zp.bands.reduce((n, b) => n + b.seats, 0);
-            promos[bzIdx].description = `Jackpot just hit? Enter the Banana Zone — paid fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.`;
+            promos[bzIdx].description = `Jackpot just hit? Enter the Banana Zone — paid fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`;
           }
           promos[bzIdx].modalContent.bonusZone = {
             ...(zp ? { packBands: zp.bands } : {}),

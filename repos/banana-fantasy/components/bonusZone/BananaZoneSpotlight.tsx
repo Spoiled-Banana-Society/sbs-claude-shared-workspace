@@ -130,6 +130,14 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             Jackpot just hit? Enter the Banana Zone — paid fills earn <b className="text-banana">Free Spins</b> and
             sealed <b className="text-banana">Packs</b>{totalSeats ? <>, with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
           </p>
+          {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it
+              reads as the prize world, not this promo's mechanics */}
+          <p className="hidden min-[560px]:block mt-1.5 text-[13.5px] leading-[1.5] font-semibold whitespace-nowrap text-[#ff9838] [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
+            JackHOF — win the league and go straight to the Finals, plus you compete for added prizes.
+          </p>
+          <p className="mt-1.5 text-[13.5px] leading-[1.5] font-semibold text-white/85 [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
+            Win your JackHOF league → skip straight to the <b className="text-white">Finals</b> and play for <b className="text-banana">added prizes</b>.
+          </p>
           <div className="mt-2.5 max-w-[470px] hidden min-[560px]:block">
             {rows.map((r) => (
               <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] border-t border-white/20 first:border-t-0 text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
@@ -148,6 +156,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         {/* MOBILE (<560px): sectioned layout — chips, then YOUR SPINS and
             YOUR PACKS split by full-width dividers. Same data, zero cram. */}
         <div className="min-[560px]:hidden">
+          <p className="mt-1.5 text-[12px] leading-[1.5] font-semibold whitespace-nowrap text-[#ff9838] [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
+            JackHOF — win the league → Finals + added prizes.
+          </p>
           <div className={`mt-3 grid gap-2 ${rows.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
             {rows.map(({ band, buy, from, to, seats }) => {
               const st = bandState(band);
