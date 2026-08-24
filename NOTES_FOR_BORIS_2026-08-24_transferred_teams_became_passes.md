@@ -27,3 +27,13 @@ wrap a real pass via RealTokenId, so don't key the check on RealTokenId alone.
 
 **Remediation is Richard's call** (delete the 5 unused phantom passes; void or keep the 8 drafts).
 Nothing has been changed on any user yet.
+
+## Update 8/24 ~19:40Z — remediation DONE (Richard's call)
+Minted 8 real NFTs (9777–9784) via a one-off Vercel route (since removed) and pointed each phantom
+draft's engine card at its own token: GatorMAB #742→9777 #744→9778, AkFF #879→9779,
+sdotdfs #534→9780 #537→9781 #586→9782 KFFL #1→9783, JonnyCanuck KFFL #1→9784. Deleted the 5
+unused phantom passes + recounted. Originals rebuilt (9283 is #852 again, etc.), OpenSea refreshed.
+Audit trail: Firestore `phantom_pass_remediation/{synthCardId}`.
+Heads-up for the engine: `RealTokenId` had to be patched in THREE places (drafts/{id}/cards,
+owners/{w}/usedDraftTokens, top-level draftTokens) — if there's a fourth copy I missed, those
+8 cards are the ones to check.
