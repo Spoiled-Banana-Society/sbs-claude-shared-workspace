@@ -122,15 +122,15 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
         aria-label={`Banana Zone: ${tierLabel(view.tier)}, ${view.packSeats ? `${view.packSeats} JackHOF seats in packs, ` : ''}${left} drafts left`}
       >
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-        <span className="text-[9.5px] font-extrabold tracking-[0.05em] leading-none whitespace-nowrap">BANANA ZONE</span>
+        <span className="text-[9px] font-extrabold tracking-[0.04em] leading-none whitespace-nowrap">BANANA ZONE</span>
         {/* One line on every phone. Order (Richard 8/24): name, drafts left,
             the deal, then the JackHOF seats. "DRAFTS" always spelled out
             (Boris 8/24) — the whole strip sized down so it still never wraps. */}
-        <span className="text-[9.5px] font-extrabold tracking-[0.03em] leading-none text-emerald-300/90 whitespace-nowrap">
+        <span className="text-[9px] font-extrabold tracking-[0.02em] leading-none text-emerald-300/90 whitespace-nowrap">
           {left} {left === 1 ? 'DRAFT' : 'DRAFTS'} LEFT
         </span>
-        <span className="text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        {!!view.packSeats && <JackHofSeats n={view.packSeats} className="text-[9.5px] tracking-[0.02em]" />}
+        <span className="text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
+        {!!view.packSeats && <JackHofSeats n={view.packSeats} seats className="text-[9px] tracking-[0.02em]" />}
       </div>
     </Tooltip>
   );

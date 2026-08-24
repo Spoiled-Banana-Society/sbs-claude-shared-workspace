@@ -210,6 +210,8 @@ export interface ZonePackDoc {
   prize: Prize | null;
   opened: boolean;
   openedAt?: string;
+  /** Earned after its batch had already dealt — always empty by construction. */
+  lateAfterLock?: boolean;
 }
 
 /** Create the band doc on first use, stamping the sealed-seed commitment
@@ -270,24 +272,29 @@ export async function awardGoldenPacksForFill(opts: {
   try {
     await db.runTransaction(async (tx) => {
       if ((await tx.get(ledgerRef)).exists) throw new Error('ALREADY_AWARDED');
-      // A locked band's tickets are assigned — a late webhook can't join it.
+      // A locked band's seats are already dealt. A fill that lands AFTER the
+      // deal (early lock, late webhook) still earns a pack — sealed, rippable,
+      // and known-empty (Richard 8/24: "just give them packs, they'll be empty
+      // whatever"). Nothing to double-pay; they get the reveal moment.
       const bandSnap = await tx.get(bandRef);
-      if ((bandSnap.data() as BandDoc | undefined)?.status !== 'earning') throw new Error('BAND_LOCKED');
+      const lateAfterLock = (bandSnap.data() as BandDoc | undefined)?.status !== 'earning';
       tx.set(ledgerRef, {
         userId, bandId, draftId: opts.draftId, position: opts.position,
         windowStart: opts.windowStart, at: new Date(nowMs).toISOString(),
+        ...(lateAfterLock ? { lateAfterLock: true } : {}),
       });
       tx.set(bandRef.collection(PACKS).doc(packId), {
         packId, userId, bandId, windowStart: opts.windowStart, band: spec.band,
         source: opts.draftId, position: opts.position, passType: 'paid',
         earnedAt: new Date(nowMs).toISOString(),
-        prize: null, opened: false,
+        prize: lateAfterLock ? { kind: 'none' } : null, opened: false,
+        ...(lateAfterLock ? { lateAfterLock: true } : {}),
       } satisfies ZonePackDoc);
       tx.set(bandRef, { packCount: FieldValue.increment(1) }, { merge: true });
     });
   } catch (err) {
     const msg = (err as Error).message;
-    if (msg === 'ALREADY_AWARDED' || msg === 'BAND_LOCKED') return { awarded: 0, bandId };
+    if (msg === 'ALREADY_AWARDED') return { awarded: 0, bandId };
     logger.error('zone_drop.award_failed', { userId, draftId: opts.draftId, err: msg });
     return { awarded: 0, bandId };
   }
@@ -458,10 +465,15 @@ export async function zoneDropTick(): Promise<Record<string, unknown>> {
   try {
     const view = await readBonusZoneView();
     const windowStart = (view as { windowStart?: number }).windowStart;
-    const position = (view as { position?: number }).position ?? 0;
+    // ⚠️ view.position is the NEXT draft's position (the header's "1 left"
+    // number), NOT the last filled one. Passing it straight through locked
+    // batch 1 of window #867 one draft early (at 24 fills, 8/24 4:16pm) and
+    // left draft #891's players packless. Lock on the last FILLED position.
+    const nextPosition = (view as { position?: number }).position ?? 0;
+    const lastFilled = Math.max(0, nextPosition - 1);
     if (typeof windowStart === 'number') {
-      await maybeLockDueBands(windowStart, position);
-      out.window = { windowStart, position };
+      await maybeLockDueBands(windowStart, lastFilled);
+      out.window = { windowStart, lastFilled };
     }
     const earning = await getAdminFirestore().collection(BANDS).where('status', '==', 'earning').get();
     for (const d of earning.docs) {
