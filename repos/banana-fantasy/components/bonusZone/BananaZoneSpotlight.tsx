@@ -172,7 +172,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             <span>
               <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">Drafts Left at Buy {tier ?? 1} Get 1 Spin</span>
               {tier !== null && (
-                <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.6)]">Draft {segDone} of {segSize}</span>
+                <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Draft {segDone} of {segSize}</span>
               )}
             </span>
             <span className="text-[34px] font-extrabold leading-none tabular-nums text-banana [text-shadow:0_0_18px_rgba(255,207,61,.5)]">
@@ -207,9 +207,13 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
               </button>
             ) : (
-              <span className="text-[12px] font-extrabold tracking-[.6px] uppercase text-banana text-right">
-                {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : units === 0 ? 'Fill a paid draft → Free Spin' : `${fillsNeeded} more = Free Spin`}
-              </span>
+              tier === null ? (
+                <span className="text-[11px] font-bold text-white/50 uppercase tracking-[.6px] text-right">{hasView ? 'Zone closed' : '…'}</span>
+              ) : units === 0 ? (
+                <span className="text-[11px] font-bold text-white/75 text-right">Fill a paid draft → <span className="text-banana font-extrabold">Free Spin</span></span>
+              ) : (
+                <span className="text-[12px] font-extrabold tracking-[.6px] uppercase text-banana text-right">{`${fillsNeeded} more = Free Spin`}</span>
+              )
             )}
           </div>
 
@@ -239,7 +243,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               <span className="text-right text-[10px] font-extrabold tracking-[.6px] uppercase leading-[1.6] text-[rgba(235,245,240,.75)]">
                 {packs.sealed > 0
                   ? <>Unlock at {unlockAt} Drafts<br /><span className="text-white">or when the JP hits</span></>
-                  : 'Fill a paid draft → 1 Pack'}
+                  : <>Fill a paid draft → <span className="text-banana font-extrabold normal-case">1 Pack</span></>}
               </span>
             )}
           </div>
@@ -260,7 +264,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             ) : (
               <div className="text-[44px] font-extrabold leading-none tabular-nums text-white/35">{hasView ? 0 : '—'}</div>
             )}
-            <div className="self-start text-[10px] font-extrabold tracking-[1.3px] uppercase text-[rgba(235,245,240,.7)]">
+            <div className="self-start text-[10px] font-extrabold tracking-[1.3px] uppercase text-[rgba(235,245,240,.82)]">
               {tier ? `Draft ${segDone} of ${segSize}` : hasView ? 'Reopens at next Jackpot' : 'Connecting…'}
             </div>
           </div>
@@ -298,9 +302,13 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   {claimCount > 1 ? `Claim ${claimCount} Spins` : 'Claim Spin'}
                 </button>
               ) : (
-                <div className="text-[14px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">
-                  {tier === null ? <span className="text-white/50">{hasView ? 'Zone closed' : '…'}</span> : units === 0 ? 'Fill a paid draft → Free Spin' : `${fillsNeeded} more = Free Spin`}
-                </div>
+                tier === null ? (
+                  <div className="text-[12px] font-bold text-white/50 uppercase tracking-[.8px]">{hasView ? 'Zone closed' : '…'}</div>
+                ) : units === 0 ? (
+                  <div className="text-[11.5px] font-bold text-white/75">Fill a paid draft → <span className="text-banana font-extrabold">Free Spin</span></div>
+                ) : (
+                  <div className="text-[14px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">{`${fillsNeeded} more = Free Spin`}</div>
+                )
               )}
             </div>
           </div>
@@ -331,7 +339,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span>
                 </div>
               ) : (
-                <div className="text-[11.5px] font-bold text-white/50">Fill a paid zone draft → 1 Pack</div>
+                <div className="text-[11.5px] font-bold text-white/75">Fill a paid zone draft → <span className="text-banana font-extrabold">1 Pack</span></div>
               )}
             </div>
           </div>
