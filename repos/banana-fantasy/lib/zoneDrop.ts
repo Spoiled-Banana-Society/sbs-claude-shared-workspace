@@ -939,7 +939,7 @@ async function notifyDraftDealt(bandId: string, band: BandDoc, opts: { draftId: 
   const sealedUntilReveal = typeof opts.openableAtMs === 'number' && opts.openableAtMs > Date.now();
   const message = opts.isHit
     ? `The Jackpot hit on your draft. Every JackHOF seat still hidden in this batch landed in this draft's packs. ${sealedUntilReveal ? 'Yours opens the moment the hit is revealed.' : 'Rip yours now.'}`
-    : `Your Banana Zone draft filled and your pack is ready to rip. ${found} of ${band.tickets} JackHOF seats found so far in drafts ${band.fromPos} to ${band.toPos}${left > 0 ? `, ${left} still hidden in drafts ${Math.min(band.toPos, opts.position + 1)} to ${band.toPos}. Every paid draft you fill = 1 more pack.` : '. Every seat in this batch has landed.'}`;
+    : `Your Banana Zone draft filled and your pack is ready to rip. ${found} of ${band.tickets} JackHOF seats found so far in drafts ${band.fromPos} to ${band.toPos}${left > 0 ? `, ${left} still hidden in the next ${Math.max(0, band.toPos - opts.position)} drafts. Every paid draft you fill = 1 more pack. Jackpot hits first? The draft that hits it splits the rest.` : '. Every seat in this batch has landed.'}`;
   await Promise.allSettled(holders.map((w) => {
     const docId = `${w}__zone-drop-dealt-${bandId}-${opts.position}`.replace(/[/\\\s]+/g, '_').slice(0, 1400);
     return db.collection('marketplace_notifications').doc(docId).create({

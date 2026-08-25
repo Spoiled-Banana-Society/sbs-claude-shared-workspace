@@ -184,7 +184,7 @@ export default function ZonePacksPreviewPage() {
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
               <p className="text-[13px] font-bold text-white">📦 Your pack is ready</p>
               <p className="mt-1 text-[12px] leading-relaxed text-white/55">
-                Your Banana Zone draft filled and your pack is ready to rip. 1 of 3 JackHOF seats found so far in drafts 1 to 30, 2 still hidden in drafts 13 to 30. Every paid draft you fill = 1 more pack.
+                Your Banana Zone draft filled and your pack is ready to rip. 1 of 3 JackHOF seats found so far in drafts 1 to 30, 2 still hidden in the next 18 drafts. Every paid draft you fill = 1 more pack. Jackpot hits first? The draft that hits it splits the rest.
               </p>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">

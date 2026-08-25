@@ -285,7 +285,8 @@ export function ZonePacks() {
       {liveInstant && liveBand && (() => {
         const found = Math.min(liveBand.tickets, liveBand.seatsDealt ?? 0);
         const hidden = seatsLeft(liveBand);
-        const from = Math.max(liveBand.fromPos, zone.position ?? liveBand.fromPos);
+        // Drafts still to fill in this batch, counting the next one.
+        const draftsAhead = Math.max(1, liveBand.toPos - (zone.position ?? liveBand.fromPos) + 1);
         return (
           <div className="mt-3 rounded-2xl border border-banana/35 bg-banana/[0.05] px-4 py-3 text-center" data-testid="zone-seat-tracker">
             <div className="flex items-center justify-center gap-1.5">
@@ -305,12 +306,17 @@ export function ZonePacks() {
             </p>
             <p className="mt-0.5 text-[12.5px] font-bold text-banana">
               {hidden > 0
-                ? <>{hidden} still hidden in drafts {from} to {liveBand.toPos}</>
-                : <>every seat in drafts {liveBand.fromPos} to {liveBand.toPos} has been found</>}
+                ? <>{hidden} still hidden in the next {draftsAhead} {draftsAhead === 1 ? 'draft' : 'drafts'}</>
+                : <>every seat in this batch has been found</>}
             </p>
             <p className="mt-1.5 text-[11.5px] leading-snug text-white/55">
               Fill a paid draft → get a pack → open it right away. Any pack can hold a seat.
             </p>
+            {hidden > 0 && (
+              <p className="mt-1 text-[11.5px] leading-snug text-white/55">
+                Jackpot hits before draft {liveBand.toPos}? The draft that hits it splits the {hidden} seat{hidden === 1 ? '' : 's'} still hidden.
+              </p>
+            )}
           </div>
         );
       })()}
