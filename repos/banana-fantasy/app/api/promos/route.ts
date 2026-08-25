@@ -314,7 +314,12 @@ export async function GET(req: Request) {
               if (zd.instant && st.view.windowStart > 0) {
                 const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
                 const snaps = await Promise.all(specs.map((s2) => getAdminFirestore().collection('zone_drop_bands').doc(bandIdFor(st.view.windowStart, s2.band)).get()));
-                dealtBy = Object.fromEntries(snaps.map((s2, i) => [specs[i].band, Number((s2.data() as { seatsDealt?: number } | undefined)?.seatsDealt ?? 0) || 0]));
+                dealtBy = Object.fromEntries(snaps.map((s2, i) => {
+                  const d = s2.data() as { mode?: string; seatsDealt?: number; winners?: unknown[]; status?: string } | undefined;
+                  // A batch-mode band from before the flip dealt at its lock.
+                  const dealt = d?.mode === 'instant' ? Number(d.seatsDealt ?? 0) : (d?.status === 'locked' ? (d.winners?.length ?? 0) : 0);
+                  return [specs[i].band, dealt || 0];
+                }));
               }
               return {
                 // Per-batch, not a bare total — "first window has 6, second

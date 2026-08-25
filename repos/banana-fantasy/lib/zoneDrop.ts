@@ -829,16 +829,20 @@ export async function resolveZoneDraft(opts: {
   openableAtMs?: number | null;
   nowMs?: number;
   notify?: boolean;
+  /** Deal into THIS band regardless of the live tier map — the mid-window
+   *  conversion (a batch band re-spanned to instant) holds positions the
+   *  new map would file elsewhere. */
+  bandId?: string;
 }): Promise<{ ok: boolean; reason?: string; seats?: number; winners?: string[]; packs?: number }> {
   if (!isFirestoreConfigured()) return { ok: false, reason: 'no-firestore' };
   const zd = await readZoneDropConfig();
   if (!zd.enabled) return { ok: false, reason: 'not-live' };
   const zoneCfg = await readBonusZoneConfig();
-  const spec = bandForPosition(opts.position, zoneCfg, zd.seatsByBand);
-  if (!spec) return { ok: false, reason: 'no-band-for-position' };
+  const spec = opts.bandId ? null : bandForPosition(opts.position, zoneCfg, zd.seatsByBand);
+  if (!spec && !opts.bandId) return { ok: false, reason: 'no-band-for-position' };
   const nowMs = opts.nowMs ?? Date.now();
   const db = getAdminFirestore();
-  const bandId = bandIdFor(opts.windowStart, spec.band);
+  const bandId = opts.bandId ?? bandIdFor(opts.windowStart, spec!.band);
   const bandRef = db.collection(BANDS).doc(bandId);
 
   let dealtSeats = 0;

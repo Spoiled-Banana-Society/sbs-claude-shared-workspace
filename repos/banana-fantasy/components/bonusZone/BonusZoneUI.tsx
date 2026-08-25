@@ -83,7 +83,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-2.5 py-[5px] border-emerald-400/40 bg-emerald-400/[0.06]" data-testid="bonus-zone-pill">
         <span className="text-[7.5px] font-extrabold tracking-[0.04em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
         <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className="mt-[3px] text-[9px] tracking-[0.04em]" />}
+        {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className={hs.left ? 'mt-[3px] text-[11.5px] tracking-[0.03em]' : 'mt-[3px] text-[9px] tracking-[0.04em]'} />}
       </div>
     );
   }
@@ -100,7 +100,8 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       {/* Third line while ZONE PACKS is live: the JackHOF seats hidden in this
           tier's packs (Richard 8/24, option A) — counting DOWN once instant
           packs are on (8/25). Absent = pill stays 2 lines. */}
-      {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className="mt-[3px] text-[10.5px] tracking-[0.05em]" />}
+      {/* Bigger than the deal line when counting down (Richard 8/25: "needs to be bigger x/x left"). */}
+      {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className={hs.left ? 'mt-[3px] text-[13px] tracking-[0.04em]' : 'mt-[3px] text-[10.5px] tracking-[0.05em]'} />}
     </div>
   );
 }
@@ -148,7 +149,7 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
         </span>
         <span className="text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
         {/* Phone strip stays ONE line: "2 JACKHOF LEFT" (no SEATS) when counting down. */}
-        {hs && <JackHofSeats n={hs.n} of={hs.of} seats={!hs.left} left={hs.left} className="text-[9px] tracking-[0.02em]" />}
+        {hs && <JackHofSeats n={hs.n} of={hs.of} seats={!hs.left} left={hs.left} className={hs.left ? 'text-[10.5px] tracking-[0.02em]' : 'text-[9px] tracking-[0.02em]'} />}
       </div>
     </Tooltip>
   );
@@ -219,8 +220,10 @@ export function ZoneTierChips({ view, small = false, packBands = null }: {
     if (seats === null) return null;
     const dealt = dealtFor(i);
     if (dealt === null) return `📦 ${seats} JACKHOF SEATS`;
-    if (st === 'live') return `📦 ${Math.max(0, seats - dealt)} OF ${seats} SEATS LEFT`;
-    if (st === 'dead') return `📦 ${dealt} OF ${seats} SEATS DEALT`;
+    if (st === 'live') return `📦 ${Math.max(0, seats - dealt)}/${seats} SEATS LEFT`;
+    // A burned batch may have been a BATCH-mode band from before the flip
+    // (6 dealt against a 3-seat spec) — print what it actually dealt.
+    if (st === 'dead') return `📦 ${dealt} SEAT${dealt === 1 ? '' : 'S'} DEALT`;
     return `📦 ${seats} JACKHOF SEATS`;
   };
   return (
