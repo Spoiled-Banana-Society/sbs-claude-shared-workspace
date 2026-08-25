@@ -87,7 +87,7 @@ function BatchChip({ b, position }: { b: ZoneBand; position: number | null }) {
   const ready = readyCount(b);
   const live = b.status === 'earning' && position !== null && position >= b.fromPos && position <= b.toPos;
   const instant = isInstant(b);
-  const found = instant ? Math.min(b.tickets, b.seatsDealt ?? b.winners?.length ?? 0) : (b.winners?.length ?? 0);
+  const found = Math.min(b.tickets, b.seatsDealt ?? 0); // both modes: server computes seatsDealt (batch = revealed winners count)
   // Instant: the chip reads FOUND / HIDDEN plainly (Richard 8/25: "x out of
   // x seats have been hit and x remain").
   const state = ready > 0 ? 'OPEN NOW'
