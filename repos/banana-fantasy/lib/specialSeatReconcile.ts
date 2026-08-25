@@ -57,7 +57,7 @@ export async function reconcileSeatToOwner(
   const { getQueueStatus, reassignQueuePassWallet } = await import('@/lib/db');
   const queues = await getQueueStatus();
 
-  let found: { draftId: string | null; seller: string; locked: boolean } | null = null;
+  let found: { draftId: string | null; seller: string; locked: boolean; members: string[] } | null = null;
   for (const type of ['jackpot', 'hof', 'jackhof'] as const) {
     for (const round of queues[type]?.rounds || []) {
       const member = (round.members || []).find(m => m.tokenId && String(m.tokenId) === tid);
@@ -66,6 +66,7 @@ export async function reconcileSeatToOwner(
         draftId: round.draftId || null,
         seller: member.wallet.toLowerCase(),
         locked: round.status !== 'filling' || (round.members || []).length >= 10,
+        members: (round.members || []).map(m => String(m.wallet).toLowerCase()),
       };
       break;
     }
@@ -74,6 +75,20 @@ export async function reconcileSeatToOwner(
 
   if (!found) return { moved: false, reason: 'no_such_pass', tokenId: tid };
   if (found.seller === owner) return { moved: false, reason: 'already_owner', tokenId: tid, to: owner };
+  // Same-person rule (lib/linkedWallets.ts): a pass bought into a round where
+  // the buyer — or a wallet linked to them — already sits would give one person
+  // two seats. The seat still follows the NFT (ownership is on-chain and this
+  // path never blocks it), but shout so it gets moved to another round by hand.
+  try {
+    const { samePersonWallets } = await import('@/lib/linkedWallets');
+    const samePerson = new Set(await samePersonWallets(owner));
+    const collide = (found.members || []).filter(w => w !== found!.seller && samePerson.has(w));
+    if (collide.length) {
+      logger.error('special_seat.same_person_collision', {
+        tokenId: tid, draftId: found.draftId, buyer: owner, alreadySeated: collide,
+      });
+    }
+  } catch { /* advisory only */ }
   if (found.locked) {
     // Seats lock at fill by design. Drift that reaches this point can only be
     // undone by hand — surface it loudly so it never sits unnoticed again.

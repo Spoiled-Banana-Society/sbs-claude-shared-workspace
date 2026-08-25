@@ -2505,17 +2505,24 @@ function roundSource(r: QueueRound): QueueRoundSource {
   return r.source ?? 'wheel';
 }
 
+/**
+ * `excludeWallets` = the joiner plus every wallet linked to the same person
+ * (lib/linkedWallets.ts). One person never holds two seats in one special
+ * draft — a linked wallet's entry goes to the next open round instead
+ * (Richard, 2026-08-24, ticket-2661: couch + Banana69 both in jackpot round 11).
+ */
 function findOpenRound(
   queue: DraftQueue,
   source: QueueRoundSource,
-  userId: string,
+  excludeWallets: string[],
 ): QueueRound | undefined {
+  const excluded = new Set(excludeWallets.map(w => w.toLowerCase()));
   return queue.rounds.find(
     r =>
       r.status === 'filling' &&
       roundSource(r) === source &&
       r.members.length < QUEUE_MAX &&
-      !r.members.some(m => m.wallet === userId),
+      !r.members.some(m => excluded.has(String(m.wallet).toLowerCase())),
   );
 }
 
@@ -2551,6 +2558,8 @@ export async function joinQueue(
   await ensureUserSeeded(userId);
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  const { samePersonWallets } = await import('@/lib/linkedWallets');
+  const samePerson = await samePersonWallets(userId);
 
   return db.runTransaction(async (tx) => {
     const [userSnap, queueSnap] = await Promise.all([tx.get(userRef), tx.get(queueRef)]);
@@ -2568,7 +2577,7 @@ export async function joinQueue(
     // Add new entries to next available rounds (don't touch existing rounds)
     const joinedRoundIds: number[] = [];
     for (let i = 0; i < entries; i++) {
-      let round = findOpenRound(queue, source, userId);
+      let round = findOpenRound(queue, source, samePerson);
       if (!round) {
         round = newRound(queue.nextRoundId++, source);
         queue.rounds.push(round);
@@ -2600,6 +2609,8 @@ export async function joinQueueWithToken(
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
   const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  const { samePersonWallets } = await import('@/lib/linkedWallets');
+  const samePerson = await samePersonWallets(userId);
 
   return db.runTransaction(async (tx) => {
     const queueSnap = await tx.get(queueRef);
@@ -2611,7 +2622,7 @@ export async function joinQueueWithToken(
     const existing = queue.rounds.find(r => r.members.some(m => m.tokenId === tokenId));
     if (existing) return { queue, joinedRoundId: existing.roundId };
 
-    let round = findOpenRound(queue, source, userId);
+    let round = findOpenRound(queue, source, samePerson);
     if (!round) {
       round = newRound(queue.nextRoundId++, source);
       queue.rounds.push(round);

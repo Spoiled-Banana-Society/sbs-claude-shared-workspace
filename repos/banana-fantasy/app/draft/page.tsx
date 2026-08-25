@@ -429,7 +429,7 @@ export default function DraftingPage() {
       <EntryFlowModal
         isOpen={showEntryFlow}
         onClose={() => { clearDepositBuyError(); setShowEntryFlow(false); }}
-        onComplete={(passType, speed) => void handleEntryComplete(passType, speed)}
+        onComplete={(passType, speed, opts) => void handleEntryComplete(passType, speed, opts)}
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={depositBuying}

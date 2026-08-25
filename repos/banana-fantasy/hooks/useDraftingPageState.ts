@@ -489,18 +489,26 @@ export function useDraftingPageState() {
     setShowBuyFromBalance(false);
   };
 
-  const handleEntryComplete = async (passType: 'paid' | 'free' | 'balance', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = async (
+    passType: 'paid' | 'free' | 'balance',
+    speed: 'fast' | 'slow',
+    // ticket: tomalom 8/24 — this surface dropped forcePublic, so a private-
+    // league member out of entries could never take the "public instead"
+    // escape here: every join re-routed into the league and bounced. Home and
+    // buy-drafts already forward it; now all three do.
+    opts?: { forcePublic?: boolean },
+  ) => {
     if (passType === 'balance') {
       // Paid seat bought from balance inside the chooser — keep the modal up
       // until the charge lands so a failure stays visible.
       const ok = await buyPassWithBalance();
       if (!ok) return;
       setShowEntryFlow(false);
-      void enterDraftWithPassType('paid', speed);
+      void enterDraftWithPassType('paid', speed, undefined, opts);
       return;
     }
     setShowEntryFlow(false);
-    void enterDraftWithPassType(passType, speed);
+    void enterDraftWithPassType(passType, speed, undefined, opts);
   };
 
   useEffect(() => {
