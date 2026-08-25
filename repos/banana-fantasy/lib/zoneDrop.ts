@@ -1231,11 +1231,8 @@ export async function getZoneDropStatus(wallet?: string | null): Promise<{
       status: band?.status ?? 'earning',
       packCount: band?.packCount ?? 0,
       revealAtMs: band?.revealAtMs ?? null,
-      // Identities NEVER leave the server (Boris 2026-08-25): an instant
-      // band's winners include seats whose packs are still UNOPENED, and the
-      // raw JSON was the one place a curious user could spoil their own rip.
-      // The UI only ever needed the count — seatsDealt/seatsLeft carry it.
-      winners: null,
+      // Instant: winners are public as they land (their pack is dealt).
+      winners: (revealed || instant) ? (band?.winners ?? []).map(({ userId }) => ({ userId })) : null,
       myPacks,
       myUnopened,
       myUnopenedIds,

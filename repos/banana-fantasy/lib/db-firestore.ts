@@ -6,7 +6,7 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/li
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { MINT_PROMO_END_MS, PICK_PROMOS_END_MS, promoWeekendActive } from '@/lib/promoWindow';
+import { MINT_PROMO_END_MS, promoWeekendActive } from '@/lib/promoWindow';
 import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
@@ -2505,12 +2505,9 @@ function roundSource(r: QueueRound): QueueRoundSource {
   return r.source ?? 'wheel';
 }
 
-/**
- * `excludeWallets` = the joiner plus every wallet linked to the same person
- * (lib/linkedWallets.ts). One person never holds two seats in one special
- * draft — a linked wallet's entry goes to the next open round instead
- * (Richard, 2026-08-24, ticket-2661: couch + Banana69 both in jackpot round 11).
- */
+/** `excludeWallets` = the joiner plus every wallet linked to the same person
+ *  (lib/linkedWallets.ts) — one person never holds two seats in one special
+ *  draft (Richard, 2026-08-24, ticket-2661). */
 function findOpenRound(
   queue: DraftQueue,
   source: QueueRoundSource,
@@ -3293,9 +3290,6 @@ export async function notifyPick10FounderSkip(userId: string, draftId: string): 
 }
 
 export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string, slot = 10): Promise<Promo | null> {
-  // RETIRED (Richard 2026-08-23, PICK_PROMOS_END_MS) — no new credits. Earned
-  // spins stay claimable; the card hides once they're claimed (promoFilter).
-  if (Date.now() >= PICK_PROMOS_END_MS) return null;
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
@@ -3391,8 +3385,8 @@ const PICK_CHASE_SEEN_LEDGER_MAX = 60;    // idempotency ledger cap per user
  *     the chase RESETS so the next filled draft sets a new target. Miss → keep
  *     chasing (target + timer unchanged).
  *
- * Paid-gated via promoCreditAllowed below (free drafts counted only during
- * the launch weekend window, which auto-reverted Jul 26). Idempotent per
+ * FREE and paid drafts both count (no paid-gate) — safe at the 5-spin cap (a
+ * chase costs ~10 drafts and pays back ≤5, so it can't print). Idempotent per
  * (user, draftId) via a capped seen-ledger. Requires the pick-chase promo doc
  * to already exist (real seeded users) — bots have no promo docs, so they
  * no-op naturally; callers also pre-exclude bots.
@@ -3443,10 +3437,6 @@ export async function recordPickChase(
     let won = 0;
     let resetChase = false;
     if (!activeChase) {
-      // RETIRED (Richard 2026-08-23, PICK_PROMOS_END_MS): no NEW chases. A
-      // chase whose clock was already running takes the branch below and can
-      // still pay until its own 24h timer expires — nothing earned is cut off.
-      if (Date.now() >= PICK_PROMOS_END_MS) return { won: 0, changed: false };
       // Start a fresh chase — this draft sets the target.
       mc.chaseTargetSlot = slot;
       mc.chaseRunLength = 1;
