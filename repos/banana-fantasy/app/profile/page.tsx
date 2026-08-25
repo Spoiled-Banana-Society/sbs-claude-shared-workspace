@@ -34,6 +34,8 @@ import { useExportWallet } from '@privy-io/react-auth';
 const KEY_EXPORT_ALLOWLIST = new Set<string>([
   '0xfff36cb99d9d7432ba70d6a93c1a72d49a7fc98e',
   '0x59e8ca8bbaf42037d8da75e8ca96732efd29092c',
+  // LamarJ — brother sent 0.0101 ETH on Base instead of USDC (ticket-3349, 8/24). Right chain, wrong asset; has gas.
+  '0xf4a0b6c01f4db328c31bf0e1bb8d3fcdf3c2d086',
 ]);
 
 function truncateAddress(addr: string): string {

@@ -198,7 +198,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
                 const part = i === filled && hasPartial;
-                const next = i === filled && !hasPartial && tier !== null;
+                const next = i >= filled && !(i === filled && hasPartial) && tier !== null;
                 return (
                   <span key={i} className={`w-[44px] h-[44px] rounded-full flex items-center justify-center text-[21px] ${
                     on ? 'border-[3px] border-banana bg-banana/15 shadow-[0_0_14px_rgba(255,207,61,.6)]'
@@ -287,7 +287,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               {Array.from({ length: slots }, (_, i) => {
                 const on = i < filled;
                 const part = i === filled && hasPartial;
-                const next = i === filled && !hasPartial && tier !== null;
+                const next = i >= filled && !(i === filled && hasPartial) && tier !== null;
                 return (
                   <span
                     key={i}
