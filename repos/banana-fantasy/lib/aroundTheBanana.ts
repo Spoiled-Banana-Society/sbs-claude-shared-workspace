@@ -121,7 +121,8 @@ export async function resetAllLapsForNextRound(completedSeat: number): Promise<v
   const claimed = await db.runTransaction(async (tx) => {
     const s = (await tx.get(stateRef)).data() ?? {};
     if (s[marker]) return false;
-    tx.set(stateRef, { [marker]: new Date().toISOString() }, { merge: true });
+    const nowIso = new Date().toISOString();
+    tx.set(stateRef, { [marker]: nowIso, roundStartedAt: nowIso }, { merge: true });
     return true;
   });
   if (!claimed) return;
@@ -183,6 +184,30 @@ export async function recordAroundTheBanana(
   }
 
   const db = getAdminFirestore();
+
+  // Round-scoped entries ONLY (Boris 2026-08-25, the Fantasy Couch 2/10):
+  // slow drafts entered in a PRIOR round reveal weeks later and were crediting
+  // slots into the fresh race. A draft only counts for the round it started
+  // in — drafts that began before roundStartedAt (stamped at every lap reset)
+  // are carryover and never credit. Engine start time ≈ fill moment for both
+  // lanes. Fail-closed on a missing start time EXCEPT for admin grants
+  // (skipPaidGate), whose synthetic draftIds have no engine state.
+  if (!opts?.skipPaidGate) {
+    const stateDoc = await db.collection(STATE_COLLECTION).doc(STATE_DOC).get();
+    const roundStartMs = Date.parse(String(stateDoc.data()?.roundStartedAt ?? '')) || 0;
+    if (roundStartMs > 0) {
+      let startedMs = 0;
+      try {
+        const base = process.env.DRAFTS_API_URL || process.env.NEXT_PUBLIC_DRAFTS_API_URL || '';
+        const r = await fetch(`${base}/draft/${draftId}/state/info`);
+        if (r.ok) startedMs = (Number((await r.json())?.draftStartTime) || 0) * 1000;
+      } catch { /* engine unreachable → treated as unknown below */ }
+      if (startedMs === 0 || startedMs < roundStartMs) {
+        logger.info('atb.credit_skipped_prior_round_draft', { userId, draftId, startedMs, roundStartMs });
+        return;
+      }
+    }
+  }
   const promoRef = db.collection('v2_users').doc(userId)
     .collection('promos').doc(ATB_PROMO_ID);
   const stateRef = db.collection(STATE_COLLECTION).doc(STATE_DOC);
