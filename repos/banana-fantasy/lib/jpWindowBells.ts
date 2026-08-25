@@ -168,11 +168,16 @@ async function runBonusZoneBells(
   // in that batch's packs, and the tier-2 bell tells people holding sealed
   // batch-1 packs to OPEN THEM — but ONLY those who actually hold packs.
   const { readZoneDropConfig, bandSpecs, bandIdFor } = await import('@/lib/zoneDrop');
-  const packsOn = (await readZoneDropConfig()).enabled;
-  const bands = packsOn ? bandSpecs(cfg) : [];
+  const zd = await readZoneDropConfig();
+  const packsOn = zd.enabled;
+  const bands = packsOn ? bandSpecs(cfg, zd.seatsByBand) : [];
   const seatsFor = (tier: number) => bands.find((b) => b.band === tier)?.tickets ?? 0;
   const seatLine = (tier: number, from: number, to: number) =>
-    seatsFor(tier) > 0 ? `${seatsFor(tier)} JackHOF seats are hiding in the packs from drafts ${from} to ${to}. ` : '';
+    seatsFor(tier) > 0
+      ? (zd.instant
+        ? `${seatsFor(tier)} JackHOF seats are hidden in drafts ${from} to ${to}, and packs open the moment your draft fills. `
+        : `${seatsFor(tier)} JackHOF seats are hiding in the packs from drafts ${from} to ${to}. `)
+      : '';
   const seatTag = (tier: number) => (seatsFor(tier) > 0 ? ` + ${seatsFor(tier)} JackHOF seats` : '');
 
   const bell = live.tier === 1
@@ -203,9 +208,14 @@ async function runBonusZoneBells(
   // with an OPEN YOUR PACKS lead — nobody without packs is told to open any.
   let holders = new Set<string>();
   if (packsOn && live.tier >= 2 && seatsFor(live.tier - 1) > 0) {
-    const sealed = await db.collection('zone_drop_bands').doc(bandIdFor(windowStart, live.tier - 1))
-      .collection('packs').where('opened', '==', false).select('userId').get();
-    holders = new Set(sealed.docs.map((d) => String((d.data() as { userId?: string }).userId ?? '').toLowerCase()));
+    // INSTANT bands (8/25) dealt as they went — nothing waits for the batch
+    // boundary, so no "open your packs" lead; the per-fill bell already did it.
+    const prevRef = db.collection('zone_drop_bands').doc(bandIdFor(windowStart, live.tier - 1));
+    const prevMode = ((await prevRef.get()).data() as { mode?: string } | undefined)?.mode;
+    if (prevMode !== 'instant') {
+      const sealed = await prevRef.collection('packs').where('opened', '==', false).select('userId').get();
+      holders = new Set(sealed.docs.map((d) => String((d.data() as { userId?: string }).userId ?? '').toLowerCase()));
+    }
   }
   const holderWallets = wallets.filter((w) => holders.has(w));
   const otherWallets = wallets.filter((w) => !holders.has(w));

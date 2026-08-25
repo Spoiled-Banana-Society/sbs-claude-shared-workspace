@@ -16,6 +16,9 @@ interface BandLite {
   status: 'earning' | 'locked';
   revealAtMs: number | null;
   myUnopened: number;
+  /** Instant bands (8/25): the server already decided per pack. */
+  mode?: 'batch' | 'instant';
+  myReady?: number;
 }
 interface StatusLite { enabled: boolean; bands?: BandLite[]; backlog?: BandLite[] }
 
@@ -27,8 +30,13 @@ export interface ZonePacksSummary {
   openable: number;
 }
 
-const openableNow = (b: BandLite) =>
-  b.status === 'locked' && (b.revealAtMs === null || Date.now() >= b.revealAtMs);
+/** Openable count per band: instant bands say so per pack (myReady); batch
+ *  bands open all at once at the lock + reveal. */
+const openableIn = (b: BandLite) => (
+  b.mode === 'instant'
+    ? (b.myReady ?? 0)
+    : (b.status === 'locked' && (b.revealAtMs === null || Date.now() >= b.revealAtMs) ? (b.myUnopened || 0) : 0)
+);
 
 export function useZonePacks(wallet: string | null | undefined): ZonePacksSummary {
   const [state, setState] = useState<ZonePacksSummary>({ loaded: false, sealed: 0, openable: 0 });
@@ -41,9 +49,7 @@ export function useZonePacks(wallet: string | null | undefined): ZonePacksSummar
       const d = (await res.json()) as StatusLite;
       const all = [...(d.bands ?? []), ...(d.backlog ?? [])];
       const sealed = d.enabled ? all.reduce((n, b) => n + (b.myUnopened || 0), 0) : 0;
-      const openable = d.enabled
-        ? all.filter(openableNow).reduce((n, b) => n + (b.myUnopened || 0), 0)
-        : 0;
+      const openable = d.enabled ? all.reduce((n, b) => n + openableIn(b), 0) : 0;
       if (!dead.current) setState({ loaded: true, sealed, openable });
     } catch { /* keep the last good state — decoration only */ }
   }, [wallet]);

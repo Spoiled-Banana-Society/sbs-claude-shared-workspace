@@ -156,6 +156,7 @@ export function PromoMiniCard({
             const filledN = Math.min(slots, Math.floor(units / credit));
             const need = Math.max(1, Math.ceil((6 - units) / credit));
             const unlockAt = tier === 1 ? t1 : end;
+            const packsInstant = (bz as { packsInstant?: boolean }).packsInstant === true;
             return (
               <>
                 <div className="flex flex-col gap-[3px]">
@@ -205,7 +206,9 @@ export function PromoMiniCard({
                 </div>
                 {tier !== null && zonePacks.openable === 0 && (
                   <span className="block text-[9.5px] leading-[1.5] font-extrabold tracking-[.4px] uppercase text-[rgba(235,245,240,.55)]">
-                    {zonePacks.sealed > 0 ? `Packs unlock at ${unlockAt} drafts or when the JP hits` : 'Every paid fill = 1 sealed Pack'}
+                    {packsInstant
+                      ? (zonePacks.sealed > 0 ? 'Your pack is being dealt, opens in a moment' : 'Every paid fill = 1 Pack, opens the moment it fills')
+                      : (zonePacks.sealed > 0 ? `Packs unlock at ${unlockAt} drafts or when the JP hits` : 'Every paid fill = 1 sealed Pack')}
                   </span>
                 )}
                 <div className={`mt-auto pt-1 ${hasVisibleClaim && zonePacks.openable > 0 ? 'grid grid-cols-2 gap-2' : ''}`}>

@@ -239,10 +239,19 @@ export async function POST(req: NextRequest) {
       // from the token stamp (source of truth, same as every promo above).
       try {
         const { readBonusZoneConfig, fillPositionForDraft } = await import('@/lib/bonusZone');
-        const { awardGoldenPacksForFill, maybeLockDueBands, bandForPosition } = await import('@/lib/zoneDrop');
-        const zoneCfg = await readBonusZoneConfig();
+        const {
+          readZoneDropConfig, applyStagedZoneConfig, awardGoldenPacksForFill, maybeLockDueBands, bandForPosition, resolveZoneDraft,
+        } = await import('@/lib/zoneDrop');
+        let zoneCfg = await readBonusZoneConfig();
         const fillPos = await fillPositionForDraft(draftId, zoneCfg);
-        if (fillPos && bandForPosition(fillPos.position, zoneCfg)) {
+        // A staged re-tier / instant-mode flip lands with the FIRST fill of a
+        // new window, before that draft's band is born (Richard 8/25: 30/60,
+        // 3 + 7 seats, open at fill — never applied mid-window).
+        if (fillPos && (await readZoneDropConfig()).next && (await applyStagedZoneConfig(fillPos.windowStart))) {
+          zoneCfg = await readBonusZoneConfig({ fresh: true });
+        }
+        const zd = await readZoneDropConfig();
+        if (fillPos && bandForPosition(fillPos.position, zoneCfg, zd.seatsByBand)) {
           await Promise.allSettled(wallets.map(async (w) => {
             const wallet = w.toLowerCase();
             const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
@@ -253,6 +262,15 @@ export async function POST(req: NextRequest) {
               notify: true,
             });
           }));
+          // INSTANT bands: deal THIS draft now — its packs become openable
+          // seconds after the fill. On the Jackpot-hit draft every seat still
+          // hidden in the band lands here (sealed until the hit reveals).
+          if (zd.instant) {
+            await resolveZoneDraft({
+              windowStart: fillPos.windowStart, position: fillPos.position, draftId,
+              isHit: fillPos.isJackpotHit, openableAtMs: fillPos.revealAtMs,
+            });
+          }
         }
         // Band done (or passed)? Lock and assign — no-op while the switch is
         // off, and the cron tick backstops a missed boundary.

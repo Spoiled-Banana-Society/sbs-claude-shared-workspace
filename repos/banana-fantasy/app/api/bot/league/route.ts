@@ -358,6 +358,18 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
         const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
         // No "🍌 BANANA ZONE:" prefix — just the tier label (Richard 2026-08-22).
         if (v.tier) bonusZoneLine = `${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
+        // Seats-left rides along while zone packs deal (Boris 2026-08-25):
+        // same liveSeats stamp the header uses — left/total, no winner info.
+        if (v.tier) {
+          try {
+            const { readZoneDropConfig } = await import('@/lib/zoneDrop');
+            const zd = await readZoneDropConfig();
+            if (zd.enabled && zd.liveSeats && zd.liveSeats.windowStart === lane.windowStart) {
+              const seatsLeft = Math.max(0, zd.liveSeats.tickets - zd.liveSeats.dealt);
+              if (seatsLeft > 0) bonusZoneLine += `\n${seatsLeft}/${zd.liveSeats.tickets} JackHOF seats still hidden in packs`;
+            }
+          } catch { /* decoration */ }
+        }
       }
     }
   } catch { /* decoration */ }

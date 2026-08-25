@@ -8,10 +8,12 @@
  * Mounted in the zone card's modal. Renders NOTHING until the zone drop
  * switch is on (the status API returns enabled:false while dark). The hero
  * is THE DROP's physical pack pile — same sealed pack, same bob, same tear
- * ceremony — now tappable: click the pile, a pack rips. Batches: drafts 1
- * to 25 hide 6 JackHOF seats, 26 to 50 hide 4; packs unlock the INSTANT the
- * batch's last draft fills (no 9pm). Old DROP-night packs and past-window
- * packs stay openable here too — nothing earned is ever stranded.
+ * ceremony — now tappable: click the pile, a pack rips. Batch bands: packs
+ * unlock the INSTANT the batch's last draft fills (no 9pm). INSTANT bands
+ * (Richard 8/25): seats land draft by draft and every pack opens the moment
+ * its draft is dealt — seconds after the fill; the chip counts down the
+ * seats still hidden. Old DROP-night packs and past-window packs stay
+ * openable here too — nothing earned is ever stranded.
  *
  * ⚠️ Rule #0: the fetch effect keys on [wallet] only — a stable scalar.
  */
@@ -35,6 +37,13 @@ interface ZoneBand {
   myPacks: number;
   myUnopened: number;
   myUnopenedIds: string[];
+  /** Instant bands (8/25) — absent on older payloads = batch. */
+  mode?: 'batch' | 'instant';
+  seatsDealt?: number;
+  seatsLeft?: number;
+  myReady?: number;
+  myReadyIds?: string[];
+  myWaiting?: number;
 }
 
 interface ZoneStatus {
@@ -63,20 +72,33 @@ interface OpenResult { packId: string; prize: RevealPrize }
 export interface ZonePacksPreviewData { zone: ZoneStatus; legacy: LegacyDropState | null }
 export const ZonePacksPreviewContext = createContext<ZonePacksPreviewData | null>(null);
 
-const openable = (b: ZoneBand) =>
-  b.status === 'locked' && (b.revealAtMs === null || Date.now() >= b.revealAtMs);
+const isInstant = (b: ZoneBand) => b.mode === 'instant';
+/** Packs of mine I can rip in this band right now. */
+const readyCount = (b: ZoneBand) => (
+  isInstant(b)
+    ? (b.myReady ?? 0)
+    : (b.status === 'locked' && (b.revealAtMs === null || Date.now() >= b.revealAtMs) ? b.myUnopened : 0)
+);
+const openable = (b: ZoneBand) => readyCount(b) > 0;
+const seatsLeft = (b: ZoneBand) => Math.max(0, b.seatsLeft ?? (b.tickets - (b.seatsDealt ?? 0)));
 
 /** Compact batch chip above the pile — state at a glance, pile stays hero. */
 function BatchChip({ b, position }: { b: ZoneBand; position: number | null }) {
-  const ripe = openable(b);
+  const ready = readyCount(b);
   const live = b.status === 'earning' && position !== null && position >= b.fromPos && position <= b.toPos;
-  const state = ripe && b.myUnopened > 0 ? 'OPEN NOW'
-    : ripe ? `opened · ${b.winners?.length ?? 0} seat${(b.winners?.length ?? 0) === 1 ? '' : 's'} found`
-      : live ? `draft ${position} of ${b.toPos}`
-        : 'up next';
+  const instant = isInstant(b);
+  const found = Math.min(b.tickets, b.seatsDealt ?? 0); // both modes: server computes seatsDealt (batch = revealed winners count)
+  // Instant: the chip reads FOUND / HIDDEN plainly (Richard 8/25: "x out of
+  // x seats have been hit and x remain").
+  const state = ready > 0 ? 'OPEN NOW'
+    : instant && live ? `draft ${position} of ${b.toPos}`
+      : instant && b.status === 'locked' ? 'done'
+        : (!instant && b.status === 'locked') ? `opened · ${found} seat${found === 1 ? '' : 's'} found`
+          : live ? `draft ${position} of ${b.toPos}`
+            : 'up next';
   return (
     <div className={`flex-1 rounded-xl border px-3 py-2 text-center ${
-      ripe && b.myUnopened > 0 ? 'border-emerald-400/45 bg-emerald-400/[0.06]'
+      ready > 0 ? 'border-emerald-400/45 bg-emerald-400/[0.06]'
         : live ? 'border-banana/40 bg-banana/[0.05]'
           : 'border-white/[0.08] bg-white/[0.02]'}`}
     >
@@ -86,8 +108,15 @@ function BatchChip({ b, position }: { b: ZoneBand; position: number | null }) {
       <p className="mt-0.5 text-[12px] font-black text-white leading-tight">
         {b.tickets}× <JackHofWordmark size={11} /> <span className="font-extrabold text-white/60">SEATS</span>
       </p>
+      {instant && (live || b.status === 'locked') && (
+        <p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-[0.06em] leading-tight">
+          <span className="text-emerald-300">{found} found</span>
+          <span className="text-white/35"> · </span>
+          <span className={seatsLeft(b) > 0 ? 'text-banana' : 'text-white/40'}>{seatsLeft(b)} hidden</span>
+        </p>
+      )}
       <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
-        ripe && b.myUnopened > 0 ? 'text-emerald-300' : live ? 'text-banana/90' : 'text-white/40'}`}>
+        ready > 0 ? 'text-emerald-300' : live ? 'text-banana/90' : 'text-white/40'}`}>
         {state}
       </p>
       {live && (
@@ -137,8 +166,9 @@ export function ZonePacks() {
     setZone((z) => {
       if (!z) return z;
       const bands = z.bands.map((b) => {
-        if (b.myUnopened === 0 || !(b.status === 'locked')) return b;
-        const take = all ? b.myUnopened : 1;
+        const ready = readyCount(b);
+        if (ready === 0) return b;
+        const take = all ? ready : 1;
         const opened: OpenResult[] = Array.from({ length: take }, () => ({
           packId: `mock-${previewRippedRef.current}`,
           prize: (previewRippedRef.current++ === 0 ? { kind: 'jackhof' } : { kind: 'none' }) as RevealPrize,
@@ -147,7 +177,12 @@ export function ZonePacks() {
         setBatchMode(opened.length > 1);
         setReveal(opened[0]);
         if (opened.length > 1) setQueue(opened.slice(1));
-        return { ...b, myUnopened: b.myUnopened - take, myUnopenedIds: b.myUnopenedIds.slice(take) };
+        return {
+          ...b,
+          myUnopened: b.myUnopened - take,
+          myUnopenedIds: b.myUnopenedIds.slice(take),
+          ...(isInstant(b) ? { myReady: ready - take, myReadyIds: (b.myReadyIds ?? []).slice(take) } : {}),
+        };
       });
       return { ...z, bands };
     });
@@ -216,20 +251,25 @@ export function ZonePacks() {
 
   // The pile shows the batch that matters most right now: one you can OPEN,
   // else the one you're earning into.
-  const ripeBand = zone.bands.find((b) => openable(b) && b.myUnopened > 0)
-    ?? zone.backlog.find((b) => b.myUnopened > 0)
+  const ripeBand = zone.bands.find((b) => openable(b))
+    ?? zone.backlog.find((b) => openable(b))
     ?? null;
   const liveBand = zone.bands.find((b) =>
     b.status === 'earning' && zone.position !== null && zone.position >= b.fromPos && zone.position <= b.toPos) ?? null;
-  const pileCount = ripeBand ? ripeBand.myUnopened : (liveBand?.myPacks ?? 0);
+  const pileCount = ripeBand ? readyCount(ripeBand) : (liveBand?.myUnopened ?? 0);
   const canRip = !!ripeBand && pileCount > 0;
+  const nextPackId = ripeBand ? (isInstant(ripeBand) ? ripeBand.myReadyIds?.[0] : ripeBand.myUnopenedIds[0]) : undefined;
+  const liveInstant = !!liveBand && isInstant(liveBand);
+  // Instant: a sealed pack of mine that isn't dealt yet (seconds) or is held
+  // until the Jackpot-hit reveal.
+  const waiting = liveInstant ? (liveBand?.myWaiting ?? 0) : 0;
 
   const legacyNights: Array<{ nightId: string; sealed: number }> = [
     ...(legacy && legacy.status !== 'earning' && (legacy.you?.sealed ?? 0) > 0
       ? [{ nightId: legacy.nightId, sealed: legacy.you?.sealed ?? 0 }] : []),
     ...(legacy?.previous ?? []),
   ];
-  const dustyBacklog = zone.backlog.filter((b) => b.myUnopened > 0 && b.bandId !== ripeBand?.bandId);
+  const dustyBacklog = zone.backlog.filter((b) => openable(b) && b.bandId !== ripeBand?.bandId);
 
   return (
     <div className="mb-5" data-testid="zone-packs">
@@ -240,6 +280,47 @@ export function ZonePacks() {
         {!isLoggedIn && !preview && <p className="text-[11px] text-white/40">Log in to see yours</p>}
       </div>
 
+      {/* ── Seat tracker (instant mode): the one line that explains it all —
+          X of Y seats found, Z still hidden ahead, drafts = packs ── */}
+      {liveInstant && liveBand && (() => {
+        const found = Math.min(liveBand.tickets, liveBand.seatsDealt ?? 0);
+        const hidden = seatsLeft(liveBand);
+        // Drafts still to fill in this batch, counting the next one.
+        const draftsAhead = Math.max(1, liveBand.toPos - (zone.position ?? liveBand.fromPos) + 1);
+        return (
+          <div className="mt-3 rounded-2xl border border-banana/35 bg-banana/[0.05] px-4 py-3 text-center" data-testid="zone-seat-tracker">
+            <div className="flex items-center justify-center gap-1.5">
+              {Array.from({ length: liveBand.tickets }, (_, i) => (
+                <span
+                  key={i}
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border-2 text-[13px] ${
+                    i < found ? 'border-banana bg-banana/20 shadow-[0_0_10px_rgba(255,207,61,.45)]' : 'border-dashed border-white/35 bg-black/25'}`}
+                  aria-hidden
+                >
+                  <span className={i < found ? '' : 'opacity-40 grayscale'}>🏆</span>
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-[15px] font-black leading-tight text-white">
+              {found} of {liveBand.tickets} <JackHofWordmark size={14} /> seats found
+            </p>
+            <p className="mt-0.5 text-[12.5px] font-bold text-banana">
+              {hidden > 0
+                ? <>{hidden} still hidden in the next {draftsAhead} {draftsAhead === 1 ? 'draft' : 'drafts'}</>
+                : <>every seat in this batch has been found</>}
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-snug text-white/55">
+              Fill a paid draft → get a pack → open it right away. Any pack can hold a seat.
+            </p>
+            {hidden > 0 && (
+              <p className="mt-1 text-[11.5px] leading-snug text-white/55">
+                Jackpot hits before draft {liveBand.toPos}? The draft that hits it splits the {hidden} seat{hidden === 1 ? '' : 's'} still hidden.
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="mt-3 flex gap-2">
         {zone.bands.map((b) => <BatchChip key={b.bandId} b={b} position={zone.position} />)}
       </div>
@@ -248,20 +329,32 @@ export function ZonePacks() {
       <div className="mt-4 text-center">
         <PackPile
           count={pileCount}
-          onClick={canRip && !opening ? () => openZone(ripeBand!.bandId, ripeBand!.myUnopenedIds[0]) : undefined}
+          onClick={canRip && !opening ? () => openZone(ripeBand!.bandId, nextPackId) : undefined}
           clickHint={canRip ? 'TAP A PACK TO RIP' : undefined}
         />
         <p className="mt-2 text-[13px] text-white/50">
-          {canRip ? (
+          {canRip && isInstant(ripeBand!) ? (
+            <>
+              <b className="text-white">{pileCount} pack{pileCount === 1 ? '' : 's'} ready to rip</b>
+              {' '}&middot; each one can hold a <JackHofWordmark size={12} /> seat
+            </>
+          ) : canRip ? (
             <>
               <b className="text-white">{pileCount} sealed pack{pileCount === 1 ? '' : 's'}</b>
               {' '}&middot; {ripeBand!.tickets} <JackHofWordmark size={12} /> seat{ripeBand!.tickets === 1 ? '' : 's'} were dealt into this batch
+            </>
+          ) : waiting > 0 ? (
+            <>
+              <b className="text-white">{waiting} pack{waiting === 1 ? '' : 's'} being dealt</b>
+              {' '}&middot; opens in a moment
             </>
           ) : pileCount > 0 ? (
             <>
               <b className="text-white">{pileCount} sealed pack{pileCount === 1 ? '' : 's'}</b>
               {' '}&middot; open at draft {liveBand?.toPos}, or instantly if the Jackpot hits
             </>
+          ) : liveInstant ? (
+            <>No packs yet &middot; fill a paid Banana Zone draft and you get 1, open the moment it fills</>
           ) : (
             <>No packs yet &middot; every paid Banana Zone draft you fill earns 1</>
           )}
@@ -289,7 +382,7 @@ export function ZonePacks() {
                 <div className="relative">
                   <SealedPack w={84} dusty />
                   <span className="absolute inset-x-0 text-[17px] font-black text-white" style={{ bottom: 36 }}>
-                    ×{b.myUnopened}
+                    ×{readyCount(b)}
                   </span>
                 </div>
                 <button

@@ -302,25 +302,43 @@ export async function GET(req: Request) {
           // The rules overlay derives from the LIVE tier config, so the 25/50
           // re-tier and the pack copy land in one flip.
           const zp = await import('@/lib/zoneDrop')
-            .then(async ({ readZoneDropConfig, bandSpecs, zonePackRulesExplanation }) => {
-              if (!(await readZoneDropConfig()).enabled) return null;
+            .then(async ({ readZoneDropConfig, bandSpecs, zonePackRulesExplanation, bandIdFor }) => {
+              const zd = await readZoneDropConfig();
+              if (!zd.enabled) return null;
               const { readBonusZoneConfig } = await import('@/lib/bonusZone');
               const zoneCfg = await readBonusZoneConfig();
+              const specs = bandSpecs(zoneCfg, zd.seatsByBand);
+              // INSTANT mode: seats land draft by draft, so the chips print
+              // "N of M left" from the live band docs (2 small reads).
+              let dealtBy: Record<number, number> = {};
+              if (zd.instant && st.view.windowStart > 0) {
+                const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+                const snaps = await Promise.all(specs.map((s2) => getAdminFirestore().collection('zone_drop_bands').doc(bandIdFor(st.view.windowStart, s2.band)).get()));
+                dealtBy = Object.fromEntries(snaps.map((s2, i) => {
+                  const d = s2.data() as { mode?: string; seatsDealt?: number; winners?: unknown[]; status?: string } | undefined;
+                  // A batch-mode band from before the flip dealt at its lock.
+                  const dealt = d?.mode === 'instant' ? Number(d.seatsDealt ?? 0) : (d?.status === 'locked' ? (d.winners?.length ?? 0) : 0);
+                  return [specs[i].band, dealt || 0];
+                }));
+              }
               return {
                 // Per-batch, not a bare total — "first window has 6, second
                 // has 4" must be legible on the card (Richard 8/23).
-                bands: bandSpecs(zoneCfg).map((s2) => ({ from: s2.fromPos, to: s2.toPos, seats: s2.tickets })),
-                explanation: zonePackRulesExplanation(zoneCfg),
+                bands: specs.map((s2) => ({ from: s2.fromPos, to: s2.toPos, seats: s2.tickets, ...(zd.instant ? { dealt: dealtBy[s2.band] ?? 0 } : {}) })),
+                explanation: zonePackRulesExplanation(zoneCfg, zd),
+                instant: zd.instant,
               };
             })
             .catch(() => null);
           if (zp) {
             promos[bzIdx].modalContent.explanation = zp.explanation;
             const totalSeats = zp.bands.reduce((n, b) => n + b.seats, 0);
-            promos[bzIdx].description = `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`;
+            promos[bzIdx].description = zp.instant
+              ? `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and Packs you open the moment your draft fills, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`
+              : `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`;
           }
           promos[bzIdx].modalContent.bonusZone = {
-            ...(zp ? { packBands: zp.bands } : {}),
+            ...(zp ? { packBands: zp.bands, packsInstant: zp.instant } : {}),
             tier: st.view.tier,
             label: st.view.label,
             position: st.view.position,

@@ -102,6 +102,9 @@ async function fetchRosters(draftId: string): Promise<Record<string, Record<stri
 }
 
 const NUM_TEAMS = 10;
+// Board column track: 100px card + 5px side margins. Fixed so the header row
+// and the round rows (separate grids) can never size their tracks differently.
+const BOARD_COLS = 'repeat(10, minmax(110px, 1fr))';
 const NUM_ROUNDS = 15;
 
 export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, onClose }: LeagueDetailModalProps) {
@@ -769,7 +772,12 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
               ) : boardGrid.length > 0 ? (
                 <div className="overflow-x-auto -mx-5 px-5 pb-2" style={{ maxWidth: 1200, margin: '0 auto' }}>
                   {/* Header row: drafter names */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', padding: '10px 0 0' }}>
+                  {/* Header + every round row are separate grids, so their tracks MUST be
+                      pinned to the same fixed width. With `1fr` the phone-width tracks collapse
+                      to min-content: 100px for the name cell vs 110px for the card (100 + 5px
+                      side margins) and the names drift one column left by the end of the board
+                      (ticket-2661, Fantasy Couch 8/25). */}
+                  <div style={{ display: 'grid', gridTemplateColumns: BOARD_COLS, padding: '10px 0 0' }}>
                     {columnHeaders.map((header, i) => {
                       // pfp + badge per drafter, exactly like the draft-room board.
                       const addr = drafterOrder[i];
@@ -779,7 +787,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                           key={`heading-${i}`}
                           style={{
                             width: 100,
-                            marginTop: 10,
+                            margin: '10px 5px 0',
                             padding: 5,
                             textAlign: 'center',
                             fontWeight: 'bold',
@@ -816,7 +824,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                       key={roundIdx}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(10, 1fr)',
+                        gridTemplateColumns: BOARD_COLS,
                       }}
                     >
                       {row.map((pick, colIdx) => {

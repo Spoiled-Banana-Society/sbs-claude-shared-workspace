@@ -78,6 +78,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
   const t2 = (live?.tier2Through ?? bz?.tier2Through) ?? 50;
   const t3 = (live?.tier3Through ?? bz?.tier3Through) ?? 50;
   const packBands = (bz as { packBands?: Array<{ from: number; to: number; seats: number }> } | undefined)?.packBands ?? null;
+  const packsInstant = (bz as { packsInstant?: boolean } | undefined)?.packsInstant === true;
   const rows = bandRows(t1, t2, t3, packBands);
   const totalSeats = packBands ? packBands.reduce((n, b) => n + b.seats, 0) : null;
 
@@ -252,8 +253,10 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             ) : (
               <span className="text-right text-[10px] font-extrabold tracking-[.6px] uppercase leading-[1.6] text-[rgba(235,245,240,.75)]">
                 {packs.sealed > 0
-                  ? <>Unlock at {unlockAt} Drafts<br /><span className="text-white">or when the JP hits</span></>
-                  : <>Fill a paid draft → <span className="text-banana font-extrabold normal-case">1 Pack</span></>}
+                  ? (packsInstant
+                    ? <>Dealing<br /><span className="text-white">opens in a moment</span></>
+                    : <>Unlock at {unlockAt} Drafts<br /><span className="text-white">or when the JP hits</span></>)
+                  : <>Fill a paid draft → <span className="text-banana font-extrabold normal-case">1 Pack</span>{packsInstant ? <><br /><span className="text-white">opens the moment it fills</span></> : null}</>}
               </span>
             )}
           </div>
@@ -346,7 +349,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 </button>
               ) : packs.sealed > 0 ? (
                 <div className="text-[11.5px] font-extrabold tracking-[.9px] uppercase whitespace-nowrap text-banana">
-                  Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span>
+                  {packsInstant
+                    ? <>Opens the moment <span className="text-white/85">your draft fills</span></>
+                    : <>Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span></>}
                 </div>
               ) : (
                 <div className="text-[11.5px] font-bold text-white/75">Fill a paid zone draft → <span className="text-banana font-extrabold">1 Pack</span></div>

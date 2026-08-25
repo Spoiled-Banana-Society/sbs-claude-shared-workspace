@@ -2,7 +2,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, type RollingLanes } from '@/lib/rollingLanes';
 import { bonusZoneViewForLane, readBonusZoneConfig, type BonusZoneConfig, type BonusZoneView } from '@/lib/bonusZone';
-import { readZoneDropConfig, packSeatsForTier } from '@/lib/zoneDrop';
+import { readZoneDropConfig, packSeatsForTier, packSeatsLeftForTier, type ZoneDropConfig } from '@/lib/zoneDrop';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -53,15 +53,16 @@ const REVEAL_OFFSET_SEC = 39;
  * The IDs themselves stay sealed during a batch (anti-frontrunning).
  */
 /** Zone config + packs switch, both cached in their libs; never throws. */
-async function readZoneInputs(): Promise<[BonusZoneConfig | undefined, boolean]> {
-  const [bz, zp] = await Promise.all([
+async function readZoneInputs(): Promise<[BonusZoneConfig | undefined, ZoneDropConfig | undefined]> {
+  const [bz, zd] = await Promise.all([
     readBonusZoneConfig().catch(() => undefined),
-    readZoneDropConfig().then((c) => c.enabled).catch(() => false),
+    readZoneDropConfig().catch(() => undefined),
   ]);
-  return [bz, zp];
+  return [bz, zd];
 }
 
-function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: BonusZoneConfig, zonePacksOn = false): BatchProgress {
+function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: BonusZoneConfig, zoneDropCfg?: ZoneDropConfig): BatchProgress {
+  const zonePacksOn = zoneDropCfg?.enabled === true;
   const d = data ?? {};
   const filled = Number(d.FilledLeaguesCount ?? d.filledLeaguesCount ?? 0) || 0;
   const jpIds: number[] = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
@@ -175,7 +176,13 @@ function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: Bonu
     bonusZone = bonusZoneViewForLane(jpView.windowStart, filled - unrevealedIds.size, bzConfig);
     // JackHOF seats in this tier's packs — only while ZONE PACKS is live, so
     // the pill and the promo card flip together and never disagree.
-    if (zonePacksOn) bonusZone.packSeats = packSeatsForTier(bonusZone.tier, bzConfig);
+    if (zonePacksOn && zoneDropCfg) {
+      bonusZone.packSeats = packSeatsForTier(bonusZone.tier, bzConfig, zoneDropCfg.seatsByBand);
+      // INSTANT mode (8/25): the pill counts DOWN the seats still hidden in
+      // this tier's drafts ahead. Null in batch mode → pill prints the total.
+      const left = packSeatsLeftForTier(bonusZone.tier, jpView.windowStart, bzConfig, zoneDropCfg);
+      if (left !== null) bonusZone.packSeatsLeft = left;
+    }
   }
 
   return {
@@ -265,7 +272,7 @@ export async function GET(req: Request) {
           const data = snap.exists ? (snap.data() ?? {}) : {};
           // Config read is a 20s in-memory cache — one Firestore read per
           // instance per 20s, not per tracker update.
-          void readZoneInputs().then(([bz, packsOn]) => send('update', buildPayload(data, bz, packsOn)));
+          void readZoneInputs().then(([bz, zd]) => send('update', buildPayload(data, bz, zd)));
         },
         (err) => {
           logger.warn('batchProgress.stream.snapshot_err', { err: err.message });

@@ -416,13 +416,13 @@ export function PromoLive({
     case 'bonus-zone': {
       const bz = mc.bonusZone;
       if (!bz) return <Stat big v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
-      const pend = bz.pending.filter((e) => e.eligible).length;
       if (!bz.tier) return <Stat big v="Zone closed" l="OPENS WHEN JP HITS" />;
       // Deal lives at the TOP of the card now (Boris 2026-08-23) — the footer
-      // carries the countdown.
+      // carries the countdown. No "N PENDING" (Richard 8/25: never say a
+      // draft is filling anywhere).
       return <Stat big
         v={<span style={{ color: accent }}>{bz.draftsLeftInTier} {bz.draftsLeftInTier === 1 ? 'Draft' : 'Drafts'} Left</span>}
-        l={pend > 0 ? `${pend} PENDING · AT BUY ${bz.tier} GET 1` : `AT BUY ${bz.tier} GET 1`} />;
+        l={`AT BUY ${bz.tier} GET 1`} />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;
