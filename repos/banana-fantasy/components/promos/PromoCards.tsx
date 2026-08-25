@@ -138,8 +138,41 @@ function ZoneCardStatus({ promo, wallet, onOpenModal }: { promo: Promo; wallet: 
   // INSTANT packs (8/25): nothing waits for a batch — a sealed pack here is
   // one whose draft is being dealt this second (or held for a JP-hit reveal).
   const instant = (bz as { packsInstant?: boolean }).packsInstant === true;
+  // The live tier's seat count, big (Richard 8/25: "the 2/3 needs to be way
+  // more prominent"). packBands is stamped only while zone packs are on.
+  const bands = (bz as { packBands?: Array<{ from: number; to: number; seats: number; dealt?: number }> }).packBands ?? null;
+  const t1 = bz.tier1Through ?? 25;
+  const liveBand = bands?.find((b) => (tier === 1 ? b.from === 1 : b.from === t1 + 1)) ?? null;
+  const seatsTotal = liveBand?.seats ?? null;
+  const seatsFound = liveBand && typeof liveBand.dealt === 'number' ? Math.min(liveBand.seats, liveBand.dealt) : null;
+  const seatsLeftN = seatsTotal !== null && seatsFound !== null ? Math.max(0, seatsTotal - seatsFound) : null;
+  const draftsLeft = bz.draftsLeftInTier ?? 0;
   if (tier === null) return null;
   return (
+    <>
+    {instant && seatsTotal !== null && seatsLeftN !== null && (
+      <div className="mt-2 flex items-center gap-3 rounded-xl border border-banana/40 bg-banana/[0.07] px-3.5 py-2.5" data-testid="zone-card-seats">
+        <span className="text-[30px] sm:text-[34px] font-black leading-none tabular-nums text-banana">{seatsLeftN}/{seatsTotal}</span>
+        <span className="min-w-0">
+          <span className="block text-[12.5px] sm:text-[14px] font-black uppercase tracking-[1px] leading-tight text-white">
+            <span className="text-red-400">Jack</span><span className="text-[#e6c35c]">HOF</span> seats left
+          </span>
+          <span className="block mt-0.5 text-[11px] sm:text-[12px] font-bold leading-tight text-white/70">
+            {seatsLeftN > 0
+              ? <>{seatsFound} found · {seatsLeftN} still hidden in the next {draftsLeft} {draftsLeft === 1 ? 'draft' : 'drafts'}</>
+              : <>all {seatsTotal} found in this batch</>}
+          </span>
+        </span>
+        <span className="ml-auto hidden sm:inline-flex items-center gap-1.5">
+          {Array.from({ length: seatsTotal }, (_, i) => (
+            <span key={i} className={`inline-flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] ${
+              i < (seatsFound ?? 0) ? 'border-banana bg-banana/20' : 'border-dashed border-white/35 bg-black/25'}`} aria-hidden>
+              <span className={i < (seatsFound ?? 0) ? '' : 'opacity-40 grayscale'}>🏆</span>
+            </span>
+          ))}
+        </span>
+      </div>
+    )}
     <div className="mt-1.5 flex items-center justify-between gap-3 flex-wrap">
       <span className="inline-flex items-center gap-2">
         {Array.from({ length: slots }, (_, i) => (
@@ -173,6 +206,7 @@ function ZoneCardStatus({ promo, wallet, onOpenModal }: { promo: Promo; wallet: 
         )}
       </span>
     </div>
+    </>
   );
 }
 
