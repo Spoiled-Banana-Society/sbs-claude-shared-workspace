@@ -40,7 +40,8 @@ export interface BonusZoneViewLike {
 export function JackHofSeats({ n, of, seats = false, left = false, className = '' }: { n: number; of?: number; seats?: boolean; left?: boolean; className?: string }) {
   return (
     <span className={`font-extrabold leading-none whitespace-nowrap ${className}`}>
-      <span className="text-white/90 tabular-nums">{n}{typeof of === 'number' ? ` OF ${of}` : ''} </span>
+      {/* "2/3" — same slash style as the JACKPOT 1/59 and HOF 2/40 pills (Richard 8/25). */}
+      <span className="text-white/90 tabular-nums">{n}{typeof of === 'number' ? `/${of}` : ''} </span>
       <span className="text-red-400">JACK</span><span className="text-[#e6c35c]">HOF</span>
       {seats && <span className="text-white/85">{(of ?? n) === 1 ? ' SEAT' : ' SEATS'}</span>}
       {left && <span className="text-white/85"> LEFT</span>}
@@ -283,13 +284,11 @@ export function BonusZoneLadder({ view, pending = 0, units = 0, packBands = null
       </div>
       <ZoneTierChips view={view} small packBands={packBands} />
 
-      {(pending > 0 || units > 0) && (
+      {/* "N PENDING" chip removed (Richard 8/25: never say a draft is filling
+          anywhere). `pending` prop kept for callers; unused on purpose. */}
+      {void pending}
+      {units > 0 && (
         <div className="flex gap-[5px] mt-1.5">
-          {pending > 0 && (
-            <span className="rounded-md bg-emerald-400/15 px-2 py-[3px] text-[10.5px] font-extrabold tracking-[1px] text-emerald-300">
-              {pending} PENDING
-            </span>
-          )}
           {units > 0 && (
             <span className="rounded-md bg-white/[0.08] px-2 py-[3px] text-[10.5px] font-extrabold tracking-[1px] text-white/70">
               {unitsCopy(units).toUpperCase()} TOWARD A FREE SPIN
@@ -475,7 +474,6 @@ export function BonusZoneModalContent({ data, rules, packsMode = false, claimSlo
     tier2Through: data?.tier2Through ?? 40,
     tier3Through: data?.tier3Through ?? 60,
   };
-  const pendingEligible = (data?.pending ?? []).filter((p) => p.eligible);
   return (
     <div className="space-y-4">
       {/* Live state */}
@@ -495,10 +493,10 @@ export function BonusZoneModalContent({ data, rules, packsMode = false, claimSlo
       </div>
 
       {/* Your stats */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* No "pending" stat (Richard 8/25: never say a draft is filling). */}
+      <div className="grid grid-cols-2 gap-2">
         {[
           { v: data?.earned ?? 0, l: 'FREE SPINS EARNED' },
-          { v: pendingEligible.length, l: 'PENDING ON FILLS' },
           { v: (data?.unitsThisWindow ?? 0) > 0 ? unitsCopy(data?.unitsThisWindow ?? 0) : 0, l: 'BANKED THIS WINDOW' },
         ].map((s) => (
           <div key={s.l} className="rounded-lg bg-white/[0.05] px-2 py-2.5 text-center">
@@ -529,22 +527,7 @@ export function BonusZoneModalContent({ data, rules, packsMode = false, claimSlo
         </p>
       )}
 
-      {/* Pending locks */}
-      {expanded && (data?.pending?.length ?? 0) > 0 && (
-        <div>
-          <p className="text-[10px] font-extrabold tracking-[2px] text-white/50 mb-1.5">YOUR SEATS IN LOBBIES STILL FILLING</p>
-          <ul className="space-y-1">
-            {data!.pending.map((p) => (
-              <li key={p.draftId} className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px]">
-                <span className="text-white/80">{draftName(p.draftId)}</span>
-                <span className={p.eligible ? 'font-bold text-emerald-300' : 'text-white/40'}>
-                  {p.eligible ? `pays by fill position · now ${p.label}` : 'not eligible'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* (Pending-locks list removed 8/25 — Richard: never say a draft is filling anywhere.) */}
 
       {/* History */}
       {expanded && (data?.history?.length ?? 0) > 0 && (

@@ -9,6 +9,8 @@
 // 'md' (home carousel / draft sidebar), 'sm' (modal header strip).
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { SealedPack } from '@/components/promos/PackVisuals';
+import { useZonePacks } from '@/hooks/useZonePacks';
 import type { Promo } from '@/types';
 import { deriveChaseState } from '@/lib/chasePromo';
 import { useDropMe } from '@/hooks/useDropMe';
@@ -223,6 +225,7 @@ export function PromoSwatch({
   sweepDelayS = 0,
   isClaimed = false,
   align = 'center',
+  fpVariant = 'new',
 }: {
   promo: Promo;
   size?: Size;
@@ -234,6 +237,8 @@ export function PromoSwatch({
   isClaimed?: boolean;
   /** 'right' leaves room on the left for an overlaid kicker (mini cards). */
   align?: 'center' | 'right';
+  /** First-purchase deal shown in the corner (page-computed variant). */
+  fpVariant?: 'new' | 'returning';
 }) {
   const mc = promo.modalContent || ({} as Promo['modalContent']);
   let inner: React.ReactNode;
@@ -274,18 +279,23 @@ export function PromoSwatch({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) { inner = <Big n="1+1" label="FREE SPINS" size={size} />; break; }
-      inner = bz.tier === 1
-        ? <Big n="1+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
-        : bz.tier === 2
-          ? <Big n="2+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
-          : bz.tier === 3
-            ? <Big n="3+1" label={size === 'lg' ? `${bz.draftsLeftInTier} DRAFTS LEFT` : `${bz.draftsLeftInTier} LEFT`} size={size} />
-            : <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />;
+      if (!bz) { inner = <Big n="🍌" label="FREE SPINS" size={size} />; break; }
+      if (!bz.tier) { inner = <Big n="OFF" label={size === 'lg' ? 'OPENS WHEN JP HITS' : 'CLOSED'} size={size} />; break; }
+      if (size === 'lg') {
+        inner = <Big n={bz.draftsLeftInTier} label={`DRAFTS LEFT AT BUY ${bz.tier} GET 1`} size={size} />;
+        break;
+      }
+      // Mini/carousel card (Boris 2026-08-24): the sealed Banana Pack with
+      // this wallet's count badge lives in the art — fill sockets moved into
+      // the card body. Same pack people rip in the modal's pack room.
+      inner = <ZonePackCorner wallet={wallet} />;
       break;
     }
     case 'first-purchase':
-      inner = <Big n="3" label="SPINS PER PASS" size={size} />;
+      // Redesign (Boris 2026-08-23): corner states the variant's actual deal.
+      inner = fpVariant === 'returning'
+        ? <Big n="1" label={size === 'lg' ? 'SPIN PER 2 PASSES' : 'PER 2 PASSES'} size={size} />
+        : <Big n="2" label={size === 'lg' ? 'FREE SPINS PER PASS' : 'SPINS PER PASS'} size={size} />;
       break;
     case 'new-user':
       // Mini cards (md/sm) are too narrow for the full label next to the
@@ -349,12 +359,16 @@ export function PromoLive({
   const accent = promoAccent(promo.type);
   const t = size === 'lg' ? 'text-[13px]' : size === 'md' ? 'text-[12px]' : 'text-[11px]';
   const sm = size === 'lg' ? 'text-[10px] tracking-[1.6px]' : 'text-[8.5px] tracking-[0.9px]';
-  const Stat = ({ v, l, ready }: { v: React.ReactNode; l?: string; ready?: boolean }) => (
+  // One notch up — the Banana Zone footer is the promo's whole pitch, so it
+  // reads bigger than the other cards' footers (Boris 2026-08-22).
+  const tBig = size === 'lg' ? 'text-[16px]' : size === 'md' ? 'text-[15px]' : 'text-[14px]';
+  const smBig = size === 'lg' ? 'text-[11.5px] tracking-[1.6px]' : 'text-[10px] tracking-[0.9px]';
+  const Stat = ({ v, l, ready, big }: { v: React.ReactNode; l?: string; ready?: boolean; big?: boolean }) => (
     // Value + label wrap as WHOLE units (label drops to its own line when
     // tight) — never clip mid-word (Boris 2026-08-18: "RESETS ONCE…" cut off).
-    <span className={`${t} font-extrabold tabular-nums inline-flex flex-wrap items-baseline gap-x-1.5 leading-tight ${ready ? 'text-banana' : 'text-white'} ${className}`}>
+    <span className={`${big ? tBig : t} font-extrabold tabular-nums inline-flex flex-wrap items-baseline gap-x-1.5 leading-tight ${ready ? 'text-banana' : 'text-white'} ${className}`}>
       <span className="whitespace-nowrap">{v}</span>
-      {l && !hideLabel && <small className={`${sm} font-extrabold text-white/45 whitespace-nowrap`}>{l}</small>}
+      {l && !hideLabel && <small className={`${big ? smBig : sm} font-extrabold text-white/45 whitespace-nowrap`}>{l}</small>}
     </span>
   );
   if (hasVisibleClaim) return <Stat v="Ready to claim" ready />;
@@ -401,12 +415,14 @@ export function PromoLive({
     }
     case 'bonus-zone': {
       const bz = mc.bonusZone;
-      if (!bz) return <Stat v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
-      const pend = bz.pending.filter((e) => e.eligible).length;
-      if (bz.tier === 1) return <Stat v={<span style={{ color: accent }}>Buy 1 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 2) return <Stat v={<span style={{ color: accent }}>Buy 2 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      if (bz.tier === 3) return <Stat v={<span style={{ color: accent }}>Buy 3 Get 1 Spin</span>} l={pend > 0 ? `${pend} PENDING · ${bz.draftsLeftInTier} LEFT` : `${bz.draftsLeftInTier} ${bz.draftsLeftInTier === 1 ? 'DRAFT' : 'DRAFTS'} LEFT`} />;
-      return <Stat v="Zone closed" l="OPENS WHEN JP HITS" />;
+      if (!bz) return <Stat big v="Buy 1 Get 1 Spin" l="FIRST 20 DRAFTS" />;
+      if (!bz.tier) return <Stat big v="Zone closed" l="OPENS WHEN JP HITS" />;
+      // Deal lives at the TOP of the card now (Boris 2026-08-23) — the footer
+      // carries the countdown. No "N PENDING" (Richard 8/25: never say a
+      // draft is filling anywhere).
+      return <Stat big
+        v={<span style={{ color: accent }}>{bz.draftsLeftInTier} {bz.draftsLeftInTier === 1 ? 'Draft' : 'Drafts'} Left</span>}
+        l={`AT BUY ${bz.tier} GET 1`} />;
     }
     case 'first-purchase':
       return <Stat v="One-time" l="YOUR FIRST ORDER ONLY" />;
@@ -422,6 +438,20 @@ export function PromoLive({
       if (isClaimed) return <Stat v="✓ Claimed" />;
       return null;
   }
+}
+
+function ZonePackCorner({ wallet }: { wallet: string | null }) {
+  const packs = useZonePacks(wallet);
+  return (
+    <span className={`relative inline-block shrink-0 mr-1 ${packs.sealed === 0 ? 'opacity-45 grayscale-[.5]' : ''}`}>
+      <SealedPack w={44} />
+      {packs.sealed > 0 && (
+        <span className="absolute -top-[6px] -right-[8px] min-w-[20px] h-[20px] rounded-full bg-banana text-black text-[11px] font-black flex items-center justify-center px-1 shadow-[0_2px_6px_rgba(0,0,0,.45)]">
+          {packs.sealed}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function DropLive({ size, wallet }: { size: Size; wallet: string | null }) {
