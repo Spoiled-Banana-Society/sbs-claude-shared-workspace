@@ -354,7 +354,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                     : <>Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span></>}
                 </div>
               ) : (
-                <div className="text-[11.5px] font-bold text-white/75">Fill a paid zone draft → <span className="text-banana font-extrabold">1 Pack</span></div>
+                <div className="text-[11.5px] font-bold text-white/75">Fill a paid draft → <span className="text-banana font-extrabold">1 Pack</span></div>
               )}
             </div>
           </div>
