@@ -43,6 +43,11 @@ export async function runJpWindowBells(): Promise<Record<string, unknown>> {
   const { isBonusZoneEnabled } = await import('@/lib/bonusZone');
   if (await isBonusZoneEnabled()) return runBonusZoneBells(db, { filled, rollingStart, windowStart, position });
 
+  // Zone OFF ≠ spin promo back ON. The 10/5-spin Jackpot Hit bells are retired
+  // for good (Boris 2026-08-22) — flipping the zone flag must produce silence,
+  // never resurrect the old broadcast.
+  return { ok: true, skip: 'legacy-spin-bells-retired', windowStart, position };
+
   // Which tier is live right now?
   let tier: 10 | 5 | null = null;
   if (position >= 1 && position <= JP_TEN_SPIN_THROUGH) tier = 10;
@@ -155,37 +160,75 @@ async function runBonusZoneBells(
     .map((d) => d.id.toLowerCase())
     .filter((w) => /^0x[0-9a-f]{40}$/.test(w) && !bots.has(w));
 
+  const t1 = tierInfo(1, cfg);
   const t2 = tierInfo(2, cfg);
   const t3 = tierInfo(3, cfg);
+
+  // ZONE PACKS (Richard 8/24): every tier bell names the JackHOF seats hiding
+  // in that batch's packs, and the tier-2 bell tells people holding sealed
+  // batch-1 packs to OPEN THEM — but ONLY those who actually hold packs.
+  const { readZoneDropConfig, bandSpecs, bandIdFor } = await import('@/lib/zoneDrop');
+  const zd = await readZoneDropConfig();
+  const packsOn = zd.enabled;
+  const bands = packsOn ? bandSpecs(cfg, zd.seatsByBand) : [];
+  const seatsFor = (tier: number) => bands.find((b) => b.band === tier)?.tickets ?? 0;
+  const seatLine = (tier: number, from: number, to: number) =>
+    seatsFor(tier) > 0
+      ? (zd.instant
+        ? `${seatsFor(tier)} JackHOF seats are hidden in drafts ${from} to ${to}, and packs open the moment your draft fills. `
+        : `${seatsFor(tier)} JackHOF seats are hiding in the packs from drafts ${from} to ${to}. `)
+      : '';
+  const seatTag = (tier: number) => (seatsFor(tier) > 0 ? ` + ${seatsFor(tier)} JackHOF seats` : '');
+
   const bell = live.tier === 1
     ? {
-        title: '🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin',
+        title: `🍌 Jackpot hit. Banana Zone is ON: Buy 1 Get 1 Spin${seatTag(1)}`,
         message: `Every paid draft that fills in the next ${left} drafts earns a FREE SPIN. `
+          + seatLine(1, 1, t1.through)
           + (t3.through > t2.through
             ? `Then Buy 2 Get 1 Spin through draft ${t2.through} and Buy 3 Get 1 Spin through ${t3.through}. Tap for the rules.`
             : `Then Buy 2 Get 1 Spin through draft ${t2.through}. Tap for the rules.`),
       }
     : live.tier === 2
       ? {
-          title: '🍌 Banana Zone: Buy 2 Get 1 Spin',
+          title: `🍌 Banana Zone: Buy 2 Get 1 Spin${seatTag(2)}`,
           message: `Every 2 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
+            + seatLine(2, t1.through + 1, t2.through)
             + (t3.through > t2.through ? `Drops to Buy 3 Get 1 Spin at draft ${t2.through + 1}. ` : `The zone closes at draft ${t2.through} of the window. `)
             + 'Tap for the rules.',
         }
       : {
-          title: '🍌 Banana Zone: Buy 3 Get 1 Spin, last call',
+          title: `🍌 Banana Zone: Buy 3 Get 1 Spin, last call${seatTag(3)}`,
           message: `Every 3 paid drafts that fill in the next ${left} drafts earn a FREE SPIN. `
+            + seatLine(3, t2.through + 1, t3.through)
             + `The zone closes at draft ${t3.through} of the window. Tap for the rules.`,
         };
 
+  // Holders of sealed packs from the batch that just dealt get the same bell
+  // with an OPEN YOUR PACKS lead — nobody without packs is told to open any.
+  let holders = new Set<string>();
+  if (packsOn && live.tier >= 2 && seatsFor(live.tier - 1) > 0) {
+    // INSTANT bands (8/25) dealt as they went — nothing waits for the batch
+    // boundary, so no "open your packs" lead; the per-fill bell already did it.
+    const prevRef = db.collection('zone_drop_bands').doc(bandIdFor(windowStart, live.tier - 1));
+    const prevMode = ((await prevRef.get()).data() as { mode?: string } | undefined)?.mode;
+    if (prevMode !== 'instant') {
+      const sealed = await prevRef.collection('packs').where('opened', '==', false).select('userId').get();
+      holders = new Set(sealed.docs.map((d) => String((d.data() as { userId?: string }).userId ?? '').toLowerCase()));
+    }
+  }
+  const holderWallets = wallets.filter((w) => holders.has(w));
+  const otherWallets = wallets.filter((w) => !holders.has(w));
+  const holderBell = {
+    title: `📦 OPEN YOUR PACKS · ${bell.title.replace(/^🍌 /, '')}`,
+    message: `Drafts ${live.tier === 2 ? 1 : t1.through + 1} to ${live.tier === 2 ? t1.through : t2.through} are done and their ${seatsFor(live.tier - 1)} JackHOF seats are dealt — your sealed packs are ready to rip. `
+      + bell.message,
+  };
+
   const { createNotificationForWallets } = await import('@/lib/queueNotifications');
-  await createNotificationForWallets(wallets, {
-    type: 'promo',
-    ...bell,
-    link: '/promos?promo=bonus-zone',
-    dedupeKey: `bonus-zone-${live.tier}-${windowStart}`,
-    icon: 'sparkles',
-  });
+  const common = { type: 'promo' as const, link: '/promos?promo=bonus-zone', dedupeKey: `bonus-zone-${live.tier}-${windowStart}`, icon: 'sparkles' as const };
+  if (holderWallets.length > 0) await createNotificationForWallets(holderWallets, { ...common, ...holderBell });
+  await createNotificationForWallets(otherWallets, { ...common, ...bell });
 
   await markerRef.set({ sentTo: wallets.length }, { merge: true });
   logger.info('bonus_zone_bells.sent', { windowStart, tier: live.tier, position, sentTo: wallets.length });

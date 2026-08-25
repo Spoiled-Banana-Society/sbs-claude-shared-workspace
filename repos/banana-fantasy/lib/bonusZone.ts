@@ -126,6 +126,9 @@ export interface BonusZoneView {
    *  while the zone packs switch is on (same gate as the card row), absent
    *  otherwise so the header can never advertise packs early. */
   packSeats?: number | null;
+  /** INSTANT packs (8/25): seats STILL HIDDEN in this tier's drafts ahead —
+   *  the header counts these down. Absent in batch mode. */
+  packSeatsLeft?: number | null;
 }
 
 /**
@@ -591,7 +594,15 @@ export async function creditBananaZoneSpins(wallet: string, count: number, reaso
  * never the live filled count (that's how BBB #349 over-paid the jackpot
  * draw). Go writes DisplayName a beat after the fill, so this retries.
  */
-export async function fillPositionForDraft(draftId: string, cfg: BonusZoneConfig): Promise<{ draftNo: number; position: number; windowStart: number; tier: BonusZoneTierInfo | null } | null> {
+export async function fillPositionForDraft(draftId: string, cfg: BonusZoneConfig): Promise<{
+  draftNo: number; position: number; windowStart: number; tier: BonusZoneTierInfo | null;
+  /** This draft IS the Jackpot hit that closes its window (zone packs: the
+   *  hidden seats land here — lib/zoneDrop instant mode). */
+  isJackpotHit: boolean;
+  /** When its slot lands on the lane (DraftStartTime − 39s); null if unknown
+   *  or already past. Instant-mode packs of a hit draft stay sealed until then. */
+  revealAtMs: number | null;
+} | null> {
   const db = getAdminFirestore();
   let draftNo: number | null = null;
   for (let i = 0; i < 6 && draftNo === null; i++) {
@@ -609,7 +620,18 @@ export async function fillPositionForDraft(draftId: string, cfg: BonusZoneConfig
   // computeJpCycle excludes hits at/after draftNo, so the draft lands in the
   // window it actually filled into (even when it IS the jackpot that closes it).
   const cyc = computeJpCycle(jpIds, rollingStart, Math.max(filled, draftNo), draftNo);
-  return { draftNo, position: cyc.position, windowStart: cyc.windowStart, tier: bonusZoneTierForPosition(cyc.position, cfg) };
+  const isJackpotHit = jpIds.includes(draftNo);
+  let revealAtMs: number | null = null;
+  if (isJackpotHit) {
+    const nowMs = Date.now();
+    for (const rf of Array.isArray(t?.RecentFills) ? t!.RecentFills! : []) {
+      if ((Number(rf?.Id ?? 0) || 0) !== draftNo) continue;
+      const st = Number(rf?.StartTime ?? 0) || 0;
+      const atMs = st > 0 ? (st - REVEAL_OFFSET_SEC) * 1000 : 0;
+      if (atMs > nowMs) revealAtMs = Math.max(revealAtMs ?? 0, atMs);
+    }
+  }
+  return { draftNo, position: cyc.position, windowStart: cyc.windowStart, tier: bonusZoneTierForPosition(cyc.position, cfg), isJackpotHit, revealAtMs };
 }
 
 // ── Fill settlement ─────────────────────────────────────────────────────────

@@ -14,6 +14,11 @@ import { promoAccent, promoHueStyle, promoKicker, promoName, promoRules } from '
 import { PromoSwatch, PromoLive } from '@/components/promos/PromoVisuals';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { firstPurchaseCardLines } from '@/lib/firstPurchaseCopy';
+import { BananaZoneSpotlight } from '@/components/bonusZone/BananaZoneSpotlight';
+import { useZonePacks } from '@/hooks/useZonePacks';
+import { SealedPack } from '@/components/promos/PackVisuals';
+import { FirstPurchaseSpotlight } from '@/components/promos/FirstPurchaseSpotlight';
+import { firstPurchaseRedesign } from '@/lib/firstPurchaseCopy';
 import { useAuth } from '@/hooks/useAuth';
 
 // ─── Per-promo secondary indicators (under the one-liner) ───────────────────
@@ -61,12 +66,15 @@ function ReferralMilestones({ promo }: { promo: Promo }) {
   const hist = promo.modalContent?.referralHistory || [];
   const best = (k: 'bought1' | 'bought4' | 'bought10') => hist.some((e) => e.rewards?.[k] === 'claimed' || e.rewards?.[k] === 'claim');
   const cells: [string, string, boolean][] = [['Buys 1 pass', '+1 SPIN', best('bought1')], ['Buys 4', '+1 SPIN', best('bought4')], ['Buys 10', '+1 SPIN', best('bought10')]];
+  // The tiles own the card's leftover height (Boris 2026-08-24): flex-1 on
+  // the wrapper centers them in whatever space the grid row leaves, so a
+  // short card next to a tall neighbor never shows a dead bottom half.
   return (
-    <div className="flex gap-[5px] mt-1">
+    <div className="flex-1 flex items-center gap-[7px] mt-1 min-h-0">
       {cells.map(([l, r, on]) => (
-        <div key={l} className={`flex-1 text-center text-[10px] font-extrabold py-[5px] px-1 rounded-lg ${on ? 'bg-white/[0.14] text-white' : 'bg-white/[0.06] text-white/45'}`}>
+        <div key={l} className={`flex-1 text-center text-[12px] font-extrabold py-[13px] px-1 rounded-xl border ${on ? 'bg-white/[0.14] text-white border-white/20' : 'bg-white/[0.05] text-white/60 border-white/[0.09]'}`}>
           {l}
-          <small className="block text-[8px] tracking-[1px] opacity-85 mt-[1px]">{on ? '✓' : r}</small>
+          <small className="block text-[9.5px] tracking-[1.2px] opacity-90 mt-[3px]">{on ? '✓' : r}</small>
         </div>
       ))}
     </div>
@@ -95,26 +103,80 @@ function JackpotCycle({ promo }: { promo: Promo }) {
 }
 
 function FirstBuyLadder({ variant }: { variant: 'new' | 'returning' }) {
-  // NEW players: 2 free drafts guaranteed per pass (2 promo spins × min wedge).
-  // RETURNING: classic — 2 passes = 1 spin. Last rung wears MAX (Boris 2026-08-19).
-  const rungs = variant === 'new'
-    ? [{ buy: 'BUY 1', n: '2', l: 'GTD DRAFTS' }, { buy: 'BUY 10', n: '20', l: 'GTD DRAFTS' }, { buy: 'BUY 20', n: '40', l: 'GTD DRAFTS', max: true }]
-    : [{ buy: 'BUY 2', n: '1', l: 'SPIN' }, { buy: 'BUY 10', n: '5', l: 'SPINS' }, { buy: 'BUY 20', n: '10', l: 'SPINS', max: true }];
+  // 2026-08-23 redesign (Boris): spins language on every rung — white action
+  // line, banana reward line, quiet MAX tag on the top rung.
+  const r = firstPurchaseRedesign(variant);
   return (
     <div className="grid grid-cols-3 gap-1 mt-1">
-      {rungs.map((r) => (
-        <div key={r.buy} className={`text-center rounded-lg bg-white/[0.08] text-white py-[4px] px-[2px] ${r.max ? 'border border-banana/60' : ''}`}>
-          <span className={`block h-[8px] leading-[8px] text-[6.5px] font-black tracking-[1.4px] ${r.max ? 'text-[#ffcf3d]' : 'text-transparent'}`}>MAX</span>
-          <i className="block not-italic text-[7.5px] font-extrabold tracking-[1.2px] text-white/85 mt-[1px] whitespace-nowrap">{r.buy}</i>
-          <b className="block text-[13px] font-extrabold leading-[1.1] mt-[1px]">= {r.n}</b>
-          <small className="block text-[6.5px] font-extrabold tracking-[1px] text-white/80 mt-[1px] whitespace-nowrap">{r.l}</small>
+      {r.ladder.map((rung) => (
+        <div key={rung.buy} className={`relative text-center rounded-lg py-[7px] px-[2px] border ${rung.max ? 'border-banana/55 bg-banana/[.07]' : 'border-white/[.14] bg-white/[0.06]'}`}>
+          {rung.max && (
+            <span className="absolute -top-[6px] left-1/2 -translate-x-1/2 rounded-full border border-banana/45 bg-[#14141a] px-[5px] text-[6px] font-extrabold tracking-[.16em] text-banana">MAX</span>
+          )}
+          <i className="block not-italic text-[8.5px] font-black tracking-[.08em] text-white whitespace-nowrap">{rung.buy}</i>
+          <b className="block text-[11.5px] font-extrabold leading-[1.15] mt-[2px] text-banana whitespace-nowrap">{rung.get.replace(' Free', '')}</b>
         </div>
       ))}
     </div>
   );
 }
 
-function Extra({ promo, fpVariant }: { promo: Promo; fpVariant: 'new' | 'returning' }) {
+/** Long-card status row under the zone ladder (Boris 2026-08-24): your fill
+ *  sockets + spin target on the left, your sealed Packs + unlock rule (or the
+ *  Open button, straight into the modal pack room) on the right. */
+function ZoneCardStatus({ promo, wallet, onOpenModal }: { promo: Promo; wallet: string | null; onOpenModal?: () => void }) {
+  const packs = useZonePacks(wallet);
+  const bz = promo.modalContent?.bonusZone;
+  if (!bz) return null;
+  const tier = bz.tier;
+  const credit = tier === 1 ? 6 : tier === 2 ? 3 : 2;
+  const units = bz.unitsThisWindow ?? 0;
+  const slots = tier ? Math.ceil(6 / credit) : 0;
+  const filledN = Math.min(slots, Math.floor(units / credit));
+  const need = Math.max(1, Math.ceil((6 - units) / credit));
+  const unlockAt = tier === 1 ? (bz.tier1Through ?? 25) : Math.max(bz.tier2Through ?? 50, bz.tier3Through ?? 50);
+  // INSTANT packs (8/25): nothing waits for a batch — a sealed pack here is
+  // one whose draft is being dealt this second (or held for a JP-hit reveal).
+  const instant = (bz as { packsInstant?: boolean }).packsInstant === true;
+  if (tier === null) return null;
+  return (
+    <div className="mt-1.5 flex items-center justify-between gap-3 flex-wrap">
+      <span className="inline-flex items-center gap-2">
+        {Array.from({ length: slots }, (_, i) => (
+          <span key={i} className={`w-[24px] h-[24px] rounded-full inline-flex items-center justify-center text-[12px] ${
+            i < filledN ? 'border-2 border-banana bg-banana/15 shadow-[0_0_8px_rgba(255,207,61,.55)]' : 'border-2 border-dashed border-white/40 bg-black/20'
+          }`}><span className={i < filledN ? '' : 'opacity-70 grayscale-[.5]'}>🍌</span></span>
+        ))}
+        <span className="text-[10.5px] font-extrabold tracking-[.5px] uppercase text-banana">{need} more = Free Spin</span>
+      </span>
+      <span className="inline-flex items-center gap-2.5">
+        <span className={`relative inline-block ${packs.sealed === 0 ? 'opacity-45 grayscale-[.5]' : ''}`}>
+          <SealedPack w={30} />
+          {packs.sealed > 0 && (
+            <span className="absolute -top-[5px] -right-[7px] min-w-[17px] h-[17px] rounded-full bg-banana text-black text-[10px] font-black flex items-center justify-center px-1">{packs.sealed}</span>
+          )}
+        </span>
+        {packs.openable > 0 ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenModal?.(); }}
+            className="rounded-full bg-gradient-to-br from-[#7ff0c3] to-[#34d399] px-3 py-1.5 text-[10.5px] font-black text-[#04231a] uppercase tracking-[.5px] active:scale-[.97] transition-transform"
+          >
+            Open {packs.openable} Pack{packs.openable === 1 ? '' : 's'}
+          </button>
+        ) : (
+          <span className="text-[9.5px] font-extrabold tracking-[.5px] uppercase text-[rgba(235,245,240,.6)] whitespace-nowrap">
+            {packs.sealed > 0
+              ? (instant ? <>Dealing <span className="text-banana">opens in a moment</span></> : <>Unlock at {unlockAt} drafts <span className="text-banana">or when the JP hits</span></>)
+              : (instant ? 'Every paid fill = 1 Pack, opens at fill' : 'Every paid fill = 1 sealed Pack')}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function Extra({ promo, fpVariant, wallet = null, onOpenModal }: { promo: Promo; fpVariant: 'new' | 'returning'; wallet?: string | null; onOpenModal?: () => void }) {
   switch (promo.type) {
     case 'pick-chase': return <ChaseLadder promo={promo} />;
     case 'referral': return <ReferralMilestones promo={promo} />;
@@ -122,7 +184,17 @@ function Extra({ promo, fpVariant }: { promo: Promo; fpVariant: 'new' | 'returni
     case 'bonus-zone': {
       const bz = promo.modalContent?.bonusZone;
       if (!bz) return null;
-      return <BonusZoneLadder view={{ enabled: true, ...bz }} pending={bz.pending.filter((e) => e.eligible).length} units={bz.unitsThisWindow} />;
+      return (
+        <>
+          <BonusZoneLadder
+            view={{ enabled: true, ...bz }}
+            pending={bz.pending.filter((e) => e.eligible).length}
+            units={bz.unitsThisWindow}
+            packBands={(bz as { packBands?: Array<{ from: number; to: number; seats: number }> }).packBands ?? null}
+          />
+          <ZoneCardStatus promo={promo} wallet={wallet} onOpenModal={onOpenModal} />
+        </>
+      );
     }
     case 'first-purchase': return <FirstBuyLadder variant={fpVariant} />;
     default: return null;
@@ -188,7 +260,7 @@ export function PromoLongCard({
     >
       <div className="promo-spec" />
       <div className="grid grid-cols-[96px_1fr] sm:grid-cols-[128px_1fr] flex-1 min-h-[168px]">
-        <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
+        <PromoSwatch promo={promo} size="lg" wallet={wallet} isClaimed={isClaimed} fpVariant={fpVariant} sweep sweepDelayS={index * 2.1} className="self-stretch py-3.5 px-2.5" />
         <div className="flex flex-col gap-1.5 min-w-0 px-4 sm:px-[18px] pt-3.5 pb-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-extrabold tracking-[2px] min-w-0 leading-[1.35]" style={{ color: accent }}>{promoKicker(promo)}</span>
@@ -211,7 +283,7 @@ export function PromoLongCard({
               <SpinExplainer promoTitle={promo.title} promoType={promo.type} className="block text-[11px] leading-snug text-banana/80" />
             </>
           )}
-          <Extra promo={promo} fpVariant={fpVariant} />
+          <Extra promo={promo} fpVariant={fpVariant} wallet={wallet} onOpenModal={onOpenModal} />
           <div className="mt-auto pt-2 flex items-center justify-between gap-2.5 min-h-[34px]">
             <PromoLive promo={promo} size="lg" wallet={wallet} hasVisibleClaim={hasVisibleClaim} isClaimed={isClaimed} />
             {hasVisibleClaim ? (
@@ -339,13 +411,40 @@ export interface PromoSpotlightProps {
 export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOpenModal, onClaim, fpVariant = 'new', fpShowNewPlayerTag = false }: PromoSpotlightProps) {
   const [how, setHow] = useState(false);
   const { isTwitterVerified, linkTwitter } = useAuth();
+  // Banana Zone wears its own signed-off spotlight (Boris 2026-08-23) —
+  // live window view off the header's SSE stream, claim through the same
+  // onClaim → claimPromo → ClaimSuccessModal path as every other promo.
+  // Branch sits AFTER every hook so the hook order never changes.
+  if (promo.type === 'bonus-zone') {
+    return (
+      <BananaZoneSpotlight
+        promo={promo}
+        wallet={wallet}
+        hasVisibleClaim={hasVisibleClaim}
+        onClaim={onClaim}
+        onOpenModal={onOpenModal}
+      />
+    );
+  }
+  // First Purchase wears the 2026-08-23 redesign spotlight (Boris sign-off).
+  if (promo.type === 'first-purchase') {
+    return (
+      <FirstPurchaseSpotlight
+        promo={promo}
+        variant={fpVariant}
+        hasVisibleClaim={hasVisibleClaim}
+        onClaim={onClaim}
+        onOpenModal={onOpenModal}
+      />
+    );
+  }
   const isNu = promo.type === 'new-user';
   const rules = promoRules(promo);
   const isAtb = promo.type === 'around-the-banana';
   const atb = promo.modalContent?.aroundTheBanana;
   const hits = atb?.slotsHit ?? [];
   const seatsLeft = Math.max(0, (atb?.seatsTotal ?? 10) - (atb?.seatsClaimed ?? 0));
-  const isFp = promo.type === 'first-purchase';
+  const isFp = (promo.type as string) === 'first-purchase';
 
   let kicker = promoKicker(promo);
   let line: React.ReactNode = promo.description;
@@ -356,7 +455,7 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
 
   return (
     <section
-      className={`promo-grad promo-sweep promo-rise rounded-[24px] p-6 sm:p-8 text-white ${hasVisibleClaim ? 'ring-2 ring-banana' : ''}`}
+      className={`promo-grad promo-sweep promo-rise transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[0_20px_48px_rgba(0,0,0,.5)] active:scale-[.99] rounded-[24px] p-6 sm:p-8 text-white ${hasVisibleClaim ? 'ring-2 ring-banana' : ''}`}
       style={promoHueStyle(promo.type, 0)}
       aria-label={`${promoName(promo)} — featured promo`}
     >

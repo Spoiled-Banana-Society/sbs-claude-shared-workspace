@@ -95,7 +95,23 @@ export async function GET(req: Request) {
         // 2-line card clamp truncated ("...and win a…") — keep every user's
         // card on the current copy (Boris 2026-08-17). Same string on the
         // carousel, sidebar and /promos card.
-        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid and free drafts count.';
+        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.\nJackpot — win the league, go straight to the Finals.';
+        // Rules text lives on the seeded per-user doc too — restamp it so the
+        // modal matches the paid-only era (Boris 2026-08-22), same as the card.
+        atb.modalContent.explanation =
+          '• PAID drafts only — free and wheel drafts don\'t count.\n'
+          + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
+          + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
+          + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'
+          + '• 10 seats total. When they\'re gone, they\'re gone — the card shows how many are left.\n'
+          + '• Any number of drafts counts. Repeat slots don\'t hurt you, only new slots move you forward.\n'
+          + '• Drafts count when they FILL and reveal, not when you enter.\n'
+          + '\n'
+          + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
+          + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+          + '\n'
+          + '• One seat per player.\n'
+          + '• One account per person — more than one account makes you ineligible to win prizes.';
         const { getAtbSeatCount } = await import('@/lib/aroundTheBanana');
         const seats = await getAtbSeatCount();
         const mc = atb.modalContent as unknown as Record<string, unknown>;
@@ -134,8 +150,17 @@ export async function GET(req: Request) {
           .map((r) => `${r.count} ${r.kind === 'jackhof' ? 'JackHOF' : r.kind === 'hof' ? 'HOF' : 'Jackpot'} seat${r.count === 1 ? '' : 's'}`);
         const spins = spinsForNight(nightId);
         const prizeLine = [...seatWords, spins > 0 ? `${spins} Free Spins` : null].filter(Boolean).join(' · ');
-        drop.description = `Draft, earn packs. Open at 9 PM.\nDaily: ${prizeLine}.`;
+        drop.description = `Draft. Earn packs. Paid drafts only.\nDaily: ${prizeLine}.`;
         drop.isNew = false; // NEW ribbon retired 2026-08-05 — promo is established now
+        // FINAL NIGHT (Richard 8/23): tonight's 9pm opening is THE DROP's
+        // last — say so on the card for its remaining minutes. The card
+        // retires itself at the 9pm roll (dropEarningRetired in promoFilter),
+        // and packs live in the Banana Zone from here.
+        const { DROP_FINAL_NIGHT_ID } = await import('@/lib/dropRates');
+        if (nightId === DROP_FINAL_NIGHT_ID) {
+          drop.title = 'THE DROP → LAST ONE TONIGHT';
+          drop.description = `Tonight at 9:00 PM PT is the FINAL Drop. ${prizeLine} go out one last time. Rip everything. Packs live in the Banana Zone now.`;
+        }
       }
     } catch { /* copy refresh is decoration — promos still return */ }
 
@@ -260,14 +285,55 @@ export async function GET(req: Request) {
     // entry modal. Best-effort — promos always return.
     try {
       const { readBonusZoneConfig, getBonusZoneWalletStatus } = await import('@/lib/bonusZone');
-      const { isWalletAdmin } = await import('@/lib/adminAllowlist');
       const cfg = await readBonusZoneConfig();
-      const adminPreview = isWalletAdmin(userId);
       const bzIdx = promos.findIndex((p) => p.type === 'bonus-zone');
-      if (cfg.enabled || adminPreview) {
+      // Admin wallets get NO dark preview here — the live payload is identical
+      // for everyone (Boris 2026-08-23); dark-zone preview lives at /preview/bonus-zone.
+      if (cfg.enabled) {
+        if (bzIdx !== -1) {
+          // Seeded per-user docs carry launch copy — keep every surface on the
+          // current line (Boris 2026-08-23), same pattern as ATB/Drop.
+          promos[bzIdx].description = 'Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs.';
+        }
         if (bzIdx !== -1 && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
           const st = await getBonusZoneWalletStatus(userId.toLowerCase(), { includePasses: true });
+          // ZONE PACKS row + rules on the zone card — stamped only while the
+          // zone drop switch is on, so the card can never advertise it early.
+          // The rules overlay derives from the LIVE tier config, so the 25/50
+          // re-tier and the pack copy land in one flip.
+          const zp = await import('@/lib/zoneDrop')
+            .then(async ({ readZoneDropConfig, bandSpecs, zonePackRulesExplanation, bandIdFor }) => {
+              const zd = await readZoneDropConfig();
+              if (!zd.enabled) return null;
+              const { readBonusZoneConfig } = await import('@/lib/bonusZone');
+              const zoneCfg = await readBonusZoneConfig();
+              const specs = bandSpecs(zoneCfg, zd.seatsByBand);
+              // INSTANT mode: seats land draft by draft, so the chips print
+              // "N of M left" from the live band docs (2 small reads).
+              let dealtBy: Record<number, number> = {};
+              if (zd.instant && st.view.windowStart > 0) {
+                const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+                const snaps = await Promise.all(specs.map((s2) => getAdminFirestore().collection('zone_drop_bands').doc(bandIdFor(st.view.windowStart, s2.band)).get()));
+                dealtBy = Object.fromEntries(snaps.map((s2, i) => [specs[i].band, Number((s2.data() as { seatsDealt?: number } | undefined)?.seatsDealt ?? 0) || 0]));
+              }
+              return {
+                // Per-batch, not a bare total — "first window has 6, second
+                // has 4" must be legible on the card (Richard 8/23).
+                bands: specs.map((s2) => ({ from: s2.fromPos, to: s2.toPos, seats: s2.tickets, ...(zd.instant ? { dealt: dealtBy[s2.band] ?? 0 } : {}) })),
+                explanation: zonePackRulesExplanation(zoneCfg, zd),
+                instant: zd.instant,
+              };
+            })
+            .catch(() => null);
+          if (zp) {
+            promos[bzIdx].modalContent.explanation = zp.explanation;
+            const totalSeats = zp.bands.reduce((n, b) => n + b.seats, 0);
+            promos[bzIdx].description = zp.instant
+              ? `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and Packs you open the moment your draft fills, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`
+              : `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`;
+          }
           promos[bzIdx].modalContent.bonusZone = {
+            ...(zp ? { packBands: zp.bands, packsInstant: zp.instant } : {}),
             tier: st.view.tier,
             label: st.view.label,
             position: st.view.position,
@@ -284,10 +350,8 @@ export async function GET(req: Request) {
             history: st.history.map((h) => ({ draftId: h.draftId, label: h.label, status: h.status, settledAtIso: h.settledAtIso, unitsAfter: h.unitsAfter })),
           };
         }
-        if (cfg.enabled) {
-          const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
-          if (jpIdx !== -1) promos.splice(jpIdx, 1);
-        }
+        const jpIdx = promos.findIndex((p) => p.type === 'jackpot');
+        if (jpIdx !== -1) promos.splice(jpIdx, 1);
       } else if (bzIdx !== -1) {
         promos.splice(bzIdx, 1);
       }

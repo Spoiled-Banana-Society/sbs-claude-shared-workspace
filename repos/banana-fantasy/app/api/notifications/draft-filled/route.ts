@@ -172,8 +172,8 @@ export async function POST(req: NextRequest) {
           passType: passType === 'paid' ? 'paid' : 'free',
         }).catch((err) => logger.warn('eliminator.fill_credit_failed', { draftId, wallet, err: String(err) }));
 
-        // THE DROP: a filled draft earns sealed packs for tonight's 8pm drop.
-        // Paid 2, free 1. Awarded HERE and nowhere else — entering must never
+        // THE DROP: a filled draft earns sealed packs for tonight's drop.
+        // Paid 1, free 0 — paid drafts only (Boris 2026-08-22). Awarded HERE and nowhere else — entering must never
         // award, because leaving a filling lobby refunds the pass and that
         // makes enter/earn/leave/repeat free and unbounded.
         //
@@ -228,6 +228,55 @@ export async function POST(req: NextRequest) {
         await settleBonusZoneFill(draftId, wallets);
       } catch (err) {
         logger.warn('bonus_zone.fill_settle_failed', { draftId, err: String(err) });
+      }
+
+      // GOLDEN TICKETS (Richard 8/23): every PAID seat in a zone fill earns
+      // one sealed pack toward the band's JackHOF Golden Tickets. FULLY
+      // switch-gated inside zoneDrop — nothing banks while dark (the band map
+      // depends on the zone tiers, which change at green light); the
+      // green-light backfill credits the window retroactively.
+      // Fill position resolved ONCE per draft; per-wallet pass types re-read
+      // from the token stamp (source of truth, same as every promo above).
+      try {
+        const { readBonusZoneConfig, fillPositionForDraft } = await import('@/lib/bonusZone');
+        const {
+          readZoneDropConfig, applyStagedZoneConfig, awardGoldenPacksForFill, maybeLockDueBands, bandForPosition, resolveZoneDraft,
+        } = await import('@/lib/zoneDrop');
+        let zoneCfg = await readBonusZoneConfig();
+        const fillPos = await fillPositionForDraft(draftId, zoneCfg);
+        // A staged re-tier / instant-mode flip lands with the FIRST fill of a
+        // new window, before that draft's band is born (Richard 8/25: 30/60,
+        // 3 + 7 seats, open at fill — never applied mid-window).
+        if (fillPos && (await readZoneDropConfig()).next && (await applyStagedZoneConfig(fillPos.windowStart))) {
+          zoneCfg = await readBonusZoneConfig({ fresh: true });
+        }
+        const zd = await readZoneDropConfig();
+        if (fillPos && bandForPosition(fillPos.position, zoneCfg, zd.seatsByBand)) {
+          await Promise.allSettled(wallets.map(async (w) => {
+            const wallet = w.toLowerCase();
+            const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
+            if (passType !== 'paid') return;
+            await awardGoldenPacksForFill({
+              userId: wallet, draftId, passType: 'paid',
+              position: fillPos.position, windowStart: fillPos.windowStart,
+              notify: true,
+            });
+          }));
+          // INSTANT bands: deal THIS draft now — its packs become openable
+          // seconds after the fill. On the Jackpot-hit draft every seat still
+          // hidden in the band lands here (sealed until the hit reveals).
+          if (zd.instant) {
+            await resolveZoneDraft({
+              windowStart: fillPos.windowStart, position: fillPos.position, draftId,
+              isHit: fillPos.isJackpotHit, openableAtMs: fillPos.revealAtMs,
+            });
+          }
+        }
+        // Band done (or passed)? Lock and assign — no-op while the switch is
+        // off, and the cron tick backstops a missed boundary.
+        if (fillPos) await maybeLockDueBands(fillPos.windowStart, fillPos.position);
+      } catch (err) {
+        logger.warn('zone_drop.fill_award_failed', { draftId, err: String(err) });
       }
 
       // Wheel-won Jackpot/HOF queue drafts: the club badge unlocks when THIS
