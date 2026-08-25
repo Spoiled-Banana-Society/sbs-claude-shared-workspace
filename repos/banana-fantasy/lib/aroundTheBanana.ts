@@ -202,7 +202,13 @@ export async function recordAroundTheBanana(
         const r = await fetch(`${base}/draft/${draftId}/state/info`);
         if (r.ok) startedMs = (Number((await r.json())?.draftStartTime) || 0) * 1000;
       } catch { /* engine unreachable → treated as unknown below */ }
-      if (startedMs === 0 || startedMs < roundStartMs) {
+      // startedMs === 0 → the engine hasn't initialized this draft's state
+      // yet, which only happens in the first ~minute after a FILL — i.e. the
+      // draft is definitionally current-round. Fail-closed here blocked every
+      // legit at-fill credit for ~2h on 8/25 (Billieve/AeroSpace). Old drafts
+      // revealing late always HAVE initialized state with an old start time,
+      // so the carryover block below still holds.
+      if (startedMs > 0 && startedMs < roundStartMs) {
         logger.info('atb.credit_skipped_prior_round_draft', { userId, draftId, startedMs, roundStartMs });
         return;
       }
