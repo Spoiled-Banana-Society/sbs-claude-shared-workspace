@@ -82,15 +82,15 @@ describe('Instant mode bands (Richard 8/25: 1-30 → 3, 31-60 → 7)', () => {
     expect(packSeatsLeftForTier(1, 901, c, zdInstant({ instant: false }))).toBeNull();
   });
 
-  it('rules copy switches to the instant wording and says the seats lean late', () => {
+  it('rules copy switches to the instant wording and NEVER mentions the end-of-batch lean', () => {
     const txt = zonePackRulesExplanation(cfg(30, 60, 60), zdInstant());
-    expect(txt).toContain('opens right here, the moment your draft fills');
+    expect(txt).toContain('opens right here, the moment the draft fills');
     expect(txt).toContain('3 JackHOF seats are hidden in drafts 1 to 30. 7 more are hidden in drafts 31 to 60.');
+    expect(txt).toContain('how many seats have been found so far and how many are still hidden');
+    expect(txt).toContain('More paid drafts = more packs = more shots at a seat');
     expect(txt).toContain('Every seat still hidden lands in the packs of the draft that hit');
-    expect(txt).toContain('more likely the deeper you get into each batch');
+    expect(txt).not.toMatch(/deeper|hottest|more likely|lean|ramp/i); // hidden (Richard 8/25)
     expect(txt).not.toMatch(/\d–\d/); // no dashes in copy
-    const flat = zonePackRulesExplanation(cfg(30, 60, 60), zdInstant({ seatRamp: 0 }));
-    expect(flat).not.toContain('more likely the deeper');
   });
 });
 

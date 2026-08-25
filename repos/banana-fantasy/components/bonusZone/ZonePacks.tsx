@@ -87,11 +87,12 @@ function BatchChip({ b, position }: { b: ZoneBand; position: number | null }) {
   const ready = readyCount(b);
   const live = b.status === 'earning' && position !== null && position >= b.fromPos && position <= b.toPos;
   const instant = isInstant(b);
-  const found = b.winners?.length ?? b.seatsDealt ?? 0;
-  // Instant: the chip is a countdown ("2 STILL HIDDEN · DRAFT 12 OF 30").
+  const found = instant ? Math.min(b.tickets, b.seatsDealt ?? b.winners?.length ?? 0) : (b.winners?.length ?? 0);
+  // Instant: the chip reads FOUND / HIDDEN plainly (Richard 8/25: "x out of
+  // x seats have been hit and x remain").
   const state = ready > 0 ? 'OPEN NOW'
-    : instant && live ? `${seatsLeft(b)} still hidden · draft ${position} of ${b.toPos}`
-      : instant && b.status === 'locked' ? `done · ${found} seat${found === 1 ? '' : 's'} landed`
+    : instant && live ? `draft ${position} of ${b.toPos}`
+      : instant && b.status === 'locked' ? 'done'
         : (!instant && b.status === 'locked') ? `opened · ${found} seat${found === 1 ? '' : 's'} found`
           : live ? `draft ${position} of ${b.toPos}`
             : 'up next';
@@ -107,6 +108,13 @@ function BatchChip({ b, position }: { b: ZoneBand; position: number | null }) {
       <p className="mt-0.5 text-[12px] font-black text-white leading-tight">
         {b.tickets}× <JackHofWordmark size={11} /> <span className="font-extrabold text-white/60">SEATS</span>
       </p>
+      {instant && (live || b.status === 'locked') && (
+        <p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-[0.06em] leading-tight">
+          <span className="text-emerald-300">{found} found</span>
+          <span className="text-white/35"> · </span>
+          <span className={seatsLeft(b) > 0 ? 'text-banana' : 'text-white/40'}>{seatsLeft(b)} hidden</span>
+        </p>
+      )}
       <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${
         ready > 0 ? 'text-emerald-300' : live ? 'text-banana/90' : 'text-white/40'}`}>
         {state}
@@ -272,6 +280,41 @@ export function ZonePacks() {
         {!isLoggedIn && !preview && <p className="text-[11px] text-white/40">Log in to see yours</p>}
       </div>
 
+      {/* ── Seat tracker (instant mode): the one line that explains it all —
+          X of Y seats found, Z still hidden ahead, drafts = packs ── */}
+      {liveInstant && liveBand && (() => {
+        const found = Math.min(liveBand.tickets, liveBand.seatsDealt ?? 0);
+        const hidden = seatsLeft(liveBand);
+        const from = Math.max(liveBand.fromPos, zone.position ?? liveBand.fromPos);
+        return (
+          <div className="mt-3 rounded-2xl border border-banana/35 bg-banana/[0.05] px-4 py-3 text-center" data-testid="zone-seat-tracker">
+            <div className="flex items-center justify-center gap-1.5">
+              {Array.from({ length: liveBand.tickets }, (_, i) => (
+                <span
+                  key={i}
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border-2 text-[13px] ${
+                    i < found ? 'border-banana bg-banana/20 shadow-[0_0_10px_rgba(255,207,61,.45)]' : 'border-dashed border-white/35 bg-black/25'}`}
+                  aria-hidden
+                >
+                  <span className={i < found ? '' : 'opacity-40 grayscale'}>🏆</span>
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-[15px] font-black leading-tight text-white">
+              {found} of {liveBand.tickets} <JackHofWordmark size={14} /> seats found
+            </p>
+            <p className="mt-0.5 text-[12.5px] font-bold text-banana">
+              {hidden > 0
+                ? <>{hidden} still hidden in drafts {from} to {liveBand.toPos}</>
+                : <>every seat in drafts {liveBand.fromPos} to {liveBand.toPos} has been found</>}
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-snug text-white/55">
+              Fill a paid draft → get a pack → open it right away. Any pack can hold a seat.
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="mt-3 flex gap-2">
         {zone.bands.map((b) => <BatchChip key={b.bandId} b={b} position={zone.position} />)}
       </div>
@@ -286,10 +329,8 @@ export function ZonePacks() {
         <p className="mt-2 text-[13px] text-white/50">
           {canRip && isInstant(ripeBand!) ? (
             <>
-              <b className="text-white">{pileCount} pack{pileCount === 1 ? '' : 's'} ready</b>
-              {' '}&middot; {seatsLeft(ripeBand!) > 0
-                ? <>{seatsLeft(ripeBand!)} <JackHofWordmark size={12} /> seat{seatsLeft(ripeBand!) === 1 ? '' : 's'} still hidden in drafts ahead</>
-                : <>every <JackHofWordmark size={12} /> seat in drafts {ripeBand!.fromPos} to {ripeBand!.toPos} has landed</>}
+              <b className="text-white">{pileCount} pack{pileCount === 1 ? '' : 's'} ready to rip</b>
+              {' '}&middot; each one can hold a <JackHofWordmark size={12} /> seat
             </>
           ) : canRip ? (
             <>
@@ -307,7 +348,7 @@ export function ZonePacks() {
               {' '}&middot; open at draft {liveBand?.toPos}, or instantly if the Jackpot hits
             </>
           ) : liveInstant ? (
-            <>No packs yet &middot; every paid Banana Zone draft you fill earns 1, and it opens the moment the draft fills</>
+            <>No packs yet &middot; fill a paid Banana Zone draft and you get 1, open the moment it fills</>
           ) : (
             <>No packs yet &middot; every paid Banana Zone draft you fill earns 1</>
           )}

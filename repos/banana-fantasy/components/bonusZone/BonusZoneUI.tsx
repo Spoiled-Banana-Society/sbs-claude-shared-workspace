@@ -37,21 +37,21 @@ export interface BonusZoneViewLike {
 
 /** "6 JACKHOF" in the header's own colors (JACK red, HOF gold), white count.
  *  `left` = instant-mode countdown: "2 JACKHOF SEATS LEFT". */
-export function JackHofSeats({ n, seats = false, left = false, className = '' }: { n: number; seats?: boolean; left?: boolean; className?: string }) {
+export function JackHofSeats({ n, of, seats = false, left = false, className = '' }: { n: number; of?: number; seats?: boolean; left?: boolean; className?: string }) {
   return (
     <span className={`font-extrabold leading-none whitespace-nowrap ${className}`}>
-      <span className="text-white/90 tabular-nums">{n} </span>
+      <span className="text-white/90 tabular-nums">{n}{typeof of === 'number' ? ` OF ${of}` : ''} </span>
       <span className="text-red-400">JACK</span><span className="text-[#e6c35c]">HOF</span>
-      {seats && <span className="text-white/85">{n === 1 ? ' SEAT' : ' SEATS'}</span>}
+      {seats && <span className="text-white/85">{(of ?? n) === 1 ? ' SEAT' : ' SEATS'}</span>}
       {left && <span className="text-white/85"> LEFT</span>}
     </span>
   );
 }
 
-/** What the header prints for a tier's seats: the countdown when instant
+/** What the header prints for a tier's seats: "2 OF 3 … LEFT" when instant
  *  packs are live, the plain total otherwise. Null = nothing (packs dark). */
-export function headerSeats(view: Pick<BonusZoneViewLike, 'packSeats' | 'packSeatsLeft'>): { n: number; left: boolean } | null {
-  if (typeof view.packSeatsLeft === 'number') return { n: view.packSeatsLeft, left: true };
+export function headerSeats(view: Pick<BonusZoneViewLike, 'packSeats' | 'packSeatsLeft'>): { n: number; of?: number; left: boolean } | null {
+  if (typeof view.packSeatsLeft === 'number') return { n: view.packSeatsLeft, of: view.packSeats ?? undefined, left: true };
   if (view.packSeats) return { n: view.packSeats, left: false };
   return null;
 }
@@ -82,7 +82,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       <div className="flex flex-col items-center justify-center shrink-0 gap-[2px] rounded-[9px] border px-2.5 py-[5px] border-emerald-400/40 bg-emerald-400/[0.06]" data-testid="bonus-zone-pill">
         <span className="text-[7.5px] font-extrabold tracking-[0.04em] leading-none text-emerald-300/90 whitespace-nowrap">BANANA ZONE · {left} DRAFTS LEFT</span>
         <span className="mt-[3px] text-[11px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
-        {hs && <JackHofSeats n={hs.n} seats left={hs.left} className="mt-[3px] text-[9px] tracking-[0.04em]" />}
+        {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className="mt-[3px] text-[9px] tracking-[0.04em]" />}
       </div>
     );
   }
@@ -99,7 +99,7 @@ export function BonusZonePill({ view, compact = false }: { view: BonusZoneViewLi
       {/* Third line while ZONE PACKS is live: the JackHOF seats hidden in this
           tier's packs (Richard 8/24, option A) — counting DOWN once instant
           packs are on (8/25). Absent = pill stays 2 lines. */}
-      {hs && <JackHofSeats n={hs.n} seats left={hs.left} className="mt-[3px] text-[10.5px] tracking-[0.05em]" />}
+      {hs && <JackHofSeats n={hs.n} of={hs.of} seats left={hs.left} className="mt-[3px] text-[10.5px] tracking-[0.05em]" />}
     </div>
   );
 }
@@ -147,7 +147,7 @@ export function BonusZoneMobileBar({ view, href = '/promos?promo=bonus-zone' }: 
         </span>
         <span className="text-[10.5px] font-extrabold leading-none tabular-nums text-emerald-400 whitespace-nowrap">{tierShort(view.tier)}</span>
         {/* Phone strip stays ONE line: "2 JACKHOF LEFT" (no SEATS) when counting down. */}
-        {hs && <JackHofSeats n={hs.n} seats={!hs.left} left={hs.left} className="text-[9px] tracking-[0.02em]" />}
+        {hs && <JackHofSeats n={hs.n} of={hs.of} seats={!hs.left} left={hs.left} className="text-[9px] tracking-[0.02em]" />}
       </div>
     </Tooltip>
   );
@@ -430,6 +430,8 @@ export interface BonusZoneModalData {
   tier: BzTier;
   label: string | null;
   position: number;
+  /** Stamped by /api/promos while zone packs are on (dealt = instant mode). */
+  packBands?: Array<{ from: number; to: number; seats: number; dealt?: number }> | null;
   draftsLeftInTier: number;
   draftsLeftInZone: number;
   tier1Through: number;
@@ -489,7 +491,7 @@ export function BonusZoneModalContent({ data, rules, packsMode = false, claimSlo
           {view.tier === 3 && 'Every paid draft that fills now earns a third of a Free Spin. Three in this window make one.'}
           {!view.tier && 'The zone reopens the moment the Jackpot hits. Buy 1 Get 1 Spin from draft 1.'}
                   </p>
-        <BonusZoneLadder view={view} />
+        <BonusZoneLadder view={view} packBands={data?.packBands ?? null} />
       </div>
 
       {/* Your stats */}

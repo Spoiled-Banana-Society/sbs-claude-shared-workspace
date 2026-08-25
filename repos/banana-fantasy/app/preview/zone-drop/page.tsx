@@ -38,12 +38,12 @@ const EXPLANATION =
   + '• Halves add up inside the same window. The moment they make a whole spin, you get it. Leftovers are lost when the Jackpot hits.\n'
   + `• Draft ${T2 + 1} and up: no bonus. The Jackpot odds sell themselves from here.\n`
   + '\n'
-  + '📦 PACKS\n'
-  + '• Every paid draft that fills in the zone earns 1 pack. It opens right here, the moment your draft fills. No waiting.\n'
+  + '📦 PACKS AND JACKHOF SEATS\n'
+  + '• Fill a paid draft in the zone and you get 1 pack. It opens right here, the moment the draft fills. No waiting.\n'
   + `• ${SEATS_1} JackHOF seats are hidden in drafts 1 to ${T1}. ${SEATS_2} more are hidden in drafts ${T1 + 1} to ${T2}. That is ${SEATS_1 + SEATS_2} seats every window, one full JackHOF league.\n`
+  + '• Every pack can hold a JackHOF seat. The counter shows how many seats have been found so far and how many are still hidden in the drafts ahead.\n'
   + '• Which drafts hold a seat was decided before the window began, from randomness committed on chain. Nobody knows which drafts they are until they fill. When one of them fills, the seat lands in one of its packs.\n'
-  + '• Seats are more likely the deeper you get into each batch. The last few drafts of a batch are the hottest.\n'
-  + '• The counter shows how many seats are still hidden in the drafts ahead.\n'
+  + '• More paid drafts = more packs = more shots at a seat.\n'
   + '• Jackpot hits early? Every seat still hidden lands in the packs of the draft that hit. A hit never voids a seat.\n'
   + '• Packs never expire.\n'
   + '\n'
@@ -148,7 +148,7 @@ export default function ZonePacksPreviewPage() {
           </h2>
           <div className="mt-4 flex items-center gap-4">
             <BonusZonePill view={headerView} compact />
-            <span className="text-[12px] text-white/40">← counts DOWN as seats land (was a flat &ldquo;6 JACKHOF SEATS&rdquo;)</span>
+            <span className="text-[12px] text-white/40">← found / left, counts down as seats land</span>
           </div>
           <div className="mt-4 max-w-[430px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0f]">
             <BonusZoneMobileBar view={headerView} />
@@ -184,7 +184,7 @@ export default function ZonePacksPreviewPage() {
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
               <p className="text-[13px] font-bold text-white">📦 Your pack is ready</p>
               <p className="mt-1 text-[12px] leading-relaxed text-white/55">
-                Your Banana Zone draft filled and your pack is ready to rip. 2 JackHOF seats still hidden in drafts 13 to 30.
+                Your Banana Zone draft filled and your pack is ready to rip. 1 of 3 JackHOF seats found so far in drafts 1 to 30, 2 still hidden in drafts 13 to 30. Every paid draft you fill = 1 more pack.
               </p>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">

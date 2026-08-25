@@ -102,7 +102,8 @@ export const TICKETS_BY_BAND = [6, 4, 0] as const;
  *  each batch (Richard 8/25: "snowball to the end of the batches naturally").
  *  0 = flat, 1 = linear (last third of a band holds ~56% of its seats), 2 =
  *  quadratic (~70%). Nothing is faked: the sealed seed still decides, only
- *  the weighting of the positions changes — and the rules copy says so. */
+ *  the weighting of the positions changes. ⚠️ NOT stated anywhere
+ *  user-facing (Richard 8/25: "no we're hiding it"). */
 export const SEAT_RAMP_DEFAULT = 1;
 
 // ── Switch ──────────────────────────────────────────────────────────────────
@@ -373,21 +374,20 @@ export function zonePackRulesExplanation(cfg: BonusZoneConfig, zd?: Pick<ZoneDro
     const seatSentence = specs.length === 2
       ? `• ${specs[0].tickets} JackHOF seats are hidden in drafts ${specs[0].fromPos} to ${specs[0].toPos}. ${specs[1].tickets} more are hidden in drafts ${specs[1].fromPos} to ${specs[1].toPos}. That is ${total} seats every window, one full JackHOF league.`
       : seatLines.join('\n');
-    const rampLine = (zd.seatRamp ?? SEAT_RAMP_DEFAULT) > 0
-      ? '• Seats are more likely the deeper you get into each batch. The last few drafts of a batch are the hottest.\n'
-      : '';
+    // ⚠️ The end-of-batch lean (seatRamp) is deliberately NOT mentioned
+    // anywhere user-facing (Richard 8/25: "no we're hiding it").
     return 'THE BANANA ZONE\n'
       + `• The Jackpot window counts up from 1 after every Jackpot hit. The Banana Zone is the first ${zoneEnd} drafts of every window.\n`
       + specs.map((s) => spinLine(s.band, s.fromPos, s.toPos)).join('\n') + '\n'
       + '• Halves add up inside the same window. The moment they make a whole spin, you get it. Leftovers are lost when the Jackpot hits.\n'
       + `• Draft ${zoneEnd + 1} and up: no bonus. The Jackpot odds sell themselves from here.\n`
       + '\n'
-      + '📦 PACKS\n'
-      + '• Every paid draft that fills in the zone earns 1 pack. It opens right here, the moment your draft fills. No waiting.\n'
+      + '📦 PACKS AND JACKHOF SEATS\n'
+      + '• Fill a paid draft in the zone and you get 1 pack. It opens right here, the moment the draft fills. No waiting.\n'
       + seatSentence + '\n'
+      + '• Every pack can hold a JackHOF seat. The counter shows how many seats have been found so far and how many are still hidden in the drafts ahead.\n'
       + '• Which drafts hold a seat was decided before the window began, from randomness committed on chain. Nobody knows which drafts they are until they fill. When one of them fills, the seat lands in one of its packs.\n'
-      + rampLine
-      + '• The counter shows how many seats are still hidden in the drafts ahead.\n'
+      + '• More paid drafts = more packs = more shots at a seat.\n'
       + '• Jackpot hits early? Every seat still hidden lands in the packs of the draft that hit. A hit never voids a seat.\n'
       + '• Packs never expire.\n'
       + '\n'
@@ -934,11 +934,12 @@ async function notifyDraftDealt(bandId: string, band: BandDoc, opts: { draftId: 
   const db = getAdminFirestore();
   const packs = await db.collection(BANDS).doc(bandId).collection(PACKS).where('source', '==', opts.draftId).select('userId').get();
   const holders = [...new Set(packs.docs.map((d) => String((d.data() as { userId?: string }).userId ?? '').toLowerCase()).filter(Boolean))];
-  const left = Math.max(0, band.tickets - (band.seatsDealt ?? 0));
+  const found = Math.min(band.tickets, band.seatsDealt ?? 0);
+  const left = Math.max(0, band.tickets - found);
   const sealedUntilReveal = typeof opts.openableAtMs === 'number' && opts.openableAtMs > Date.now();
   const message = opts.isHit
     ? `The Jackpot hit on your draft. Every JackHOF seat still hidden in this batch landed in this draft's packs. ${sealedUntilReveal ? 'Yours opens the moment the hit is revealed.' : 'Rip yours now.'}`
-    : `Your Banana Zone draft filled and your pack is ready to rip. ${left > 0 ? `${left} JackHOF seat${left === 1 ? '' : 's'} still hidden in drafts ${Math.min(band.toPos, opts.position + 1)} to ${band.toPos}.` : `Every seat in drafts ${band.fromPos} to ${band.toPos} has landed.`}`;
+    : `Your Banana Zone draft filled and your pack is ready to rip. ${found} of ${band.tickets} JackHOF seats found so far in drafts ${band.fromPos} to ${band.toPos}${left > 0 ? `, ${left} still hidden in drafts ${Math.min(band.toPos, opts.position + 1)} to ${band.toPos}. Every paid draft you fill = 1 more pack.` : '. Every seat in this batch has landed.'}`;
   await Promise.allSettled(holders.map((w) => {
     const docId = `${w}__zone-drop-dealt-${bandId}-${opts.position}`.replace(/[/\\\s]+/g, '_').slice(0, 1400);
     return db.collection('marketplace_notifications').doc(docId).create({
