@@ -247,7 +247,7 @@ export function BatchProgressIndicator() {
                 {jpLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jpLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                {jpView.remaining} Jackpot somewhere in the next {jpLeft} drafts — guaranteed. Resets every time it hits.
+                {jpView.remaining} Jackpot somewhere in the next {jpLeft} {jpLeft === 1 ? 'draft' : 'drafts'} — guaranteed. Resets every time it hits.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${jpPos}%`, background: pills[0].barBg }} />
@@ -261,7 +261,7 @@ export function BatchProgressIndicator() {
                 {hofLanePct !== null && <span className="text-[12px] font-semibold tabular-nums text-[#e6c35c]">{fmtPct(hofLanePct)}</span>}
               </div>
               <p className="text-[10.5px] leading-snug text-text-secondary">
-                {hofView.remaining} HOF left in the next {hofLeft} drafts ({hofView.hitsInWindow} of {HOF_PER_WINDOW} hit) — resets after the 5th.
+                {hofView.remaining} HOF left in the next {hofLeft} {hofLeft === 1 ? 'draft' : 'drafts'} ({hofView.hitsInWindow} of {HOF_PER_WINDOW} hit) — resets after the 5th.
               </p>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full" style={{ width: `${hofPos}%`, background: pills[1].barBg }} />

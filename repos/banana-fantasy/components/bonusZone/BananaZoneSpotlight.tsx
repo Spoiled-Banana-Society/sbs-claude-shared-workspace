@@ -189,7 +189,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             <span>
               <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">{seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}</span>
               {seatsHero && (
-                <span className="block mt-1 text-[10px] font-extrabold uppercase tracking-[.7px] text-[rgba(235,245,240,.8)]">in the next <span className="text-[14px] text-white tabular-nums">{draftsLeftInTier}</span> drafts</span>
+                <span className="block mt-1 text-[10px] font-extrabold uppercase tracking-[.7px] text-[rgba(235,245,240,.8)]">in the next <span className="text-[14px] text-white tabular-nums">{draftsLeftInTier}</span> {draftsLeftInTier === 1 ? 'draft' : 'drafts'}</span>
               )}
               {tier !== null && (
                 <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Draft {segDone} of {segSize}</span>
@@ -293,7 +293,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   <span className="text-[30px] sm:text-[33px] font-extrabold text-white/75">/{seatsTotalLive}</span>
                 </div>
                 <div className="text-[11px] font-extrabold uppercase tracking-[.8px] text-[rgba(235,245,240,.85)]">
-                  in the next <span className="text-[17px] text-white tabular-nums">{draftsLeftInTier}</span> drafts
+                  in the next <span className="text-[17px] text-white tabular-nums">{draftsLeftInTier}</span> {draftsLeftInTier === 1 ? 'draft' : 'drafts'}
                 </div>
               </div>
             ) : tier ? (
