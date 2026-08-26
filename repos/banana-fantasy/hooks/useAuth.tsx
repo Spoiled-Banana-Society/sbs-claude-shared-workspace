@@ -1421,6 +1421,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (!walletAddress) {
+      // Truly logged OUT (not mid-handshake): the right move is opening the
+      // sign-in flow, not telling them to wait for a sign-in that never
+      // started (Boris 2026-08-26 — logged-out visitors tapping Connect on
+      // the new-user card got a dead end). After login, the card re-renders
+      // and the same button links X for real.
+      if (!privy.authenticated) {
+        privy.login();
+        return;
+      }
       setTwitterError('Finishing sign-in — give it a second, then tap Connect again.');
       return;
     }

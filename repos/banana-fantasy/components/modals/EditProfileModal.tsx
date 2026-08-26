@@ -138,7 +138,14 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
         const formData = new FormData();
         formData.append('file', pendingFile);
         let uploadToken = '';
-        try { uploadToken = (await privy.getAccessToken()) || ''; } catch { /* token not ready */ }
+        // Privy's access token can lag a fresh signup by a few seconds — exactly
+        // when the tutorial's profile step runs. One silent failed try was the
+        // "can't edit my profile pic" report (Boris 2026-08-26): no token → 401.
+        // Retry briefly before giving up.
+        for (let i = 0; i < 6 && !uploadToken; i++) {
+          try { uploadToken = (await privy.getAccessToken()) || ''; } catch { /* not ready yet */ }
+          if (!uploadToken) await new Promise((r) => setTimeout(r, 700));
+        }
         const res = await fetch('/api/upload', {
           method: 'POST',
           headers: uploadToken ? { Authorization: `Bearer ${uploadToken}` } : undefined,
