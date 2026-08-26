@@ -274,7 +274,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   ? (packsInstant
                     ? <>Dealing<br /><span className="text-white">opens in a moment</span></>
                     : <>Unlock at {unlockAt} Drafts<br /><span className="text-white">or when the JP hits</span></>)
-                  : <>Fill a paid draft → <span className="text-banana font-extrabold normal-case">1 Pack</span>{packsInstant ? <><br /><span className="text-white">opens the moment it fills</span></> : null}</>}
+                  : tier === null && hasView
+                    ? <>Zone closed</>
+                    : <>Fill a paid draft → <span className="text-banana font-extrabold normal-case">1 Pack</span>{packsInstant ? <><br /><span className="text-white">opens the moment it fills</span></> : null}</>}
               </span>
             )}
           </div>
@@ -346,7 +348,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 tier === null ? (
                   <div className="text-[12px] font-bold text-white/50 uppercase tracking-[.8px]">{hasView ? 'Zone closed' : '…'}</div>
                 ) : units === 0 ? (
-                  <div className="text-[11.5px] font-bold text-white/75">Fill a paid draft → <span className="text-banana font-extrabold">Free Spin</span></div>
+                  <div className="text-[11.5px] font-bold text-white/75">{tier === null && hasView ? 'Zone closed' : <>Fill a paid draft → <span className="text-banana font-extrabold">Free Spin</span></>}</div>
                 ) : (
                   <div className="text-[14px] font-extrabold tracking-[.8px] uppercase text-banana [text-shadow:0_0_12px_rgba(255,207,61,.5)]">{`${fillsNeeded} more = Free Spin`}</div>
                 )
@@ -382,7 +384,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                     : <>Unlock at Draft {unlockAt} <span className="text-white/85">· or when the JP hits</span></>}
                 </div>
               ) : (
-                <div className="text-[11.5px] font-bold text-white/75">Fill a paid draft → <span className="text-banana font-extrabold">1 Pack</span></div>
+                <div className="text-[11.5px] font-bold text-white/75">{tier === null && hasView ? 'Zone closed' : <>Fill a paid draft → <span className="text-banana font-extrabold">1 Pack</span></>}</div>
               )}
             </div>
           </div>
