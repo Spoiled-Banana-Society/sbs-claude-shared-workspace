@@ -101,7 +101,7 @@ export async function GET(req: Request) {
       return json({ ok: true, skipped: 'event already started' }, 200);
     }
 
-    const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
+    const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET';
     const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
 
     // Day-of only: skip until we're on the event's PT calendar day.

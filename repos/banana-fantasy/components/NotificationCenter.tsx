@@ -753,7 +753,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       {typeof notif.liveAtMs === 'number' && (
                         <p className="text-banana text-[11px] font-extrabold mt-0.5">
                           {nowTick < notif.liveAtMs
-                            ? `Starts in ${Math.max(1, Math.ceil((notif.liveAtMs - nowTick) / 60_000))} min`
+                            ? (() => { const mins = Math.max(1, Math.ceil((notif.liveAtMs - nowTick) / 60_000)); return mins < 90 ? `Starts in ${mins} min` : mins < 60 * 30 ? `Starts in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Starts in ${Math.round(mins / 1440)} days`; })()
                             : '🔴 LIVE NOW'}
                         </p>
                       )}

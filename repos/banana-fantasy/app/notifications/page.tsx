@@ -210,7 +210,7 @@ export default function NotificationsPage() {
                           {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && (
                             <p className="text-banana text-xs mt-1 font-extrabold">
                               {Date.now() < (notif as { liveAtMs?: number }).liveAtMs!
-                                ? `Starts in ${Math.max(1, Math.ceil(((notif as { liveAtMs?: number }).liveAtMs! - Date.now()) / 60_000))} min`
+                                ? (() => { const mins = Math.max(1, Math.ceil(((notif as { liveAtMs?: number }).liveAtMs! - Date.now()) / 60_000)); return mins < 90 ? `Starts in ${mins} min` : mins < 60 * 30 ? `Starts in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Starts in ${Math.round(mins / 1440)} days`; })()
                                 : '🔴 LIVE NOW'}
                             </p>
                           )}
