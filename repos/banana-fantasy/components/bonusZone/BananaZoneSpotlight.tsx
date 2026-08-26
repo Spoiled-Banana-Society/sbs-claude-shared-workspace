@@ -80,6 +80,12 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
   const packBands = (bz as { packBands?: Array<{ from: number; to: number; seats: number }> } | undefined)?.packBands ?? null;
   const packsInstant = (bz as { packsInstant?: boolean } | undefined)?.packsInstant === true;
   const rows = bandRows(t1, t2, t3, packBands);
+  // Live seats-left for the CURRENT band (Richard's stream stamp) — drives the
+  // 3/7 hero + live-chip counters. Null until the stream ticks or when packs
+  // aren't dealing; every consumer falls back to the static layout then.
+  const seatsTotalLive = typeof live?.packSeats === 'number' ? live.packSeats : null;
+  const seatsLeftLive = typeof live?.packSeatsLeft === 'number' ? live.packSeatsLeft : null;
+  const seatsHero = tier !== null && seatsLeftLive !== null && (seatsTotalLive ?? 0) > 0;
   const totalSeats = packBands ? packBands.reduce((n, b) => n + b.seats, 0) : null;
 
   const units = bz?.unitsThisWindow ?? 0;
@@ -170,7 +176,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
                   <em className="block not-italic mt-[2px] text-[9px] font-extrabold tracking-[1.3px] text-white/50">DRAFTS {from}–{to}</em>
-                  {seats !== null && <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{seats} JACKHOF SEATS</span>}
+                  {seats !== null && <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{st === 'live' && seatsHero ? `${seatsLeftLive}/${seatsTotalLive}` : seats} JACKHOF SEATS</span>}
                   {st === 'live' && <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>}
                 </div>
               );
@@ -181,14 +187,24 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* section 1 — mirrors desktop box 1: the countdown owns its row */}
           <div className="flex items-center justify-between gap-3">
             <span>
-              <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">Drafts Left at Buy {tier ?? 1} Get 1 Spin</span>
+              <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">{seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}</span>
+              {seatsHero && (
+                <span className="block mt-1 text-[10px] font-extrabold uppercase tracking-[.7px] text-[rgba(235,245,240,.8)]">in the next <span className="text-[14px] text-white tabular-nums">{draftsLeftInTier}</span> drafts</span>
+              )}
               {tier !== null && (
                 <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Draft {segDone} of {segSize}</span>
               )}
             </span>
-            <span className="bz-breathe text-[34px] font-extrabold leading-none tabular-nums text-banana">
-              {tier ? draftsLeftInTier : hasView ? 0 : '—'}
-            </span>
+            {seatsHero ? (
+              <span className="leading-none tabular-nums whitespace-nowrap">
+                <span className="bz-breathe text-[36px] font-extrabold text-banana">{seatsLeftLive}</span>
+                <span className="text-[24px] font-extrabold text-white/40">/{seatsTotalLive}</span>
+              </span>
+            ) : (
+              <span className="bz-breathe text-[34px] font-extrabold leading-none tabular-nums text-banana">
+                {tier ? draftsLeftInTier : hasView ? 0 : '—'}
+              </span>
+            )}
           </div>
 
           <div className="h-px bg-white/[.16] -mx-6 my-4" />
@@ -268,9 +284,19 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* col 1 — countdown */}
           <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
             <div className="self-start text-[10.5px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.88)]">
-              Drafts Left at Buy {tier ?? 1} Get 1 Spin
+              {seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}
             </div>
-            {tier ? (
+            {seatsHero ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="leading-none tabular-nums">
+                  <span className="bz-breathe text-[46px] sm:text-[50px] font-extrabold text-banana">{seatsLeftLive}</span>
+                  <span className="text-[30px] sm:text-[33px] font-extrabold text-white/40">/{seatsTotalLive}</span>
+                </div>
+                <div className="text-[11px] font-extrabold uppercase tracking-[.8px] text-[rgba(235,245,240,.85)]">
+                  in the next <span className="text-[17px] text-white tabular-nums">{draftsLeftInTier}</span> drafts
+                </div>
+              </div>
+            ) : tier ? (
               <div className="bz-breathe text-[44px] sm:text-[48px] font-extrabold leading-none tabular-nums text-banana">
                 {draftsLeftInTier}
               </div>
@@ -380,7 +406,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   st === 'live' ? 'text-white/65' : 'text-white/45'
                 }`}>DRAFTS {from}–{to}</em>
                 {seats !== null && (
-                  <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>
+                  <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{st === 'live' && seatsHero ? `${seatsLeftLive}/${seatsTotalLive}` : seats} JACKHOF SEATS</span>
                 )}
                 {st === 'live' && (
                   <span className="block mt-0.5 text-[9px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>
