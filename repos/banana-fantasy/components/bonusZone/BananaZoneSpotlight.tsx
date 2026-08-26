@@ -187,13 +187,15 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* section 1 — mirrors desktop box 1: the countdown owns its row */}
           <div className="flex items-center justify-between gap-3">
             <span>
-              <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">{seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}</span>
+              <span className="block text-[10px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.85)]">{tier === null && hasView ? 'Banana Zone Closed' : seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}</span>
               {seatsHero && (
                 <span className="block mt-1 text-[10px] font-extrabold uppercase tracking-[.7px] text-[rgba(235,245,240,.8)]">in the next <span className="text-[14px] text-white tabular-nums">{draftsLeftInTier}</span> {draftsLeftInTier === 1 ? 'draft' : 'drafts'}</span>
               )}
-              {tier !== null && (
+              {tier !== null ? (
                 <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Draft {segDone} of {segSize}</span>
-              )}
+              ) : hasView ? (
+                <span className="block mt-1 text-[9.5px] font-extrabold tracking-[1.2px] uppercase text-[rgba(235,245,240,.75)]">Reopens when the Jackpot hits</span>
+              ) : null}
             </span>
             {seatsHero ? (
               <span className="leading-none tabular-nums whitespace-nowrap">
@@ -201,8 +203,8 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 <span className="text-[24px] font-extrabold text-white/75">/{seatsTotalLive}</span>
               </span>
             ) : (
-              <span className="bz-breathe text-[34px] font-extrabold leading-none tabular-nums text-banana">
-                {tier ? draftsLeftInTier : hasView ? 0 : '—'}
+              <span className="text-[30px] leading-none">
+                {tier ? <span className="bz-breathe text-[34px] font-extrabold tabular-nums text-banana">{draftsLeftInTier}</span> : hasView ? '🍌' : <span className="text-white/35 font-extrabold">—</span>}
               </span>
             )}
           </div>
@@ -284,7 +286,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* col 1 — countdown */}
           <div className="grid grid-rows-[18px_108px_minmax(30px,auto)] items-center justify-items-center text-center gap-2 min-h-[170px]">
             <div className="self-start text-[10.5px] font-extrabold tracking-[1.6px] uppercase text-[rgba(235,245,240,.88)]">
-              {seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}
+              {tier === null && hasView ? 'Banana Zone Closed' : seatsHero ? 'JackHOF Seats Left' : `Drafts Left at Buy ${tier ?? 1} Get 1 Spin`}
             </div>
             {seatsHero ? (
               <div className="flex flex-col items-center gap-1">
@@ -301,10 +303,10 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 {draftsLeftInTier}
               </div>
             ) : (
-              <div className="text-[44px] font-extrabold leading-none tabular-nums text-white/35">{hasView ? 0 : '—'}</div>
+              <div className="text-[40px] font-extrabold leading-none text-white/35">🍌</div>
             )}
             <div className="self-start text-[10px] font-extrabold tracking-[1.3px] uppercase text-[rgba(235,245,240,.82)]">
-              {tier ? `Draft ${segDone} of ${segSize}` : hasView ? 'Reopens at next Jackpot' : 'Connecting…'}
+              {tier ? `Draft ${segDone} of ${segSize}` : hasView ? 'Reopens when the Jackpot hits' : 'Connecting…'}
             </div>
           </div>
           <div className="hidden min-[560px]:block w-px self-stretch bg-banana/30" />
