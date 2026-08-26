@@ -176,7 +176,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
                   <em className="block not-italic mt-[2px] text-[9px] font-extrabold tracking-[1.3px] text-white/50">DRAFTS {from}–{to}</em>
-                  {seats !== null && <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{st === 'live' && seatsHero ? `${seatsLeftLive}/${seatsTotalLive}` : seats} JACKHOF SEATS</span>}
+                  {seats !== null && (st === 'live' && seatsHero
+                    ? <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
+                    : <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{seats} JACKHOF SEATS</span>)}
                   {st === 'live' && <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>}
                 </div>
               );
@@ -406,7 +408,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   st === 'live' ? 'text-white/65' : 'text-white/45'
                 }`}>DRAFTS {from}–{to}</em>
                 {seats !== null && (
-                  <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{st === 'live' && seatsHero ? `${seatsLeftLive}/${seatsTotalLive}` : seats} JACKHOF SEATS</span>
+                  {st === 'live' && seatsHero
+                    ? <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
+                    : <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>}
                 )}
                 {st === 'live' && (
                   <span className="block mt-0.5 text-[9px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>
