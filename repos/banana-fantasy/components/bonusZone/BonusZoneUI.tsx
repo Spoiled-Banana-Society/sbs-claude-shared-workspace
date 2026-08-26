@@ -170,7 +170,7 @@ export function BonusZoneTooltipSection({ view }: { view: BonusZoneViewLike }) {
         {view.tier === 1 && `Every paid draft that fills in the next ${plural(view.draftsLeftInTier, 'draft')} earns a Free Spin. Then Buy 2 Get 1 Spin through draft ${t2}.`}
         {view.tier === 2 && `Every 2 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. ${end > t2 ? `Then Buy 3 Get 1 Spin through ${end}.` : `Zone closes at draft ${t2}.`}`}
         {view.tier === 3 && `Every 3 paid drafts that fill in the next ${plural(view.draftsLeftInTier, 'draft')} earn a Free Spin. Zone closes at draft ${end}.`}
-        {!view.tier && `Opens the moment the Jackpot hits: Buy 1 Get 1 Spin for drafts 1 to ${view.tier1Through}, Buy 2 Get 1 Spin through ${t2}.`}
+        {!view.tier && `Opens the moment the Jackpot hits: Buy 1 Get 1 Spin for drafts 1 to ${view.tier1Through}, Buy 2 Get 1 Spin through ${t2} — with 10 JackHOF seats hidden in the Packs.`}
               </p>
       <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full" style={{ width: `${Math.min(100, view.position)}%`, background: 'linear-gradient(90deg,#0f766e,#34d399)' }} />
