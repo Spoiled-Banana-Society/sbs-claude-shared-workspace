@@ -407,11 +407,9 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 <em className={`block not-italic mt-[3px] text-[10px] sm:text-[11px] font-extrabold tracking-[1.6px] ${
                   st === 'live' ? 'text-white/65' : 'text-white/45'
                 }`}>DRAFTS {from}–{to}</em>
-                {seats !== null && (
-                  {st === 'live' && seatsHero
-                    ? <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
-                    : <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>}
-                )}
+                {seats !== null && (st === 'live' && seatsHero
+                  ? <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
+                  : <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>)}
                 {st === 'live' && (
                   <span className="block mt-0.5 text-[9px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>
                 )}
