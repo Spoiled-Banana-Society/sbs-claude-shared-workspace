@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import LiveDraftActivityLine from '@/components/drafting/LiveDraftActivityLine';
+import NextLobbyLine from '@/components/drafting/NextLobbyLine';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
@@ -360,6 +362,12 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="space-y-4">
+      {/* Same live pulse the lobby shows users — going-drafts nudge + next-lobby
+          fills — so admin reads the room without leaving the tab (Boris 8/26). */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <LiveDraftActivityLine />
+        <NextLobbyLine />
+      </div>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-sm text-gray-400">
           {loading && drafts === null ? 'Loading active drafts…' : `${filtered.length} active draft${filtered.length === 1 ? '' : 's'}`}
