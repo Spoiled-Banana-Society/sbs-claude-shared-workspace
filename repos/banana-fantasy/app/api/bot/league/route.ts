@@ -357,18 +357,23 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       if (lane.rolling) {
         const v = bonusZoneViewForLane(lane.windowStart, lane.revealedFilled, bzCfg);
         // No "🍌 BANANA ZONE:" prefix — just the tier label (Richard 2026-08-22).
-        if (v.tier) bonusZoneLine = `${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
-        // Seats-left rides along while zone packs deal (Boris 2026-08-25):
-        // same liveSeats stamp the header uses — left/total, no winner info.
+        // Seats line owns the drafts-left number (Boris 2026-08-25):
+        //   Buy 2 Get 1 Spin
+        //   5/7 JackHOF seats in next 15 drafts
+        // Falls back to "label · N drafts left" when zone packs aren't dealing.
         if (v.tier) {
+          let seatsLine = '';
           try {
             const { readZoneDropConfig } = await import('@/lib/zoneDrop');
             const zd = await readZoneDropConfig();
             if (zd.enabled && zd.liveSeats && zd.liveSeats.windowStart === lane.windowStart) {
               const seatsLeft = Math.max(0, zd.liveSeats.tickets - zd.liveSeats.dealt);
-              if (seatsLeft > 0) bonusZoneLine += `\n${seatsLeft}/${zd.liveSeats.tickets} JackHOF seats still hidden in packs`;
+              if (seatsLeft > 0) seatsLine = `${seatsLeft}/${zd.liveSeats.tickets} JackHOF seats in next ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'}`;
             }
           } catch { /* decoration */ }
+          bonusZoneLine = seatsLine
+            ? `${v.label}\n${seatsLine}`
+            : `${v.label} · ${v.draftsLeftInTier} ${v.draftsLeftInTier === 1 ? 'draft' : 'drafts'} left`;
         }
       }
     }
