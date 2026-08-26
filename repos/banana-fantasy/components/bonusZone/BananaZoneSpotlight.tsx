@@ -120,7 +120,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="promo-tx min-w-0">
             <h3 className="text-[25px] sm:text-[34px] font-extrabold leading-[1.05] tracking-[-.8px] text-banana">
-              Free Spins <span className="text-white/55 font-bold">+</span> JackHOF Seats
+              JackHOF Seats <span className="text-white/55 font-bold">+</span> Free Spins
             </h3>
             <div className="mt-1.5 text-[15px] sm:text-[16px] font-extrabold tracking-[5px] text-white">BANANA ZONE</div>
           </div>
