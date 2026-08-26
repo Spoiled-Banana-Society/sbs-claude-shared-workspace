@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNotifications, BellCountdown, type NotificationType } from '@/components/NotificationCenter';
+import { useNotifications, BellCountdown, renderDynamicText, type NotificationType } from '@/components/NotificationCenter';
+import { useLaneCounters } from '@/lib/liveCounters';
 import { NotificationIcon } from '@/components/NotificationIcons';
 
 const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; label: string }> = {
@@ -62,6 +63,7 @@ type FilterKey = 'all' | 'unread';
 
 export default function NotificationsPage() {
   const { notifications, unreadCount, markAsRead, markAllRead, unpin, hasLoaded } = useNotifications();
+  const { jpLeft } = useLaneCounters();
   const [filter, setFilter] = useState<FilterKey>('all');
 
   const filtered = useMemo(
@@ -198,7 +200,7 @@ export default function NotificationsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <p className={`text-sm font-semibold ${!notif.read ? 'text-white' : 'text-white/70'}`}>
-                              {notif.title}
+                              {renderDynamicText(notif.title, notif as { dynamic?: string }, jpLeft)}
                             </p>
                             <span
                               className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
@@ -208,7 +210,7 @@ export default function NotificationsPage() {
                             </span>
                           </div>
                           {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && <BellCountdown liveAtMs={(notif as { liveAtMs?: number }).liveAtMs!} />}
-                          <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{notif.message}</p>
+                          <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{renderDynamicText(notif.message, notif as { dynamic?: string }, jpLeft)}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {!notif.read && <div className="w-2.5 h-2.5 rounded-full bg-banana" />}
