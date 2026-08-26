@@ -207,6 +207,13 @@ export default function NotificationsPage() {
                               {config.label}
                             </span>
                           </div>
+                          {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && (
+                            <p className="text-banana text-xs mt-1 font-extrabold">
+                              {Date.now() < (notif as { liveAtMs?: number }).liveAtMs!
+                                ? `Starts in ${Math.max(1, Math.ceil(((notif as { liveAtMs?: number }).liveAtMs! - Date.now()) / 60_000))} min`
+                                : '🔴 LIVE NOW'}
+                            </p>
+                          )}
                           <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{notif.message}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">

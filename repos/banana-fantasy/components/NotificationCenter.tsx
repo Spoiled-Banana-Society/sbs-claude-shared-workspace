@@ -27,6 +27,9 @@ export interface Notification {
    *  even after read, until the user dismisses it (× → their copy only) or the
    *  team unpins it globally (flag flipped on every copy). */
   pinned?: boolean;
+  /** Live-event countdown (Boris 2026-08-25): when set, the bell renders a
+   *  ticking "Starts in N min" line that flips to LIVE NOW at the timestamp. */
+  liveAtMs?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -309,6 +312,7 @@ export function useNotifications() {
           link: (n.link as string) || undefined,
           icon: (n.icon as string) || undefined,
           pinned: n.pinned === true,
+          liveAtMs: typeof n.liveAtMs === 'number' ? (n.liveAtMs as number) : undefined,
         };
       });
       // Re-merge optimistic local entries the server hasn't returned yet
@@ -620,6 +624,14 @@ interface NotificationPanelProps {
 }
 
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
+  // 20s tick so liveAtMs countdowns stay honest while the panel is open.
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!isOpen) return;
+    setNowTick(Date.now());
+    const t = setInterval(() => setNowTick(Date.now()), 20_000);
+    return () => clearInterval(t);
+  }, [isOpen]);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -738,6 +750,13 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
                         )}
                       </div>
+                      {typeof notif.liveAtMs === 'number' && (
+                        <p className="text-banana text-[11px] font-extrabold mt-0.5">
+                          {nowTick < notif.liveAtMs
+                            ? `Starts in ${Math.max(1, Math.ceil((notif.liveAtMs - nowTick) / 60_000))} min`
+                            : '🔴 LIVE NOW'}
+                        </p>
+                      )}
                       <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
                         {notif.message}
                       </p>
