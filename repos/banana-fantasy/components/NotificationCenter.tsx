@@ -658,14 +658,7 @@ export function BellCountdown({ liveAtMs }: { liveAtMs: number }) {
 }
 
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
-  // 20s tick so liveAtMs countdowns stay honest while the panel is open.
-  const [nowTick, setNowTick] = useState(Date.now());
-  useEffect(() => {
-    if (!isOpen) return;
-    setNowTick(Date.now());
-    const t = setInterval(() => setNowTick(Date.now()), 20_000);
-    return () => clearInterval(t);
-  }, [isOpen]);
+
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
