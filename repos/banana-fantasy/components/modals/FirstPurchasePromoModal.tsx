@@ -4,13 +4,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useSyncedFlag } from '@/hooks/useSyncedFlag';
-import { newPlayerFirstBuy } from '@/lib/firstPurchaseCopy';
+import { FirstPurchaseSpotlight } from '@/components/promos/FirstPurchaseSpotlight';
+import type { Promo } from '@/types';
 
-// Same totals-in-hand math as the promo card + modal, so this popup can never
-// quote a different ceiling than the surfaces it's pitching alongside.
-const fpOne = newPlayerFirstBuy(1);
-const fpTwo = newPlayerFirstBuy(2);
-const fpThree = newPlayerFirstBuy(3);
 
 // App-wide popup for the first-purchase promo, shown to NEW users (not
 // returning players) when they finish their welcome-wheel free drafts —
@@ -104,40 +100,29 @@ export function FirstPurchasePromoModal() {
       onClick={dismiss}
     >
       <div
-        className="relative w-full max-w-sm rounded-3xl border border-banana/30 bg-[#15151c] p-7 text-center shadow-[0_0_40px_rgba(251,191,36,0.25)]"
+        className="relative w-full max-w-2xl"
         onClick={(e) => e.stopPropagation()}
+        // The Buy Drafts CTA inside the card is a plain <a> — mark seen before
+        // navigation so the popup never re-fires after they come back.
+        onClickCapture={(e) => { if ((e.target as HTMLElement).closest('a')) { setSeen(true); setOpen(false); } }}
       >
         <button
           onClick={dismiss}
           aria-label="Close"
-          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+          className="absolute right-3 top-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-lg leading-none text-white/70 transition-colors hover:bg-white/10 hover:text-white"
         >
           ×
         </button>
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-banana/15 text-3xl">
-          🍌
-        </div>
-        <h2 className="text-xl font-bold tracking-tight text-white">First Purchase Promo</h2>
-        {/* Fixed lines — each one a complete idea, never wrapping mid-phrase
-            ("40" / "Drafts" on separate lines read broken). Sized to fit a
-            320px-wide phone inside the card padding. */}
-        <div className="mt-3 text-sm leading-relaxed text-white/70">
-          <span className="block whitespace-nowrap"><span className="font-semibold text-white">{fpOne.guaranteed} Drafts Guaranteed</span> — up to <span className="font-semibold text-banana">{fpOne.max}</span> from the wheel</span>
-          <span className="block whitespace-nowrap">(${fpOne.maxValueUsd.toLocaleString('en-US')} in Drafts)</span>
-        </div>
-        <div className="mt-3 text-xs leading-relaxed text-white/45">
-          <span className="block whitespace-nowrap">Buy more, get more: 2 passes = {fpTwo.guaranteed} Drafts, 3 = {fpThree.guaranteed}</span>
-          <span className="block whitespace-nowrap">One-time offer, first purchase only</span>
-        </div>
-        <button
-          onClick={() => {
-            dismiss();
-            router.push('/buy-drafts');
-          }}
-          className="mt-6 w-full rounded-full bg-banana py-3 text-sm font-bold text-[#1d1d1f] transition-transform hover:scale-[1.03]"
-        >
-          Buy Now
-        </button>
+        {/* THE ACTUAL first-purchase promo card (Boris 2026-08-26): the popup
+            IS the /promos spotlight — one component, identical copy + visuals
+            forever, no drift. Popup only fires for NEW users → variant 'new'. */}
+        <FirstPurchaseSpotlight
+          promo={{ claimCount: 0 } as Promo}
+          variant="new"
+          hasVisibleClaim={false}
+          onClaim={() => {}}
+          onOpenModal={() => { dismiss(); router.push('/promos?promo=first-purchase'); }}
+        />
       </div>
     </div>
   );
