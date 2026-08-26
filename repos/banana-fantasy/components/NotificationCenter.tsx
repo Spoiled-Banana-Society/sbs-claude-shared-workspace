@@ -623,6 +623,40 @@ interface NotificationPanelProps {
   onUnpin?: (id: string) => void;
 }
 
+/** Compact per-second segmented countdown for pinned event bells — the bell-
+ *  sized sibling of /mindshare's CountdownChip (same beat, same accents). */
+export function BellCountdown({ liveAtMs }: { liveAtMs: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  if (now >= liveAtMs) return <p className="text-banana text-[11px] font-extrabold mt-1">🔴 LIVE NOW</p>;
+  const s = Math.max(0, Math.floor((liveAtMs - now) / 1000));
+  const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+  const seg = (v: number, unit: string, tickKey?: number) => (
+    <span className="flex flex-col items-center min-w-[20px]">
+      <span key={tickKey} className="text-banana font-extrabold tabular-nums text-[14px] leading-none" style={tickKey !== undefined ? { animation: 'secTick 380ms ease-out' } : undefined}>
+        {String(v).padStart(2, '0')}
+      </span>
+      <span className="text-[6.5px] font-bold tracking-[0.14em] text-white/40 mt-[3px]">{unit}</span>
+    </span>
+  );
+  const colon = <span className="text-banana/35 font-bold text-[12px] -mt-2 select-none">:</span>;
+  return (
+    <span className="mt-1.5 inline-flex items-center gap-1.5 border border-banana/40 bg-banana/[0.05] rounded-lg px-2.5 py-1.5">
+      <span className="text-[7px] font-black tracking-[0.14em] text-white/50 mr-0.5">STARTS IN</span>
+      {d > 0 && <>{seg(d, 'DAYS')}{colon}</>}
+      {seg(h, 'HRS')}
+      {colon}
+      {seg(m, 'MIN')}
+      {colon}
+      {seg(sec, 'SEC', sec)}
+    </span>
+  );
+}
+
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
   // 20s tick so liveAtMs countdowns stay honest while the panel is open.
   const [nowTick, setNowTick] = useState(Date.now());
@@ -750,13 +784,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
                         )}
                       </div>
-                      {typeof notif.liveAtMs === 'number' && (
-                        <p className="text-banana text-[11px] font-extrabold mt-0.5">
-                          {nowTick < notif.liveAtMs
-                            ? (() => { const mins = Math.max(1, Math.ceil((notif.liveAtMs - nowTick) / 60_000)); return mins < 90 ? `Starts in ${mins} min` : mins < 60 * 30 ? `Starts in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Starts in ${Math.round(mins / 1440)} days`; })()
-                            : '🔴 LIVE NOW'}
-                        </p>
-                      )}
+                      {typeof notif.liveAtMs === 'number' && <BellCountdown liveAtMs={notif.liveAtMs} />}
                       <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
                         {notif.message}
                       </p>

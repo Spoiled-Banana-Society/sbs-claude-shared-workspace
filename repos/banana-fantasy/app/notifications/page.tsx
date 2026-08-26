@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNotifications, type NotificationType } from '@/components/NotificationCenter';
+import { useNotifications, BellCountdown, type NotificationType } from '@/components/NotificationCenter';
 import { NotificationIcon } from '@/components/NotificationIcons';
 
 const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; label: string }> = {
@@ -207,13 +207,7 @@ export default function NotificationsPage() {
                               {config.label}
                             </span>
                           </div>
-                          {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && (
-                            <p className="text-banana text-xs mt-1 font-extrabold">
-                              {Date.now() < (notif as { liveAtMs?: number }).liveAtMs!
-                                ? (() => { const mins = Math.max(1, Math.ceil(((notif as { liveAtMs?: number }).liveAtMs! - Date.now()) / 60_000)); return mins < 90 ? `Starts in ${mins} min` : mins < 60 * 30 ? `Starts in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Starts in ${Math.round(mins / 1440)} days`; })()
-                                : '🔴 LIVE NOW'}
-                            </p>
-                          )}
+                          {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && <BellCountdown liveAtMs={(notif as { liveAtMs?: number }).liveAtMs!} />}
                           <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{notif.message}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
