@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
 import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
+import { setLaneCounters } from '@/lib/liveCounters';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 import { createPortal } from 'react-dom';
@@ -187,6 +188,7 @@ export function BatchProgressIndicator() {
     const jpPos = lanePosition(filledLeaguesCount, jpView.windowStart);
     const hofPos = lanePosition(filledLeaguesCount, hofView.windowStart);
     const jpLeft = laneDraftsLeft(rFilled, jpView.windowStart);
+    setLaneCounters({ jpLeft }); // publish for dynamic bells — same number as the pill
     const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
     const jpLanePct = lanePct(jpView.remaining, jpLeft);
     const hofLanePct = lanePct(hofView.remaining, hofLeft);

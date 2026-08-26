@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { useLaneCounters } from '@/lib/liveCounters';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,6 +31,9 @@ export interface Notification {
   /** Live-event countdown (Boris 2026-08-25): when set, the bell renders a
    *  ticking "Starts in N min" line that flips to LIVE NOW at the timestamp. */
   liveAtMs?: number;
+  /** Dynamic-token bells (Boris 2026-08-26): '{N}' in title/message renders as
+   *  the live jpLeft from the header's own computation — real-time, no writes. */
+  dynamic?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -313,6 +317,7 @@ export function useNotifications() {
           icon: (n.icon as string) || undefined,
           pinned: n.pinned === true,
           liveAtMs: typeof n.liveAtMs === 'number' ? (n.liveAtMs as number) : undefined,
+          dynamic: typeof n.dynamic === 'string' ? (n.dynamic as string) : undefined,
         };
       });
       // Re-merge optimistic local entries the server hasn't returned yet
@@ -657,7 +662,13 @@ export function BellCountdown({ liveAtMs }: { liveAtMs: number }) {
   );
 }
 
+export function renderDynamicText(text: string, notif: { dynamic?: string }, jpLeft: number | null): string {
+  if (notif.dynamic !== 'jp-window' || !text.includes('{N}')) return text;
+  return text.replace(/\{N\}/g, jpLeft !== null ? String(jpLeft) : '…');
+}
+
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
+  const { jpLeft } = useLaneCounters();
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -771,7 +782,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       )}
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-xs font-semibold leading-tight ${!notif.read ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          {notif.title}
+                          {renderDynamicText(notif.title, notif, jpLeft)}
                         </p>
                         {!notif.read && (
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
@@ -779,7 +790,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       </div>
                       {typeof notif.liveAtMs === 'number' && <BellCountdown liveAtMs={notif.liveAtMs} />}
                       <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
-                        {notif.message}
+                        {renderDynamicText(notif.message, notif, jpLeft)}
                       </p>
                       <p className="text-text-muted/50 text-[10px] mt-1">{timeAgo(notif.createdAt)}</p>
                     </div>
