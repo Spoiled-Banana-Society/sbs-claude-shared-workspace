@@ -176,9 +176,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                 }`}>
                   BUY {buy} GET <span className="text-banana">1 SPIN</span>
                   <em className="block not-italic mt-[2px] text-[9px] font-extrabold tracking-[1.3px] text-white/50">DRAFTS {from}–{to}</em>
-                  {seats !== null && (st === 'live' && seatsHero
-                    ? <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
-                    : <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{seats} JACKHOF SEATS</span>)}
+                  {seats !== null && <span className="block mt-[2px] text-[11px] font-black tracking-[.7px] text-banana">{seats} JACKHOF SEATS</span>}
                   {st === 'live' && <span className="block mt-0.5 text-[8px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>}
                 </div>
               );
@@ -200,7 +198,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             {seatsHero ? (
               <span className="leading-none tabular-nums whitespace-nowrap">
                 <span className="bz-breathe text-[36px] font-extrabold text-banana">{seatsLeftLive}</span>
-                <span className="text-[24px] font-extrabold text-white/40">/{seatsTotalLive}</span>
+                <span className="text-[24px] font-extrabold text-white/75">/{seatsTotalLive}</span>
               </span>
             ) : (
               <span className="bz-breathe text-[34px] font-extrabold leading-none tabular-nums text-banana">
@@ -292,7 +290,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               <div className="flex flex-col items-center gap-1">
                 <div className="leading-none tabular-nums">
                   <span className="bz-breathe text-[46px] sm:text-[50px] font-extrabold text-banana">{seatsLeftLive}</span>
-                  <span className="text-[30px] sm:text-[33px] font-extrabold text-white/40">/{seatsTotalLive}</span>
+                  <span className="text-[30px] sm:text-[33px] font-extrabold text-white/75">/{seatsTotalLive}</span>
                 </div>
                 <div className="text-[11px] font-extrabold uppercase tracking-[.8px] text-[rgba(235,245,240,.85)]">
                   in the next <span className="text-[17px] text-white tabular-nums">{draftsLeftInTier}</span> drafts
@@ -408,7 +406,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
                   st === 'live' ? 'text-white/65' : 'text-white/45'
                 }`}>DRAFTS {from}–{to}</em>
                 {seats !== null && (st === 'live' && seatsHero
-                  ? <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/45">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
+                  ? <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana"><span>{seatsLeftLive}</span><span className="text-white/75">/{seatsTotalLive}</span> JACKHOF SEATS LEFT</span>
                   : <span className="block mt-[3px] text-[12.5px] sm:text-[14px] font-black tracking-[.9px] text-banana">{seats} JACKHOF SEATS</span>)}
                 {st === 'live' && (
                   <span className="block mt-0.5 text-[9px] font-black tracking-[2px] text-[#7ff0c3]">● LIVE</span>
