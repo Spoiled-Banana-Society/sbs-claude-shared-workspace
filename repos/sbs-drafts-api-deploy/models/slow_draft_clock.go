@@ -36,9 +36,22 @@ func slowDraftAdvanceToNextActive(t time.Time) time.Time {
 }
 
 // SlowDraftPickEndUnix returns the Unix instant when pickLengthSec of slow-draft clock have elapsed from fromUnix.
+// Honours the system_config/slowDraftClock fresh-clock switch (see slow_draft_clock_config.go).
 func SlowDraftPickEndUnix(fromUnix int64, pickLengthSec int64) int64 {
+	return slowDraftPickEndUnixOpts(fromUnix, pickLengthSec, SlowDraftFreshClockAfterPause())
+}
+
+// slowDraftPickEndUnixOpts is the pure form. freshAfterPause=true: a pick that
+// would cross the 22:00 PT pause does NOT carry its leftover minutes into the
+// morning — it restarts with the FULL pickLengthSec at 05:00 PT (so nobody wakes
+// up to 40 minutes left). false: legacy carry-over.
+func slowDraftPickEndUnixOpts(fromUnix int64, pickLengthSec int64, freshAfterPause bool) int64 {
 	if pickLengthSec <= 0 {
 		return fromUnix
+	}
+	if pickLengthSec > slowDraftActiveWindowSec {
+		// Can't fit in one active window — a fresh clock would never end.
+		freshAfterPause = false
 	}
 	cur := slowDraftAdvanceToNextActive(time.Unix(fromUnix, 0))
 	remaining := pickLengthSec
@@ -55,7 +68,11 @@ func SlowDraftPickEndUnix(fromUnix int64, pickLengthSec int64) int64 {
 		if remaining <= avail {
 			return cur.Add(time.Duration(remaining) * time.Second).Unix()
 		}
-		remaining -= avail
+		if freshAfterPause {
+			remaining = pickLengthSec
+		} else {
+			remaining -= avail
+		}
 		midnight := time.Date(y, m, d, 0, 0, 0, 0, pacific)
 		cur = midnight.AddDate(0, 0, 1).Add(5 * time.Hour)
 	}

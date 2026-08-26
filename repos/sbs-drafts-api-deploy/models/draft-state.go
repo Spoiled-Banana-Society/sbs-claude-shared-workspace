@@ -924,7 +924,8 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	if strings.ToLower(leagueInfo.DraftType) == "fast" {
 		pickLength = 30
 	} else {
-		pickLength = 3600 * 8
+		// system_config/slowDraftClock overrides the 8h legacy when enabled.
+		pickLength = SlowDraftEffectivePickLength(0)
 	}
 
 	info, err := CreateDraftInfoForDraft(draftId, pickLength, leagueInfo.CurrentUsers, &leagueInfo)

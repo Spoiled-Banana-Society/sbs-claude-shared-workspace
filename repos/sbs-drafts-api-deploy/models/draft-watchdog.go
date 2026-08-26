@@ -323,12 +323,11 @@ func watchdogRepairDraft(draftId string, rt *RealTimeDraftInfo, deadFor int64, w
 	drafter := draftInfo.DraftOrder[seat].OwnerId
 	isSlow := strings.HasPrefix(draftId, watchdogSlowDraftPrefix)
 	pickLen := rt.PickLength
-	if pickLen <= 0 {
-		if isSlow {
-			pickLen = 28800
-		} else {
-			pickLen = 30
-		}
+	if isSlow {
+		// Same override ProcessNewPick applies (system_config/slowDraftClock).
+		pickLen = SlowDraftEffectivePickLength(pickLen)
+	} else if pickLen <= 0 {
+		pickLen = 30
 	}
 	row.NextPick = nextPick
 	row.NewDrafter = drafter
@@ -442,6 +441,7 @@ func watchdogRepairDraft(draftId string, rt *RealTimeDraftInfo, deadFor int64, w
 	rt.CurrentDrafter = drafter
 	rt.PickStartTime = startAt
 	if isSlow {
+		rt.PickLength = pickLen
 		rt.PickEndTime = SlowDraftPickEndUnix(startAt, pickLen)
 	} else {
 		rt.PickEndTime = startAt + pickLen
