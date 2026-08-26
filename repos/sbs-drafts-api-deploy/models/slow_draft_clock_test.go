@@ -109,3 +109,23 @@ func TestSlowDraftEffectivePickLength_SwitchOffIsLegacy(t *testing.T) {
 		t.Fatal("fresh clock must be OFF with no config")
 	}
 }
+
+func TestSlowDraftClockConfig_StartsAtGate(t *testing.T) {
+	now := time.Date(2026, 8, 26, 20, 0, 0, 0, pacific)
+	c := SlowDraftClockConfig{Enabled: true, PickLengthSec: 14400, FreshClockAfterPause: true, StartsAtIso: "2026-08-27T12:00:00Z"}
+	if c.active(now) {
+		t.Fatal("must be inactive before startsAt")
+	}
+	if !c.active(now.Add(24 * time.Hour)) {
+		t.Fatal("must be active after startsAt")
+	}
+	if !(SlowDraftClockConfig{Enabled: true}).active(now) {
+		t.Fatal("no gate → active")
+	}
+	if !(SlowDraftClockConfig{Enabled: true, StartsAtIso: "garbage"}).active(now) {
+		t.Fatal("bad gate → treated as no gate")
+	}
+	if (SlowDraftClockConfig{Enabled: false, StartsAtIso: "2020-01-01T00:00:00Z"}).active(now) {
+		t.Fatal("disabled stays off")
+	}
+}

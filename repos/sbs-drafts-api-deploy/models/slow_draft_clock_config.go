@@ -44,6 +44,26 @@ type SlowDraftClockConfig struct {
 	Enabled              bool  `firestore:"enabled"`
 	PickLengthSec        int64 `firestore:"pickLengthSec"`
 	FreshClockAfterPause bool  `firestore:"freshClockAfterPause"`
+	// Optional RFC3339 instant. While set and in the future the switch reads
+	// as OFF even if Enabled — lets Richard arm it today for "5am PT tomorrow"
+	// without anything having to wake up and flip it.
+	StartsAtIso string `firestore:"startsAtIso"`
+}
+
+// active reports whether the switch is in force right now (Enabled AND past
+// StartsAtIso, if any). An unparseable StartsAtIso is treated as "no gate".
+func (c SlowDraftClockConfig) active(now time.Time) bool {
+	if !c.Enabled {
+		return false
+	}
+	if c.StartsAtIso == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, c.StartsAtIso)
+	if err != nil {
+		return true
+	}
+	return !now.Before(t)
 }
 
 var (
@@ -85,8 +105,8 @@ func LoadSlowDraftClockConfig() SlowDraftClockConfig {
 		return slowClockCfgCached
 	}
 	if slowClockCfgCached != cfg {
-		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v\n",
-			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause)
+		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v startsAt=%q active=%v\n",
+			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause, cfg.StartsAtIso, cfg.active(time.Now()))
 	}
 	slowClockCfgCached = cfg
 	slowClockCfgLoaded = true
@@ -100,7 +120,7 @@ func LoadSlowDraftClockConfig() SlowDraftClockConfig {
 // legacy default when the doc has none.
 func SlowDraftEffectivePickLength(stored int64) int64 {
 	cfg := LoadSlowDraftClockConfig()
-	if cfg.Enabled && cfg.PickLengthSec > 0 {
+	if cfg.active(time.Now()) && cfg.PickLengthSec > 0 {
 		return cfg.PickLengthSec
 	}
 	if stored > 0 {
@@ -113,5 +133,5 @@ func SlowDraftEffectivePickLength(stored int64) int64 {
 // overnight pause restarts with a full clock at 05:00 PT.
 func SlowDraftFreshClockAfterPause() bool {
 	cfg := LoadSlowDraftClockConfig()
-	return cfg.Enabled && cfg.FreshClockAfterPause
+	return cfg.active(time.Now()) && cfg.FreshClockAfterPause
 }

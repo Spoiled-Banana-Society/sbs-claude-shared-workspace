@@ -8,8 +8,10 @@ future matches need no deploy on either side.
 ```
 { enabled: false,               // ← green light. false = EXACT legacy behaviour everywhere
   pickLengthSec: 14400,         // 4h. Change to match UD (7200, 3600 …). Max 17h (one active window)
-  freshClockAfterPause: true }  // pick that straddles 22:00 PT restarts with a FULL clock at 05:00 PT
+  freshClockAfterPause: true,   // pick that straddles 22:00 PT restarts with a FULL clock at 05:00 PT
+  startsAtIso: '2026-08-27T12:00:00Z' }  // optional gate: reads as OFF until this instant (5am PT Aug 27)
 ```
+**ARMED 8/26 evening: enabled=true + startsAtIso=2026-08-27T12:00:00Z → goes live 5am PT Thu Aug 27 on its own.**
 Toggle: `node scripts/_slow-clock-toggle.mjs [--on|--off|--hours 2|--minutes 60|--fresh on|off]` (Next repo).
 Both sides cache the doc 60s, so a flip lands within a minute.
 
