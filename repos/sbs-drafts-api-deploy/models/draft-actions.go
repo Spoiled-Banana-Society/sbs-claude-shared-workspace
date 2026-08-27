@@ -187,6 +187,10 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		nowUnix := time.Now().Unix()
 		realTimeDraftInfo.PickStartTime = nowUnix
 		if leagueReadErr == nil && strings.EqualFold(league.DraftType, "slow") {
+			// Re-derive the clock every pick so a system_config/slowDraftClock
+			// change (8h → 4h …) applies to drafts already in progress, not just
+			// new ones. Persisting PickLength keeps the room/notifs in step.
+			realTimeDraftInfo.PickLength = SlowDraftEffectivePickLength(realTimeDraftInfo.PickLength)
 			realTimeDraftInfo.PickEndTime = SlowDraftPickEndUnix(nowUnix, realTimeDraftInfo.PickLength)
 		} else {
 			realTimeDraftInfo.PickEndTime = nowUnix + realTimeDraftInfo.PickLength
