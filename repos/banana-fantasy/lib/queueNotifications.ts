@@ -16,6 +16,7 @@
  */
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { getSlowClockCopy } from '@/lib/slowClockServer';
 import { FieldValue } from 'firebase-admin/firestore';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 
@@ -159,21 +160,23 @@ export async function createNotificationForWallets(
 /** Notify user they've been queued */
 export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof' | 'jackhof', draftCount: number) {
   const label = type === 'jackpot' ? 'Jackpot' : type === 'hof' ? 'HOF' : 'JackHOF';
+  const clock = await getSlowClockCopy();
   await createNotification(wallet, {
     type: `${type}_queue`,
     title: `${label} Draft Queued!`,
-    message: `You're in ${draftCount} ${label} draft queue${draftCount !== 1 ? 's' : ''} (8-hour picks). The draft starts as soon as 10 winners fill the queue!`,
+    message: `You're in ${draftCount} ${label} draft queue${draftCount !== 1 ? 's' : ''} (${clock.hyphen} picks). The draft starts as soon as 10 winners fill the queue!`,
   });
 }
 
 /** Notify ALL members that a round is full — draft starting now */
 export async function notifyQueueFilled(wallets: string[], type: 'jackpot' | 'hof' | 'jackhof') {
   const label = type === 'jackpot' ? 'Jackpot' : type === 'hof' ? 'HOF' : 'JackHOF';
+  const clock = await getSlowClockCopy();
   const promises = wallets.map(wallet =>
     createNotification(wallet, {
       type: `${type}_queue`,
       title: `${label} Draft Starting!`,
-      message: `10 winners are in! Your ${label} draft is starting now. 8-hour picks — draft at your own pace.`,
+      message: `10 winners are in! Your ${label} draft is starting now. ${clock.hyphen} picks — draft at your own pace.`,
       dedupeKey: `${type}-queue-filled-${wallet.toLowerCase()}`,
     })
   );

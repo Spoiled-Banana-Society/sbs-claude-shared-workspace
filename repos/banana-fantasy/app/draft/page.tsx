@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
+import type { SlowClockCopy } from '@/lib/slowClock';
 import { BonusLeaveWarning } from '@/components/bonusZone/BonusZoneUI';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -30,7 +32,7 @@ const BuyPassesModal = dynamic(
 import { formatCountdown, formatRelativeTime, useDraftingPageState } from '@/hooks/useDraftingPageState';
 import { useDraftAlertsConfigured } from '@/hooks/useDraftAlertsConfigured';
 
-const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string }[] }> = {
+const buildInfoTopics = (clock: SlowClockCopy): Record<string, { title: string; items: { q: string; a: string }[] }> => ({
   '10-players': {
     title: '10 Players',
     items: [
@@ -43,7 +45,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     title: 'Snake Draft',
     items: [
       { q: 'What is a snake draft?', a: 'Pick order reverses each round. If you pick 1st in round 1, you pick 10th in round 2, then 1st again in round 3. This keeps things fair for everyone.' },
-      { q: 'Fast or slow — what\'s the difference?', a: 'You choose your speed before each draft. Fast drafts give you 30 seconds per pick — the whole draft takes about 15-20 minutes. Slow drafts give you 8 hours per pick, perfect if you want to draft over a few days.' },
+      { q: 'Fast or slow — what\'s the difference?', a: 'You choose your speed before each draft. Fast drafts give you 30 seconds per pick — the whole draft takes about 15-20 minutes. Slow drafts give you ' + clock.long + ' per pick, perfect if you want to draft over a few days.' + clock.shorteningNote },
       { q: 'How many rounds?', a: '15 rounds. You draft a full roster: 1 QB, 2 RB, 3 WR, 1 TE, 2 FLEX, 1 K, 1 DEF, plus bench spots.' },
     ],
   },
@@ -75,7 +77,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     items: [
       { q: 'What is a Hall of Fame Draft?', a: 'HOF Drafts are premium draft rooms making up 5% of all drafts. Your team competes for a separate bonus prize pool on top of the regular tournament prizes.' },
       { q: 'How do I get into a HOF Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and 5 HOF are guaranteed in every rolling 100-draft window. 2) The Banana Wheel: land on HOF and you win a guaranteed seat in a HOF draft (from the Wheel), free.' },
-      { q: 'What happens when I win a HOF on the Banana Wheel?', a: 'You\'re seated in a HOF draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
+      { q: 'What happens when I win a HOF on the Banana Wheel?', a: 'You\'re seated in a HOF draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with ' + clock.long + ' per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
       { q: 'Can I leave or sell a wheel-won HOF seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won HOF drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
     ],
@@ -85,7 +87,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     items: [
       { q: 'What is a Jackpot Draft?', a: 'Jackpot Drafts are the rarest and most valuable draft type — only 1% of all drafts. If you win your league in a Jackpot draft, you skip straight to the finals, bypassing two weeks of playoffs.' },
       { q: 'How do I get into a Jackpot Draft?', a: 'Two ways. 1) The reveal: every paid draft has a shot — when your room fills to 10, the slot machine reveals your type, and a Jackpot is always within 100 drafts of the last one. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a Jackpot draft (from the Wheel), free.' },
-      { q: 'What happens when I win a Jackpot on the Banana Wheel?', a: 'You\'re seated in a Jackpot draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with 8 hours per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
+      { q: 'What happens when I win a Jackpot on the Banana Wheel?', a: 'You\'re seated in a Jackpot draft (from the Wheel) instantly — you\'ll see it in your lobby right away. The draft starts automatically the moment 10 wheel winners have joined. It\'s a slow draft with ' + clock.long + ' per pick (the clock pauses overnight), so there\'s plenty of time to make every pick.' },
       { q: 'Can I leave or sell a wheel-won Jackpot seat?', a: 'Your seat is locked — there\'s no leaving a Wheel draft. Before the draft fills you can sell the pass on the SBS Marketplace and the buyer takes your seat — it\'s the only draft pass that can ever be sold. After the draft wraps you can sell your team too. The only time you can\'t sell is while the draft is live.' },
       { q: 'Do wheel-won Jackpot drafts count toward promos?', a: 'No. Wheel-won drafts are free drafts and never earn promos — no free spin for a Slot 10, and they don\'t count toward the 4-drafts-in-a-day promo.' },
       { q: 'What exactly happens if I win?', a: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely.' },
@@ -100,9 +102,11 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
       { q: 'What exactly happens if I win?', a: 'Everything. You advance directly to the Week 17 finals (the Jackpot perk) and your team also enters the separate HOF playoff track for bonus prizes (the HOF perk). Your draft token gets the exclusive red-and-gold JackHOF border.' },
     ],
   },
-};
+});
 
 export default function DraftingPage() {
+  const { copy: slowClock } = useSlowClock();
+  const INFO_TOPICS = useMemo(() => buildInfoTopics(slowClock), [slowClock]);
   const router = useRouter();
   const {
     contest,
@@ -303,7 +307,7 @@ export default function DraftingPage() {
                       </button>
                       <button onClick={() => setInfoTopic('snake-draft')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Snake Draft</h4>
-                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Fast (30s) or slow (8hr) picks — your choice</p>
+                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Fast (30s) or slow ({slowClock.short}) picks — your choice</p>
                       </button>
                       <button onClick={() => setInfoTopic('team-positions')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Team Positions</h4>

@@ -1,6 +1,7 @@
 'use client';
 
 import type React from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
@@ -115,6 +116,7 @@ export function BuyTab({
   onSetPaymentMethod,
   onHandleBuy,
 }: BuyTabProps) {
+  const { copy: slowClock } = useSlowClock();
   // Web2 (embedded) users pay from their in-app balance — label it "Balance",
   // not "USDC" (crypto jargon). Web3 users keep "USDC".
   const { isEmbeddedWallet } = useAuth();
@@ -620,7 +622,7 @@ export function BuyTab({
                       </p>
                       <p className="text-text-secondary text-xs leading-relaxed">
                         {typeof selectedTeam.lobbyCount === 'number' ? `${selectedTeam.lobbyCount}/10 in the draft lobby — starts automatically at 10. ` : 'Starts automatically when 10 wheel winners join. '}
-                        Slow draft, 8 hours per pick. The seat is yours the moment you buy; it locks for good when the draft fills.
+                        Slow draft, {slowClock.long} per pick. The seat is yours the moment you buy; it locks for good when the draft fills.
                         {selectedTeam.fillingWheelLevel === 'jackpot'
                           ? ' Win the league and skip straight to the Finals.'
                           : ' Compete for added prizes on top of the regular ones.'}

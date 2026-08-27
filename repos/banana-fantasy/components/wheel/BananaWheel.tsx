@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import Link from 'next/link';
 import confetti from 'canvas-confetti';
 import { allKnownSegmentsById, type WheelSegment } from '@/lib/wheelConfig';
@@ -245,6 +246,7 @@ interface PendingSpin {
 }
 
 export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus, spinButtonText }: BananaWheelProps) {
+  const { copy: slowClock } = useSlowClock();
   const [isSpinning, setIsSpinning] = useState(false);
   // 'free' = constant-speed spin while waiting on RNG; 'landing' = decel onto
   // the result; 'idle' = stopped (no transition). Drives the CSS transition.
@@ -959,7 +961,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                           : remaining === 0
                             ? <span className="text-white/90 font-semibold">It&apos;s full (10/10) — your draft is starting now!</span>
                             : <><span className="text-white/90 font-semibold">{remaining} more</span> {label} winner{remaining !== 1 ? 's' : ''} to go <span className="text-white/90 font-semibold">({count}/10)</span>.</>}</p>
-                      <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — 8 hours per pick).</p>
+                      <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — {slowClock.long} per pick).</p>
                       <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJackHof ? 'you skip straight to the season Finals AND enter the Hall of Fame playoff bracket — both perks on this one draft' : isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
                       <p className="text-white/40 pt-1">Your seat is locked — before the draft fills you can sell this pass on the Marketplace and the buyer takes your spot, and after the draft you can sell your team. You just can&apos;t sell mid-draft.</p>
                     </div>

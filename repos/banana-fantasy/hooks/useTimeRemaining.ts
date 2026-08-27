@@ -51,7 +51,14 @@ export function useTimeRemaining(
           // full pick length at the start, ticks down during active hours, and
           // freezes overnight (22:00–05:00 PT).
           const nowSec = Math.floor(now / 1000);
-          setTimeRemaining(slowDraftActiveSecondsUntil(nowSec, endOfTurnTimestamp));
+          // Cap at the pick length: with the fresh-clock-after-pause rule a
+          // pick armed at 9pm has 1h + a full clock of ACTIVE time ahead of
+          // it, but the honest display is "you always have at least the full
+          // clock" — full, frozen overnight, full again at 5am. Legacy clocks
+          // never exceed pickLength, so this is a no-op for them.
+          const active = slowDraftActiveSecondsUntil(nowSec, endOfTurnTimestamp);
+          const cap = pickLengthSec && pickLengthSec > 0 ? pickLengthSec : Infinity;
+          setTimeRemaining(Math.min(active, cap));
         } else {
           // endOfTurnTimestamp is in seconds (Unix timestamp), convert to milliseconds
           const timestampMs = endOfTurnTimestamp * 1000;

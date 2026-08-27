@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
@@ -128,6 +129,7 @@ const LISTING_DURATIONS: Array<{ label: string; seconds: number }> = [
 const DEFAULT_LISTING_SECONDS = 30 * 24 * 3600;
 
 export default function NftDetailPage() {
+  const { copy: slowClock } = useSlowClock();
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1568,7 +1570,7 @@ export default function NftDetailPage() {
               </p>
               <div className="space-y-1.5 text-text-secondary text-xs leading-relaxed">
                 <p><span className="text-text-primary font-semibold">Buy it →</span> the seat is transferred to you and you take their spot in the {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'}-only lobby.</p>
-                <p><span className="text-text-primary font-semibold">When the lobby fills (10 winners) →</span> you draft your team. Slow Draft, 8 hours per pick.</p>
+                <p><span className="text-text-primary font-semibold">When the lobby fills (10 winners) →</span> you draft your team. Slow Draft, {slowClock.long} per pick.</p>
                 <p><span className="text-text-primary font-semibold">Win your league →</span> {fillingLevel === 'jackpot' ? 'you skip straight to the season Finals.' : 'you enter the Hall of Fame playoff bracket for bonus prizes.'}</p>
                 <p className="text-text-muted pt-1">Once it fills, the pass becomes your drafted team.</p>
               </div>

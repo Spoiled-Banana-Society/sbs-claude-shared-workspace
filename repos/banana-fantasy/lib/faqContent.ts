@@ -1,7 +1,15 @@
 import type { FAQSection } from '@/types';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
+import { LEGACY_SLOW_CLOCK_COPY, type SlowClockCopy } from '@/lib/slowClock';
 
-export const mockFAQSections: FAQSection[] = [
+/**
+ * FAQ content as a function of the slow-draft clock switch (lib/slowClock.ts),
+ * so "8 hours per pick" flips to whatever is live without a copy hunt. Client
+ * components: `buildFAQSections(useSlowClock().copy)`. `mockFAQSections` is the
+ * legacy (switch-off) snapshot for anything that can't use the hook.
+ */
+export function buildFAQSections(clock: SlowClockCopy = LEGACY_SLOW_CLOCK_COPY): FAQSection[] {
+  return [
   {
     id: 'best-ball',
     title: 'Best Ball',
@@ -62,7 +70,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What\'s the difference between Fast and Slow drafts?',
-        answer: 'Fast drafts have a 30-second pick clock — the whole draft runs about 30-40 minutes. Slow drafts give you 8 hours per pick (the clock pauses overnight, 10pm-5am PT), so you can draft over a few days at your own pace.',
+        answer: 'Fast drafts have a 30-second pick clock — the whole draft runs about 30-40 minutes. Slow drafts give you ' + clock.long + ' per pick (the clock pauses overnight, ' + clock.pauseWindowLabel.replace('–', '-') + '), so you can draft over a few days at your own pace.' + (clock.pauseNote ? ' ' + clock.pauseNote : '') + clock.shorteningNote,
       },
     ],
   },
@@ -102,7 +110,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'I hit Jackpot on the Banana Wheel — what happens now?',
-        answer: 'You\'re automatically seated in a special Jackpot draft, free. It sits ready and starts on its own the moment 10 wheel winners have joined. It\'s a slow draft — 8 hours per pick, and the clock pauses overnight (10pm–5am PT). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
+        answer: 'You\'re automatically seated in a special Jackpot draft, free. It sits ready and starts on its own the moment 10 wheel winners have joined. It\'s a slow draft — ' + clock.long + ' per pick, and the clock pauses overnight (' + clock.pauseWindowLabel + '). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
       },
       {
         question: 'Can I leave a wheel-won Jackpot, HOF, or JackHOF draft?',
@@ -144,7 +152,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'I hit HOF on the Banana Wheel — what happens now?',
-        answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (8 hours per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace before the draft, and your team can be sold after it wraps — the only time you can\'t sell is while the draft is live. Special drafts never earn promos.',
+        answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (' + clock.long + ' per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace before the draft, and your team can be sold after it wraps — the only time you can\'t sell is while the draft is live. Special drafts never earn promos.',
       },
     ],
   },
@@ -166,7 +174,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'I hit JackHOF on the Banana Wheel — what happens now?',
-        answer: 'Same flow as a wheel Jackpot or HOF, but better: you\'re seated free in a special JackHOF draft that starts automatically once 10 wheel winners join. Slow draft, 8 hours per pick, paused overnight. Your seat is locked, but the pass can be sold on the Marketplace before the draft, and the team can be sold after it wraps — the only time you can\'t sell is while the draft is live.',
+        answer: 'Same flow as a wheel Jackpot or HOF, but better: you\'re seated free in a special JackHOF draft that starts automatically once 10 wheel winners join. Slow draft, ' + clock.long + ' per pick, paused overnight. Your seat is locked, but the pass can be sold on the Marketplace before the draft, and the team can be sold after it wraps — the only time you can\'t sell is while the draft is live.',
       },
     ],
   },
@@ -249,7 +257,7 @@ export const mockFAQSections: FAQSection[] = [
         : []),
       {
         question: 'What is a "special draft"?',
-        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (before the draft — and your drafted team can be sold after it wraps, just never mid-draft). They\'re free drafts, so they never earn promos.',
+        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot, HOF, or JackHOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (' + clock.long + ' per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (before the draft — and your drafted team can be sold after it wraps, just never mid-draft). They\'re free drafts, so they never earn promos.',
       },
       {
         question: 'Where can I spin the wheel?',
@@ -430,3 +438,6 @@ export const mockFAQSections: FAQSection[] = [
     ],
   },
 ];
+}
+
+export const mockFAQSections: FAQSection[] = buildFAQSections(LEGACY_SLOW_CLOCK_COPY);

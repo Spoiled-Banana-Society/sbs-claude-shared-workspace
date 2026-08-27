@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 
 interface DraftSpeedModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface DraftSpeedModalProps {
 }
 
 export function DraftSpeedModal({ isOpen, onClose, onSelectSpeed, draftPasses }: DraftSpeedModalProps) {
+  const { copy: slowClock } = useSlowClock();
   if (!isOpen) return null;
 
   return (
@@ -67,8 +69,8 @@ export function DraftSpeedModal({ isOpen, onClose, onSelectSpeed, draftPasses }:
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-white">Slow Draft</h3>
-                <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
-                <p className="text-white/65 text-xs mt-1">Clock pauses daily 10pm–5am PT · you can still make picks</p>
+                <p className="text-blue-400 text-sm font-medium">{slowClock.perPick}</p>
+                <p className="text-white/65 text-xs mt-1">Clock pauses daily {slowClock.pauseWindowLabel} · you can still make picks{slowClock.freshClockAfterPause ? ` · fresh full clock at ${slowClock.pauseEndLabel}` : ''}</p>
               </div>
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
                 <polyline points="9 18 15 12 9 6"></polyline>

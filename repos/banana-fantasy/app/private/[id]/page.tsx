@@ -16,6 +16,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -42,6 +43,7 @@ function shortHash(h: string) {
 }
 
 export default function PrivateLeaguePage() {
+  const { copy: slowClock } = useSlowClock();
   const params = useParams<{ id: string }>();
   const privateId = String(params?.id ?? '').toLowerCase();
 
@@ -206,7 +208,7 @@ export default function PrivateLeaguePage() {
 
   // ——— Unlocked ———
   const laneLabel = (lane: 'fast' | 'slow') =>
-    lane === 'slow' ? 'Slow draft · 8h per pick' : 'Fast draft · 30s per pick · ~30 min';
+    lane === 'slow' ? `Slow draft · ${slowClock.compact} per pick` : 'Fast draft · 30s per pick · ~30 min';
 
   return (
     <main className="min-h-screen bg-[#0a0a0f] px-4 pt-10 pb-24">
@@ -216,7 +218,7 @@ export default function PrivateLeaguePage() {
           <p className="text-[#fbbf24] text-[11px] font-semibold tracking-[0.2em] uppercase mb-1">Private League</p>
           <h1 className="text-white text-3xl font-bold">{info?.name}</h1>
           <p className="text-white/40 text-sm mt-1">
-            {lanes.length > 1 ? 'Fast and slow drafts' : lanes[0] === 'slow' ? 'Slow drafts · 8h per pick' : 'Fast drafts · 30s per pick · ~30 min'} · 10 seats
+            {lanes.length > 1 ? 'Fast and slow drafts' : lanes[0] === 'slow' ? `Slow drafts · ${slowClock.compact} per pick` : 'Fast drafts · 30s per pick · ~30 min'} · 10 seats
             {info ? ` · ${info.draftsFilled} drafted` : ''}
           </p>
           {isCommissioner && (

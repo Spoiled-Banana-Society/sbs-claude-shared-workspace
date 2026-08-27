@@ -7,10 +7,12 @@
  * ContestDetailsBody (prize pool, breakdown, scoring, roster, odds).
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useWallets } from '@privy-io/react-auth';
-import { mockFAQSections } from '@/lib/faqContent';
+import { buildFAQSections } from '@/lib/faqContent';
+import { useSlowClock } from '@/contexts/SlowClockContext';
+import type { SlowClockCopy } from '@/lib/slowClock';
 import { ContestDetailsBody } from './ContestDetailsBody';
 import { DraftProofExplainerContent } from '@/components/drafting/DraftProofExplainerContent';
 import { ProofFeedLive } from '@/components/drafting/ProofFeedLive';
@@ -18,9 +20,9 @@ import type { Contest } from '@/types';
 
 type Tab = 'how' | 'contest' | 'faq' | 'vrf';
 
-const HOW = [
+const buildHow = (clock: SlowClockCopy) => [
   { t: '10 Players', d: 'Join a lobby — the draft starts instantly when 10 people join.' },
-  { t: 'Snake Draft', d: 'Fast (30s) or slow (8hr) picks — your choice.' },
+  { t: 'Snake Draft', d: `Fast (30s) or slow (${clock.short}) picks — your choice.` },
   { t: 'Team Positions', d: 'Draft “DAL WR1” and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.' },
   { t: 'Best Ball', d: 'No managing needed. Draft once, best scorers auto-selected weekly.' },
   { t: 'Regular Season (Weeks 1–14)', d: 'Points are CUMULATIVE — your team stacks points every week. The top 2 in your draft pod advance to the playoffs.' },
@@ -34,6 +36,9 @@ const TYPES: { word: string; pct: string; color: string; d: string }[] = [
 ];
 
 export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
+  const { copy: slowClock } = useSlowClock();
+  const HOW = useMemo(() => buildHow(slowClock), [slowClock]);
+  const mockFAQSections = useMemo(() => buildFAQSections(slowClock), [slowClock]);
   const [tab, setTab] = useState<Tab>('contest');
   // FAQ tab: which section card is expanded (one at a time, same as /faq).
   const [openFaqSection, setOpenFaqSection] = useState<string | null>(null);

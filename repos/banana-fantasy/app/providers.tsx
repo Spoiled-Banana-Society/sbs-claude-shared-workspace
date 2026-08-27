@@ -29,6 +29,7 @@ import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
 import { NyDepositAutoRecovery } from '@/components/NyDepositAutoRecovery';
+import { SlowClockProvider } from '@/contexts/SlowClockContext';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -225,8 +226,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <QueryProvider>
             <ToastProvider>
               <ClaimCelebrationProvider>
-                <OneSignalInit />
-                <AppContent>{children}</AppContent>
+                <SlowClockProvider>
+                  <OneSignalInit />
+                  <AppContent>{children}</AppContent>
+                </SlowClockProvider>
               </ClaimCelebrationProvider>
             </ToastProvider>
           </QueryProvider>

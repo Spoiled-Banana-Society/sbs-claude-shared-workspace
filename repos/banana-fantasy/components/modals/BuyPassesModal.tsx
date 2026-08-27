@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -67,6 +68,7 @@ export function BuyPassesModal({
   onClose,
   onPurchaseComplete,
 }: BuyPassesModalProps) {
+  const { copy: slowClock } = useSlowClock();
   const _router = useRouter();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
   const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
@@ -1433,7 +1435,7 @@ export function BuyPassesModal({
                   <div>
                     <h3 className="text-lg font-bold text-white">🔒 Enter {pickSpeedPrivateLeague.name}</h3>
                     <p className="text-banana text-sm font-medium">
-                      Your private league · {pickSpeedPrivateLeague.draftType === 'slow' ? '8 hours per pick' : '30 seconds per pick'}
+                      Your private league · {pickSpeedPrivateLeague.draftType === 'slow' ? slowClock.perPick : '30 seconds per pick'}
                     </p>
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-banana transition-colors">
@@ -1470,7 +1472,7 @@ export function BuyPassesModal({
                 <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft</h3>
-                    <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                    <p className="text-blue-400 text-sm font-medium">{slowClock.perPick}</p>
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
                     <polyline points="9 18 15 12 9 6"></polyline>

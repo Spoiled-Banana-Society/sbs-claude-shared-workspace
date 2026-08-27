@@ -4,13 +4,16 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useWallets } from '@privy-io/react-auth';
 import { Card } from '@/components/ui/Card';
-import { mockFAQSections } from '@/lib/faqContent';
+import { buildFAQSections } from '@/lib/faqContent';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 
 // Same destinations the profile dropdown uses for X / Discord / chat.
 const SBS_X_URL = 'https://x.com/SBSFantasy';
 const SBS_DISCORD_URL = 'https://discord.gg/4q4ZgXuMN4';
 
 export default function FAQPage() {
+  const { copy: slowClock } = useSlowClock();
+  const faqSections = React.useMemo(() => buildFAQSections(slowClock), [slowClock]);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -20,10 +23,12 @@ export default function FAQPage() {
     if (typeof window === 'undefined') return;
     const hash = window.location.hash.replace('#', '');
     if (!hash) return;
-    if (mockFAQSections.some((sec) => sec.id === hash)) {
+    if (faqSections.some((sec) => sec.id === hash)) {
       setExpandedSection(hash);
       setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
     }
+    // Section ids never change with the clock copy — mount-only on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Confirmed web2 user = signed in with an embedded (Privy) wallet and NO
@@ -38,7 +43,7 @@ export default function FAQPage() {
   // plain-language content. 'all' / untagged is always shown. Sections that end
   // up empty after filtering their items are dropped.
   const hideAudience = isWeb2 ? 'web3' : 'web2';
-  const visibleSections = mockFAQSections
+  const visibleSections = faqSections
     .filter((section) => section.audience !== hideAudience)
     .map((section) => ({ ...section, items: section.items.filter((item) => item.audience !== hideAudience) }))
     .filter((section) => section.items.length > 0);

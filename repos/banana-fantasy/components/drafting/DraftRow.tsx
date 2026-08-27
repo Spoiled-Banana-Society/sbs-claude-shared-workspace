@@ -9,6 +9,7 @@ import { getDraftTypeColor } from '@/lib/draftTypes';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { useIsFounderDraft } from '@/hooks/useIsFounderDraft';
 import { slowDraftActiveSecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import type { DraftState } from '@/lib/draftStore';
 import { BonusPendingGlyph } from '@/components/bonusZone/BonusZoneUI';
 
@@ -41,6 +42,7 @@ export function DraftRow({
   formatRelativeTime,
   formatCountdown,
 }: DraftRowProps) {
+  const { copy: slowClock } = useSlowClock();
   const resolvedType = draft.type || draft.draftType || draft.specialType || null;
   const isRevealed = resolvedType !== null;
   const isFounder = useIsFounderDraft(draft.id);
@@ -170,14 +172,14 @@ export function DraftRow({
             // Overnight pause (10pm–5am PT): the whole slow draft is frozen, so
             // show the pause state on EVERY in-progress slow row (not just when
             // it's your turn). The status column still shows your time / picks away.
-            <span className="text-banana/80 text-[10px] sm:text-xs font-medium whitespace-nowrap" title="Slow-draft clock pauses 10pm–5am PT — resumes 5am PT">
+            <span className="text-banana/80 text-[10px] sm:text-xs font-medium whitespace-nowrap" title={`Slow-draft clock pauses ${slowClock.pauseWindowLabel} — resumes ${slowClock.pauseEndLabel} PT`}>
               <span className="sm:hidden">⏸</span>
               <span className="hidden sm:inline">⏸ Paused</span>
             </span>
           ) : (
             <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
-              <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
-              <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
+              <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : slowClock.compact}</span>
+              <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : slowClock.word}</span>
             </span>
           )}
         </div>
@@ -304,18 +306,24 @@ export function DraftRow({
               // (the pause state shows in the speed column). For slow,
               // slowDraftActiveSecondsUntil returns the active budget, which
               // doesn't tick down while paused — so the clock simply freezes.
-              const remaining = draft.pickEndTimestamp
+              const rawRemaining = draft.pickEndTimestamp
                 ? (isSlow
                     ? slowDraftActiveSecondsUntil(nowSec, draft.pickEndTimestamp)
                     : Math.max(0, draft.pickEndTimestamp - nowSec))
                 : (draft.timeRemaining ?? 30);
-              const expectedPickLength = isSlow ? 28800 : 30;
+              const expectedPickLength = isSlow ? slowClock.pickLengthSec : 30;
+              // Fresh-clock-after-pause: a pick armed before 10pm legitimately
+              // carries up to (pre-pause minutes + a FULL clock) of active time.
+              // Display it capped at the clock (same as the in-room timer) and
+              // widen the "unconfirmed" bound so it doesn't read as Syncing….
+              const slackForFresh = isSlow && slowClock.freshClockAfterPause ? expectedPickLength : 0;
+              const remaining = isSlow ? Math.min(rawRemaining, expectedPickLength) : rawRemaining;
               // Fast: a value within 5% of full is almost certainly a pre-sync
               // default → brief placeholder. Slow: an 8h pick legitimately sits
               // near-full for ~24min, so 5% would falsely read "Syncing…"; only
               // a value ABOVE the max pick length (raw/unsynced) is unconfirmed.
               const looksUnconfirmed = isSlow
-                ? remaining > expectedPickLength + 2
+                ? rawRemaining > expectedPickLength + slackForFresh + 2
                 : remaining > expectedPickLength * 0.95;
               if (looksUnconfirmed) {
                 return <span className="text-white/30 text-[11px] sm:text-sm">Syncing…</span>;

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
 import { DraftRoomChat } from '@/components/drafting/DraftRoomChat';
@@ -103,6 +104,7 @@ export function DraftRoomDrafting({
   usersMap,
   contestName,
 }: DraftRoomDraftingProps) {
+  const { copy: slowClock } = useSlowClock();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
   // Driven entirely by DraftRoomChat (which is always mounted + polling); reset
@@ -161,7 +163,7 @@ export function DraftRoomDrafting({
 
   // The top banner is position:fixed, so the page must reserve its height —
   // but the banner's height is content-driven: the slow-draft overnight pause
-  // adds a "⏸ Paused · 5am PT" line to the on-clock card, which pushed the
+  // adds a "⏸ Paused · {slowClock.pauseEndLabel} PT" line to the on-clock card, which pushed the
   // banner past the old hardcoded 290px and clipped the DRAFT/QUEUE/… tab bar
   // every night 10pm–5am PT (ticket-2661, 2026-07-18). So measure the real
   // rendered height and reserve exactly that; the hardcoded values remain only
@@ -380,7 +382,7 @@ export function DraftRoomDrafting({
                               {formatTime(bestTimeRemaining)}
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
-                              ⏸ Paused · 5am PT
+                              ⏸ Paused · {slowClock.pauseEndLabel} PT
                             </div>
                           </div>
                         ) : (
@@ -477,11 +479,11 @@ export function DraftRoomDrafting({
             {isSlowDraft && (
               isSlowDraftPaused ? (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
-                  ⏸ Clock paused until 5am PT — you can still make picks
+                  ⏸ Clock paused until {slowClock.pauseEndLabel} PT — you can still make picks
                 </div>
               ) : (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
-                  Clock pauses daily 10pm–5am PT · you can still make picks
+                  Clock pauses daily {slowClock.pauseWindowLabel} · you can still make picks
                 </div>
               )
             )}

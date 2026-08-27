@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import { Tooltip } from '../ui/Tooltip';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { CompletedDraft } from '@/types';
@@ -11,6 +12,7 @@ interface CompletedDraftsProps {
 }
 
 export function CompletedDrafts({ drafts, onViewDetails }: CompletedDraftsProps) {
+  const { copy: slowClock } = useSlowClock();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const formatCurrency = (amount: number) => {
@@ -104,13 +106,13 @@ export function CompletedDrafts({ drafts, onViewDetails }: CompletedDraftsProps)
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-white font-medium">{draft.contestName}</span>
-                  <Tooltip content={draft.draftSpeed === 'fast' ? '30 seconds per pick' : '8 hours per pick'}>
+                  <Tooltip content={draft.draftSpeed === 'fast' ? '30 seconds per pick' : slowClock.perPick}>
                     <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70">
                       <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                       </svg>
-                      {draft.draftSpeed === 'fast' ? '30s' : '8hr'}
+                      {draft.draftSpeed === 'fast' ? '30s' : slowClock.short}
                     </span>
                   </Tooltip>
                   {draft.type === 'jackpot' && (

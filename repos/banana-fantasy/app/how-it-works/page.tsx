@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
+import type { SlowClockCopy } from '@/lib/slowClock';
 import Link from 'next/link';
 import { motion, useInView } from 'framer-motion';
 
@@ -24,7 +26,7 @@ function Reveal({ children, className, delay = 0 }: { children: React.ReactNode;
 
 /* ────────── Data ────────── */
 
-const STEPS = [
+const buildSteps = (clock: SlowClockCopy) => [
   {
     num: '01',
     icon: '🎟️',
@@ -37,7 +39,7 @@ const STEPS = [
     num: '02',
     icon: '🏈',
     title: 'Draft Your Team',
-    desc: '10-player snake draft against 9 opponents. Pick QBs, RBs, WRs, and TEs. Fast drafts (30s) or slow drafts (8hr picks) — your call.',
+    desc: `10-player snake draft against 9 opponents. Pick QBs, RBs, WRs, and TEs. Fast drafts (30s) or slow drafts (${clock.short} picks) — your call.`,
     color: 'from-green-500/20 to-green-600/5',
     border: 'border-green-500/30',
   },
@@ -69,7 +71,7 @@ const COMPARISON = [
   { feature: 'Prize pools', trad: 'League pot', bb: 'League + Jackpot + HOF' },
 ];
 
-const FAQS = [
+const buildFaqs = (clock: SlowClockCopy) => [
   {
     q: 'What is Best Ball?',
     a: 'Best Ball is a fantasy format where your highest-scoring players are automatically selected each week. You draft a team and never touch your lineup again — the optimal lineup is calculated for you.',
@@ -80,7 +82,7 @@ const FAQS = [
   },
   {
     q: 'What are Fast vs Slow drafts?',
-    a: 'Fast drafts have a 30-second pick timer — the whole draft finishes in about 30 minutes. Slow drafts give you 8 hours per pick, so you can draft on your own schedule over a few days.',
+    a: 'Fast drafts have a 30-second pick timer — the whole draft finishes in about 30 minutes. Slow drafts give you ' + clock.long + ' per pick, so you can draft on your own schedule over a few days.' + clock.shorteningNote,
   },
   {
     q: 'How do I get a Jackpot or HOF draft? (Two ways)',
@@ -140,6 +142,9 @@ const PRIZES = [
 /* ────────── Component ────────── */
 
 export default function HowItWorksPage() {
+  const { copy: slowClock } = useSlowClock();
+  const STEPS = useMemo(() => buildSteps(slowClock), [slowClock]);
+  const FAQS = useMemo(() => buildFaqs(slowClock), [slowClock]);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (

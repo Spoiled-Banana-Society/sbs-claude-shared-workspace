@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import dynamic from 'next/dynamic';
 
 const BananaWheel = dynamic(() => import('@/components/wheel/BananaWheel').then(m => ({ default: m.BananaWheel })), {
@@ -26,6 +27,10 @@ import { SPIN_DURATION_MS } from '@/components/wheel/BananaWheel';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function BananaWheelPage() {
+  const { copy: slowClock } = useSlowClock();
+  // Read inside effects/closures without adding the copy to their deps.
+  const slowClockRef = React.useRef(slowClock);
+  slowClockRef.current = slowClock;
   const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil, freezeSpinReveal } = useAuth();
   const spinMutation = useSpin(user?.id);
   const queryClient = useQueryClient();
@@ -65,10 +70,10 @@ export default function BananaWheelPage() {
         type: kind === 'jackpot' ? 'jackpot_queue' : kind === 'hof' ? 'hof_queue' : 'jackhof_queue',
         title: `You won a ${label} Draft (from the Wheel)!`,
         message: (remaining === null
-          ? `You're in a ${label}-only lobby. It drafts as soon as 10 wheel winners are in (Slow Draft, 8 hrs/pick).`
+          ? `You're in a ${label}-only lobby. It drafts as soon as 10 wheel winners are in (Slow Draft, ${slowClockRef.current.hrsPick}).`
           : remaining === 0
-            ? `Your ${label} lobby is full (10/10) — your draft is starting now! (Slow Draft, 8 hrs/pick).`
-            : `You're in a ${label}-only lobby (${count}/10) — ${remaining} more wheel winner${remaining === 1 ? '' : 's'} to go, then you draft (Slow Draft, 8 hrs/pick).`)
+            ? `Your ${label} lobby is full (10/10) — your draft is starting now! (Slow Draft, ${slowClockRef.current.hrsPick}).`
+            : `You're in a ${label}-only lobby (${count}/10) — ${remaining} more wheel winner${remaining === 1 ? '' : 's'} to go, then you draft (Slow Draft, ${slowClockRef.current.hrsPick}).`)
           + (kind === 'jackpot' ? ' Win your league → skip to the Finals.' : kind === 'hof' ? ' Win your league → enter the HOF playoffs.' : ' Win your league → skip to the Finals AND enter the HOF playoffs.'),
         link: '/drafting',
         ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
@@ -83,7 +88,7 @@ export default function BananaWheelPage() {
         pushNotification({
           type: kind === 'jackpot' ? 'jackpot_queue' : kind === 'hof' ? 'hof_queue' : 'jackhof_queue',
           title: 'Make sure your Draft Alerts are on',
-          message: `Your ${label} Draft (from the Wheel) is a slow draft (8 hrs/pick) — turn on Draft Alerts so you don't miss the start or a pick.`,
+          message: `Your ${label} Draft (from the Wheel) is a slow draft (${slowClockRef.current.hrsPick}) — turn on Draft Alerts so you don't miss the start or a pick.`,
           link: '/profile?tab=notifications',
           icon: '🔔',
           ...(spinId ? { dedupeKey: `spin-alerts-${spinId}` } : {}),
@@ -569,7 +574,7 @@ export default function BananaWheelPage() {
                   Land on Jackpot and you&apos;re placed into a Jackpot draft lobby. Draft starts when 10 wheel winners join. Win that league and skip straight to the finals.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
+                  Slow draft ({slowClock.compact} per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>
@@ -578,7 +583,7 @@ export default function BananaWheelPage() {
                   Land on HOF and you&apos;re placed into a HOF draft lobby. Draft starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
+                  Slow draft ({slowClock.compact} per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>
@@ -587,7 +592,7 @@ export default function BananaWheelPage() {
                   The 0.1% wedge — the rarest prize on the wheel. Land it and you&apos;re placed into a JackHOF draft lobby with BOTH perks: win that league and you skip straight to the finals AND compete for HOF bonus prizes.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
+                  Slow draft ({slowClock.compact} per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
               <div>

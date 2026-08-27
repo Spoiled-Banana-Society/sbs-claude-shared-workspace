@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { DraftRoom } from '@/types';
@@ -12,6 +13,7 @@ interface LeagueTableProps {
 }
 
 export function LeagueTable({ rooms, onEnter, onBuyDrafts }: LeagueTableProps) {
+  const { copy: slowClock } = useSlowClock();
   const [timers, setTimers] = useState<{ [roomId: string]: number }>({});
 
   useEffect(() => {
@@ -131,13 +133,13 @@ export function LeagueTable({ rooms, onEnter, onBuyDrafts }: LeagueTableProps) {
               {/* Draft Name + Speed Badge */}
               <div className="flex items-center gap-3">
                 <span className="text-white font-medium">{room.contestName}</span>
-                <Tooltip content={room.draftSpeed === 'fast' ? '30 seconds per pick' : '8 hours per pick'}>
+                <Tooltip content={room.draftSpeed === 'fast' ? '30 seconds per pick' : slowClock.perPick}>
                   <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70">
                     <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="10"/>
                       <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                    {room.draftSpeed === 'fast' ? '30s' : '8hr'}
+                    {room.draftSpeed === 'fast' ? '30s' : slowClock.short}
                   </span>
                 </Tooltip>
               </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
 import { SPIN_ON_PURCHASE_UI_ENABLED } from '@/lib/spinTypes';
 import { firstPurchaseEntryLine } from '@/lib/firstPurchaseCopy';
@@ -66,6 +67,7 @@ export function EntryFlowModal({
   balanceError = null,
   onAddFunds,
 }: EntryFlowModalProps) {
+  const { copy: slowClock } = useSlowClock();
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | 'balance' | null>(null);
   // Private-league routing (ticket-2681): when the user has unlocked a private
@@ -219,7 +221,7 @@ export function EntryFlowModal({
                     🔒 Joining <span className="text-[#fbbf24]">{privLeague.name}</span> — your private league
                   </p>
                   <p className="text-white/50 text-xs mt-0.5">
-                    {privLeague.draftType === 'slow' ? 'Slow draft · 8h per pick' : privLeague.draftType === 'both' ? 'Fast or slow · you pick next' : 'Fast draft · 30s per pick'} · paid or free Draft Pass
+                    {privLeague.draftType === 'slow' ? `Slow draft · ${slowClock.compact} per pick` : privLeague.draftType === 'both' ? 'Fast or slow · you pick next' : 'Fast draft · 30s per pick'} · paid or free Draft Pass
                   </p>
                   <button
                     onClick={() => { if (!isSubmitting) setJoinPublic(true); }}
@@ -393,7 +395,7 @@ export function EntryFlowModal({
                 <div className="flex w-full items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-white">Slow Draft{payingWithBalance ? ` · $${ENTRY_PRICE_USD}` : ''}</h3>
-                    <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                    <p className="text-blue-400 text-sm font-medium">{slowClock.perPick}</p>
                     {!privateMode && <LobbyFillBar fill={nextLobby.slow} className="mt-2" />}
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
