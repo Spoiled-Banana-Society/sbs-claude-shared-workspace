@@ -110,6 +110,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Base.dev app verification (dashboard.base.org) */}
+        <meta name="base:app_id" content="6a90abade727f5ee4f5f4a9f" />
         {/* Preload critical font to avoid render-blocking */}
         <link
           rel="preload"
