@@ -9,9 +9,12 @@ future matches need no deploy on either side.
 { enabled: false,               // ← green light. false = EXACT legacy behaviour everywhere
   pickLengthSec: 14400,         // 4h. Change to match UD (7200, 3600 …). Max 17h (one active window)
   freshClockAfterPause: true,   // pick that straddles 22:00 PT restarts with a FULL clock at 05:00 PT
-  startsAtIso: '2026-08-27T12:00:00Z' }  // optional gate: reads as OFF until this instant (5am PT Aug 27)
+  pauseEndHour: 7,              // overnight pause now 22:00–07:00 PT (legacy 5). Config-driven on both sides.
+  startsAtIso: '2026-08-27T05:00:00Z' }  // optional gate: reads as OFF until this instant (10pm PT Aug 26)
 ```
-**ARMED 8/26 evening: enabled=true + startsAtIso=2026-08-27T12:00:00Z → goes live 5am PT Thu Aug 27 on its own.**
+**ARMED 8/26 evening: enabled=true + startsAtIso=2026-08-27T05:00:00Z → live from 10pm PT Wed Aug 26 (start of the pause), so the morning of Thu Aug 27 is fully on the new rule. Bell already sent to 1,088 users.**
+
+Heads-up on tonight only: picks armed BEFORE 10pm keep their legacy PickEndTime (carry-over from 5am), so a few autopick tasks may fire between 5am and 7am tomorrow while the UI says "paused until 7am". One-night edge; picks armed after 10pm end no earlier than 11am.
 Toggle: `node scripts/_slow-clock-toggle.mjs [--on|--off|--hours 2|--minutes 60|--fresh on|off]` (Next repo).
 Both sides cache the doc 60s, so a flip lands within a minute.
 

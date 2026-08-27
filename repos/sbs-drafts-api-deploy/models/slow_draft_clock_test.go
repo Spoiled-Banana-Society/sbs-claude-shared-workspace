@@ -55,13 +55,13 @@ func TestSlowDraftPickEndUnix_Fresh_9PMRestartsFullAt5AM(t *testing.T) {
 	// 9pm PT + 4h fresh: 1h burns (21→22), then a FULL 4h from 05:00 → 9am.
 	start := time.Date(2026, 8, 26, 21, 0, 0, 0, pacific).Unix()
 	want := time.Date(2026, 8, 27, 9, 0, 0, 0, pacific).Unix()
-	got := slowDraftPickEndUnixOpts(start, 4*3600, true)
+	got := slowDraftPickEndUnixOpts(start, 4*3600, true, 5)
 	if got != want {
 		t.Fatalf("fresh = %s, want %s", time.Unix(got, 0).In(pacific).Format(time.RFC3339), time.Unix(want, 0).In(pacific).Format(time.RFC3339))
 	}
 	// Legacy carry-over for the same input: 1h + 3h → 8am.
 	wantLegacy := time.Date(2026, 8, 27, 8, 0, 0, 0, pacific).Unix()
-	if got := slowDraftPickEndUnixOpts(start, 4*3600, false); got != wantLegacy {
+	if got := slowDraftPickEndUnixOpts(start, 4*3600, false, 5); got != wantLegacy {
 		t.Fatalf("legacy = %s, want %s", time.Unix(got, 0).In(pacific).Format(time.RFC3339), time.Unix(wantLegacy, 0).In(pacific).Format(time.RFC3339))
 	}
 }
@@ -70,10 +70,10 @@ func TestSlowDraftPickEndUnix_Fresh_NoStraddleUnchanged(t *testing.T) {
 	// 10am + 4h never touches the pause → identical either way.
 	start := time.Date(2026, 8, 26, 10, 0, 0, 0, pacific).Unix()
 	want := time.Date(2026, 8, 26, 14, 0, 0, 0, pacific).Unix()
-	if got := slowDraftPickEndUnixOpts(start, 4*3600, true); got != want {
+	if got := slowDraftPickEndUnixOpts(start, 4*3600, true, 5); got != want {
 		t.Fatalf("fresh no-straddle = %d, want %d", got, want)
 	}
-	if got := slowDraftPickEndUnixOpts(start, 4*3600, false); got != want {
+	if got := slowDraftPickEndUnixOpts(start, 4*3600, false, 5); got != want {
 		t.Fatalf("legacy no-straddle = %d, want %d", got, want)
 	}
 }
@@ -82,7 +82,7 @@ func TestSlowDraftPickEndUnix_Fresh_DuringPauseStartsFullAt5AM(t *testing.T) {
 	// 2am PT: clock hasn't started; both modes → 05:00 + 4h = 9am.
 	start := time.Date(2026, 8, 27, 2, 0, 0, 0, pacific).Unix()
 	want := time.Date(2026, 8, 27, 9, 0, 0, 0, pacific).Unix()
-	if got := slowDraftPickEndUnixOpts(start, 4*3600, true); got != want {
+	if got := slowDraftPickEndUnixOpts(start, 4*3600, true, 5); got != want {
 		t.Fatalf("fresh in-pause = %d, want %d", got, want)
 	}
 }
@@ -90,8 +90,8 @@ func TestSlowDraftPickEndUnix_Fresh_DuringPauseStartsFullAt5AM(t *testing.T) {
 func TestSlowDraftPickEndUnix_Fresh_TooLongFallsBackToCarryOver(t *testing.T) {
 	// 18h can never fit one active window; fresh must degrade to carry-over, not loop forever.
 	start := time.Date(2026, 8, 26, 6, 0, 0, 0, pacific).Unix()
-	got := slowDraftPickEndUnixOpts(start, 18*3600, true)
-	want := slowDraftPickEndUnixOpts(start, 18*3600, false)
+	got := slowDraftPickEndUnixOpts(start, 18*3600, true, 5)
+	want := slowDraftPickEndUnixOpts(start, 18*3600, false, 5)
 	if got != want {
 		t.Fatalf("fresh too-long = %d, want carry-over %d", got, want)
 	}
@@ -127,5 +127,32 @@ func TestSlowDraftClockConfig_StartsAtGate(t *testing.T) {
 	}
 	if (SlowDraftClockConfig{Enabled: false, StartsAtIso: "2020-01-01T00:00:00Z"}).active(now) {
 		t.Fatal("disabled stays off")
+	}
+}
+
+func TestSlowDraftPickEndUnix_PauseEnds7AM(t *testing.T) {
+	// 9pm + 4h fresh, pause 22:00–07:00 → 07:00 + 4h = 11am.
+	start := time.Date(2026, 8, 26, 21, 0, 0, 0, pacific).Unix()
+	want := time.Date(2026, 8, 27, 11, 0, 0, 0, pacific).Unix()
+	if got := slowDraftPickEndUnixOpts(start, 4*3600, true, 7); got != want {
+		t.Fatalf("7am fresh = %s, want %s", time.Unix(got, 0).In(pacific).Format(time.RFC3339), time.Unix(want, 0).In(pacific).Format(time.RFC3339))
+	}
+	// 6am is still paused with a 7am end → clock starts 07:00 → 11am.
+	start6 := time.Date(2026, 8, 27, 6, 0, 0, 0, pacific).Unix()
+	if got := slowDraftPickEndUnixOpts(start6, 4*3600, true, 7); got != want {
+		t.Fatalf("6am start with 7am pause end = %d, want %d", got, want)
+	}
+	if !slowDraftInNightPauseAt(time.Date(2026, 8, 27, 6, 30, 0, 0, pacific), 7) {
+		t.Fatal("06:30 must be paused when pause ends at 7")
+	}
+	if slowDraftInNightPauseAt(time.Date(2026, 8, 27, 6, 30, 0, 0, pacific), 5) {
+		t.Fatal("06:30 must be active on legacy 5am")
+	}
+	// Elapsed across the pause with 7am end: 9pm→noon = 1h + 5h.
+	if got := slowDraftEffectiveElapsedSecondsAt(start, time.Date(2026, 8, 27, 12, 0, 0, 0, pacific).Unix(), 7); got != 6*3600 {
+		t.Fatalf("elapsed = %d, want %d", got, 6*3600)
+	}
+	if SlowDraftPauseEndHour() != 5 {
+		t.Fatal("no config → legacy 5am")
 	}
 }

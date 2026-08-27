@@ -32,12 +32,9 @@ import (
 
 const (
 	slowDraftLegacyPickLengthSec int64 = 8 * 3600
+	slowDraftLegacyPauseEndHour        = 5
 	slowDraftClockConfigDoc            = "slowDraftClock"
 	slowDraftClockConfigTTL            = 60 * time.Second
-	// Longest pick that can still finish inside one 05:00–22:00 active window.
-	// The fresh-clock rule is only meaningful below this; above it the pick
-	// could never end and we fall back to carry-over.
-	slowDraftActiveWindowSec int64 = 17 * 3600
 )
 
 type SlowDraftClockConfig struct {
@@ -48,6 +45,9 @@ type SlowDraftClockConfig struct {
 	// as OFF even if Enabled — lets Richard arm it today for "5am PT tomorrow"
 	// without anything having to wake up and flip it.
 	StartsAtIso string `firestore:"startsAtIso"`
+	// Hour (PT, 0–21) the overnight pause ends. 0/unset = legacy 05:00.
+	// Richard 2026-08-26: 7 (pause 22:00–07:00).
+	PauseEndHour int `firestore:"pauseEndHour"`
 }
 
 // active reports whether the switch is in force right now (Enabled AND past
@@ -105,8 +105,8 @@ func LoadSlowDraftClockConfig() SlowDraftClockConfig {
 		return slowClockCfgCached
 	}
 	if slowClockCfgCached != cfg {
-		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v startsAt=%q active=%v\n",
-			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause, cfg.StartsAtIso, cfg.active(time.Now()))
+		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v pauseEndHour=%d startsAt=%q active=%v\n",
+			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause, cfg.PauseEndHour, cfg.StartsAtIso, cfg.active(time.Now()))
 	}
 	slowClockCfgCached = cfg
 	slowClockCfgLoaded = true
@@ -134,4 +134,14 @@ func SlowDraftEffectivePickLength(stored int64) int64 {
 func SlowDraftFreshClockAfterPause() bool {
 	cfg := LoadSlowDraftClockConfig()
 	return cfg.active(time.Now()) && cfg.FreshClockAfterPause
+}
+
+// SlowDraftPauseEndHour is the PT hour the overnight pause ends right now:
+// the configured pauseEndHour while the switch is active, else legacy 05.
+func SlowDraftPauseEndHour() int {
+	cfg := LoadSlowDraftClockConfig()
+	if cfg.active(time.Now()) && cfg.PauseEndHour > 0 && cfg.PauseEndHour < slowDraftPauseStartHour {
+		return cfg.PauseEndHour
+	}
+	return slowDraftLegacyPauseEndHour
 }
