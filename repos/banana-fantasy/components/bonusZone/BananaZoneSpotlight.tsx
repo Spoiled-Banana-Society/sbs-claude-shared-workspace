@@ -142,7 +142,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
           {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it
               reads as the prize world, not this promo's mechanics */}
           <p className="hidden min-[560px]:block mt-1.5 text-[13.5px] leading-[1.5] font-semibold whitespace-nowrap text-[#ffa94d] font-bold [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
-            JackHOF — win the league and go straight to the Finals, plus you compete for added prizes.
+            JackHOF — league winner goes to the Finals + competes for added prizes.
           </p>
           <div className="mt-2.5 max-w-[470px] hidden min-[560px]:block">
             {rows.map((r) => (

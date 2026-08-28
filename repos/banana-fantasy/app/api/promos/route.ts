@@ -338,8 +338,8 @@ export async function GET(req: Request) {
             promos[bzIdx].modalContent.explanation = zp.explanation;
             const totalSeats = zp.bands.reduce((n, b) => n + b.seats, 0);
             promos[bzIdx].description = zp.instant
-              ? `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and Packs you open the moment your draft fills, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`
-              : `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — win the league and go straight to the Finals, plus you compete for added prizes.`;
+              ? `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and Packs you open the moment your draft fills, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — league winner goes to the Finals + competes for added prizes.`
+              : `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and sealed Packs, with ${totalSeats} JackHOF seats hidden inside the Packs.\nJackHOF — league winner goes to the Finals + competes for added prizes.`;
           }
           promos[bzIdx].modalContent.bonusZone = {
             ...(zp ? { packBands: zp.bands, packsInstant: zp.instant } : {}),
