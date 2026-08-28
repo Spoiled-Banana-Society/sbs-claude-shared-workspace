@@ -14,39 +14,51 @@ import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivitySt
 import { TYPE_COLOR, typeLabelFor, relativeTime } from '@/components/admin/LiveActivity';
 import { bananaPlaceholderName } from '@/utils/helpers';
 
-const MAX_ROWS = 5;
+const MAX_ROWS = 10;
 
-/** One short detail string per event — the one fact you'd want at a glance. */
-function detailFor(e: LiveActivityEvent): string {
+/** Per-event detail, split so REAL MONEY renders loud (banana, bold) and the
+ *  rest stays quiet gray. Everything here comes off the event doc already in
+ *  the stream — richer rows cost zero extra reads (Boris 2026-08-28). */
+function detailFor(e: LiveActivityEvent): { money: string | null; text: string } {
   const m = e.metadata ?? {};
   switch (e.type) {
     case 'pass_purchased': {
       const total = Number(m.totalPrice);
-      const money = total > 0 ? `$${total.toFixed(0)} · ` : '';
-      return `${money}${e.quantity} pass${e.quantity === 1 ? '' : 'es'} · ${e.paymentMethod === 'card' ? 'card' : 'USDC'}`;
+      return {
+        money: total > 0 ? `$${total.toFixed(0)}` : null,
+        text: `${e.quantity} pass${e.quantity === 1 ? '' : 'es'} · ${e.paymentMethod === 'card' ? 'card' : 'USDC'}`,
+      };
     }
     case 'deposit_completed':
-      return typeof m.amountUsd === 'number' ? `$${(m.amountUsd as number).toFixed(2)} card` : 'card';
+      return {
+        money: typeof m.amountUsd === 'number' ? `$${(m.amountUsd as number).toFixed(2)}` : null,
+        text: 'deposit · card',
+      };
     case 'pass_granted':
-      return `${e.quantity} pass${e.quantity === 1 ? '' : 'es'}`;
+      return { money: null, text: `${e.quantity} pass${e.quantity === 1 ? '' : 'es'} granted` };
     case 'spin_won': {
       const prize = String(m.prizeLabel ?? m.prizeType ?? m.prize ?? '');
-      return prize || '';
+      const val = Number(m.prizeValue ?? m.amount);
+      return { money: null, text: [prize, val > 1 ? `×${val}` : ''].filter(Boolean).join(' ') };
+    }
+    case 'user_signed_up': {
+      const how = String(m.loginMethod ?? e.walletType ?? '');
+      return { money: null, text: how ? `via ${how}` : '' };
     }
     case 'draft_entered':
     case 'draft_filled':
     case 'draft_left': {
       const pass = m.passType ? String(m.passType) : '';
       const league = m.leagueId ? String(m.leagueId) : '';
-      return [pass, league].filter(Boolean).join(' · ');
+      return { money: null, text: [pass, league].filter(Boolean).join(' · ') };
     }
     case 'marketplace_sold':
     case 'marketplace_bought': {
       const price = Number(m.priceUsd ?? m.price);
-      return price > 0 ? `$${price.toFixed(0)}` : '';
+      return { money: price > 0 ? `$${price.toFixed(0)}` : null, text: '' };
     }
     default:
-      return '';
+      return { money: null, text: '' };
   }
 }
 
@@ -89,7 +101,8 @@ export function LiveActivityMini({ enabled }: { enabled: boolean }) {
                   >
                     {name}
                   </Link>
-                  {detail && <span className="truncate text-gray-500 hidden sm:inline">{detail}</span>}
+                  {detail.money && <span className="shrink-0 text-banana font-bold tabular-nums">{detail.money}</span>}
+                  {detail.text && <span className="truncate text-gray-500">{detail.text}</span>}
                 </span>
               </li>
             );
