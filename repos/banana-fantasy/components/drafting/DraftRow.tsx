@@ -8,7 +8,7 @@ import { FounderTag } from '@/components/drafting/FounderTag';
 import { getDraftTypeColor } from '@/lib/draftTypes';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { useIsFounderDraft } from '@/hooks/useIsFounderDraft';
-import { slowDraftActiveSecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
+import { slowDraftActiveSecondsUntil, slowDraftDisplaySecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import { useSlowClock } from '@/contexts/SlowClockContext';
 import type { DraftState } from '@/lib/draftStore';
 import { BonusPendingGlyph } from '@/components/bonusZone/BonusZoneUI';
@@ -314,10 +314,13 @@ export function DraftRow({
               const expectedPickLength = isSlow ? slowClock.pickLengthSec : 30;
               // Fresh-clock-after-pause: a pick armed before 10pm legitimately
               // carries up to (pre-pause minutes + a FULL clock) of active time.
-              // Display it capped at the clock (same as the in-room timer) and
-              // widen the "unconfirmed" bound so it doesn't read as Syncing….
+              // Show the same thing as the in-room timer (counts down to the
+              // pause tonight, full clock after) and widen the "unconfirmed"
+              // bound so it doesn't read as Syncing….
               const slackForFresh = isSlow && slowClock.freshClockAfterPause ? expectedPickLength : 0;
-              const remaining = isSlow ? Math.min(rawRemaining, expectedPickLength) : rawRemaining;
+              const remaining = isSlow && draft.pickEndTimestamp
+                ? slowDraftDisplaySecondsUntil(nowSec, draft.pickEndTimestamp, expectedPickLength)
+                : rawRemaining;
               // Fast: a value within 5% of full is almost certainly a pre-sync
               // default → brief placeholder. Slow: an 8h pick legitimately sits
               // near-full for ~24min, so 5% would falsely read "Syncing…"; only

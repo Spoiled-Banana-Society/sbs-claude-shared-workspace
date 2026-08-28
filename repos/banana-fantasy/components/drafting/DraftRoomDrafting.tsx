@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useSlowClock } from '@/contexts/SlowClockContext';
+import { slowDraftActiveSecondsUntil } from '@/utils/slowDraftClock';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
 import { DraftRoomChat } from '@/components/drafting/DraftRoomChat';
@@ -105,6 +106,12 @@ export function DraftRoomDrafting({
   contestName,
 }: DraftRoomDraftingProps) {
   const { copy: slowClock } = useSlowClock();
+  // Fresh-clock-after-pause pick: more than one full clock of active time
+  // ahead (tonight's remainder + a full clock at pauseEnd). The clock counts
+  // down to tonight's pause, so label what happens next and don't go red.
+  const freshClockAhead = isSlowDraft && slowClock.freshClockAfterPause && !isSlowDraftPaused
+    && engine.endOfTurnTimestamp > 0
+    && slowDraftActiveSecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp) > slowClock.pickLengthSec;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
   // Driven entirely by DraftRoomChat (which is always mounted + polling); reset
@@ -391,9 +398,14 @@ export function DraftRoomDrafting({
                             fontSize: '16px',
                             margin: '2px auto 0px auto',
                             textAlign: 'center',
-                            color: bestTimeRemaining > 10 ? '#fff' : 'red',
+                            color: bestTimeRemaining > 10 || freshClockAhead ? '#fff' : 'red',
                           }}>
                             {formatTime(bestTimeRemaining)}
+                            {freshClockAhead && (
+                              <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
+                                then a full {slowClock.compact} clock at {slowClock.pauseEndLabel} PT
+                              </div>
+                            )}
                           </div>
                         )
                       ) : (

@@ -194,3 +194,34 @@ export function isSlowDraftNightPause(nowUnixSec: number, pauseEndHour: number =
 export function slowDraftActiveSecondsUntil(nowUnixSec: number, pickEndUnixSec: number, pauseEndHour: number = defaultPauseEndHour): number {
   return slowDraftEffectiveElapsedSeconds(nowUnixSec, pickEndUnixSec, pauseEndHour);
 }
+
+/** Seconds from `nowUnixSec` until tonight's 22:00 PT pause starts; 0 while paused. */
+export function slowDraftSecondsUntilPause(nowUnixSec: number, pauseEndHour: number = defaultPauseEndHour): number {
+  const w = nyWallFromUnixSec(nowUnixSec);
+  if (inNightPause(w, pauseEndHour)) return 0;
+  return Math.max(0, unixAtNYWallClock(w.y, w.mon, w.d, PAUSE_START_HOUR, 0, 0) - nowUnixSec);
+}
+
+/**
+ * What a slow-draft clock should DISPLAY. Normally the active seconds left
+ * (ticks in active hours, frozen overnight). With the fresh-clock-after-pause
+ * rule a pick armed after (22:00 − pickLength) has MORE active time than one
+ * clock: tonight's remainder PLUS a full clock at pauseEnd. Capping that at
+ * pickLength (the pre-8/27 behavior) showed a flat "4:00:00" from ~6pm until
+ * 7am — every user read it as frozen (ticket-2661). Richard 8/27: "it should
+ * still count down." So while there is more than one clock ahead, count down
+ * to the pause (tonight's real remaining), then the full clock shows through
+ * the pause and ticks from pauseEnd. Never returns 0 before the pause: 0 flips
+ * canDraft off in the room for the final second, so the floor is 1.
+ */
+export function slowDraftDisplaySecondsUntil(
+  nowUnixSec: number,
+  pickEndUnixSec: number,
+  pickLengthSec: number,
+  pauseEndHour: number = defaultPauseEndHour
+): number {
+  const active = slowDraftActiveSecondsUntil(nowUnixSec, pickEndUnixSec, pauseEndHour);
+  if (!(pickLengthSec > 0) || active <= pickLengthSec) return active;
+  const toPause = slowDraftSecondsUntilPause(nowUnixSec, pauseEndHour);
+  return toPause > 0 ? Math.max(1, toPause) : pickLengthSec;
+}
