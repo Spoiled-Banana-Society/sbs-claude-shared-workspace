@@ -70,7 +70,7 @@ export async function GET(req: Request) {
 
   const sent = await createNotificationForWallets(wallets, {
     type: 'promo',
-    title: 'JackHOF Seats + Free Spins',
+    title: `${seats} JackHOF Seat${seats === 1 ? '' : 's'}`,
     message: `${seats} JackHOF seat${seats === 1 ? '' : 's'} in the next {N} Drafts\nBuy 2 Get 1 Spin for the next {N} Drafts\nBanana Zone Promo`,
     link: '/promos',
     dedupeKey: `zone-b2-${lane.windowStart}`,
