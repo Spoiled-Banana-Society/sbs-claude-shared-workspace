@@ -190,7 +190,10 @@ export function BatchProgressIndicator() {
     const jpLeft = laneDraftsLeft(rFilled, jpView.windowStart);
     // publish for dynamic bells — same numbers as the pills. zoneLeft floors
     // at 1 (Boris 2026-08-28: the zone bell counts down to 1 and holds).
-    const zl = data.bonusZone?.draftsLeftInTier;
+    // Tier-1 only: the sent bell's copy is about the Buy 1 window, so once the
+    // window rolls to tier 2 (or closes) the count freezes at 1 instead of
+    // jumping to the next band's number under stale copy.
+    const zl = data.bonusZone?.tier === 1 ? data.bonusZone?.draftsLeftInTier : 1;
     setLaneCounters({ jpLeft, zoneLeft: typeof zl === 'number' ? Math.max(1, zl) : null });
     const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
     const jpLanePct = lanePct(jpView.remaining, jpLeft);
