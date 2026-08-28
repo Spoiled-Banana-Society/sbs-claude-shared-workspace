@@ -136,8 +136,8 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         {/* intro + deal rows — ranges and seats from the live config */}
         <div className="promo-tx mt-3 max-w-[58ch]">
           <p className="text-[15.5px] leading-[1.5] text-[rgba(255,255,255,.92)] font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-            Jackpot just hit? Enter the Banana Zone — paid draft fills earn <b className="text-banana">Free Spins</b> and
-            sealed <b className="text-banana">Packs</b>{totalSeats ? <>, with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
+            Jackpot just hit? The Banana Zone is open. Paid drafts earn <b className="text-banana">Free Spins</b> +
+            sealed <b className="text-banana">Packs</b> the moment they fill{totalSeats ? <> — with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
           </p>
           {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it
               reads as the prize world, not this promo's mechanics */}

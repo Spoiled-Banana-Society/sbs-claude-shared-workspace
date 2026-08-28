@@ -67,7 +67,7 @@ export default function ZonePacksPreviewPage() {
     id: 'bonus-zone',
     type: 'bonus-zone',
     title: 'Banana Zone → FREE SPINS',
-    description: `Jackpot just hit? Enter the Banana Zone — paid draft fills earn Free Spins and Packs you open the moment your draft fills, with ${SEATS_1 + SEATS_2} JackHOF seats hidden inside the Packs.\nJackHOF — league winner goes to the Finals + competes for added prizes.`,
+    description: `Jackpot just hit? The Banana Zone is open. Paid drafts earn Free Spins + Packs the moment they fill — with ${SEATS_1 + SEATS_2} JackHOF seats hidden inside the Packs.\nJackHOF — league winner goes to the Finals + competes for added prizes.`,
     ctaText: 'Draft now',
     ctaLink: '/draft',
     backgroundColor: '#2a2a35',
