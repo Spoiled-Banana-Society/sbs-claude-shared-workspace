@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
-import { backfillUsernameLower } from '@/lib/usernameBackfill';
+import { backfillUsernameLower, syncDisplayNamesFromOwners } from '@/lib/usernameBackfill';
 
 /**
  * Vercel cron — runs nightly to backfill `username_lower` on any v2_users
@@ -27,8 +27,9 @@ export async function GET(req: Request) {
 
   try {
     const result = await backfillUsernameLower();
-    logger.info('crons.backfill-username-lower.done', result);
-    return json({ ok: true, ...result });
+    const names = await syncDisplayNamesFromOwners();
+    logger.info('crons.backfill-username-lower.done', { ...result, displayNames: names });
+    return json({ ok: true, ...result, displayNames: names });
   } catch (err) {
     logger.warn('crons.backfill-username-lower.failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);

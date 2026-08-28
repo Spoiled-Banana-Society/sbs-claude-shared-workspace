@@ -175,7 +175,11 @@ export function UsersTableBox({ enabled }: Props) {
     if (!q) return base;
     return base.filter((u) =>
       u.wallet.toLowerCase().includes(q) ||
-      (u.username ?? '').toLowerCase().includes(q),
+      (u.username ?? '').toLowerCase().includes(q) ||
+      // Chosen profile display name — often the ONLY name a user has (many
+      // never set a username, so it's still the default User-0x…; RyRo case
+      // 2026-08-28: unsearchable despite $300 spent).
+      (u.displayName ?? '').toLowerCase().includes(q),
     );
   }, [all, filter, search]);
 

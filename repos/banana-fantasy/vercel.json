@@ -40,7 +40,7 @@
     },
     {
       "path": "/api/crons/backfill-username-lower",
-      "schedule": "0 7 * * *"
+      "schedule": "23 * * * *"
     },
     {
       "path": "/api/crons/audit-integrity",

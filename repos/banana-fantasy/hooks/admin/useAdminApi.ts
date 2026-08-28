@@ -14,6 +14,8 @@ export interface AdminStats {
 }
 
 export interface AdminUser {
+  /** Mirrored Go-profile display name (syncDisplayNamesFromOwners) — the name the site shows. */
+  displayName?: string | null;
   id: string;
   walletAddress: string;
   username: string | null;

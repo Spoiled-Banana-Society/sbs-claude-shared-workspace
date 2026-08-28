@@ -143,7 +143,7 @@ export function GlobalSearch({ enabled }: { enabled: boolean }) {
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-white truncate">
-                          {u.username || <span className="text-gray-500 italic">no name</span>}
+                          {u.displayName || u.username || <span className="text-gray-500 italic">no name</span>}
                         </p>
                         <p className="text-[11px] text-gray-500 font-mono truncate">{u.walletAddress}</p>
                       </div>

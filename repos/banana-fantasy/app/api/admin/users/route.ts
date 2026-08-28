@@ -67,6 +67,8 @@ function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) 
     id: doc.id,
     walletAddress: isStoredValid ? storedWallet : doc.id,
     username: (typeof data.username === 'string' && !data.username.startsWith('User-')) ? data.username : null,
+    // Mirrored Go-profile display name — the name the site actually shows.
+    displayName: typeof data.displayName === 'string' ? data.displayName : null,
     // Server-assigned unique default-handle number ("Banana"+bananaNumber).
     // Display fallback for unnamed users — NEVER recompute from the wallet.
     bananaNumber: typeof data.bananaNumber === 'number' ? data.bananaNumber : null,
@@ -130,6 +132,10 @@ export async function GET(req: Request) {
         ...usernameCandidates.map((candidate) =>
           usersCollection.where('username', '>=', candidate).where('username', '<=', candidate + '\uf8ff').limit(20),
         ),
+        // Chosen profile display name, mirrored hourly from the Go owner layer
+        // (syncDisplayNamesFromOwners) — users who never set a username are
+        // ONLY findable by this (RyRo 2026-08-28).
+        usersCollection.where('displayName_lower', '>=', q).where('displayName_lower', '<=', prefixEnd).limit(20),
       ];
 
       // If q looks like a wallet or wallet-prefix, also try direct doc lookup
