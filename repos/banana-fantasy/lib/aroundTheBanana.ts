@@ -327,10 +327,16 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
       // Stamp the special level so selectTokensByType / countSpendableTokens
       // SKIP it — without this the pass could be spent on an ordinary draft,
       // burning the JackHOF seat.
-      await Promise.all(res.tokenIds.map((tid) => db
-        .collection('owners').doc(winnerId.toLowerCase())
-        .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: 'JackHOF' }, { merge: true })));
+      // BOTH stores — the reconciler rebuilds owner subcollections from the
+      // global token doc (registered Level Pro), so an owners-only stamp gets
+      // wiped by the next sweep (proven on the 8/27 hype payout).
+      await Promise.all(res.tokenIds.flatMap((tid) => [
+        db.collection('owners').doc(winnerId.toLowerCase())
+          .collection('validDraftTokens').doc(String(tid))
+          .set({ Level: 'JackHOF' }, { merge: true }),
+        db.collection('draftTokens').doc(String(tid))
+          .set({ Level: 'JackHOF' }, { merge: true }),
+      ]));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {

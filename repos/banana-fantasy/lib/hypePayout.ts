@@ -101,9 +101,15 @@ export async function runHypePayout(weekId: string, apply: boolean): Promise<{ f
         try { await registerMintedTokens(wallet, res.tokenIds.map(Number), 'free'); }
         catch (e) { logger.warn('hype_payout.register_go_failed', { wallet, err: (e as Error).message }); }
         const specialLevel = kind === 'jackpot' ? 'Jackpot' : kind === 'hof' ? 'Hall of Fame' : 'JackHOF';
-        await Promise.all(res.tokenIds.map((tid) =>
+        // BOTH stores — the owners doc alone is not durable: the pass
+        // reconciler rebuilds owner subcollections from the global token doc,
+        // which Go registers as Level Pro, so an owners-only stamp was wiped
+        // within minutes of the first sweep (all 9 non-surviving stamps,
+        // 2026-08-27 payout). The global doc is the rebuild source — stamp it.
+        await Promise.all(res.tokenIds.flatMap((tid) => [
           db.collection('owners').doc(wallet).collection('validDraftTokens').doc(String(tid)).set({ Level: specialLevel }, { merge: true }),
-        ));
+          db.collection('draftTokens').doc(String(tid)).set({ Level: specialLevel }, { merge: true }),
+        ]));
         const tokenId = String(res.tokenIds[0] ?? '');
         let joinedRoundId: number | null = null;
         if (tokenId) {

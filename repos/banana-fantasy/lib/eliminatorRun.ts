@@ -223,10 +223,15 @@ async function awardJackhofSeat(winnerId: string, dayId: string): Promise<void> 
       // Stamp the special level so the Go engine's selectTokensByType and
       // countSpendableTokens both SKIP it — without this the pass could be
       // spent on an ordinary fast draft, burning the JackHOF seat.
-      await Promise.all(res.tokenIds.map((tid) => db
-        .collection('owners').doc(winnerId.toLowerCase())
-        .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: 'JackHOF' }, { merge: true })));
+      // BOTH stores — owners-only stamps get wiped when the reconciler
+      // rebuilds from the global token doc (proven on the 8/27 hype payout).
+      await Promise.all(res.tokenIds.flatMap((tid) => [
+        db.collection('owners').doc(winnerId.toLowerCase())
+          .collection('validDraftTokens').doc(String(tid))
+          .set({ Level: 'JackHOF' }, { merge: true }),
+        db.collection('draftTokens').doc(String(tid))
+          .set({ Level: 'JackHOF' }, { merge: true }),
+      ]));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {
