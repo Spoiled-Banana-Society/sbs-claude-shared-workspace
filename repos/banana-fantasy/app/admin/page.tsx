@@ -65,7 +65,9 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: 'drafts', label: 'Drafts', group: 'Admin' },
   { key: 'user-lookup', label: 'User Lookup', group: 'Admin' },
-  { key: 'activity', label: 'Live Activity', group: 'Admin' },
+  // Live Activity also off the sidebar (Boris 2026-08-28 follow-up): its
+  // stats poll is the same ~28k-read scan the Dashboard ran. The Drafts tab
+  // carries the light live lines (single tracker doc) — pennies.
   { key: 'support', label: 'Support', group: 'Admin' },
   { key: 'money', label: 'Money', group: 'Admin' },
   // Dashboard / Logs / Tools / Audit removed from the sidebar (Boris
