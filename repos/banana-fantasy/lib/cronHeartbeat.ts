@@ -30,16 +30,21 @@ const CRITICAL_CRONS: Array<{ name: string; everyMin: number; graceMin: number; 
   { name: 'audit-integrity',      everyMin: 360, graceMin: 90, does: 'state-integrity audits (pass drift, duplicates, balances)' },
   { name: 'wheel-period-keeper',  everyMin: 5,   graceMin: 15, does: 'wheel period rollover' },
   { name: 'capture-draft-data',   everyMin: 5,   graceMin: 15, does: 'server-side draft-close pick-data capture (the safety net that guarantees every team card gets its pick data even if no client fires the close trigger)' },
+  { name: 'dead-clock-kick',      everyMin: 2,   graceMin: 13, does: 'kicks the engine auto-draft for any draft whose pick clock expired with no advance (the backstop for a lost Cloud Task / pointer heal — BBB #757 sat dead 3h without it)' },
 ];
 
-/** Stamp a successful run. Best-effort — never throws into the cron. */
-export async function recordCronHeartbeat(name: string): Promise<void> {
+/** Stamp a successful run. Best-effort — never throws into the cron.
+ *  `summary` (optional) is stored verbatim on the heartbeat doc — cheap
+ *  observability for crons whose logger output doesn't persist anywhere
+ *  (the deposit sweep ran "green" for days while crediting nothing, and
+ *  there was no way to see why — 2026-08-04). */
+export async function recordCronHeartbeat(name: string, summary?: Record<string, unknown>): Promise<void> {
   if (!isFirestoreConfigured()) return;
   try {
     await getAdminFirestore()
       .collection(HEARTBEAT_COLLECTION)
       .doc(name)
-      .set({ name, lastRunAt: FieldValue.serverTimestamp() }, { merge: true });
+      .set({ name, lastRunAt: FieldValue.serverTimestamp(), ...(summary ? { lastRunSummary: summary } : {}) }, { merge: true });
   } catch {
     /* heartbeat is best-effort; don't fail the cron over it */
   }

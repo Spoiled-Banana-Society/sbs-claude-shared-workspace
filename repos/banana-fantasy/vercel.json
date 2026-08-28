@@ -51,6 +51,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/crons/dead-clock-kick",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/crons/king-of-drafts",
       "schedule": "0 6 * * 1"
     },
