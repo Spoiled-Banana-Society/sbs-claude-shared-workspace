@@ -73,10 +73,22 @@ export async function runDraftStallCanary(nowMs: number): Promise<StallFinding[]
     }
     if (keys.length === 0) return findings;
 
-    const recent = keys
-      .filter((k) => draftNumber(k) >= 0)
-      .sort((a, b) => draftNumber(b) - draftNumber(a))
-      .slice(0, RECENT_DRAFTS_TO_CHECK);
+    // Newest N PER LANE. Sorting every id by number and taking the top 40
+    // (pre-2026-08-27) returned only fast drafts (ids ~800+), so slow lanes —
+    // which run for days and sit at much lower numbers — were never checked
+    // and BBB #757's 3-hour freeze produced no alert.
+    const laneOf = (k: string) => k.replace(/\d+$/, '');
+    const byLane = new Map<string, string[]>();
+    for (const k of keys) {
+      if (draftNumber(k) < 0) continue;
+      const lane = laneOf(k);
+      if (!byLane.has(lane)) byLane.set(lane, []);
+      byLane.get(lane)!.push(k);
+    }
+    const recent: string[] = [];
+    for (const lane of byLane.values()) {
+      recent.push(...lane.sort((a, b) => draftNumber(b) - draftNumber(a)).slice(0, RECENT_DRAFTS_TO_CHECK));
+    }
 
     const nowSec = Math.floor(nowMs / 1000);
     for (const draftId of recent) {

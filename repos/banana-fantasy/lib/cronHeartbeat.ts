@@ -30,6 +30,7 @@ const CRITICAL_CRONS: Array<{ name: string; everyMin: number; graceMin: number; 
   { name: 'audit-integrity',      everyMin: 360, graceMin: 90, does: 'state-integrity audits (pass drift, duplicates, balances)' },
   { name: 'wheel-period-keeper',  everyMin: 5,   graceMin: 15, does: 'wheel period rollover' },
   { name: 'capture-draft-data',   everyMin: 5,   graceMin: 15, does: 'server-side draft-close pick-data capture (the safety net that guarantees every team card gets its pick data even if no client fires the close trigger)' },
+  { name: 'dead-clock-kick',      everyMin: 2,   graceMin: 13, does: 'kicks the engine auto-draft for any draft whose pick clock expired with no advance (the backstop for a lost Cloud Task / pointer heal — BBB #757 sat dead 3h without it)' },
 ];
 
 /** Stamp a successful run. Best-effort — never throws into the cron.

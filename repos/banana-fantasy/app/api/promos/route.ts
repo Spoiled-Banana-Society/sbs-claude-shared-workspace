@@ -99,7 +99,7 @@ export async function GET(req: Request) {
         // too, since seeded docs carry the launch-day "JACKPOT SEAT" title.
         atb.title = 'Around The Banana → JACKHOF SEAT';
         atb.modalContent.title = 'Around The Banana → JackHOF Seat';
-        atb.description = 'First 10 people to hit all 10 slots win a JackHOF seat.\nPaid drafts only.\nJackHOF — skip to the Finals + the HOF prize track.';
+        atb.description = 'First 10 people to hit all 10 slots win a JackHOF seat.\nPaid drafts only.\nJackHOF — league winner goes to the Finals + competes for added prizes.';
         // Rules text lives on the seeded per-user doc too — restamp it so the
         // modal matches the paid-only era (Boris 2026-08-22), same as the card.
         atb.modalContent.explanation =

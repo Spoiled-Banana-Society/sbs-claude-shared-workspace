@@ -95,6 +95,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/crons/dead-clock-kick",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/crons/hype-payout-sweep",
       "schedule": "7,37 * * * *"
     }
