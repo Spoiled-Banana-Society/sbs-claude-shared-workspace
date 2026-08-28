@@ -9,6 +9,7 @@
  */
 
 import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import { TYPE_COLOR, typeLabelFor, relativeTime } from '@/components/admin/LiveActivity';
@@ -66,6 +67,41 @@ export function LiveActivityMini({ enabled }: { enabled: boolean }) {
   const { events, isConnected } = useActivityStream(enabled ? '/api/admin/activity/stream' : null);
   const rows = events.slice(0, MAX_ROWS);
 
+  // Tx-written events (spins, mints) carry no username — resolve those few
+  // wallets through the shared display-batch endpoint so the feed says
+  // "Chartsy", not "Banana 2bc7". Admin-only surface, ≤5 wallets per new
+  // event burst, cached in-component: cost rounds to zero.
+  const [names, setNames] = useState<Record<string, string>>({});
+  const namesRef = useRef(names);
+  namesRef.current = names;
+  useEffect(() => {
+    const missing = rows
+      .filter((e) => !e.username && e.walletAddress && !(e.walletAddress.toLowerCase() in namesRef.current))
+      .map((e) => e.walletAddress!.toLowerCase());
+    if (missing.length === 0) return;
+    const unique = [...new Set(missing)];
+    void fetch('/api/users/display-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallets: unique }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { users?: Record<string, { displayName?: string | null }> } | null) => {
+        if (!d?.users) return;
+        setNames((prev) => {
+          const next = { ...prev };
+          for (const w of unique) {
+            const dn = d.users?.[w]?.displayName;
+            next[w] = dn && !/^0x/i.test(dn) ? dn : '';
+          }
+          return next;
+        });
+      })
+      .catch(() => { /* fallback name is fine */ });
+    // rows identity churns with the stream; key off the joined ids instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.map((e) => e.id).join(',')]);
+
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
       <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.04] flex items-center justify-between gap-2">
@@ -81,7 +117,7 @@ export function LiveActivityMini({ enabled }: { enabled: boolean }) {
       ) : (
         <ul className="divide-y divide-white/[0.04]">
           {rows.map((e) => {
-            const name = e.username ?? (e.walletAddress ? bananaPlaceholderName(e.walletAddress) : '—');
+            const name = e.username || names[e.walletAddress?.toLowerCase() ?? ''] || (e.walletAddress ? bananaPlaceholderName(e.walletAddress) : '—');
             const detail = detailFor(e);
             return (
               <li key={e.id} className="px-4 py-2.5 flex items-center gap-3 min-w-0">

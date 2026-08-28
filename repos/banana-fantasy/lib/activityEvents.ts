@@ -95,7 +95,12 @@ async function loadDenormFields(userId: string): Promise<{ username: string | nu
   const db = getAdminFirestore();
   const snap = await db.collection('v2_users').doc(userId.toLowerCase()).get();
   const data = snap.exists ? (snap.data() ?? {}) : {};
-  const username = typeof data.username === 'string' && !data.username.startsWith('User-') ? data.username : null;
+  // Prefer the set username; else the mirrored Go profile display name
+  // (synced hourly — many users only ever name themselves there; Chartsy
+  // showed as "Banana 2bc7" in feeds, 2026-08-28).
+  const username =
+    (typeof data.username === 'string' && !data.username.startsWith('User-') && data.username) ||
+    (typeof data.displayName === 'string' && data.displayName) || null;
   const walletType = (typeof data.walletType === 'string' ? data.walletType : 'unknown') as WalletType;
   const walletAddress = (typeof data.walletAddress === 'string' && data.walletAddress)
     ? data.walletAddress
