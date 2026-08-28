@@ -14,7 +14,7 @@ import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivitySt
 import { TYPE_COLOR, typeLabelFor, relativeTime } from '@/components/admin/LiveActivity';
 import { bananaPlaceholderName } from '@/utils/helpers';
 
-const MAX_ROWS = 10;
+const MAX_ROWS = 5;
 
 /** Per-event detail, split so REAL MONEY renders loud (banana, bold) and the
  *  rest stays quiet gray. Everything here comes off the event doc already in
@@ -73,9 +73,6 @@ export function LiveActivityMini({ enabled }: { enabled: boolean }) {
           <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-gray-600'}`} aria-hidden />
           Live Activity
         </span>
-        <Link href="/admin?tab=activity" className="text-[11px] text-gray-400 hover:text-white transition-colors whitespace-nowrap">
-          See all →
-        </Link>
       </div>
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-center text-gray-500 text-xs">
