@@ -28,8 +28,27 @@ export async function GET(req: Request) {
   try {
     const result = await backfillUsernameLower();
     const names = await syncDisplayNamesFromOwners();
-    logger.info('crons.backfill-username-lower.done', { ...result, displayNames: names });
-    return json({ ok: true, ...result, displayNames: names });
+    // Bell housekeeping (Boris 2026-08-28, cost cleanup): READ, UNPINNED
+    // bells older than 60 days age out — every broadcast writes ~1,100 docs
+    // and the collection passed 160k; nobody revisits a two-month-old read
+    // notification. Pinned and unread rows are NEVER touched. 450/run hourly
+    // is a ~10k/day ceiling — catches up gradually, negligible read cost.
+    const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+    const db = getAdminFirestore();
+    const cutoff = new Date(Date.now() - 60 * 24 * 3600_000);
+    const readSnap = await db.collection('marketplace_notifications')
+      .where('read', '==', true).limit(450).get();
+    const batch = db.batch();
+    let purged = 0;
+    for (const d of readSnap.docs) {
+      const x = d.data();
+      const created = x.createdAt?.toDate?.() ?? null;
+      if (x.pinned === true || !created || created >= cutoff) continue;
+      batch.delete(d.ref); purged++;
+    }
+    if (purged > 0) await batch.commit();
+    logger.info('crons.backfill-username-lower.done', { ...result, displayNames: names, bellsPurged: purged });
+    return json({ ok: true, ...result, displayNames: names, bellsPurged: purged });
   } catch (err) {
     logger.warn('crons.backfill-username-lower.failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);
