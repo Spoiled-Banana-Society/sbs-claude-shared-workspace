@@ -13,7 +13,7 @@ const DRY = process.env.APPLY !== '1';
 const KEY = 'slow-clock-4h-2026-08-27';
 const bell = {
   type: 'promo',
-  title: '⏱ Slow draft clocks change tomorrow',
+  title: '⏱ Slow draft clocks go from 8 to 4 hours tomorrow',
   message: 'Starting 5am PT tomorrow, slow drafts move from 8 hours per pick to 4 hours. Kickoff is two weeks out and every draft needs to finish in time, so clocks will keep getting shorter as Week 1 gets closer. New rule too: if you are on the clock when the overnight pause hits, you get a fresh full clock at 5am PT. Set your queue before bed and you are good.',
   link: '/faq#drafts',
   icon: 'calendar',

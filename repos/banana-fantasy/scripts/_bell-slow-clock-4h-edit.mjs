@@ -10,13 +10,14 @@ initializeApp({ credential: cert(sa) });
 const db = getFirestore();
 const DRY = process.env.APPLY !== '1';
 const KEY = 'slow-clock-4h-2026-08-27';
+const title = '⏱ Slow draft clocks go from 8 to 4 hours tomorrow';
 const message = 'Starting tomorrow morning, slow drafts move from 8 hours per pick to 4 hours, and the overnight pause now runs 10pm to 7am PT instead of 10pm to 5am. Kickoff is two weeks out and every draft needs to finish in time, so clocks will keep getting shorter as Week 1 gets closer. New rule too: if you are on the clock when the overnight pause hits, you get a fresh full clock at 7am PT. Set your queue before bed and you are good.';
 const snap = await db.collection('marketplace_notifications').where('dedupeKey', '==', KEY).get();
 console.log(`docs=${snap.size} dry=${DRY}`);
 if (DRY) process.exit(0);
 const writer = db.bulkWriter();
 let n = 0;
-for (const d of snap.docs) { void writer.update(d.ref, { message }).then(() => { n += 1; }).catch(() => {}); }
+for (const d of snap.docs) { void writer.update(d.ref, { title, message }).then(() => { n += 1; }).catch(() => {}); }
 await writer.close();
 console.log(`updated=${n}`);
 process.exit(0);
