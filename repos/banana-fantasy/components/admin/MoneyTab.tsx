@@ -14,8 +14,6 @@
  * URLs auto-redirect at the admin-page level so old bookmarks survive.
  */
 
-import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
-import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { WithdrawalsPanel } from '@/components/admin/WithdrawalsPanel';
 import { OnrampAttemptsViewer } from '@/components/admin/OnrampAttemptsViewer';
 import { OfframpAttemptsViewer } from '@/components/admin/OfframpAttemptsViewer';
@@ -27,14 +25,12 @@ type MoneySub = 'withdrawals' | 'onramps' | 'offramps' | 'promos' | 'treasury';
 const SUB_KEYS = ['withdrawals', 'onramps', 'offramps', 'promos', 'treasury'] as const;
 
 export function MoneyTab({ enabled }: { enabled: boolean }) {
-  const sub = useSubTab<MoneySub>(SUB_KEYS, 'withdrawals');
-  const { counts } = useAdminNotifications({ enabled, useAuthHeaders: useAdminAuthHeaders });
+  const sub = useSubTab<MoneySub>(SUB_KEYS, 'treasury');
 
   const items: SubTabItem<MoneySub>[] = [
-    { key: 'withdrawals', label: 'Withdrawals', badge: counts.withdrawals },
-    { key: 'onramps', label: 'Onramps', badge: counts.onramp },
-    { key: 'offramps', label: 'Offramps', badge: counts.offramp },
-    { key: 'promos', label: 'Promos' },
+    // Money slimmed to Treasury only (Boris 2026-08-28, cost cleanup).
+    // Withdrawals/Onramps/Offramps/Promos panels still render via their sub
+    // keys if ever deep-linked — only the sub-nav entries are gone.
     { key: 'treasury', label: 'Treasury' },
   ];
 

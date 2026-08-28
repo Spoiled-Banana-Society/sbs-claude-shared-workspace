@@ -66,12 +66,13 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'drafts', label: 'Drafts', group: 'Admin' },
   { key: 'user-lookup', label: 'User Lookup', group: 'Admin' },
   { key: 'activity', label: 'Live Activity', group: 'Admin' },
-  { key: 'dashboard', label: 'Dashboard', group: 'Admin' },
   { key: 'support', label: 'Support', group: 'Admin' },
-  { key: 'logs', label: 'Logs', group: 'Admin' },
-  { key: 'tools', label: 'Tools', group: 'Admin' },
   { key: 'money', label: 'Money', group: 'Admin' },
-  { key: 'audit', label: 'Audit', group: 'Admin' },
+  // Dashboard / Logs / Tools / Audit removed from the sidebar (Boris
+  // 2026-08-28, the $2.3K Firestore bill): Dashboard's stat cards + widgets
+  // full-scanned activity events + wheelSpins every poll while the tab sat
+  // open. Deep links (?tab=dashboard etc.) still render for emergencies —
+  // the burn was the tabs being open all day, not their existence.
   // Users table page: not in Boris's sidebar list — the same table lives at
   // the bottom of the Dashboard. Kept as a valid tab so ?tab=users links
   // (and the Dashboard's "open full page" affordances) still work.
@@ -190,10 +191,8 @@ export default function AdminPage() {
   // now lives.
   const TAB_NOTIF_CATEGORY: Partial<Record<TabKey, NotifCategory[]>> = {
     support: ['support'],
-    logs: ['logs'],
     money: ['withdrawals', 'onramp', 'offramp'],
     drafts: ['drafts'],
-    audit: ['kyc'],
   };
   const { counts: notifCounts, total: notifTotal, markAllSeen: markAllNotifSeen } = useAdminNotifications({
     enabled: isAuthorized,
