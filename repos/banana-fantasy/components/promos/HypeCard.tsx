@@ -86,7 +86,7 @@ export function HypeCard({ className = '' }: { className?: string }) {
 
       <div className="flex flex-col gap-1.5 min-w-0 px-3.5 sm:px-4 pt-3 pb-3.5">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[9.5px] sm:text-[11.5px] font-extrabold tracking-[1.2px] sm:tracking-[2px] text-[#22d3ee] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">JACKHOF SEAT + MORE<span className="hidden sm:inline"> · WEEKLY</span></span>
+          <span className="text-[9px] sm:text-[11.5px] font-extrabold tracking-[0.7px] sm:tracking-[2px] text-[#22d3ee] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">JACKHOF SEAT + MORE<span className="hidden sm:inline"> · WEEKLY</span></span>
           <span className="text-[9.5px] sm:text-[10.5px] font-extrabold tracking-[1px] sm:tracking-[1.1px] uppercase text-white/80 whitespace-nowrap shrink-0">Resets <b className="text-[#67e8f9]">Thu 9PM ET</b></span>
         </div>
         <h4 className="text-[17px] font-extrabold text-white tracking-[-.2px] leading-tight">Banana Hype</h4>

@@ -55,7 +55,7 @@ export function promoAccent(type: PromoType): string {
  */
 export function promoKicker(promo: Promo): string {
   switch (promo.type) {
-    case 'around-the-banana': return 'JACKHOF SEAT · LIVE RACE';
+    case 'around-the-banana': return 'JACKHOF SEAT';
     case 'drop': return 'JACKHOF SEAT · 9 PM PT';
     case 'daily-drafts': return 'FREE SPIN · EVERY 4';
     case 'pick-chase': return 'UP TO 5 SPINS';
