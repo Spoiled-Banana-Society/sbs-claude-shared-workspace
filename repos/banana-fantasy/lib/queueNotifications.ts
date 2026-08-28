@@ -34,6 +34,8 @@ export interface CreateNotificationInput {
   title: string;
   message: string;
   link?: string;
+  /** Live-token bells: which client counter substitutes {N} (e.g. 'jp-window', 'zone-window-2'). */
+  dynamic?: string;
   /** Content-stable key for cross-device idempotency. Omit for always-distinct events. */
   dedupeKey?: string;
   /** Emoji/glyph shown as this notification's icon in the bell + /notifications.
@@ -148,6 +150,9 @@ export async function createNotificationForWallets(
         read: false,
         dedupeKey: n.dedupeKey,
         icon: n.icon ?? null,
+        // Live-updating bells ({N} token) — without this passthrough the
+        // broadcast writer silently drops the field and the token renders raw.
+        ...(n.dynamic ? { dynamic: n.dynamic } : {}),
         createdAt: FieldValue.serverTimestamp(),
       })
       .then(() => { written += 1; })

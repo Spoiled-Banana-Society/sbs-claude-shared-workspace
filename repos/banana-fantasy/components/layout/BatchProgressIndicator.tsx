@@ -194,7 +194,12 @@ export function BatchProgressIndicator() {
     // window rolls to tier 2 (or closes) the count freezes at 1 instead of
     // jumping to the next band's number under stale copy.
     const zl = data.bonusZone?.tier === 1 ? data.bonusZone?.draftsLeftInTier : 1;
-    setLaneCounters({ jpLeft, zoneLeft: typeof zl === 'number' ? Math.max(1, zl) : null });
+    const zl2 = data.bonusZone?.tier === 2 ? data.bonusZone?.draftsLeftInTier : 1;
+    setLaneCounters({
+      jpLeft,
+      zoneLeft: typeof zl === 'number' ? Math.max(1, zl) : null,
+      zoneLeft2: typeof zl2 === 'number' ? Math.max(1, zl2) : null,
+    });
     const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
     const jpLanePct = lanePct(jpView.remaining, jpLeft);
     const hofLanePct = lanePct(hofView.remaining, hofLeft);

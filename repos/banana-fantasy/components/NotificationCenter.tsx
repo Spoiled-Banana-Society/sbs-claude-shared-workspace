@@ -662,15 +662,16 @@ export function BellCountdown({ liveAtMs }: { liveAtMs: number }) {
   );
 }
 
-export function renderDynamicText(text: string, notif: { dynamic?: string }, jpLeft: number | null, zoneLeft: number | null = null): string {
+export function renderDynamicText(text: string, notif: { dynamic?: string }, jpLeft: number | null, zoneLeft: number | null = null, zoneLeft2: number | null = null): string {
   if (!text.includes('{N}')) return text;
   if (notif.dynamic === 'jp-window') return text.replace(/\{N\}/g, jpLeft !== null ? String(jpLeft) : '…');
   if (notif.dynamic === 'zone-window') return text.replace(/\{N\}/g, zoneLeft !== null ? String(zoneLeft) : '…');
+  if (notif.dynamic === 'zone-window-2') return text.replace(/\{N\}/g, zoneLeft2 !== null ? String(zoneLeft2) : '…');
   return text;
 }
 
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
-  const { jpLeft, zoneLeft } = useLaneCounters();
+  const { jpLeft, zoneLeft, zoneLeft2 } = useLaneCounters();
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -784,7 +785,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       )}
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-xs font-semibold leading-tight ${!notif.read ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          {renderDynamicText(notif.title, notif, jpLeft, zoneLeft)}
+                          {renderDynamicText(notif.title, notif, jpLeft, zoneLeft, zoneLeft2)}
                         </p>
                         {!notif.read && (
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
@@ -792,7 +793,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       </div>
                       {typeof notif.liveAtMs === 'number' && <BellCountdown liveAtMs={notif.liveAtMs} />}
                       <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
-                        {renderDynamicText(notif.message, notif, jpLeft, zoneLeft)}
+                        {renderDynamicText(notif.message, notif, jpLeft, zoneLeft, zoneLeft2)}
                       </p>
                       <p className="text-text-muted/50 text-[10px] mt-1">{timeAgo(notif.createdAt)}</p>
                     </div>
