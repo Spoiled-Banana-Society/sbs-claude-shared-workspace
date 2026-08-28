@@ -181,10 +181,12 @@ export function useDraftLiveSync({
   const firebaseEndOfTurn = firebaseRtdb.data?.pickEndTime ?? null;
   const firebaseDraftStart = firebaseRtdb.data?.draftStartTime ?? null;
   const firebasePickLength = firebaseRtdb.data?.pickLength ?? null;
+  const firebasePickStart = firebaseRtdb.data?.pickStartTime ?? null;
   const firebaseTimeRemaining = useTimeRemaining(
     firebaseActive ? firebaseEndOfTurn : null,
     firebaseActive ? firebaseDraftStart : null,
     firebaseActive ? firebasePickLength : null,
+    firebaseActive ? firebasePickStart : null,
   );
 
   useEffect(() => {

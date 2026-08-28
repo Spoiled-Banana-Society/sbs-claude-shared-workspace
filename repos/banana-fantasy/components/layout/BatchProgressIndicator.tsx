@@ -188,7 +188,10 @@ export function BatchProgressIndicator() {
     const jpPos = lanePosition(filledLeaguesCount, jpView.windowStart);
     const hofPos = lanePosition(filledLeaguesCount, hofView.windowStart);
     const jpLeft = laneDraftsLeft(rFilled, jpView.windowStart);
-    setLaneCounters({ jpLeft }); // publish for dynamic bells — same number as the pill
+    // publish for dynamic bells — same numbers as the pills. zoneLeft floors
+    // at 1 (Boris 2026-08-28: the zone bell counts down to 1 and holds).
+    const zl = data.bonusZone?.draftsLeftInTier;
+    setLaneCounters({ jpLeft, zoneLeft: typeof zl === 'number' ? Math.max(1, zl) : null });
     const hofLeft = laneDraftsLeft(rFilled, hofView.windowStart);
     const jpLanePct = lanePct(jpView.remaining, jpLeft);
     const hofLanePct = lanePct(hofView.remaining, hofLeft);

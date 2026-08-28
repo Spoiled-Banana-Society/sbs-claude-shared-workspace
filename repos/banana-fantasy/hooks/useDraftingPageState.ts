@@ -992,6 +992,9 @@ export function useDraftingPageState() {
             ? Math.max(0, Math.ceil(info.pickEndTime - Date.now() / 1000))
             : undefined;
         }
+        if (typeof info.pickStartTime === 'number' && info.pickStartTime > 0) {
+          patch.pickStartTimestamp = info.pickStartTime;
+        }
         // DIAGNOSTIC: capture when the lobby applies a FORWARD pick from the RTDB
         // push, so we can confirm it now flips in lockstep with the room (it was
         // ~2s late, waiting on the 3s poll while the room held the heartbeat).
@@ -1181,6 +1184,7 @@ export function useDraftingPageState() {
             // RTDB `realTimeDraftInfo.pickEndTime`. Authoritative source —
             // overrides any stale value from a previous draft-room write.
             let rtdbPickEnd: number | undefined;
+            let rtdbPickStart: number | undefined;
             let rtdbType: 'pro' | 'hof' | 'jackpot' | undefined;
             try {
               const lpRes = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(draft.id)}`);
@@ -1188,6 +1192,9 @@ export function useDraftingPageState() {
                 const lpData = await lpRes.json();
                 if (typeof lpData.pickEndTime === 'number' && lpData.pickEndTime > 0) {
                   rtdbPickEnd = lpData.pickEndTime;
+                }
+                if (typeof lpData.pickStartTime === 'number' && lpData.pickStartTime > 0) {
+                  rtdbPickStart = lpData.pickStartTime;
                 }
                 // Authoritative draft type off the SAME RTDB node the draft room
                 // reads. Stamped synchronously at fill, so it's correct even if
@@ -1233,6 +1240,7 @@ export function useDraftingPageState() {
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
                 pickEndTimestamp: effectivePickEnd,
+                ...(rtdbPickStart ? { pickStartTimestamp: rtdbPickStart } : {}),
                 timeRemaining: isUserTurn && effectivePickEnd
                   ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
                   : undefined,

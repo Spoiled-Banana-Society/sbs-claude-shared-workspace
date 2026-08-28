@@ -6,8 +6,8 @@
  */
 import { useSyncExternalStore } from 'react';
 
-type Counters = { jpLeft: number | null };
-let counters: Counters = { jpLeft: null };
+type Counters = { jpLeft: number | null; zoneLeft: number | null };
+let counters: Counters = { jpLeft: null, zoneLeft: null };
 const subs = new Set<() => void>();
 
 export function setLaneCounters(next: Partial<Counters>): void {

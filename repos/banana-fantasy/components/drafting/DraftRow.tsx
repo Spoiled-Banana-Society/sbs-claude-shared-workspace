@@ -319,7 +319,7 @@ export function DraftRow({
               // bound so it doesn't read as Syncing….
               const slackForFresh = isSlow && slowClock.freshClockAfterPause ? expectedPickLength : 0;
               const remaining = isSlow && draft.pickEndTimestamp
-                ? slowDraftDisplaySecondsUntil(nowSec, draft.pickEndTimestamp, expectedPickLength)
+                ? slowDraftDisplaySecondsUntil(nowSec, draft.pickEndTimestamp, expectedPickLength, draft.pickStartTimestamp ?? null)
                 : rawRemaining;
               // Fast: a value within 5% of full is almost certainly a pre-sync
               // default → brief placeholder. Slow: an 8h pick legitimately sits
@@ -331,9 +331,24 @@ export function DraftRow({
               if (looksUnconfirmed) {
                 return <span className="text-white/30 text-[11px] sm:text-sm">Syncing…</span>;
               }
+              // Fresh-clock pick armed after (10pm − pickLength): the clock
+              // counts down from a full pickLength from the arm time, and a
+              // fresh full clock follows at pauseEnd. Say so, compact (mirrors
+              // the room's "then a full 4h clock at 7am PT"). Before 8/27 this
+              // showed the time-to-pause with no marker and a 4h pick armed at
+              // 8:32pm read as "1:26 left" (vertig0 ticket-2660).
+              const freshClockAhead =
+                isSlow && slowClock.freshClockAfterPause && rawRemaining > expectedPickLength && !isSlowDraftNightPause(nowSec);
               return (
-                <span className="text-banana font-bold text-sm sm:text-base">
-                  {formatCountdown(remaining)}
+                <span className="flex flex-col items-center leading-tight">
+                  <span className="text-banana font-bold text-sm sm:text-base">
+                    {formatCountdown(remaining)}
+                  </span>
+                  {freshClockAhead && (
+                    <span className="text-banana/70 text-[9px] sm:text-[10px] font-medium whitespace-nowrap" title={`Counts down to tonight's ${slowClock.pauseWindowLabel} pause, then a full ${slowClock.compact} clock at ${slowClock.pauseEndLabel} PT`}>
+                      +{slowClock.compact} at {slowClock.pauseEndLabel}
+                    </span>
+                  )}
                 </span>
               );
             })()

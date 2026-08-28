@@ -1004,11 +1004,16 @@ function DraftRoomContent() {
         // we don't stamp the store with the engine's fresh-mount default.
         return undefined;
       })(),
+      pickStartTimestamp: (() => {
+        if (!engine.isUserTurn) return undefined;
+        const s = firebaseRtdb.data?.pickStartTime;
+        return typeof s === 'number' && s > 0 ? s : undefined;
+      })(),
       enginePicks: engine.picks,
       enginePickNumber: engine.currentPickNumber,
       engineQueue: engine.queuedPlayers,
     });
-  }, [draftId, phase, draftType, engine.currentPickNumber, engine.isUserTurn, bestTimeRemaining, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickLength, engine.turnsUntilUserPick, engine.draftStatus, engine.picks.length, engine.picks, engine.queuedPlayers]);
+  }, [draftId, phase, draftType, engine.currentPickNumber, engine.isUserTurn, bestTimeRemaining, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickStartTime, firebaseRtdb.data?.pickLength, engine.turnsUntilUserPick, engine.draftStatus, engine.picks.length, engine.picks, engine.queuedPlayers]);
 
   // DIAGNOSTIC (first-pick timer lag): while the FIRST pick is active, log the
   // room's phase + the timer inputs on every meaningful change, capped. Lets us

@@ -63,7 +63,7 @@ type FilterKey = 'all' | 'unread';
 
 export default function NotificationsPage() {
   const { notifications, unreadCount, markAsRead, markAllRead, unpin, hasLoaded } = useNotifications();
-  const { jpLeft } = useLaneCounters();
+  const { jpLeft, zoneLeft } = useLaneCounters();
   const [filter, setFilter] = useState<FilterKey>('all');
 
   const filtered = useMemo(
@@ -200,7 +200,7 @@ export default function NotificationsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <p className={`text-sm font-semibold ${!notif.read ? 'text-white' : 'text-white/70'}`}>
-                              {renderDynamicText(notif.title, notif as { dynamic?: string }, jpLeft)}
+                              {renderDynamicText(notif.title, notif as { dynamic?: string }, jpLeft, zoneLeft)}
                             </p>
                             <span
                               className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
@@ -210,7 +210,7 @@ export default function NotificationsPage() {
                             </span>
                           </div>
                           {typeof (notif as { liveAtMs?: number }).liveAtMs === 'number' && <BellCountdown liveAtMs={(notif as { liveAtMs?: number }).liveAtMs!} />}
-                          <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{renderDynamicText(notif.message, notif as { dynamic?: string }, jpLeft)}</p>
+                          <p className="text-white/40 text-xs mt-1 leading-relaxed whitespace-pre-line">{renderDynamicText(notif.message, notif as { dynamic?: string }, jpLeft, zoneLeft)}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {!notif.read && <div className="w-2.5 h-2.5 rounded-full bg-banana" />}

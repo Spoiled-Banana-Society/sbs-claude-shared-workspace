@@ -30,6 +30,7 @@ export function useTimeRemaining(
   endOfTurnTimestamp: number | null | undefined,
   draftStartTime: number | null | undefined,
   pickLengthSec?: number | null,
+  pickStartTimestamp?: number | null,
 ): number | null {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
 
@@ -56,7 +57,7 @@ export function useTimeRemaining(
           // pause tonight, then the full clock shows through the pause and
           // ticks from pauseEnd (see slowDraftDisplaySecondsUntil). Legacy
           // clocks never exceed pickLength, so this is the plain active count.
-          setTimeRemaining(slowDraftDisplaySecondsUntil(nowSec, endOfTurnTimestamp, pickLengthSec ?? 0));
+          setTimeRemaining(slowDraftDisplaySecondsUntil(nowSec, endOfTurnTimestamp, pickLengthSec ?? 0, pickStartTimestamp ?? null));
         } else {
           // endOfTurnTimestamp is in seconds (Unix timestamp), convert to milliseconds
           const timestampMs = endOfTurnTimestamp * 1000;
@@ -82,7 +83,7 @@ export function useTimeRemaining(
     return () => {
       clearInterval(timer);
     };
-  }, [endOfTurnTimestamp, draftStartTime, pickLengthSec]);
+  }, [endOfTurnTimestamp, draftStartTime, pickLengthSec, pickStartTimestamp]);
 
   return timeRemaining;
 }

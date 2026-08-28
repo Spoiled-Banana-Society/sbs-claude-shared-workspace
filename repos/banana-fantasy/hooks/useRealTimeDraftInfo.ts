@@ -14,6 +14,7 @@ export interface RealTimeDraftInfo {
   roundNum: number;
   pickInRound: number;
   pickEndTime: number;       // Unix timestamp in seconds
+  pickStartTime?: number;    // Unix seconds the current pick was armed (Go writes it on every pick)
   pickLength: number;        // Duration in seconds
   draftStartTime: number;    // Unix timestamp in seconds when draft starts
   lastPick: LastPickInfo | null;

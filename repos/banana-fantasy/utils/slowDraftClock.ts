@@ -218,10 +218,24 @@ export function slowDraftDisplaySecondsUntil(
   nowUnixSec: number,
   pickEndUnixSec: number,
   pickLengthSec: number,
+  pickStartUnixSec?: number | null,
   pauseEndHour: number = defaultPauseEndHour
 ): number {
   const active = slowDraftActiveSecondsUntil(nowUnixSec, pickEndUnixSec, pauseEndHour);
   if (!(pickLengthSec > 0) || active <= pickLengthSec) return active;
+  // More than one clock ahead (fresh-clock pick armed after 22:00 − pickLength).
+  // Richard 8/27: "it needs to just count down from 4 hours" — not the time
+  // until the pause. With the arm time known, show a full clock counting down
+  // from the moment it became your turn (active hours only). It never reaches
+  // 0 tonight (the pick can't expire before the pause), and once the pause
+  // starts `active` collapses to exactly one clock, so the branch above shows
+  // the fresh full clock through the pause and ticks it from pauseEnd — which
+  // is what the 8/26 bell promised. Arm time unknown (a transient fallback
+  // path): count down to the pause rather than flash a flat full clock.
+  if (typeof pickStartUnixSec === 'number' && pickStartUnixSec > 0 && pickStartUnixSec <= nowUnixSec) {
+    const elapsed = slowDraftEffectiveElapsedSeconds(pickStartUnixSec, nowUnixSec, pauseEndHour);
+    return Math.max(1, Math.floor(pickLengthSec - elapsed));
+  }
   const toPause = slowDraftSecondsUntilPause(nowUnixSec, pauseEndHour);
   return toPause > 0 ? Math.max(1, toPause) : pickLengthSec;
 }

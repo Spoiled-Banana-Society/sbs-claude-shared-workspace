@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
   let rtdbPlayers = 0;
   let rtdbOk = false;
   let pickEndTime: number | undefined;
+  let pickStartTime: number | undefined;
   let pickLength: number | undefined;
   let currentDrafter: string | undefined;
   let currentPickNumber: number | undefined;
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
       const val = await res.json();
       if (val && typeof val === 'object') {
         pickEndTime = typeof val.pickEndTime === 'number' ? val.pickEndTime : undefined;
+        pickStartTime = typeof val.pickStartTime === 'number' ? val.pickStartTime : undefined;
         pickLength = typeof val.pickLength === 'number' ? val.pickLength : undefined;
         currentDrafter = typeof val.currentDrafter === 'string' ? val.currentDrafter : undefined;
         currentPickNumber = typeof val.currentPickNumber === 'number' ? val.currentPickNumber : undefined;
@@ -173,6 +175,7 @@ export async function GET(req: NextRequest) {
     numPlayers,
     players: [],
     pickEndTime,
+    pickStartTime,
     pickLength,
     currentDrafter,
     currentPickNumber,
