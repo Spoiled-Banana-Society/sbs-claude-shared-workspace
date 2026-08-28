@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useLaneCounters } from '@/lib/liveCounters';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { subscribeUserEvents } from '@/lib/api/firebase';
@@ -399,13 +399,21 @@ export function useNotifications() {
     // so a logged-in user sees a skeleton, not a "No notifications" flash.
     if (!walletAddress) { setNotifications([]); if (!authLoading) setHasLoaded(true); return; }
     refetchRef.current();
-    // Mobile PWAs suspend the realtime websocket, so live pings can be minutes
-    // late there — poll tightly on mobile so the bell stays near-real-time
-    // regardless. Desktop keeps the websocket (fast) + a slow safety poll.
-    const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
-    const poll = setInterval(() => refetchRef.current(), isMobile ? 5_000 : 30_000);
-    return () => clearInterval(poll);
+    // NO INTERVAL POLL (Boris 2026-08-28, the $2.3K Firestore bill). Bells
+    // live on the ACCOUNT the moment they're sent — delivery is the realtime
+    // ping (instant while connected) plus refetch on focus and on navigation,
+    // i.e. every time the user actually looks. The old 5s mobile poll re-read
+    // ~60 docs per session per tick (~$300/mo) purely so bells could pop in
+    // on an idle, unfocused screen whose socket had died.
   }, [walletAddress, authLoading]);
+
+  // Navigation = the user looked. With no interval poll, the read triggers
+  // are: realtime ping, tab focus, and every route change (this one). Deps
+  // are stable scalars + a ref — render-loop-guard compliant.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (walletAddress) refetchRef.current();
+  }, [pathname, walletAddress]);
 
   // Real-time: refetch on any user-event stream ping, coalesced to one refetch
   // per ~300ms burst (fast enough to feel instant, still storm-safe — the
