@@ -4,6 +4,21 @@
  */
 
 const PACIFIC = 'America/Los_Angeles';
+const PAUSE_START_HOUR = 22;
+
+/**
+ * PT hour the overnight pause ends. Legacy 5. The SlowClockProvider sets it
+ * from system_config/slowDraftClock.pauseEndHour when the switch is active
+ * (Richard 8/26: 7). Every helper takes it as an optional trailing arg and
+ * defaults to this module value, so callers don't have to thread it through.
+ */
+let defaultPauseEndHour = 5;
+export function setSlowDraftPauseEndHour(h: number): void {
+  if (Number.isInteger(h) && h > 0 && h < PAUSE_START_HOUR) defaultPauseEndHour = h;
+}
+export function getSlowDraftPauseEndHour(): number {
+  return defaultPauseEndHour;
+}
 
 type NYWall = { y: number; mon: number; d: number; sod: number };
 
@@ -83,53 +98,62 @@ function addCalendarDays(
   return [dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()];
 }
 
-function inNightPause(w: NYWall): boolean {
-  return w.sod >= 22 * 3600 || w.sod < 5 * 3600;
+function inNightPause(w: NYWall, pauseEndHour: number): boolean {
+  return w.sod >= PAUSE_START_HOUR * 3600 || w.sod < pauseEndHour * 3600;
 }
 
-function advanceToNextActiveUnix(unixSec: number): number {
+function advanceToNextActiveUnix(unixSec: number, pauseEndHour: number): number {
   const w = nyWallFromUnixSec(unixSec);
-  if (!inNightPause(w)) return unixSec;
-  if (w.sod >= 22 * 3600) {
+  if (!inNightPause(w, pauseEndHour)) return unixSec;
+  if (w.sod >= PAUSE_START_HOUR * 3600) {
     const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-    return unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
+    return unixAtNYWallClock(y2, m2, d2, pauseEndHour, 0, 0);
   }
-  return unixAtNYWallClock(w.y, w.mon, w.d, 5, 0, 0);
+  return unixAtNYWallClock(w.y, w.mon, w.d, pauseEndHour, 0, 0);
 }
 
-export function slowDraftPickEndUnix(fromUnix: number, pickLengthSec: number): number {
+
+/**
+ * `freshAfterPause` (system_config/slowDraftClock.freshClockAfterPause): a pick
+ * that would cross the 22:00 PT pause does NOT carry its leftover minutes into
+ * the morning — it restarts with the FULL pickLengthSec at 05:00 PT. Default
+ * false = legacy carry-over. Mirrors slowDraftPickEndUnixOpts in Go.
+ */
+export function slowDraftPickEndUnix(fromUnix: number, pickLengthSec: number, freshAfterPause = false, pauseEndHour: number = defaultPauseEndHour): number {
   if (pickLengthSec <= 0) return fromUnix;
-  let cur = advanceToNextActiveUnix(fromUnix);
+  // Longest pick that still fits one active window — beyond it a fresh clock could never end.
+  if (pickLengthSec > (PAUSE_START_HOUR - pauseEndHour) * 3600) freshAfterPause = false;
+  let cur = advanceToNextActiveUnix(fromUnix, pauseEndHour);
   let remaining = pickLengthSec;
   while (remaining > 0) {
     const w = nyWallFromUnixSec(cur);
-    const windowClose = unixAtNYWallClock(w.y, w.mon, w.d, 22, 0, 0);
+    const windowClose = unixAtNYWallClock(w.y, w.mon, w.d, PAUSE_START_HOUR, 0, 0);
     const avail = windowClose - cur;
     if (avail <= 0) {
       const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-      cur = unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
+      cur = unixAtNYWallClock(y2, m2, d2, pauseEndHour, 0, 0);
       continue;
     }
     if (remaining <= avail) {
       return cur + remaining;
     }
-    remaining -= avail;
+    remaining = freshAfterPause ? pickLengthSec : remaining - avail;
     const [y3, m3, d3] = addCalendarDays(w.y, w.mon, w.d, 1);
-    cur = unixAtNYWallClock(y3, m3, d3, 5, 0, 0);
+    cur = unixAtNYWallClock(y3, m3, d3, pauseEndHour, 0, 0);
   }
   return cur;
 }
 
-export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: number): number {
+export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: number, pauseEndHour: number = defaultPauseEndHour): number {
   if (endUnix <= startUnix) return 0;
   let total = 0;
-  let cur = advanceToNextActiveUnix(startUnix);
+  let cur = advanceToNextActiveUnix(startUnix, pauseEndHour);
   while (cur < endUnix) {
     const w = nyWallFromUnixSec(cur);
-    const windowClose = unixAtNYWallClock(w.y, w.mon, w.d, 22, 0, 0);
+    const windowClose = unixAtNYWallClock(w.y, w.mon, w.d, PAUSE_START_HOUR, 0, 0);
     if (windowClose <= cur) {
       const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-      cur = unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
+      cur = unixAtNYWallClock(y2, m2, d2, pauseEndHour, 0, 0);
       continue;
     }
     let chunkEnd = windowClose;
@@ -137,7 +161,7 @@ export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: num
     total += chunkEnd - cur;
     if (chunkEnd >= endUnix) break;
     const [y3, m3, d3] = addCalendarDays(w.y, w.mon, w.d, 1);
-    cur = unixAtNYWallClock(y3, m3, d3, 5, 0, 0);
+    cur = unixAtNYWallClock(y3, m3, d3, pauseEndHour, 0, 0);
   }
   return total;
 }
@@ -145,9 +169,10 @@ export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: num
 export function slowDraftDisplayedSecondsRemaining(
   nowUnixSec: number,
   pickStartUnixSec: number,
-  pickLengthSec: number
+  pickLengthSec: number,
+  pauseEndHour: number = defaultPauseEndHour
 ): number {
-  const elapsed = slowDraftEffectiveElapsedSeconds(pickStartUnixSec, nowUnixSec);
+  const elapsed = slowDraftEffectiveElapsedSeconds(pickStartUnixSec, nowUnixSec, pauseEndHour);
   return Math.max(0, Math.floor(pickLengthSec - elapsed));
 }
 
@@ -156,8 +181,8 @@ export function isSlowDraftPickLength(pickLengthSec: number): boolean {
 }
 
 /** True if `nowUnixSec` falls inside the slow-draft night pause (22:00–05:00 PT). */
-export function isSlowDraftNightPause(nowUnixSec: number): boolean {
-  return inNightPause(nyWallFromUnixSec(nowUnixSec));
+export function isSlowDraftNightPause(nowUnixSec: number, pauseEndHour: number = defaultPauseEndHour): boolean {
+  return inNightPause(nyWallFromUnixSec(nowUnixSec), pauseEndHour);
 }
 
 /**
@@ -166,6 +191,37 @@ export function isSlowDraftNightPause(nowUnixSec: number): boolean {
  * reads the full pick length at the start, ticks down only during active hours,
  * and freezes overnight.
  */
-export function slowDraftActiveSecondsUntil(nowUnixSec: number, pickEndUnixSec: number): number {
-  return slowDraftEffectiveElapsedSeconds(nowUnixSec, pickEndUnixSec);
+export function slowDraftActiveSecondsUntil(nowUnixSec: number, pickEndUnixSec: number, pauseEndHour: number = defaultPauseEndHour): number {
+  return slowDraftEffectiveElapsedSeconds(nowUnixSec, pickEndUnixSec, pauseEndHour);
+}
+
+/** Seconds from `nowUnixSec` until tonight's 22:00 PT pause starts; 0 while paused. */
+export function slowDraftSecondsUntilPause(nowUnixSec: number, pauseEndHour: number = defaultPauseEndHour): number {
+  const w = nyWallFromUnixSec(nowUnixSec);
+  if (inNightPause(w, pauseEndHour)) return 0;
+  return Math.max(0, unixAtNYWallClock(w.y, w.mon, w.d, PAUSE_START_HOUR, 0, 0) - nowUnixSec);
+}
+
+/**
+ * What a slow-draft clock should DISPLAY. Normally the active seconds left
+ * (ticks in active hours, frozen overnight). With the fresh-clock-after-pause
+ * rule a pick armed after (22:00 − pickLength) has MORE active time than one
+ * clock: tonight's remainder PLUS a full clock at pauseEnd. Capping that at
+ * pickLength (the pre-8/27 behavior) showed a flat "4:00:00" from ~6pm until
+ * 7am — every user read it as frozen (ticket-2661). Richard 8/27: "it should
+ * still count down." So while there is more than one clock ahead, count down
+ * to the pause (tonight's real remaining), then the full clock shows through
+ * the pause and ticks from pauseEnd. Never returns 0 before the pause: 0 flips
+ * canDraft off in the room for the final second, so the floor is 1.
+ */
+export function slowDraftDisplaySecondsUntil(
+  nowUnixSec: number,
+  pickEndUnixSec: number,
+  pickLengthSec: number,
+  pauseEndHour: number = defaultPauseEndHour
+): number {
+  const active = slowDraftActiveSecondsUntil(nowUnixSec, pickEndUnixSec, pauseEndHour);
+  if (!(pickLengthSec > 0) || active <= pickLengthSec) return active;
+  const toPause = slowDraftSecondsUntilPause(nowUnixSec, pauseEndHour);
+  return toPause > 0 ? Math.max(1, toPause) : pickLengthSec;
 }

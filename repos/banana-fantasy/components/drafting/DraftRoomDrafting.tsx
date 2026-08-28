@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useSlowClock } from '@/contexts/SlowClockContext';
+import { slowDraftActiveSecondsUntil } from '@/utils/slowDraftClock';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
 import { DraftRoomChat } from '@/components/drafting/DraftRoomChat';
@@ -67,6 +69,8 @@ interface DraftRoomDraftingProps {
    *  the sidebar at whichever drafter the user clicked on. */
   spectator?: boolean;
   usersMap?: DraftRoomUsersMap;
+  /** Normalized contest name ("League #343") — titles the saved board image. */
+  contestName?: string;
 }
 
 export function DraftRoomDrafting({
@@ -99,7 +103,15 @@ export function DraftRoomDrafting({
   showBanner = true,
   spectator = false,
   usersMap,
+  contestName,
 }: DraftRoomDraftingProps) {
+  const { copy: slowClock } = useSlowClock();
+  // Fresh-clock-after-pause pick: more than one full clock of active time
+  // ahead (tonight's remainder + a full clock at pauseEnd). The clock counts
+  // down to tonight's pause, so label what happens next and don't go red.
+  const freshClockAhead = isSlowDraft && slowClock.freshClockAfterPause && !isSlowDraftPaused
+    && engine.endOfTurnTimestamp > 0
+    && slowDraftActiveSecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp) > slowClock.pickLengthSec;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
   // Driven entirely by DraftRoomChat (which is always mounted + polling); reset
@@ -158,7 +170,7 @@ export function DraftRoomDrafting({
 
   // The top banner is position:fixed, so the page must reserve its height —
   // but the banner's height is content-driven: the slow-draft overnight pause
-  // adds a "⏸ Paused · 5am PT" line to the on-clock card, which pushed the
+  // adds a "⏸ Paused · {slowClock.pauseEndLabel} PT" line to the on-clock card, which pushed the
   // banner past the old hardcoded 290px and clipped the DRAFT/QUEUE/… tab bar
   // every night 10pm–5am PT (ticket-2661, 2026-07-18). So measure the real
   // rendered height and reserve exactly that; the hardcoded values remain only
@@ -377,7 +389,7 @@ export function DraftRoomDrafting({
                               {formatTime(bestTimeRemaining)}
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
-                              ⏸ Paused · 5am PT
+                              ⏸ Paused · {slowClock.pauseEndLabel} PT
                             </div>
                           </div>
                         ) : (
@@ -386,9 +398,14 @@ export function DraftRoomDrafting({
                             fontSize: '16px',
                             margin: '2px auto 0px auto',
                             textAlign: 'center',
-                            color: bestTimeRemaining > 10 ? '#fff' : 'red',
+                            color: bestTimeRemaining > 10 || freshClockAhead ? '#fff' : 'red',
                           }}>
                             {formatTime(bestTimeRemaining)}
+                            {freshClockAhead && (
+                              <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
+                                then a full {slowClock.compact} clock at {slowClock.pauseEndLabel} PT
+                              </div>
+                            )}
                           </div>
                         )
                       ) : (
@@ -441,24 +458,12 @@ export function DraftRoomDrafting({
 
             <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: draftStatusColor(visibleDraftType) }}>
               {spectator ? (
-                (() => {
-                  const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;
-                  const onClockName = onClockIdx !== undefined
-                    ? getTruncatedAccountName(
-                        engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '',
-                        engine.draftOrder[onClockIdx]?.name || '',
-                      )
-                    : '';
-                  const truncated = onClockName.length > 14
-                    ? `${onClockName.substring(0, 12)}…`
-                    : onClockName;
-                  return (
-                    <span className="text-white/80">
-                      On the clock: <span className="text-yellow-400">{truncated || '—'}</span>
-                      <span className="ml-3 text-white/40">Pick {engine.currentPickNumber} / 150</span>
-                    </span>
-                  );
-                })()
+                // Mirror the real room: participants never see an
+                // "On the clock: <name>" line, so spectators don't either
+                // (it also leaked the Banana-<hex> placeholder when the
+                // picker's name hadn't resolved — Boris 2026-08-03). The
+                // highlighted player card already shows whose turn it is.
+                <span className="text-white/40">Pick {engine.currentPickNumber} / 150</span>
               ) : engine.isUserTurn && engine.airplaneMode ? (
                 <span className="flex items-center justify-center gap-2 text-emerald-400">
                   Auto-drafting...
@@ -486,11 +491,11 @@ export function DraftRoomDrafting({
             {isSlowDraft && (
               isSlowDraftPaused ? (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
-                  ⏸ Clock paused until 5am PT — you can still make picks
+                  ⏸ Clock paused until {slowClock.pauseEndLabel} PT — you can still make picks
                 </div>
               ) : (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
-                  Clock pauses daily 10pm–5am PT · you can still make picks
+                  Clock pauses daily {slowClock.pauseWindowLabel} · you can still make picks
                 </div>
               )
             )}
@@ -611,6 +616,8 @@ export function DraftRoomDrafting({
                       ? user.username
                       : bananaPlaceholderName(walletParam || '')
                   }
+                  leagueNumber={(contestName || '').replace(/\D/g, '')}
+                  draftType={visibleDraftType}
                 />
               )}
               {activeTab === 'roster' && (

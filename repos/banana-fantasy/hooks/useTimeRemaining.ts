@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   isSlowDraftPickLength,
-  slowDraftActiveSecondsUntil,
+  slowDraftDisplaySecondsUntil,
 } from '@/utils/slowDraftClock';
 
 /**
@@ -51,7 +51,12 @@ export function useTimeRemaining(
           // full pick length at the start, ticks down during active hours, and
           // freezes overnight (22:00–05:00 PT).
           const nowSec = Math.floor(now / 1000);
-          setTimeRemaining(slowDraftActiveSecondsUntil(nowSec, endOfTurnTimestamp));
+          // Fresh-clock-after-pause picks (armed after 22:00 − pickLength) have
+          // tonight's remainder + a full clock tomorrow. Count down to the
+          // pause tonight, then the full clock shows through the pause and
+          // ticks from pauseEnd (see slowDraftDisplaySecondsUntil). Legacy
+          // clocks never exceed pickLength, so this is the plain active count.
+          setTimeRemaining(slowDraftDisplaySecondsUntil(nowSec, endOfTurnTimestamp, pickLengthSec ?? 0));
         } else {
           // endOfTurnTimestamp is in seconds (Unix timestamp), convert to milliseconds
           const timestampMs = endOfTurnTimestamp * 1000;

@@ -6,7 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
 import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
-import { isSlowDraftPickLength, isSlowDraftNightPause, slowDraftActiveSecondsUntil } from '@/utils/slowDraftClock';
+import { isSlowDraftPickLength, isSlowDraftNightPause, slowDraftDisplaySecondsUntil } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
@@ -1047,7 +1047,7 @@ export function useDraftLiveSync({
       // the per-device raw engine.timeRemaining. Produces the identical number
       // as branch 1, so there's no jump when Firebase goes live. FAST drafts are
       // untouched (they keep the branch above).
-      value = slowDraftActiveSecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp);
+      value = slowDraftDisplaySecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp, firebasePickLength ?? 0);
     } else {
       value = engine.timeRemaining;
     }
