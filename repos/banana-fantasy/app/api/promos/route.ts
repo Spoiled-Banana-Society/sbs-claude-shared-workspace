@@ -95,20 +95,24 @@ export async function GET(req: Request) {
         // 2-line card clamp truncated ("...and win a…") — keep every user's
         // card on the current copy (Boris 2026-08-17). Same string on the
         // carousel, sidebar and /promos card.
-        atb.description = 'First 10 people to hit all 10 slots win a Jackpot seat.\nPaid drafts only.\nJackpot — win the league, go straight to the Finals.';
+        // Prize upgraded Jackpot → JackHOF (Boris 2026-08-27) — title restamped
+        // too, since seeded docs carry the launch-day "JACKPOT SEAT" title.
+        atb.title = 'Around The Banana → JACKHOF SEAT';
+        atb.modalContent.title = 'Around The Banana → JackHOF Seat';
+        atb.description = 'First 10 people to hit all 10 slots win a JackHOF seat.\nPaid drafts only.\nJackHOF — skip to the Finals + the HOF prize track.';
         // Rules text lives on the seeded per-user doc too — restamp it so the
         // modal matches the paid-only era (Boris 2026-08-22), same as the card.
         atb.modalContent.explanation =
           '• PAID drafts only — free and wheel drafts don\'t count.\n'
           + '• Draft from ALL 10 pick slots, in ANY order, to make it Around The Banana.\n'
           + '• Your pick slot is the draft position (1 to 10) you land when a draft fills — it\'s random every time.\n'
-          + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKPOT draft.\n'
+          + '• The FIRST 10 PLAYERS to cover every slot each win a seat in a JACKHOF draft — the rarest draft in SBS, Jackpot and HOF perks combined.\n'
           + '• 10 seats total. When they\'re gone, they\'re gone — the card shows how many are left.\n'
           + '• Any number of drafts counts. Repeat slots don\'t hurt you, only new slots move you forward.\n'
           + '• Drafts count when they FILL and reveal, not when you enter.\n'
           + '\n'
-          + '• Win your Jackpot league and you advance straight to the finals, skipping both weeks of playoffs.\n'
-          + '• Your seat arrives as a Jackpot draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
+          + '• Win your JackHOF league and you advance straight to the Week 17 finals AND compete in the HOF playoff track for bonus prizes — both perks, one draft.\n'
+          + '• Your seat arrives as a JackHOF draft pass in your passes — sell it on the marketplace any time before the draft, and you can sell your team after the draft too. You just can\'t sell while the draft is live. It is a slow draft.\n'
           + '\n'
           + '• One seat per player.\n'
           + '• One account per person — more than one account makes you ineligible to win prizes.';

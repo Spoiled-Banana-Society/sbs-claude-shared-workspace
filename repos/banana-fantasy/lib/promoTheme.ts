@@ -18,7 +18,7 @@ export interface PromoHue {
 }
 
 export const PROMO_HUES: Record<PromoType, PromoHue> = {
-  'around-the-banana': { a: '#e0284a', b: '#4a0818' }, // jackpot red — the prize is a Jackpot seat
+  'around-the-banana': { a: '#e0284a', b: '#4a0818' }, // JackHOF red (gold lives in the copy) — prize upgraded to a JackHOF seat 2026-08-27
   'drop':              { a: '#e5731f', b: '#4d1c06' },
   'daily-drafts':      { a: '#c98f00', b: '#4a3300' },
   'pick-chase':        { a: '#0aa3c7', b: '#04304d' },
@@ -55,7 +55,7 @@ export function promoAccent(type: PromoType): string {
  */
 export function promoKicker(promo: Promo): string {
   switch (promo.type) {
-    case 'around-the-banana': return 'JACKPOT SEAT · LIVE RACE';
+    case 'around-the-banana': return 'JACKHOF SEAT · LIVE RACE';
     case 'drop': return 'JACKHOF SEAT · 9 PM PT';
     case 'daily-drafts': return 'FREE SPIN · EVERY 4';
     case 'pick-chase': return 'UP TO 5 SPINS';
@@ -87,7 +87,7 @@ export function promoKicker(promo: Promo): string {
  */
 export function promoKickerLines(promo: Promo): { top: string; big: string } {
   switch (promo.type) {
-    case 'around-the-banana': return { top: '', big: 'JACKPOT SEAT' };
+    case 'around-the-banana': return { top: '', big: 'JACKHOF SEAT' };
     case 'drop': return { top: '', big: 'JACKHOF SEAT' };
     case 'daily-drafts': return { top: '', big: 'FREE SPIN' };
     case 'pick-10': return { top: '', big: 'FREE SPIN' };

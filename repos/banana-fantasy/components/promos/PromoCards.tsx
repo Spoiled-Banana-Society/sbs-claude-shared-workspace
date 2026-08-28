@@ -483,8 +483,8 @@ export function PromoSpotlight({ promo, wallet, isClaimed, hasVisibleClaim, onOp
   let kicker = promoKicker(promo);
   let line: React.ReactNode = promo.description;
   if (isAtb && atb?.won) {
-    kicker = 'YOU MADE IT AROUND · JACKPOT SEAT';
-    line = `All 10 slots hit — you won seat ${atb.seatNumber}. Your Jackpot pass is in your passes; this round keeps running, and you can win another seat.`;
+    kicker = 'YOU MADE IT AROUND · JACKHOF SEAT';
+    line = `All 10 slots hit — you won seat ${atb.seatNumber}. Your JackHOF pass is in your passes; this round keeps running, and you can win another seat.`;
   }
 
   return (

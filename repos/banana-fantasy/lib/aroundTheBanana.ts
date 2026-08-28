@@ -299,9 +299,10 @@ export async function recordAroundTheBanana(
 }
 
 /**
- * Seat the winner in the promo Jackpot round. Lifted from THE DROP's
+ * Seat the winner in the promo JackHOF round (prize upgraded Jackpot →
+ * JackHOF, Boris 2026-08-27). Lifted from THE DROP's
  * awardSpecialSeat (lib/dropRun.ts) unchanged in substance: mint a real
- * Jackpot pass, stamp its Level so the Go engine never spends it on an
+ * JackHOF pass, stamp its Level so the Go engine never spends it on an
  * ordinary draft, and queue it with source 'promo' (never the wheel-winners'
  * round — the roarstone incident, Richard 2026-07-30).
  */
@@ -317,7 +318,7 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
       // Free-origin keeps the won seat out of the PAID revenue count.
       await recordPassOrigins({
         tokenIds: res.tokenIds, origin: 'admin_grant', ownerAtMint: winnerId,
-        txHash: res.txHash, reason: `around-the-banana:seat-${seat}`, level: 'jackpot',
+        txHash: res.txHash, reason: `around-the-banana:seat-${seat}`, level: 'jackhof',
       });
       const { registerMintedTokens } = await import('@/lib/onchain/reconcilePasses');
       await registerMintedTokens(winnerId, res.tokenIds, 'free')
@@ -325,19 +326,19 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
 
       // Stamp the special level so selectTokensByType / countSpendableTokens
       // SKIP it — without this the pass could be spent on an ordinary draft,
-      // burning the Jackpot seat.
+      // burning the JackHOF seat.
       await Promise.all(res.tokenIds.map((tid) => db
         .collection('owners').doc(winnerId.toLowerCase())
         .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: 'Jackpot' }, { merge: true })));
+        .set({ Level: 'JackHOF' }, { merge: true })));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {
         const { joinQueueWithToken } = await import('@/lib/db');
-        const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackpot', String(tokenId), seat >= 11 ? 'atb' : 'promo');
+        const { joinedRoundId } = await joinQueueWithToken(winnerId, 'jackhof', String(tokenId), seat >= 11 ? 'atb' : 'promo');
         if (joinedRoundId !== null) {
           const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
-          await ensureSpecialDraftSeat('jackpot', joinedRoundId, winnerId);
+          await ensureSpecialDraftSeat('jackhof', joinedRoundId, winnerId);
         }
         seated = true;
         logger.info('atb.seated_with_token', { winnerId, seat, tokenId, round: joinedRoundId });
@@ -348,15 +349,15 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
   }
 
   // FALLBACK — mint unavailable or failed. A seat that can't be sold still
-  // beats no seat. Credit jackpotEntries HERE ONLY (crediting on both paths
+  // beats no seat. Credit jackhofEntries HERE ONLY (crediting on both paths
   // would seat the winner twice — the Drop's hard-won rule).
   if (!seated) {
     await db.collection('v2_users').doc(winnerId)
-      .set({ jackpotEntries: FieldValue.increment(1) }, { merge: true });
+      .set({ jackhofEntries: FieldValue.increment(1) }, { merge: true });
     const { joinQueue } = await import('@/lib/db');
-    const { joinedRoundIds } = await joinQueue(winnerId, 'jackpot', seat >= 11 ? 'atb' : 'promo');
+    const { joinedRoundIds } = await joinQueue(winnerId, 'jackhof', seat >= 11 ? 'atb' : 'promo');
     const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
-    for (const rid of joinedRoundIds) await ensureSpecialDraftSeat('jackpot', rid, winnerId);
+    for (const rid of joinedRoundIds) await ensureSpecialDraftSeat('jackhof', rid, winnerId);
     logger.warn('atb.seated_legacy_no_token', { winnerId, seat, rounds: joinedRoundIds });
   }
 
@@ -369,6 +370,6 @@ async function awardAtbSeat(winnerId: string, seat: number): Promise<void> {
     }, { merge: true });
   }).catch((err) => logger.warn('atb.grant_mark_failed', { winnerId, err: String(err) }));
 
-  await unlockBadge(winnerId, 'jackpot-club', { source: 'around-the-banana', seat })
+  await unlockBadge(winnerId, 'jackhof-club', { source: 'around-the-banana', seat })
     .catch((err) => logger.warn('atb.badge_failed', { winnerId, err: String(err) }));
 }

@@ -76,7 +76,7 @@ export function eventNotificationContent(
       return {
         type: 'promo',
         title: 'You made it Around The Banana!',
-        message: `All 10 pick slots covered — you took seat ${seatNo} of 10. Your Jackpot draft pass is in your passes.`,
+        message: `All 10 pick slots covered — you took seat ${seatNo} of 10. Your JackHOF draft pass is in your passes.`,
         link: '/promos?promo=around-the-banana',
         dedupeKey: 'promo-around-the-banana-won',
         icon: 'trophy',
