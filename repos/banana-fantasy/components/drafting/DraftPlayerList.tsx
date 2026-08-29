@@ -367,27 +367,33 @@ export function DraftPlayerList({
           return (
             <React.Fragment key={player.playerId}>
               {pickMarkersByIndex.get(playerIdx)?.map(marker => (
+                // Line-break + small banana pill (Boris 2026-08-29, CrampyG's
+                // request, option C of the mocks): the structure stays quiet —
+                // thin gradient lines — and only the label goes loud, as a tiny
+                // solid pill with dark ink. The faint variant (second upcoming
+                // pick) keeps a translucent pill so hierarchy reads at a glance.
                 <div
                   key={marker.label}
-                  style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '5px 8px', textAlign: 'center' }}
+                  style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 12 }}
                 >
+                  <span style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, transparent, rgba(251,191,36,${marker.faint ? 0.25 : 0.55}))` }} />
                   <span
                     style={{
-                      // block + own line-height: inline text here baseline-aligns
-                      // against the div's 16px strut, which reads as extra space
-                      // above the label ("uneven vertical spacing" report 7/11)
-                      display: 'block',
                       lineHeight: 1,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '0.14em',
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      letterSpacing: '0.09em',
                       textTransform: 'uppercase',
                       whiteSpace: 'nowrap',
-                      color: marker.faint ? 'rgba(253,224,71,0.45)' : '#fde047',
+                      padding: '5px 12px',
+                      borderRadius: 999,
+                      background: marker.faint ? 'rgba(251,191,36,0.16)' : '#fbbf24',
+                      color: marker.faint ? 'rgba(253,224,71,0.85)' : '#0a0a0f',
                     }}
                   >
                     {marker.label}
                   </span>
+                  <span style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, rgba(251,191,36,${marker.faint ? 0.25 : 0.55}), transparent)` }} />
                 </div>
               ))}
               <div style={{ maxWidth: 900, width: '100%', margin: '2px auto' }}>
