@@ -361,6 +361,8 @@ async function awardVaultSeat(winnerId: string, seat: number): Promise<void> {
         .collection('owners').doc(winnerId.toLowerCase())
         .collection('validDraftTokens').doc(String(tid))
         .set({ Level: 'Jackpot' }, { merge: true })));
+      await Promise.all(res.tokenIds.map((tid) =>
+        db.collection('draftTokens').doc(String(tid)).set({ Level: 'Jackpot' }, { merge: true })));
       const tokenId = res.tokenIds[0];
       if (tokenId) {
         const { joinQueueWithToken } = await import('@/lib/db');

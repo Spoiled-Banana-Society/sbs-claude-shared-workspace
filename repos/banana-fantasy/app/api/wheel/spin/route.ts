@@ -625,13 +625,19 @@ export async function POST(req: Request) {
           // collides, so the validDraftTokens doc id is the on-chain tokenId.
           try {
             const specialLevel = jphofKind === 'jackpot' ? 'Jackpot' : jphofKind === 'hof' ? 'Hall of Fame' : 'JackHOF';
+            // BOTH stores — the pass reconciler rebuilds owner subcollections
+            // from the global token doc (registered Level Pro), so an
+            // owners-only stamp gets wiped by the next sweep. The 8/29 audit
+            // found 285 historical seat passes stripped this way.
             await Promise.all(
-              res.tokenIds.map((tid) =>
+              res.tokenIds.flatMap((tid) => [
                 db
                   .collection('owners').doc(userId.toLowerCase())
                   .collection('validDraftTokens').doc(String(tid))
                   .set({ Level: specialLevel }, { merge: true }),
-              ),
+                db.collection('draftTokens').doc(String(tid))
+                  .set({ Level: specialLevel }, { merge: true }),
+              ]),
             );
           } catch (e) {
             logger.warn('wheel.spin.jphof_level_stamp_failed', { spinId, userId, kind: jphofKind, err: (e as Error).message });

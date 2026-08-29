@@ -333,10 +333,16 @@ export async function awardSpecialSeat(
       // Stamp the special level so the Go engine's selectTokensByType and
       // countSpendableTokens both SKIP it — without this the pass could be
       // spent on an ordinary draft, burning the JackHOF seat.
-      await Promise.all(res.tokenIds.map((tid) => db
-        .collection('owners').doc(winnerId.toLowerCase())
-        .collection('validDraftTokens').doc(String(tid))
-        .set({ Level: type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'HOF' }, { merge: true })));
+      // BOTH stores — owners-only stamps get wiped when the reconciler
+      // rebuilds from the global doc (285 stripped passes found 8/29).
+      const dropLevel = type === 'jackhof' ? 'JackHOF' : type === 'jackpot' ? 'Jackpot' : 'Hall of Fame';
+      await Promise.all(res.tokenIds.flatMap((tid) => [
+        db.collection('owners').doc(winnerId.toLowerCase())
+          .collection('validDraftTokens').doc(String(tid))
+          .set({ Level: dropLevel }, { merge: true }),
+        db.collection('draftTokens').doc(String(tid))
+          .set({ Level: dropLevel }, { merge: true }),
+      ]));
 
       const tokenId = res.tokenIds[0];
       if (tokenId) {
