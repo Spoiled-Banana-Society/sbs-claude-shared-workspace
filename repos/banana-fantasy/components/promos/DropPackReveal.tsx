@@ -261,8 +261,8 @@ export function DropPackReveal({
                   {meta}
                 </div>
               )}
-              <div className="mt-auto flex justify-between items-center px-3 py-2 border-t border-white/10 text-[9px] uppercase tracking-[0.1em] text-white/35">
-                <span>Banana Pack</span><span>The Drop</span>
+              <div className="mt-auto flex justify-center items-center px-3 py-2 border-t border-white/10 text-[9px] uppercase tracking-[0.1em] text-white/35">
+                <span>Banana Zone</span>
               </div>
               {phase === 'flipped' && <span className="drop-shine absolute -top-[20%] -bottom-[20%] w-[46%]" />}
             </div>

@@ -402,7 +402,7 @@ export function ZonePacks() {
                     className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/[0.14] bg-black/60 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-[0.1em] text-white/70"
                     style={{ top: 7 }}
                   >
-                    The Drop
+                    Banana Zone
                   </span>
                   <span className="absolute inset-x-0 text-[17px] font-black text-white" style={{ bottom: 36 }}>
                     ×{n.sealed}
