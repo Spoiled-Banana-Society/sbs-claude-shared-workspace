@@ -105,6 +105,9 @@ export async function POST(req: Request, { params }: { params: { draftId: string
     } catch { /* state not initialized yet — close backstop covers it */ }
 
     if (!isJackpot && !isHof) {
+      await db.collection('drafts').doc(draftId)
+        .set({ revealCreditedAt: new Date().toISOString() }, { merge: true })
+        .catch(() => { /* stamp is for the credit sweep; crediting already ran */ });
       return json({ ok: true, level: 'pro', unlocked: false });
     }
 
@@ -117,6 +120,11 @@ export async function POST(req: Request, { params }: { params: { draftId: string
         revealedAt: new Date().toISOString(),
       });
     } catch {
+      // Already unlocked by another caller — still stamp, so the credit sweep
+      // recognizes this draft as fully processed and stops re-firing it.
+      await db.collection('drafts').doc(draftId)
+        .set({ revealCreditedAt: new Date().toISOString() }, { merge: true })
+        .catch(() => { /* best-effort */ });
       return json({ ok: true, level: levelKey, unlocked: false, deduped: true });
     }
 
@@ -158,6 +166,9 @@ export async function POST(req: Request, { params }: { params: { draftId: string
     }
 
     logger.info('draft.reveal_complete.unlocked', { draftId, level: isJackpot ? 'jackpot' : 'hof', wallets: wallets.length });
+    await db.collection('drafts').doc(draftId)
+      .set({ revealCreditedAt: new Date().toISOString() }, { merge: true })
+      .catch(() => { /* stamp is for the credit sweep */ });
     return json({ ok: true, level: isJackpot ? 'jackpot' : 'hof', unlocked: true, wallets: wallets.length });
   } catch (err) {
     logger.error('draft.reveal_complete.failed', { draftId, err });
