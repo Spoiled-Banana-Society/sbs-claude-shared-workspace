@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getRequestId } from '@/lib/requestId';
@@ -24,7 +25,15 @@ export async function GET(req: Request) {
   try {
     await requireAdmin(req);
     const snapshot = await readBbb4Treasury();
-    return json(snapshot, 200);
+    // Off-platform money that belongs in the prize-pool number (Boris's
+    // PayPal collections for the contest — $578 as of 2026-08-30). Kept in
+    // config so it's adjustable without a deploy: system_config/prizePoolAdjustment.
+    let offPlatformUsd = 0;
+    try {
+      const adj = await getAdminFirestore().collection('system_config').doc('prizePoolAdjustment').get();
+      offPlatformUsd = Number(adj.data()?.usd ?? 0) || 0;
+    } catch { /* pill just shows on-chain */ }
+    return json({ ...snapshot, offPlatformUsd }, 200);
   } catch (err) {
     if (err instanceof SkimConfigError) return jsonError(err.message, err.status);
     if (err instanceof ApiError) return jsonError(err.message, err.status);

@@ -23,6 +23,10 @@ interface DraftPlayerListProps {
    *  "YOUR PICK · N" divider where each lands in the ADP order. Only shown
    *  in the unfiltered ADP view, where its position is honest. */
   upcomingUserPicks?: number[];
+  /** Pick currently on the clock. Under RANK sort the divider is placed by
+   *  count (picks left before yours = rows likely gone), since rank values
+   *  don't share the overall-pick scale the way ADP does. */
+  currentPickNumber?: number;
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -40,6 +44,7 @@ export function DraftPlayerList({
   userRankMap,
   userStatsMap,
   upcomingUserPicks,
+  currentPickNumber,
 }: DraftPlayerListProps) {
   const resolveRank = (player: PlayerData): number => {
     const custom = userRankMap?.get(player.playerId);
@@ -113,20 +118,28 @@ export function DraftPlayerList({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availablePlayers, activePositions, sortField, searchQuery, userRankMap, userStatsMap]);
 
-  // "YOUR PICK · N" dividers. ADP shares the 1–150 overall-pick scale, so a
-  // divider sits before the first player whose sort value is past that pick —
-  // players above it will likely be gone by then. Only rendered in the full
-  // ADP-sorted view; any search/filter/RANK sort makes the position a lie.
-  // Back-to-back picks at the snake turn merge into one line.
+  // "YOUR PICK · N" dividers. In the ADP view, ADP shares the 1–150 overall-
+  // pick scale, so a divider sits before the first player whose sort value is
+  // past that pick — players above it will likely be gone by then. In the
+  // RANK view (your own 1–150 ordering, not a when-they-go prediction) the
+  // divider is placed by count instead: N picks left before yours → the top N
+  // rows are the ones likely gone. Hidden under search / position filters,
+  // where neither placement is honest. Back-to-back picks at the snake turn
+  // merge into one line.
   const pickMarkersByIndex = useMemo(() => {
     const markers = new Map<number, { label: string; faint: boolean }[]>();
     if (!upcomingUserPicks || upcomingUserPicks.length === 0) return markers;
-    if (sortField !== 'adp' || searchQuery.trim() || activePositions.size > 0) return markers;
+    if (searchQuery.trim() || activePositions.size > 0) return markers;
 
     // Same fallback chain as the sort comparator, so the divider can never
     // land out of order with the rows around it.
     const sortValue = (p: PlayerData) => resolveAdp(p) || resolveRank(p);
-    const indexFor = (pick: number) => filteredPlayers.findIndex(p => sortValue(p) >= pick);
+    const indexFor = (pick: number): number => {
+      if (sortField === 'adp') return filteredPlayers.findIndex(p => sortValue(p) >= pick);
+      if (typeof currentPickNumber !== 'number' || currentPickNumber <= 0) return -1;
+      const idx = pick - currentPickNumber;
+      return idx >= 0 && idx < filteredPlayers.length ? idx : -1;
+    };
 
     const [first, second] = upcomingUserPicks;
     const firstIdx = indexFor(first);
@@ -150,7 +163,7 @@ export function DraftPlayerList({
     }
     return markers;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredPlayers, upcomingUserPicks, sortField, searchQuery, activePositions]);
+  }, [filteredPlayers, upcomingUserPicks, currentPickNumber, sortField, searchQuery, activePositions]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 

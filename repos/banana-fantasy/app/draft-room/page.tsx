@@ -1067,6 +1067,11 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId]);
 
+  // Set by the restore below so the persist effect (which runs in the SAME
+  // mount commit, while engine.queuedPlayers is still []) doesn't wipe the
+  // saved copy before the restored queue has landed in state.
+  const queueRestoreSkipRef = useRef(false);
+
   useEffect(() => {
     const id = getPersistId();
     if (!id) return;
@@ -1075,6 +1080,7 @@ function DraftRoomContent() {
       if (raw) {
         const saved = JSON.parse(raw);
         if (Array.isArray(saved) && saved.length > 0 && engine.queuedPlayers.length === 0) {
+          queueRestoreSkipRef.current = true;
           engine.reorderQueue(saved);
         }
       }
@@ -1105,7 +1111,18 @@ function DraftRoomContent() {
     if (!id) return;
     if (engine.queuedPlayers.length > 0) {
       safeSetItem(`queue:${id}`, JSON.stringify(engine.queuedPlayers));
+      return;
     }
+    if (queueRestoreSkipRef.current) {
+      queueRestoreSkipRef.current = false;
+      return;
+    }
+    // Queue emptied → clear the saved copy too. This only ever wrote the
+    // NON-empty queue, so removing the last queued player left the old list
+    // in localStorage; every re-open of the room restored it (the server
+    // queue was correctly empty, and the live-sync falls back to the local
+    // queue when the server's is empty) — "queue won't go away" (lop, 8/29).
+    try { localStorage.removeItem(`queue:${id}`); } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.queuedPlayers, draftId]);
 
