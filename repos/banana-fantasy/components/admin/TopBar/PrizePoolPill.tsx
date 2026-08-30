@@ -5,7 +5,7 @@
  * "how much are we at" from any tab.
  *
  * Prize pool = Safe (cold treasury) + BBB4 contract USDC + off-platform
- * collections (system_config/prizePoolAdjustment — PayPal $578, Boris 2026-08-30).
+ * collections (system_config/prizePoolAdjustment — PayPal $500, Boris 2026-08-30).
  * (The old $75 deposit-flow-test adjustment was settled 2026-08-03 — Boris
  * received $100, $25 went into the Safe — matching the Money tab's row.)
  *

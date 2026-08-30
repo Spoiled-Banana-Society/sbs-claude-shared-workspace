@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     await requireAdmin(req);
     const snapshot = await readBbb4Treasury();
     // Off-platform money that belongs in the prize-pool number (Boris's
-    // PayPal collections for the contest — $578 as of 2026-08-30). Kept in
+    // PayPal collections for the contest — $500 as of 2026-08-30). Kept in
     // config so it's adjustable without a deploy: system_config/prizePoolAdjustment.
     let offPlatformUsd = 0;
     try {
