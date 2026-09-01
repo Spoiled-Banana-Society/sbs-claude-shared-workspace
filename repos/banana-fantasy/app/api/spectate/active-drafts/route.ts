@@ -59,14 +59,20 @@ function getServerDraftsApiUrl(): string {
   return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
 }
 
-async function fetchJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
+// null = the draft genuinely has no state yet (404 → still filling).
+// 'error' = the Go API failed (5xx/network) — the caller must NOT read that
+// as "filling": a transient 500 here made completed drafts render as 10/10
+// filling lobbies on the admin Spectate tab (2026-09-01). One retry, then
+// fall back to the RTDB completion flag.
+async function fetchJson<T>(url: string): Promise<T | null | 'error'> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.status === 404) return null;
+      if (res.ok) return (await res.json()) as T;
+    } catch { /* retry below */ }
   }
+  return 'error';
 }
 
 export async function GET(req: Request) {
@@ -141,8 +147,15 @@ export async function GET(req: Request) {
         if (!infoResults[i]) return null;
         try {
           const snap = await rtdb.ref(`drafts/${x.c.id}/realTimeDraftInfo`).get();
-          const v = snap.val() as { pickEndTime?: number; onDeckDrafter?: string } | null;
-          return v ? { pickEndTime: Number(v.pickEndTime ?? 0) || 0, onDeck: String(v.onDeckDrafter ?? '') } : null;
+          const v = snap.val() as { pickEndTime?: number; onDeckDrafter?: string; isDraftComplete?: boolean; pickNumber?: number } | null;
+          return v
+            ? {
+                pickEndTime: Number(v.pickEndTime ?? 0) || 0,
+                onDeck: String(v.onDeckDrafter ?? ''),
+                rtComplete: v.isDraftComplete === true,
+                rtPickNumber: Number(v.pickNumber ?? 0) || 0,
+              }
+            : null;
         } catch {
           return null;
         }
@@ -152,7 +165,12 @@ export async function GET(req: Request) {
     type Categorized = ActiveDraft & { completed: boolean };
     const drafts: Categorized[] = existing
       .map(({ c, snap }, i): Categorized | null => {
-        const info = infoResults[i];
+        const infoRaw = infoResults[i];
+        // Go API failed (not a 404): don't read that as "filling" — fall back
+        // to RTDB. A completed draft has isDraftComplete=true there; a truly
+        // filling lobby has no realTimeDraftInfo node at all.
+        const goFailed = infoRaw === 'error';
+        const info = infoRaw === 'error' ? null : infoRaw;
         const data = snap.data() as {
               Level?: string;
               DisplayName?: string;
@@ -173,12 +191,15 @@ export async function GET(req: Request) {
           : [];
         const maxPlayers = Number(data?.MaxPlayers ?? data?.maxPlayers ?? 10) || 10;
         const numPlayers = Number(data?.NumPlayers ?? data?.numPlayers ?? members.length) || members.length;
-        const pickNumber = info?.pickNumber ?? 0;
+        const clock = clockResults[i];
+        const pickNumber = info?.pickNumber ?? (goFailed ? clock?.rtPickNumber ?? 0 : 0);
         // Completed signal: pickNumber has reached 150 AND there's no
         // active pick in flight (currentPickEndTime null/missing). Matches
         // what the Go API exposes for finished drafts (verified on
         // 2024-fast-draft-709 — pickNumber=150 + currentPickEndTime=null).
-        const completed = pickNumber >= 150 && !info?.currentPickEndTime;
+        const completed = goFailed
+          ? clock?.rtComplete === true
+          : pickNumber >= 150 && !info?.currentPickEndTime;
         return {
           draftId: c.id,
           displayName: info?.displayName ?? data?.DisplayName ?? c.id,
@@ -186,7 +207,7 @@ export async function GET(req: Request) {
           level: data?.Level ?? null,
           pickNumber,
           currentDrafter: info?.currentDrafter ?? '',
-          filling: !info,
+          filling: goFailed ? !clock : !info,
           completed,
           numPlayers,
           maxPlayers,

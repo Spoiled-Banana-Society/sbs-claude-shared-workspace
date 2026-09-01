@@ -36,6 +36,8 @@ const KEY_EXPORT_ALLOWLIST = new Set<string>([
   '0x59e8ca8bbaf42037d8da75e8ca96732efd29092c',
   // LamarJ — brother sent 0.0101 ETH on Base instead of USDC (ticket-3349, 8/24). Right chain, wrong asset; has gas.
   '0xf4a0b6c01f4db328c31bf0e1bb8d3fcdf3c2d086',
+  // TBALLER — X-login embedded wallet; wants his 4 BBB4 passes visible in MetaMask (8/31).
+  '0xc01703f18087ea2f3875f18ce3de3bb348299f12',
 ]);
 
 function truncateAddress(addr: string): string {
