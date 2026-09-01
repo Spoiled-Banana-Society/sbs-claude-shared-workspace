@@ -34,6 +34,8 @@ export interface Notification {
   /** Dynamic-token bells (Boris 2026-08-26): '{N}' in title/message renders as
    *  the live jpLeft from the header's own computation — real-time, no writes. */
   dynamic?: string;
+  jpMax?: number;
+  hofMax?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -318,6 +320,8 @@ export function useNotifications() {
           pinned: n.pinned === true,
           liveAtMs: typeof n.liveAtMs === 'number' ? (n.liveAtMs as number) : undefined,
           dynamic: typeof n.dynamic === 'string' ? (n.dynamic as string) : undefined,
+          jpMax: typeof n.jpMax === 'number' ? (n.jpMax as number) : undefined,
+          hofMax: typeof n.hofMax === 'number' ? (n.hofMax as number) : undefined,
         };
       });
       // Re-merge optimistic local entries the server hasn't returned yet
@@ -678,16 +682,38 @@ export function BellCountdown({ liveAtMs }: { liveAtMs: number }) {
   );
 }
 
-export function renderDynamicText(text: string, notif: { dynamic?: string }, jpLeft: number | null, zoneLeft: number | null = null, zoneLeft2: number | null = null): string {
+/** guess-game bell (9/1): a lane counter jumping ABOVE its stamped max means
+ *  that lane's hit landed and its window rolled — drop that line. Both rolled
+ *  → the bell hides entirely (see isDynamicDone). Live, client-side, no writes. */
+export function isDynamicDone(notif: { dynamic?: string; jpMax?: number; hofMax?: number }, jpLeft: number | null, hofLeft: number | null): boolean {
+  if (notif.dynamic !== 'guess-game') return false;
+  const jpHit = jpLeft !== null && notif.jpMax != null && jpLeft > notif.jpMax;
+  const hofHit = hofLeft !== null && notif.hofMax != null && hofLeft > notif.hofMax;
+  return jpHit && hofHit;
+}
+
+export function renderDynamicText(text: string, notif: { dynamic?: string; jpMax?: number; hofMax?: number }, jpLeft: number | null, zoneLeft: number | null = null, zoneLeft2: number | null = null, hofLeft: number | null = null): string {
   if (!text.includes('{N}')) return text;
   if (notif.dynamic === 'jp-window') return text.replace(/\{N\}/g, jpLeft !== null ? String(jpLeft) : '…');
   if (notif.dynamic === 'zone-window') return text.replace(/\{N\}/g, zoneLeft !== null ? String(zoneLeft) : '…');
   if (notif.dynamic === 'zone-window-2') return text.replace(/\{N\}/g, zoneLeft2 !== null ? String(zoneLeft2) : '…');
+  if (notif.dynamic === 'guess-game') {
+    // Title has no tokens — only rebuild the message (it contains 'Jackpot').
+    if (!/Jackpot/.test(text)) return text;
+    const jpHit = jpLeft !== null && notif.jpMax != null && jpLeft > notif.jpMax;
+    const hofHit = hofLeft !== null && notif.hofMax != null && hofLeft > notif.hofMax;
+    const jpN = jpLeft !== null ? String(jpLeft) : '…';
+    const hofN = hofLeft !== null ? String(hofLeft) : '…';
+    if (!jpHit && !hofHit) return `Guess when the Jackpot and HOF hit and win a Free Spin. Jackpot will hit in the next ${jpN} drafts. HOF will hit in the next ${hofN} drafts. Enter on X to win a Spin.`;
+    if (!jpHit) return `Guess when the Jackpot hits and win a Free Spin. Jackpot will hit in the next ${jpN} drafts. Enter on X to win a Spin.`;
+    if (!hofHit) return `Guess when the HOF hits and win a Free Spin. HOF will hit in the next ${hofN} drafts. Enter on X to win a Spin.`;
+    return text;
+  }
   return text;
 }
 
 export function NotificationPanel({ isOpen, onClose, notifications, unreadCount, onMarkRead, onMarkAllRead, onUnpin }: NotificationPanelProps) {
-  const { jpLeft, zoneLeft, zoneLeft2 } = useLaneCounters();
+  const { jpLeft, hofLeft, zoneLeft, zoneLeft2 } = useLaneCounters();
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -761,7 +787,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                 <p className="text-text-muted text-xs mt-2">No notifications yet</p>
               </div>
             ) : (
-              notifications.slice(0, 15).map((notif, i) => {
+              notifications.filter((n) => !isDynamicDone(n, jpLeft, hofLeft)).slice(0, 15).map((notif, i) => {
                 const content = (
                   <motion.div
                     initial={i < 5 ? { opacity: 0, x: -8 } : false}
@@ -801,7 +827,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       )}
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-xs font-semibold leading-tight ${!notif.read ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          {renderDynamicText(notif.title, notif, jpLeft, zoneLeft, zoneLeft2)}
+                          {renderDynamicText(notif.title, notif, jpLeft, zoneLeft, zoneLeft2, hofLeft)}
                         </p>
                         {!notif.read && (
                           <div className="w-2 h-2 rounded-full bg-banana flex-shrink-0 mt-1" />
@@ -809,7 +835,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       </div>
                       {typeof notif.liveAtMs === 'number' && <BellCountdown liveAtMs={notif.liveAtMs} />}
                       <p className={`text-text-muted text-[11px] mt-0.5 whitespace-pre-line leading-relaxed ${notif.pinned ? '' : 'line-clamp-4'}`}>
-                        {renderDynamicText(notif.message, notif, jpLeft, zoneLeft, zoneLeft2)}
+                        {renderDynamicText(notif.message, notif, jpLeft, zoneLeft, zoneLeft2, hofLeft)}
                       </p>
                       <p className="text-text-muted/50 text-[10px] mt-1">{timeAgo(notif.createdAt)}</p>
                     </div>
