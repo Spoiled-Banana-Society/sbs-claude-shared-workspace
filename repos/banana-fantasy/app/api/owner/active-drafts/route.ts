@@ -249,7 +249,18 @@ export async function GET(req: Request) {
       };
     });
 
-    return json({ drafts });
+    // Edge-cache per wallet for 15s: this endpoint is a background reconcile
+    // (the client's live signals come from RTDB/WS), but it reads the wallet's
+    // ENTIRE usedDraftTokens subcollection (500+ docs for veterans) plus up to
+    // 120 league docs per call, up to 4x/min per client — one of the largest
+    // Firestore query burners of Aug 2026 ($2k Firestore month). 15s staleness
+    // is invisible; the read savings are not.
+    return new Response(JSON.stringify({ drafts }), {
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'public, s-maxage=15, stale-while-revalidate=30',
+      },
+    });
   } catch (err) {
     logger.error('[owner/active-drafts] failed', { err: err instanceof Error ? err.message : String(err) });
     return json({ drafts: [] });

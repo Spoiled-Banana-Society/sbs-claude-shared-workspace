@@ -9,7 +9,10 @@ export const runtime = 'nodejs';
 
 const STREAM_LIFETIME_MS = 55_000;
 const KEEPALIVE_INTERVAL_MS = 15_000;
-const PAGE_SIZE = 100;
+// 25, not 100: the only consumer left is LiveActivityMini's 5-row feed, and
+// every SSE reconnect re-reads PAGE_SIZE docs — with always-open admin tabs
+// that was 100 docs per tab per reconnect, 24/7 (Aug 2026 cost audit).
+const PAGE_SIZE = 25;
 
 /**
  * GET /api/admin/activity/stream

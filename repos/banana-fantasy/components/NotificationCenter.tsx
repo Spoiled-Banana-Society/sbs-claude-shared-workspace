@@ -411,8 +411,16 @@ export function useNotifications() {
   // are: realtime ping, tab focus, and every route change (this one). Deps
   // are stable scalars + a ref — render-loop-guard compliant.
   const pathname = usePathname();
+  // Throttle: a nav-happy user (lobby ↔ room ↔ promos every few seconds) was
+  // firing a full bell query per click. 30s between nav-triggered refetches is
+  // plenty — the realtime ping below still delivers new bells instantly.
+  const lastNavRefetchRef = useRef(0);
   useEffect(() => {
-    if (walletAddress) refetchRef.current();
+    if (!walletAddress) return;
+    const now = Date.now();
+    if (now - lastNavRefetchRef.current < 30_000) return;
+    lastNavRefetchRef.current = now;
+    refetchRef.current();
   }, [pathname, walletAddress]);
 
   // Real-time: refetch on any user-event stream ping, coalesced to one refetch
