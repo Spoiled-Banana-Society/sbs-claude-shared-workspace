@@ -182,8 +182,15 @@ export async function GET(req: Request) {
 
     // 2) Only the most-recent slots per speed can be live — drop old completed
     //    ids up front so a veteran's hundreds of finished drafts cost nothing.
+    // Prior-season leagues (e.g. 2025-slow-draft-73 held by a returning player's
+    // old cards) must never be candidates: their state docs are stale or missing,
+    // so they classify as "filling"/"drafting" and resurface as phantom live
+    // drafts (Billieve/NickW/esparks reports, 2026-09-01).
+    const seasonPrefix = `${new Date().getFullYear()}-`;
     const recent = (speed: 'fast' | 'slow') => {
-      const ids = [...byLeague.keys()].filter((id) => (speed === 'slow') === id.includes('-slow-'));
+      const ids = [...byLeague.keys()].filter(
+        (id) => id.startsWith(seasonPrefix) && (speed === 'slow') === id.includes('-slow-'),
+      );
       ids.sort((a, b) => slotOf(b) - slotOf(a));
       return ids.slice(0, RECENT_SLOTS);
     };
