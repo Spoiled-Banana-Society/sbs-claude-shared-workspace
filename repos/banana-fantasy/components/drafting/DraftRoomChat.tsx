@@ -117,7 +117,7 @@ export function DraftRoomChat({
     };
 
     fetchOnce();
-    const id = setInterval(fetchOnce, 2000);
+    const id = setInterval(fetchOnce, 4000); // 2s->4s (cost audit 9/1)
     return () => { cancelled = true; clearInterval(id); };
   }, [draftId, myWallet]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);

@@ -153,7 +153,14 @@ export async function GET(req: Request) {
       // Stale-tab guard: the page compares this against the value it saw on
       // first load and reloads itself when a new deploy lands (launch-day
       // iterations left open tabs rendering with old page code — Richard 8/13).
-      headers: { 'x-mindshare-build': (process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev').slice(0, 12) },
+      headers: {
+        'x-mindshare-build': (process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev').slice(0, 12),
+        // 60s edge cache (cost audit 9/1): every uncached hit reads ALL
+        // v2_twitter_links + tiles. Cache key includes ?wallet=, so the
+        // personalized "you" row stays per-viewer. Scores update on a 5-min
+        // scan cadence anyway — 60s staleness is invisible.
+        'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+      },
     });
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : 'board read failed', 500);

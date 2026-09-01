@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     return json(
       { teams: total, jackpot: jp, hof: hf, pro: Math.max(0, total - jp - hf) },
       // 5s/10s (was 30s/60s): tab counts pick up a just-closed draft near-real-time.
-      { status: 200, headers: { 'cache-control': 'public, max-age=5, s-maxage=10' } },
+      { status: 200, headers: { 'cache-control': 'public, max-age=30, s-maxage=300, stale-while-revalidate=600' /* 10s->300s (cost audit 9/1): full marketplace_index team scan per miss */ } },
     );
   } catch (err) {
     console.error('[marketplace/stats] GET failed:', err);

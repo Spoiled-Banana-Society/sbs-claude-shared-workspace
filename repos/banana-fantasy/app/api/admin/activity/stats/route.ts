@@ -122,7 +122,19 @@ function fold(b: Bucket, e: FirebaseFirestore.DocumentData, filledLeagues: Set<s
   }
 }
 
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
+  // RETIRED (2026-09-01, cost audit): this endpoint scanned up to 120k docs
+  // per call (20k activity events + 50k wheelSpins + 50k promo claims) and
+  // was auto-polled every 30-45s by the Dashboard/Live Activity tabs. Those
+  // tabs are gone, but STALE admin tabs running old bundles keep polling —
+  // 410 with zero Firestore work is what stops them from billing us.
+  // The scan code below is kept for a future one-shot admin tool.
+  return jsonError('Gone — dashboard stats retired (cost audit 2026-09-01)', 410);
+}
+
+// Legacy implementation, unexported — kept for a future one-shot admin tool.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function _legacyStats(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   if (!isFirestoreConfigured()) return jsonError('Not configured', 503);

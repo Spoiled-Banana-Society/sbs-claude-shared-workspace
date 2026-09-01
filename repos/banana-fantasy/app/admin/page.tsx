@@ -23,15 +23,10 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications, type NotifCategory } from '@/hooks/admin/useAdminNotifications';
 import { UsersTable } from '@/components/admin/UsersTable';
-import { LiveActivity } from '@/components/admin/LiveActivity';
-import { LogsTab } from '@/components/admin/LogsTab';
 import { SupportInbox } from '@/components/admin/SupportInbox';
-import { AdminTools } from '@/components/admin/AdminTools';
 import { UserLookupPanel } from '@/components/admin/UserLookup/UserLookupPanel';
-import { DashboardPanel } from '@/components/admin/DashboardPanel';
 import { MoneyTab } from '@/components/admin/MoneyTab';
 import { DraftsTab } from '@/components/admin/DraftsTab';
-import { AuditTab } from '@/components/admin/AuditTab';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
 import { QuickActions } from '@/components/admin/TopBar/QuickActions';
 import { HealthPill } from '@/components/admin/TopBar/HealthPill';
@@ -91,10 +86,10 @@ function resolveLegacyTab(legacy: string | null): { tab: TabKey; sub?: string } 
   switch (legacy) {
     case 'metrics':
     case 'live':
-      return { tab: 'dashboard' };
+      return { tab: 'drafts' };
     case 'errors':
     case 'sentry':
-      return { tab: 'logs' };
+      return { tab: 'drafts' };
     case 'withdrawals':
       return { tab: 'money', sub: 'withdrawals' };
     case 'onramp':
@@ -108,9 +103,9 @@ function resolveLegacyTab(legacy: string | null): { tab: TabKey; sub?: string } 
     case 'founder':
       return { tab: 'drafts', sub: 'founder' };
     case 'kyc':
-      return { tab: 'audit', sub: 'kyc' };
+      return { tab: 'user-lookup' };
     case 'activity':
-      return { tab: 'audit', sub: 'admin-actions' };
+      return { tab: 'drafts' };
     default:
       return null;
   }
@@ -372,16 +367,18 @@ export default function AdminPage() {
           </header>
 
           <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 max-w-[1400px]">
-            {activeTab === 'dashboard' && <DashboardPanel enabled={isAuthorized} />}
-            {activeTab === 'activity' && <LiveActivity enabled={isAuthorized} />}
-            {activeTab === 'logs' && <LogsTab enabled={isAuthorized} />}
+            {/* dashboard / activity / logs / audit / tools tabs REMOVED for real
+                (2026-09-01): the Aug-29 cleanup only dropped them from the nav,
+                so deep-linked/stale tabs kept mounting DashboardPanel — whose
+                stat cards re-scanned up to 120k docs every 30s per open tab.
+                That was the structural Firestore baseline all month. */}
             {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
             {activeTab === 'user-lookup' && <UserLookupPanel enabled={isAuthorized} />}
             {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
             {activeTab === 'money' && <MoneyTab enabled={isAuthorized} />}
             {activeTab === 'drafts' && <DraftsTab enabled={isAuthorized} />}
-            {activeTab === 'audit' && <AuditTab enabled={isAuthorized} />}
-            {activeTab === 'tools' && <AdminTools enabled={isAuthorized} />}
+            
+            
           </div>
         </main>
       </div>

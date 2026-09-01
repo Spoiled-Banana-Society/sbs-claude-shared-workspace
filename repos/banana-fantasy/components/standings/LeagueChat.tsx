@@ -22,7 +22,7 @@ interface LeagueChatProps {
   username?: string;
 }
 
-const POLL_MS = 2000;
+const POLL_MS = 5000; // 2s->5s (cost audit 9/1)
 const HISTORY_LIMIT = 200;
 
 export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueChatProps) {

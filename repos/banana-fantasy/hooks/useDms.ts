@@ -43,7 +43,7 @@ export interface BlockState {
 }
 
 const INBOX_POLL_MS = 15_000;
-const THREAD_POLL_MS = 2000;
+const THREAD_POLL_MS = 4000; // 2s->4s (cost audit 9/1)
 
 function useAuthHeaders() {
   const privy = usePrivy();

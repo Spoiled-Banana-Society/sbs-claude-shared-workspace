@@ -15,7 +15,7 @@ import { getAdminDatabase, getAdminFirestore } from '@/lib/firebaseAdmin';
 import { enrichChatIdentities } from '@/lib/chatProfiles';
 
 const MUTES_COLLECTION = 'chat_mutes';
-const HISTORY_LIMIT = 200;
+const HISTORY_LIMIT = 80; // 200->80 (cost audit 9/1): every poll re-downloads this many messages
 
 export interface GlobalChatMessage {
   id: string;
