@@ -255,11 +255,11 @@ export async function GET(req: Request) {
     // 120 league docs per call, up to 4x/min per client — one of the largest
     // Firestore query burners of Aug 2026 ($2k Firestore month). 15s staleness
     // is invisible; the read savings are not.
-    return new Response(JSON.stringify({ drafts }), {
-      headers: {
-        'content-type': 'application/json',
-        'cache-control': 'public, s-maxage=15, stale-while-revalidate=30',
-      },
+    // NextResponse (via json helper), NOT a raw Response: raw Response headers
+    // get replaced by Next's force-dynamic default (max-age=0) — verified live
+    // 9/1; the NextResponse pattern on mindshare/board edge-caches correctly.
+    return json({ drafts }, {
+      headers: { 'cache-control': 'public, max-age=10, s-maxage=15, stale-while-revalidate=30' },
     });
   } catch (err) {
     logger.error('[owner/active-drafts] failed', { err: err instanceof Error ? err.message : String(err) });
