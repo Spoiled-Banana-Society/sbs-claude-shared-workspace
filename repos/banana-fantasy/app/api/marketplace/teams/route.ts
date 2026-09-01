@@ -20,7 +20,10 @@ function colorForDraftType(dt: DraftType): string {
 const teamsCache = new Map<string, { ts: number; nfts: MarketplaceTeam[] }>();
 // 3s (was 10s): a just-closed draft's teams + league should appear in the
 // marketplace browse near-real-time, not up to 10s later.
-const TEAMS_TTL_MS = 3_000;
+// 3s -> 60s (cost audit 9/1): the default browse path runs THREE parallel
+// 1000-doc marketplace_index queries (~3k reads) per uncached view. Listings
+// change on mint/sale cadence (minutes), so 60s staleness is invisible.
+const TEAMS_TTL_MS = 60_000;
 
 /**
  * GET /api/marketplace/teams?level=jackpot|hof&league=N
@@ -47,7 +50,7 @@ export async function GET(req: Request) {
     const cacheKey = `${wantLevel ?? ''}|${hasLeague ? leagueParam : ''}|${hasTeam ? teamParam : ''}`;
     const cached = teamsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < TEAMS_TTL_MS) {
-      return json({ nfts: cached.nfts, next: null });
+      return json({ nfts: cached.nfts, next: null }, { headers: { 'cache-control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' } });
     }
 
     const db = getAdminFirestore();
@@ -157,7 +160,7 @@ export async function GET(req: Request) {
     );
 
     teamsCache.set(cacheKey, { ts: Date.now(), nfts: teams });
-    return json({ nfts: teams, next: null });
+    return json({ nfts: teams, next: null }, { headers: { 'cache-control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' } });
   } catch (err) {
     console.error('[marketplace/teams] GET failed:', err);
     return jsonError('Internal Server Error', 500);
