@@ -520,7 +520,11 @@ export function useDraftingPageState() {
     const loadLiveDrafts = async () => {
       try {
         const { getOwnerDraftTokens } = await import('@/lib/api/owner');
-        const raw = await getOwnerDraftTokens(user!.walletAddress!);
+        // activeOnly: this 5s poll only needs current-season live seats —
+        // the full-history mode was the site's biggest Firestore burner
+        // (cost audit 9/2). Everything below already filtered to exactly
+        // this subset (leagueId non-empty + roster < 15).
+        const raw = await getOwnerDraftTokens(user!.walletAddress!, { activeOnly: true });
         if (cancelled) return;
         const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
 

@@ -365,9 +365,21 @@ async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCount
  * fields (`_cardId`, `_leagueId`, `_level`, etc.). This function flattens both
  * arrays and normalizes field names to match the `ApiDraftToken` interface.
  */
-export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDraftToken[]> {
+export async function getOwnerDraftTokens(
+  walletAddress: string,
+  opts?: {
+    /** Current-season active seats only (Go `?active=1`, cost audit 9/2).
+     *  The My Drafts 5s poll uses this — the full endpoint re-reads the
+     *  wallet's ENTIRE all-time token history from Firestore on every call.
+     *  Leave unset anywhere that needs past-season tokens (history, teams,
+     *  badges). */
+    activeOnly?: boolean;
+  },
+): Promise<ApiDraftToken[]> {
   const wallet = normalizeWalletAddress(walletAddress);
-  const raw: unknown = await draftsApi().get<unknown>(`/owner/${wallet}/draftToken/all`);
+  const raw: unknown = await draftsApi().get<unknown>(
+    `/owner/${wallet}/draftToken/all${opts?.activeOnly ? '?active=1' : ''}`,
+  );
 
   // Flatten { available, active } → single array
   let rawTokens: Record<string, unknown>[] = [];
