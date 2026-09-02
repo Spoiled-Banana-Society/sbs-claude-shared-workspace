@@ -52,6 +52,46 @@ const RESP_TTL_MS = 4_000;
  * Returns BBB4 NFTs owned by a specific wallet address,
  * with active listing data (orderHash, price) merged in.
  */
+// ALL active collection listings, shared across invocations for 20s. Without
+// the cache, every Teams view ran its own multi-page OpenSea pagination and
+// OpenSea 429'd page 2+ mid-sweep — page-1-only results made newer listings
+// (AkFF's $175 JP teams) invisible again minutes after the pagination fix.
+let listingsCache: { ts: number; listings: OpenSeaListing[] } | null = null;
+let listingsInflight: Promise<{ ok: boolean; listings: OpenSeaListing[] }> | null = null;
+async function fetchAllCollectionListings(): Promise<{ ok: boolean; listings: OpenSeaListing[] }> {
+  if (listingsCache && Date.now() - listingsCache.ts < 20_000) {
+    return { ok: true, listings: listingsCache.listings };
+  }
+  if (listingsInflight) return listingsInflight;
+  listingsInflight = (async () => {
+    const all: OpenSeaListing[] = [];
+    let next = '';
+    try {
+      for (let page = 0; page < 5; page++) {
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          res = await fetch(
+            `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=100${next ? `&next=${encodeURIComponent(next)}` : ''}`,
+            { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
+          );
+          if (res.ok) break;
+          await new Promise((r) => setTimeout(r, 400)); // 429 backoff, one retry
+        }
+        if (!res?.ok) return { ok: all.length > 0, listings: all };
+        const data = (await res.json()) as { listings?: OpenSeaListing[]; next?: string };
+        all.push(...(data.listings ?? []));
+        next = data.next ?? '';
+        if (!next) break;
+      }
+      listingsCache = { ts: Date.now(), listings: all };
+      return { ok: true, listings: all };
+    } finally {
+      listingsInflight = null;
+    }
+  })();
+  return listingsInflight;
+}
+
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
@@ -72,22 +112,7 @@ export async function GET(req: Request) {
     // Paginate ALL active listings — a single limit=100 page silently dropped
     // newer listings once the collection passed 100 live orders (AkFF's $175
     // jackpot teams showed as unlisted, 2026-09-01). Capped at 5 pages/500.
-    const listingsPromise = (async () => {
-      const all: OpenSeaListing[] = [];
-      let next = '';
-      for (let page = 0; page < 5; page++) {
-        const res = await fetch(
-          `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=100${next ? `&next=${encodeURIComponent(next)}` : ''}`,
-          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
-        );
-        if (!res.ok) return { ok: all.length > 0, listings: all };
-        const data = (await res.json()) as { listings?: OpenSeaListing[]; next?: string };
-        all.push(...(data.listings ?? []));
-        next = data.next ?? '';
-        if (!next) break;
-      }
-      return { ok: true, listings: all };
-    })();
+    const listingsPromise = fetchAllCollectionListings();
 
     // Paginate owned NFTs via the `next` cursor — a heavy holder (e.g. someone
     // with many unused draft passes) owns more than one page, and the old
