@@ -63,6 +63,20 @@ export async function GET(req: NextRequest) {
   }
   const wallet = (req.nextUrl.searchParams.get('wallet') ?? '').trim().toLowerCase();
 
+  // PRIOR-SEASON short-circuit (cost audit 9/2). Old-season drafts had their
+  // RTDB nodes wiped, so they read as numPlayers 0 = "filling" forever — and
+  // clients with a stale local draft list polled them every few seconds for
+  // eternity (57% of ALL Go /state/info traffic was dead 2025 drafts). A
+  // prior-season draft is by definition complete: answer terminally with a
+  // long edge cache and touch NOTHING (no RTDB, no Go, no Firestore).
+  const seasonPrefix = `${new Date().getFullYear()}-`;
+  if (/^\d{4}-/.test(draftId) && !draftId.startsWith(seasonPrefix)) {
+    return NextResponse.json(
+      { numPlayers: 10, players: [] },
+      { headers: { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400' } },
+    );
+  }
+
   let rtdbPlayers = 0;
   let rtdbOk = false;
   let pickEndTime: number | undefined;

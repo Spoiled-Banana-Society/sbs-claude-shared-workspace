@@ -1,4 +1,4 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { runInBackground } from '@/lib/serverBackground';
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
@@ -77,8 +77,16 @@ export async function GET(req: Request) {
     hasTokenRecord.add(`${owner}|${card}|${league}`);
   }
 
-  // 2) every draft roster
-  const draftsSnap = await db.collection('drafts').get();
+  // 2) every CURRENT-SEASON draft roster. Split-brains form within seconds of
+  // a live join/leave, so prior-season drafts can never produce one — scanning
+  // them was pure read spend (cost audit 9/2: this cron was 9.1M reads/day at
+  // its old */2 cadence). __name__ range needs no index.
+  const seasonStart = `${new Date().getFullYear()}-`;
+  const seasonEnd = `${new Date().getFullYear() + 1}-`;
+  const draftsSnap = await db.collection('drafts')
+    .where(FieldPath.documentId(), '>=', seasonStart)
+    .where(FieldPath.documentId(), '<', seasonEnd)
+    .get();
   const current: Mismatch[] = [];
   const draftLevel = new Map<string, string>();
   for (const doc of draftsSnap.docs) {

@@ -66,6 +66,12 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async () => {
+      // Hidden/parked tabs idle instead of polling (cost audit 9/2); resumes
+      // instantly via visibilitychange below.
+      if (document.hidden) {
+        timeoutId = setTimeout(tick, 60_000);
+        return;
+      }
       try {
         setLoading(true);
         const token = await getAccessTokenRef.current();
@@ -87,9 +93,16 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
         }
       }
     };
+    const onVisible = () => {
+      if (cancelled || document.hidden) return;
+      if (timeoutId) clearTimeout(timeoutId);
+      void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     tick();
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [enabled, walletAddress]);

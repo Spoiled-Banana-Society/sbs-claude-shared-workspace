@@ -146,6 +146,16 @@ async function sealedCountsByHolder(nightId: string): Promise<Map<string, number
  * re-running every tick for the rest of the window can only ever send once.
  */
 async function remindPreDrop(nightId: string): Promise<{ users: number }> {
+  // Marker-first (cost audit 9/2): the per-user dedupeKey already made the
+  // SEND once-ever, but the full packs + v2_users + botWallets scans below ran
+  // on EVERY tick of the 2-hour window (~5k reads/min for nothing). One doc
+  // read now answers "already sent?" for the whole night. Crash-safe: the
+  // marker is written only AFTER a successful send, so a failed run retries
+  // next tick and the per-user dedupe still prevents double bells.
+  const db0 = getAdminFirestore();
+  const preMarker = db0.collection('promo_sweeps').doc(`drop-2h-${nightId}`);
+  if ((await preMarker.get()).exists) return { users: 0 };
+
   const counts = await sealedCountsByHolder(nightId);
 
   // ALL real users get the 2-hour ping (Boris 2026-08-07 — the holders-only
@@ -196,6 +206,8 @@ async function remindPreDrop(nightId: string): Promise<{ users: number }> {
   }
 
   const total = counts.size + earnWallets.length;
+  await preMarker.set({ sentAtIso: new Date().toISOString(), holders: counts.size, earners: earnWallets.length })
+    .catch(() => { /* marker write failing just means one redundant (deduped) retry */ });
   logger.info('drop.prereminder.sent', { nightId, holders: counts.size, earners: earnWallets.length });
   return { users: total };
 }
@@ -206,6 +218,13 @@ async function remindPreDrop(nightId: string): Promise<{ users: number }> {
  * expire, they wait until the owner opens them.
  */
 async function remindSealedHolders(nightId: string): Promise<{ users: number }> {
+  // Marker-first (cost audit 9/2): this ran the sealed-packs scan on every
+  // cron tick AND every /api/promos/drop request for 4 hours after the lock.
+  // Same pattern as remindPreDrop — one doc read, marker written post-send.
+  const db0 = getAdminFirestore();
+  const openMarker = db0.collection('promo_sweeps').doc(`drop-open-${nightId}`);
+  if ((await openMarker.get()).exists) return { users: 0 };
+
   const counts = await sealedCountsByHolder(nightId);
   if (counts.size === 0) return { users: 0 };
 
@@ -222,6 +241,8 @@ async function remindSealedHolders(nightId: string): Promise<{ users: number }> 
     icon: 'ticket',
   })));
 
+  await openMarker.set({ sentAtIso: new Date().toISOString(), users: counts.size })
+    .catch(() => { /* marker write failing just means one redundant (deduped) retry */ });
   logger.info('drop.reminder.sent', { nightId, users: counts.size });
   return { users: counts.size };
 }

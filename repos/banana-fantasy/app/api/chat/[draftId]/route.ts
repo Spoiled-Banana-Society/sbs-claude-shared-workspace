@@ -49,6 +49,17 @@ export async function GET(
   if (!isValidDraftId(draftId)) {
     return NextResponse.json({ error: 'invalid draftId' }, { status: 400 });
   }
+  // PRIOR-SEASON short-circuit (cost audit 9/2): stale tabs kept polling dead
+  // 2025 draft rooms' chat every few seconds, re-downloading history from RTDB
+  // on every poll. Old seasons never get new messages — answer empty with a
+  // long edge cache and skip RTDB entirely.
+  const seasonPrefix = `${new Date().getFullYear()}-`;
+  if (/^\d{4}-/.test(draftId) && !draftId.startsWith(seasonPrefix)) {
+    return NextResponse.json(
+      { messages: [] },
+      { headers: { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400' } },
+    );
+  }
   try {
     const snap = await chatRef(draftId).limitToLast(HISTORY_LIMIT).once('value');
     const out: Array<ChatMessageRecord & { id: string }> = [];

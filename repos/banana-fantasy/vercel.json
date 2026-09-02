@@ -64,7 +64,7 @@
     },
     {
       "path": "/api/crons/reconcile-stuck-drafts",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/crons/link-wheel-teams",
@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/crons/deposit-credit-sweep",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/crons/reconcile-special-seats",
