@@ -69,12 +69,18 @@ export async function GET(req: NextRequest) {
   // eternity (57% of ALL Go /state/info traffic was dead 2025 drafts). A
   // prior-season draft is by definition complete: answer terminally with a
   // long edge cache and touch NOTHING (no RTDB, no Go, no Firestore).
+  // ⚠️ EXEMPT special-queue drafts: jackpot/hof/jackhof rounds are created
+  // under prior-season ids ON PURPOSE (lane-numbering isolation), so they are
+  // LIVE despite the '2025-' prefix (Isaic regression, 9/2).
   const seasonPrefix = `${new Date().getFullYear()}-`;
   if (/^\d{4}-/.test(draftId) && !draftId.startsWith(seasonPrefix)) {
-    return NextResponse.json(
-      { numPlayers: 10, players: [] },
-      { headers: { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400' } },
-    );
+    const { isQueueDraftId } = await import('@/lib/queueDraftIds');
+    if (!(await isQueueDraftId(draftId))) {
+      return NextResponse.json(
+        { numPlayers: 10, players: [] },
+        { headers: { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400' } },
+      );
+    }
   }
 
   let rtdbPlayers = 0;
