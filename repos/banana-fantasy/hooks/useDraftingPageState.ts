@@ -389,7 +389,9 @@ export function useDraftingPageState() {
     };
 
     poll();
-    const interval = setInterval(poll, 5000);
+    // Hidden tabs skip the queue poll (cost audit 9/2) — first visible tick
+    // lands within 5s of refocus.
+    const interval = setInterval(() => { if (!document.hidden) poll(); }, 5000);
     return () => clearInterval(interval);
   }, [isLive, user?.id, user?.walletAddress]);
 
@@ -777,7 +779,14 @@ export function useDraftingPageState() {
     // visibilitychange — mobile returning from the app switcher/background
     // fires visibilitychange (NOT focus), which is why the page showed a
     // stale cached phase ("randomizing…") for ~10s after coming back.
-    const interval = setInterval(() => { void loadLiveDrafts(); }, 5000);
+    // Hidden tabs skip this poll entirely (cost audit 9/2). This 5s loop is
+    // the single biggest Firestore burner on the site: each tick calls Go
+    // /owner/{w}/draftToken/all, which reads the wallet's ENTIRE valid+used
+    // token history from Firestore (hundreds of docs for veterans), plus a
+    // league-players fan-out per active row — and parked My Drafts tabs ran
+    // it all night. Focus + visibilitychange below refetch instantly on
+    // return, so a visible user loses nothing.
+    const interval = setInterval(() => { if (!document.hidden) void loadLiveDrafts(); }, 5000);
     const onFocus = () => { void loadLiveDrafts(); };
     const onVisible = () => { if (document.visibilityState === 'visible') void loadLiveDrafts(); };
     window.addEventListener('focus', onFocus);
