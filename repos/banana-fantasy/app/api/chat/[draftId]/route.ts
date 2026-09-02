@@ -30,7 +30,7 @@ interface ChatMessageRecord {
   timestamp: number;
 }
 
-const HISTORY_LIMIT = 200;
+const HISTORY_LIMIT = 60; // 200->60 (cost audit 9/2): every poll re-downloads this many from RTDB; a live draft room rarely exceeds 60 on-screen
 const TEXT_MAX = 500;
 
 function chatRef(draftId: string) {

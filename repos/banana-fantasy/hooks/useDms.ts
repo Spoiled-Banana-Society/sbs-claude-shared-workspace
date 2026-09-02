@@ -98,7 +98,7 @@ export function useDmInbox(enabled: boolean): {
   useEffect(() => {
     if (!enabled) { setLoading(false); return; }
     void refreshRef.current();
-    const id = setInterval(() => { void refreshRef.current(); }, INBOX_POLL_MS);
+    const id = setInterval(() => { if (!document.hidden) void refreshRef.current(); }, INBOX_POLL_MS);
     // Refresh the instant the user focuses this device/tab so DM read-state +
     // new threads sync near-instantly across devices (not just on the 15s poll).
     const onFocus = () => { if (document.visibilityState !== 'hidden') void refreshRef.current(); };
@@ -189,7 +189,7 @@ export function useDmThread(otherWallet: string | null): {
     }
     setLoading(true);
     void refreshRef.current();
-    const id = setInterval(() => { void refreshRef.current(); }, THREAD_POLL_MS);
+    const id = setInterval(() => { if (!document.hidden) void refreshRef.current(); }, THREAD_POLL_MS);
     return () => clearInterval(id);
   }, [otherWallet]);
 

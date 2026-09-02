@@ -160,8 +160,18 @@ export async function GET(req: Request) {
 
     const db = getAdminFirestore();
 
-    // 1) Every seat the wallet currently holds a pass for.
-    const usedSnap = await db.collection(`owners/${wallet}/usedDraftTokens`).get();
+    // 1) Every seat the wallet currently holds a pass for — CURRENT SEASON
+    // only, enforced in the query (cost audit 9/2). Step 2 below already
+    // discarded prior-season LeagueIds in memory, so this is behavior-identical
+    // while a veteran's hundreds of old-season token docs stop being billed on
+    // every call. Auto single-field index; unbound tokens (LeagueId '') are
+    // excluded by the range exactly as the `!leagueId` skip did.
+    const seasonLo = `${new Date().getFullYear()}-`;
+    const seasonHi = `${new Date().getFullYear() + 1}-`;
+    const usedSnap = await db.collection(`owners/${wallet}/usedDraftTokens`)
+      .where('LeagueId', '>=', seasonLo)
+      .where('LeagueId', '<', seasonHi)
+      .get();
     if (usedSnap.empty) return json({ drafts: [] });
 
     const byLeague = new Map<string, UsedToken>();

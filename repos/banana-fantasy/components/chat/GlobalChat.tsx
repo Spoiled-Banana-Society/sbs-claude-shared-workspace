@@ -112,7 +112,9 @@ export function GlobalChat() {
     };
     void fetchOnce();
     fetchOnceRef.current = fetchOnce;
-    const id = setInterval(fetchOnce, POLL_MS);
+    // Hidden tabs skip the poll (cost audit 9/2) — every fetch re-downloads
+    // chat history from RTDB, and a parked tab reads nothing anyway.
+    const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

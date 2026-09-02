@@ -77,7 +77,8 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
     };
 
     void fetchOnce();
-    const id = setInterval(fetchOnce, POLL_MS);
+    // Hidden tabs skip the poll (cost audit 9/2) — RTDB history re-download.
+    const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
   }, [draftId, myWallet]);
 
