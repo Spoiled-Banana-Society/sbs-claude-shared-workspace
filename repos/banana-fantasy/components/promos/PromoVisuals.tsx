@@ -8,6 +8,7 @@
 // Same components at three sizes: 'lg' (/promos long cards + spotlight),
 // 'md' (home carousel / draft sidebar), 'sm' (modal header strip).
 
+import { firstPurchaseSpinsPerPass } from '@/lib/api/config';
 import React, { useEffect, useMemo, useState } from 'react';
 import { SealedPack } from '@/components/promos/PackVisuals';
 import { useZonePacks } from '@/hooks/useZonePacks';
@@ -295,7 +296,7 @@ export function PromoSwatch({
       // Redesign (Boris 2026-08-23): corner states the variant's actual deal.
       inner = fpVariant === 'returning'
         ? <Big n="1" label={size === 'lg' ? 'SPIN PER 2 PASSES' : 'PER 2 PASSES'} size={size} />
-        : <Big n="2" label={size === 'lg' ? 'FREE SPINS PER PASS' : 'SPINS PER PASS'} size={size} />;
+        : <Big n={String(firstPurchaseSpinsPerPass())} label={size === 'lg' ? 'FREE SPINS PER PASS' : 'SPINS PER PASS'} size={size} />;
       break;
     case 'new-user':
       // Mini cards (md/sm) are too narrow for the full label next to the

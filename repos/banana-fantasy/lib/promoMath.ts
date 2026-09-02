@@ -21,10 +21,16 @@ export const FIRST_PURCHASE_MAX_SPINS = 40;
  * passes past 10 earn nothing (Richard 2026-08-06; new players upgraded from
  * the classic rate on 2026-07-10). Non-positive / invalid → 0.
  */
-export function firstPurchaseSpins(quantity: number): number {
+export function firstPurchaseSpins(
+  quantity: number,
+  /** Spins per pass — the standing rate, or the $100 Day flash rate while it
+   *  is live (lib/api/config firstPurchaseSpinsPerPass). */
+  spinsPerPass: number = FIRST_PURCHASE_SPINS_PER_PASS,
+): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+  const rate = Number.isFinite(spinsPerPass) && spinsPerPass > 0 ? Math.floor(spinsPerPass) : FIRST_PURCHASE_SPINS_PER_PASS;
   return Math.min(
-    Math.floor(quantity) * FIRST_PURCHASE_SPINS_PER_PASS,
+    Math.floor(quantity) * rate,
     FIRST_PURCHASE_MAX_SPINS,
   );
 }
@@ -67,13 +73,18 @@ export function computeDepositBudgetGrant(
   budget: number,
   used: number,
   quantity: number,
+  /** Spins per pass for THIS purchase (flash rate while $100 Day is live). */
+  spinsPerPass: number = FIRST_PURCHASE_SPINS_PER_PASS,
 ): DepositBudgetGrant {
   if (!Number.isFinite(budget) || budget <= 0) return { spins: 0, passesUsed: 0, exhausted: false };
-  const maxPasses = FIRST_PURCHASE_MAX_SPINS / FIRST_PURCHASE_SPINS_PER_PASS;
+  const rate = Number.isFinite(spinsPerPass) && spinsPerPass > 0 ? Math.floor(spinsPerPass) : FIRST_PURCHASE_SPINS_PER_PASS;
+  // Budget is stored in PASSES; at a higher rate fewer passes reach the spin
+  // cap, so the usable budget shrinks accordingly (10 passes at 4/pass).
+  const maxPasses = Math.floor(FIRST_PURCHASE_MAX_SPINS / rate);
   const remaining = Math.max(0, Math.min(Math.floor(budget), maxPasses) - Math.max(0, Math.floor(used)));
   const credit = Math.min(Math.max(0, Math.floor(quantity)), remaining);
   return {
-    spins: credit * FIRST_PURCHASE_SPINS_PER_PASS,
+    spins: credit * rate,
     passesUsed: credit,
     exhausted: remaining - credit <= 0,
   };
@@ -99,12 +110,14 @@ export function computeFirstPurchaseGrant(
   alreadyGranted: boolean,
   quantity: number,
   isReturning = false,
+  /** NEW-player spins per pass for THIS purchase (flash rate while live). */
+  spinsPerPass: number = FIRST_PURCHASE_SPINS_PER_PASS,
 ): FirstPurchaseGrant {
   if (alreadyGranted) return { consume: false, spins: 0 };
   if (isReturning) {
     return { consume: quantity > 0, spins: classicFirstPurchaseSpins(quantity) };
   }
-  const spins = firstPurchaseSpins(quantity);
+  const spins = firstPurchaseSpins(quantity, spinsPerPass);
   return { consume: spins > 0, spins };
 }
 
@@ -169,9 +182,9 @@ export interface FirstPurchaseUpsell {
  * (FIRST_PURCHASE_MAX_SPINS); at the cap there is no next spin to pitch, so
  * passesToNextSpin drops to 0 — surfaces must not nudge past a capped grant.
  */
-export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
+export function firstPurchaseUpsell(quantity: number, spinsPerPass: number = FIRST_PURCHASE_SPINS_PER_PASS): FirstPurchaseUpsell {
   const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
-  const spinsThisPurchase = Math.min(q * FIRST_PURCHASE_SPINS_PER_PASS, FIRST_PURCHASE_MAX_SPINS);
+  const spinsThisPurchase = firstPurchaseSpins(q, spinsPerPass);
   const atCap = spinsThisPurchase >= FIRST_PURCHASE_MAX_SPINS;
   return {
     spinsThisPurchase,

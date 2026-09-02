@@ -3,7 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { setPurchaseFlow } from '@/lib/purchaseFlow';
-import { FIRST_PURCHASE_SPINS_PER_PASS, FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN } from '@/lib/promoMath';
+import { FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN, firstPurchaseSpins } from '@/lib/promoMath';
+import { firstPurchaseSpinsPerPass, isNewUserFlashActive } from '@/lib/api/config';
 import { clientLog } from '@/lib/clientLog';
 
 /**
@@ -59,7 +60,7 @@ export function FirstPurchaseClaimModal({
     ? 'Every 2 buys = 1 Promo Spin + 2 Bonus Spins. Your money just landed — put it to work. Ends tonight.'
     : variant === 'returning'
       ? 'Every 2 passes on your first purchase = 1 Free Banana Spin. The deposit alone doesn\'t earn spins — buying the passes does.'
-      : `Every pass on your first purchase = ${FIRST_PURCHASE_SPINS_PER_PASS} Free Banana Spins. The deposit alone doesn't earn spins — buying the passes does.`;
+      : `${isNewUserFlashActive() ? '$100 Day: ' : ''}Every pass on your first purchase = ${firstPurchaseSpinsPerPass()} Free Banana Spins. The deposit alone doesn't earn spins — buying the passes does.`;
   const rewardLine = (() => {
     if (variant === 'kickoff') {
       const promo = Math.floor(qty / 2);
@@ -67,7 +68,7 @@ export function FirstPurchaseClaimModal({
     }
     const spins = variant === 'returning'
       ? Math.floor(qty / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN)
-      : qty * FIRST_PURCHASE_SPINS_PER_PASS;
+      : firstPurchaseSpins(qty, firstPurchaseSpinsPerPass());
     return `${spins} Free Spin${spins === 1 ? '' : 's'}`;
   })();
 

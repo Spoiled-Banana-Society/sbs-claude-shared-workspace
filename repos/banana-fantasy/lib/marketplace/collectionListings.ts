@@ -22,11 +22,15 @@ export async function getCollectionListings(): Promise<Map<string, OpenSeaListin
     const byId = new Map<string, OpenSeaListing>();
     try {
       if (OPENSEA_API_KEY) {
-        const res = await fetch(
-          `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
-        );
-        if (res.ok) {
+        // Paginate: one 50-cap page went stale once live listings passed 50
+        // (premium listings invisible, 2026-09-01). Capped at 10 pages/500.
+        let next = '';
+        for (let page = 0; page < 10; page++) {
+          const res = await fetch(
+            `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50${next ? `&next=${encodeURIComponent(next)}` : ''}`,
+            { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
+          );
+          if (!res.ok) break;
           const data = await res.json();
           for (const l of (data.listings ?? []) as OpenSeaListing[]) {
             const off = l.protocol_data.parameters.offer.find(
@@ -34,8 +38,10 @@ export async function getCollectionListings(): Promise<Map<string, OpenSeaListin
             ) as { identifierOrCriteria?: string } | undefined;
             if (off?.identifierOrCriteria) byId.set(off.identifierOrCriteria, l);
           }
-          cache = { ts: Date.now(), byId };
+          next = (data.next as string) ?? '';
+          if (!next) break;
         }
+        if (byId.size > 0) cache = { ts: Date.now(), byId };
       }
     } catch {
       /* best-effort overlay — return whatever we have (possibly empty) */

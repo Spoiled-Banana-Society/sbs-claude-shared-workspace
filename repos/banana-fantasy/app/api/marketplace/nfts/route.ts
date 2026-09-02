@@ -69,13 +69,25 @@ export async function GET(req: Request) {
 
     // Kick off the active-listings fetch in parallel (used to merge orderHash/
     // price onto owned NFTs so listed teams show "Delist").
-    const listingsPromise = fetch(
-      `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=100`,
-      {
-        headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
-        cache: 'no-store',
-      },
-    );
+    // Paginate ALL active listings — a single limit=100 page silently dropped
+    // newer listings once the collection passed 100 live orders (AkFF's $175
+    // jackpot teams showed as unlisted, 2026-09-01). Capped at 5 pages/500.
+    const listingsPromise = (async () => {
+      const all: OpenSeaListing[] = [];
+      let next = '';
+      for (let page = 0; page < 5; page++) {
+        const res = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=100${next ? `&next=${encodeURIComponent(next)}` : ''}`,
+          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
+        );
+        if (!res.ok) return { ok: all.length > 0, listings: all };
+        const data = (await res.json()) as { listings?: OpenSeaListing[]; next?: string };
+        all.push(...(data.listings ?? []));
+        next = data.next ?? '';
+        if (!next) break;
+      }
+      return { ok: true, listings: all };
+    })();
 
     // Paginate owned NFTs via the `next` cursor — a heavy holder (e.g. someone
     // with many unused draft passes) owns more than one page, and the old
@@ -161,8 +173,7 @@ export async function GET(req: Request) {
     // Build a map of tokenId → listing info from active listings by this owner
     const listingMap = new Map<string, { orderHash: string; price: number; protocolAddress: string; endTime: string | null }>();
     if (listingsRes.ok) {
-      const listingsData = await listingsRes.json();
-      const allListings: OpenSeaListing[] = listingsData.listings ?? [];
+      const allListings: OpenSeaListing[] = listingsRes.listings;
       for (const listing of allListings) {
         const params = listing.protocol_data.parameters as { offerer?: string; endTime?: string; offer: Array<{ itemType: number; identifierOrCriteria?: string }> };
         const offerer = params.offerer?.toLowerCase();

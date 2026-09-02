@@ -10,6 +10,7 @@ import { recountFromInventory } from '@/lib/passLedger';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { feeForDepositUsd, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { FIRST_PURCHASE_MAX_SPINS, FIRST_PURCHASE_SPINS_PER_PASS } from '@/lib/promoMath';
+import { firstPurchaseSpinsPerPass } from '@/lib/api/config';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -219,14 +220,20 @@ export async function creditDepositCandidates(
       // never pays more than FIRST_PURCHASE_MAX_SPINS (Richard 2026-08-06);
       // pre-cap users with a bigger stored budget promise-and-pay only to the cap.
       const maxBudgetPasses = FIRST_PURCHASE_MAX_SPINS / FIRST_PURCHASE_SPINS_PER_PASS;
+      // Bell promise uses the rate live RIGHT NOW ($100 Day flash = 4/pass
+      // while open); the grant itself re-judges the rate at purchase time and
+      // caps at FIRST_PURCHASE_MAX_SPINS, so the promise never overstates.
+      const ratePerPass = firstPurchaseSpinsPerPass();
       if (isNewPlayer) {
         if (existingBudget === 0) {
           const budget = Math.min(Math.max(1, Math.floor(cand.valueUsd / 25)), maxBudgetPasses);
           budgetUpdate = { firstDepositPassBudget: budget };
-          spinsPending = budget * FIRST_PURCHASE_SPINS_PER_PASS;
+          spinsPending = Math.min(budget * ratePerPass, FIRST_PURCHASE_MAX_SPINS);
         } else {
-          spinsPending = Math.max(0, Math.min(existingBudget, maxBudgetPasses) - usedBudget)
-            * FIRST_PURCHASE_SPINS_PER_PASS;
+          spinsPending = Math.min(
+            Math.max(0, Math.min(existingBudget, maxBudgetPasses) - usedBudget) * ratePerPass,
+            FIRST_PURCHASE_MAX_SPINS,
+          );
         }
       }
       tx.set(userRef, { cardFeeCreditCents: rollover, cardFeeFrontGranted: true, ...budgetUpdate }, { merge: true });

@@ -6,6 +6,7 @@ import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
 import { HypeCard } from '@/components/promos/HypeCard';
+import { PromoCodeBox } from '@/components/promos/PromoCodeBox';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
@@ -107,6 +108,10 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
           viewer with new-user / first-purchase cards gets each as its own
           spotlight row — nothing beside them — then the normal grid. Without
           them, the Banana Zone takes the featured spot instead. */}
+      {/* Promo code entry (BANANA launch) — renders nothing until the
+          system_config/promoCode switch is on; eligibility is server-judged. */}
+      <div className="mb-3.5 empty:hidden"><PromoCodeBox /></div>
+
       {(() => {
         const ONBOARD = new Set(['new-user', 'first-purchase']);
         const convs = sortedPromos.filter((p) => ONBOARD.has(p.type));

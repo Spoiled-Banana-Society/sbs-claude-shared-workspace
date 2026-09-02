@@ -12,7 +12,8 @@ import type { DbSchema } from './dbTypes';
 import { API_CONFIG } from './config';
 import { seedUserBadges } from '@/lib/badges/catalog';
 import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
-import { newPlayerFirstBuy, firstPurchaseCardRows } from '@/lib/firstPurchaseCopy';
+import { newPlayerFirstBuy, firstPurchaseCardRows, firstPurchaseFlashOverlay } from '@/lib/firstPurchaseCopy';
+import { FIRST_PURCHASE_SPINS_PER_PASS } from '@/lib/promoMath';
 
 // New-player first-purchase numbers, counted as TOTAL drafts in hand (bought
 // passes + wheel payouts) — see lib/firstPurchaseCopy.
@@ -23,7 +24,9 @@ import { newPlayerFirstBuy, firstPurchaseCardRows } from '@/lib/firstPurchaseCop
 // AND-ing it in here would make the copy UNDERSTATE the offer on a server that
 // really is granting the spins.
 const FP_BONUS_LIVE = isSpinOnPurchaseEnabled();
-const FP_ONE = newPlayerFirstBuy(1, FP_BONUS_LIVE);
+// Standing rate pinned explicitly: seeds are module-load constants and must
+// never bake the $100 Day flash rate into stored per-user docs.
+const FP_ONE = newPlayerFirstBuy(1, FP_BONUS_LIVE, FIRST_PURCHASE_SPINS_PER_PASS);
 
 const seedBadges: UserBadge[] = seedUserBadges();
 
@@ -804,6 +807,16 @@ export function getDefaultPromos(): Promo[] {
     // explicitly so nobody feels baited — logged-in surfaces render the
     // correct per-user variant instead (getPromos / firstPurchaseVariant).
     if (promo.type === 'first-purchase') {
+      // $100 Day flash: logged-out visitors are the audience, so the live
+      // flash copy + countdown must show here too (same overlay getPromos
+      // applies for logged-in new players).
+      const flash = firstPurchaseFlashOverlay(FP_BONUS_LIVE);
+      if (flash) {
+        promo.title = flash.title;
+        promo.description = flash.description;
+        promo.timerEndTime = flash.endsAtIso;
+        promo.modalContent = { ...promo.modalContent, title: flash.modalTitle, explanation: flash.explanation };
+      }
       promo.description = `New players: ${promo.description}`;
       promo.modalContent = {
         ...promo.modalContent,

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
-import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive } from '@/lib/api/config';
+import { API_CONFIG, getUsdcPaymentAddressOrThrow, isBuyBonusActive, firstPurchaseSpinsPerPass } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
@@ -47,6 +47,7 @@ import { computeJpCycle, jpRewardForPosition, type JpCycleState } from '@/lib/ro
 import { creditReferralBananas } from '@/lib/bananaDraw';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { isSpinOnPurchaseEnabled } from '@/lib/featureFlags';
+import { firstPurchaseFlashOverlay } from '@/lib/firstPurchaseCopy';
 import { runInBackground } from '@/lib/serverBackground';
 
 const USERS_COLLECTION = 'v2_users';
@@ -724,6 +725,21 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         if (Date.now() < endMs) promo.timerEndTime = new Date(endMs).toISOString();
         else promo.claimable = false;
       }
+      // $100 Day flash (Richard 2026-09-01): NEW players see the flash copy +
+      // a countdown to whichever ends first — the flash window or their own
+      // 24h first-purchase window. Returning players are overlaid with the
+      // classic copy below and are not part of the flash.
+      const flash = !isReturningUser ? firstPurchaseFlashOverlay(isSpinOnPurchaseEnabled()) : null;
+      if (flash) {
+        promo.title = flash.title;
+        promo.description = flash.description;
+        promo.modalContent = promo.modalContent || {};
+        promo.modalContent.title = flash.modalTitle;
+        promo.modalContent.explanation = flash.explanation;
+        const flashEnd = new Date(flash.endsAtIso).getTime();
+        const cur = promo.timerEndTime ? new Date(promo.timerEndTime).getTime() : Infinity;
+        promo.timerEndTime = new Date(Math.min(cur, flashEnd)).toISOString();
+      }
     }
     // Returning players keep the CLASSIC first-purchase promo copy (their
     // rate is unchanged) — overlay it AFTER the static seed overlay so the
@@ -808,7 +824,19 @@ export async function claimPromo(userId: string, promoId: string) {
 
     if (promo.type === 'new-user') {
       // Single-shot claim — Twitter gate above proved verified-and-unclaimed.
-      spinsAdded = 1;
+      // PROMO CODE (lib/promoCode.ts): a code redeemed BEFORE this claim and
+      // not yet paid lifts the single spin to the code's spins (BANANA = 4).
+      // Honored even if the campaign window has since closed — they redeemed
+      // in time. Marked granted in the same tx so it can never pay twice.
+      const pc = (user as User & { promoCode?: { spins?: number; granted?: boolean } }).promoCode;
+      if (pc && pc.granted !== true && Number.isFinite(pc.spins) && (pc.spins as number) > 1) {
+        spinsAdded = Math.floor(pc.spins as number);
+        (user as User & { promoCode?: Record<string, unknown> }).promoCode = {
+          ...pc, granted: true, grantedAt: new Date().toISOString(), mode: 'claim',
+        };
+      } else {
+        spinsAdded = 1;
+      }
     } else if (promo.type === 'pick-10' && promo.modalContent.pick10History) {
       const claimables = promo.modalContent.pick10History.filter((h) => h.status === 'claim');
       spinsAdded = claimables.length;
@@ -1578,7 +1606,8 @@ async function _incrementMintPromosInTx(
       // entries (each entry is its own purchase; the one-transaction rule
       // below would pay only the first). See computeDepositBudgetGrant.
       const used = userData?.firstDepositPassesUsed ?? 0;
-      const g = computeDepositBudgetGrant(depositBudget, used, quantity);
+      // Rate judged per purchase: $100 Day flash (4/pass) while live, else 2.
+      const g = computeDepositBudgetGrant(depositBudget, used, quantity, firstPurchaseSpinsPerPass());
       if (g.passesUsed > 0) {
         tx.set(userRef, {
           firstDepositPassesUsed: used + g.passesUsed,
@@ -1612,7 +1641,7 @@ async function _incrementMintPromosInTx(
         if (g.spins > 0) creditFpSpins(g.spins);
       }
     } else {
-      const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
+      const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning, firstPurchaseSpinsPerPass());
       if (grant.consume) {
         tx.set(userRef, { ...stampWindow, firstPurchaseBonusGranted: true }, { merge: true });
         if (grant.spins > 0) creditFpSpins(grant.spins);

@@ -14,7 +14,8 @@
 // that feature flag.
 
 import type { FirstPurchaseVariant } from '@/lib/promoMath';
-import { firstPurchaseSpins, classicFirstPurchaseSpins } from '@/lib/promoMath';
+import { firstPurchaseSpins, classicFirstPurchaseSpins, FIRST_PURCHASE_MAX_SPINS } from '@/lib/promoMath';
+import { API_CONFIG, firstPurchaseSpinsPerPass, isNewUserFlashActive } from '@/lib/api/config';
 import { wheelSegments, jackhofWheelSegments } from '@/lib/wheelConfig';
 import { SPIN_ON_PURCHASE_UI_ENABLED, bonusDraftsFor } from '@/lib/spinTypes';
 import { ENTRY_PRICE_USD } from '@/lib/deposits';
@@ -63,9 +64,16 @@ export function newPlayerFirstBuy(
    * ship copy that counts them.
    */
   bonusSpinsEnabled: boolean = SPIN_ON_PURCHASE_UI_ENABLED,
+  /**
+   * Promo spins per pass. Defaults to the rate live RIGHT NOW (the $100 Day
+   * flash rate while it runs, else the standing 2) — the same helper the
+   * server grants with. Static seeds pass FIRST_PURCHASE_SPINS_PER_PASS so a
+   * module loaded mid-flash never bakes the flash numbers into stored docs.
+   */
+  spinsPerPass: number = firstPurchaseSpinsPerPass(),
 ): FirstBuyOutcome {
   const qty = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
-  const promoSpins = firstPurchaseSpins(qty);
+  const promoSpins = firstPurchaseSpins(qty, spinsPerPass);
   const bonusSpins = bonusSpinsEnabled ? qty : 0;
   // Every promo spin pays at least the minimum wedge (1 draft); a Bonus Spin
   // can land that same wedge and pay 0, so it adds nothing to the floor.
@@ -151,9 +159,13 @@ export function firstPurchaseBuyLine(variant: FirstPurchasePitch, quantity: numb
   if (variant === 'new' || variant === 'unknown') {
     // 'unknown' = logged out / flags not yet loaded → new-player math, but
     // explicitly labeled so a returning player never feels baited.
-    const label = variant === 'unknown' ? 'New players' : 'First purchase';
-    const drafts = firstPurchaseSpins(qty);
-    if (drafts <= 0) return `${label}: buy 1, get 2 drafts free`;
+    const flash = isNewUserFlashActive();
+    const label = flash
+      ? (variant === 'unknown' ? '$100 Day (new players)' : '$100 Day')
+      : (variant === 'unknown' ? 'New players' : 'First purchase');
+    const rate = firstPurchaseSpinsPerPass();
+    const drafts = firstPurchaseSpins(qty, rate);
+    if (drafts <= 0) return `${label}: buy 1, get ${rate} drafts free`;
     return `${label}: buy ${qty} → get ${drafts} drafts free`;
   }
   if (variant === 'returning') {
@@ -202,17 +214,65 @@ export function firstPurchaseRedesign(variant: FirstPurchaseVariant): FirstPurch
       showBonus: SPIN_ON_PURCHASE_UI_ENABLED,
     };
   }
+  // Ladder built from the LIVE rate so the $100 Day flash (4/pass) renders
+  // BUY 1 → 4, BUY 5 → 20, BUY 10 → 40 MAX, and the standing 2/pass renders
+  // BUY 1 → 2, BUY 10 → 20, BUY 20 → 40 MAX — always ending at the spin cap.
+  const rate = firstPurchaseSpinsPerPass();
+  const maxPasses = Math.max(1, Math.floor(FIRST_PURCHASE_MAX_SPINS / rate));
+  const midPasses = Math.max(1, Math.floor(maxPasses / 2));
+  const flash = isNewUserFlashActive();
   return {
-    line1: 'Every pass in your first order = 2 Free Spins.',
+    line1: flash
+      ? `$100 Day: every pass in your first order = ${rate} Free Spins.`
+      : `Every pass in your first order = ${rate} Free Spins.`,
     line2,
     ladder: [
-      { buy: 'BUY 1', get: '2 Free Spins' },
-      { buy: 'BUY 10', get: '20 Free Spins' },
-      { buy: 'BUY 20', get: '40 Free Spins', max: true },
+      { buy: 'BUY 1', get: `${firstPurchaseSpins(1, rate)} Free Spins` },
+      { buy: `BUY ${midPasses}`, get: `${firstPurchaseSpins(midPasses, rate)} Free Spins` },
+      { buy: `BUY ${maxPasses}`, get: `${firstPurchaseSpins(maxPasses, rate)} Free Spins`, max: true },
     ],
-    cornerN: '2',
+    cornerN: String(rate),
     cornerL: 'FREE SPINS PER PASS',
     showBonus: SPIN_ON_PURCHASE_UI_ENABLED,
+  };
+}
+
+/**
+ * $100 Day (Richard 2026-09-01): the server-side overlay for the NEW-player
+ * first-purchase promo card while the 24h flash is live — title, card
+ * description, modal title + explanation, and the countdown end. Returns null
+ * outside the window so callers fall through to the seeded standing copy.
+ * Shared by getPromos (logged in) and getDefaultPromos (logged out) so both
+ * surfaces flip together, no backfill of per-user docs.
+ */
+export interface FirstPurchaseFlashOverlay {
+  title: string;
+  description: string;
+  modalTitle: string;
+  explanation: string;
+  endsAtIso: string;
+}
+
+export function firstPurchaseFlashOverlay(
+  bonusSpinsEnabled: boolean = SPIN_ON_PURCHASE_UI_ENABLED,
+  now: number = Date.now(),
+): FirstPurchaseFlashOverlay | null {
+  if (!isNewUserFlashActive(now)) return null;
+  const rate = firstPurchaseSpinsPerPass(now);
+  const one = newPlayerFirstBuy(1, bonusSpinsEnabled, rate);
+  const free = one.guaranteed - 1;
+  const usd = free * ENTRY_PRICE_USD;
+  const maxPasses = Math.max(1, Math.floor(FIRST_PURCHASE_MAX_SPINS / rate));
+  return {
+    title: `$100 DAY → BUY 1, GET ${free} DRAFTS FREE`,
+    description: firstPurchaseCardRows(one).join(' · '),
+    modalTitle: `$100 Day: Buy 1, Get ${free} Drafts Free`,
+    explanation:
+      `• 24 hours only: every Draft Pass on your first order = ${rate} Free Spins.`
+      + `\n• Every Spin wins at least 1 Free Draft → ${free} Free Drafts ($${usd}) guaranteed per pass, and the wheel can pay more (up to ${MAX_WEDGE_DRAFTS} a spin, plus Jackpot and HOF seats).`
+      + `\n• Stacks on every pass in your first order, up to ${maxPasses} passes (${FIRST_PURCHASE_MAX_SPINS} Free Spins max).`
+      + '\n• One-time: your first order only. Ends Wednesday at midnight PT.',
+    endsAtIso: new Date(API_CONFIG.promos.newUserFlash.endsAtMs).toISOString(),
   };
 }
 

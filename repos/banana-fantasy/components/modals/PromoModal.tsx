@@ -21,6 +21,7 @@ import { JackHofWordmark } from '@/components/ui/JackHofWordmark';
 import { BonusZoneModalContent } from '@/components/bonusZone/BonusZoneUI';
 import { ZonePacks } from '@/components/bonusZone/ZonePacks';
 import { promoRules } from '@/lib/promoTheme';
+import { PromoCodeBox } from '@/components/promos/PromoCodeBox';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -1752,7 +1753,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       case 'mint':
         return renderMintContent();
       case 'new-user':
-        return renderNewUserContent();
+        // Promo code box sits above the X-verify content; dark until the
+        // switch is on (PromoCodeBox renders null).
+        return (
+          <>
+            <div className="mb-3 empty:hidden"><PromoCodeBox compact /></div>
+            {renderNewUserContent()}
+          </>
+        );
       case 'buy-bonus':
         return renderBuyBonusContent();
       case 'tweet-engagement':

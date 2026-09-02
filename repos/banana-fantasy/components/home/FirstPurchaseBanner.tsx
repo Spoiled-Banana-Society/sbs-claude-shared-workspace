@@ -1,5 +1,6 @@
 'use client';
 
+import { firstPurchaseSpinsPerPass } from '@/lib/api/config';
 import React, { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -59,7 +60,7 @@ export function FirstPurchaseBanner() {
               Buy 1 Draft Pass → win up to $1K in Drafts
             </p>
             <p className="text-xs text-text-secondary">
-              Every pass = 2 Free Spins · $50 in Drafts guaranteed · first purchase only
+              Every pass = {firstPurchaseSpinsPerPass()} Free Spins · ${firstPurchaseSpinsPerPass() * 25} in Drafts guaranteed · first purchase only
             </p>
           </>
         )}

@@ -1,4 +1,5 @@
 import type { WheelPrize } from '@/types';
+import { FIRST_PURCHASE_SPINS_PER_PASS } from '@/lib/promoMath';
 
 /**
  * Central place for all API/config values.
@@ -61,6 +62,23 @@ export const API_CONFIG = {
       bonusFreeDrafts: 1,
     },
 
+    // $100 DAY — 24-hour NEW-PLAYER flash (Richard 2026-09-01). While the
+    // window is open, every pass on a new player's first purchase earns
+    // spinsPerPass promo spins instead of the standing 2 — every spin pays at
+    // least 1 Free Draft, so buy 1 ($25) = at least 4 Free Drafts ($100 in
+    // drafts) guaranteed. Rate is judged PER PURCHASE at grant time, so a
+    // buyer whose own 24h first-purchase window outlives the flash drops back
+    // to the standing rate for later passes. FIRST_PURCHASE_MAX_SPINS (40)
+    // still caps the total. Auto-starts / auto-ends with no deploy.
+    newUserFlash: {
+      enabled: false, // NOT green-lit (Richard 2026-09-01). Stays off until he says go.
+      // Wednesday 2026-09-02, all day Pacific: midnight → midnight PT
+      // (= 2026-09-02T07:00:00Z → 2026-09-03T07:00:00Z).
+      startsAtMs: 1788332400000,
+      endsAtMs: 1788418800000,
+      spinsPerPass: 4,
+    },
+
     tweetEngagement: {
       tweetId: '2029602200041951655',
       tweetUrl: 'https://x.com/BorisVagner/status/2029602200041951655',
@@ -77,6 +95,29 @@ export const API_CONFIG = {
  */
 export function isBuyBonusActive(now: number = Date.now()): boolean {
   return API_CONFIG.promos.buyBonus.enabled && now < API_CONFIG.promos.buyBonus.endsAtMs;
+}
+
+/**
+ * True while the $100 Day new-player flash is live: enabled AND inside the
+ * [startsAtMs, endsAtMs) window. Every first-purchase grant and every copy
+ * surface keys the spins-per-pass rate off THIS (via firstPurchaseSpinsPerPass)
+ * so the promo starts and ends itself without a deploy.
+ */
+export function isNewUserFlashActive(now: number = Date.now()): boolean {
+  const f = API_CONFIG.promos.newUserFlash;
+  return f.enabled && now >= f.startsAtMs && now < f.endsAtMs;
+}
+
+/**
+ * NEW-player first-purchase promo spins per pass RIGHT NOW: the flash rate
+ * while $100 Day is live, otherwise the standing FIRST_PURCHASE_SPINS_PER_PASS.
+ * Single source for both the server grant and every client pitch, so the copy
+ * can never promise a rate the grant doesn't pay.
+ */
+export function firstPurchaseSpinsPerPass(now: number = Date.now()): number {
+  return isNewUserFlashActive(now)
+    ? API_CONFIG.promos.newUserFlash.spinsPerPass
+    : FIRST_PURCHASE_SPINS_PER_PASS;
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
