@@ -160,18 +160,12 @@ export async function GET(req: Request) {
 
     const db = getAdminFirestore();
 
-    // 1) Every seat the wallet currently holds a pass for — CURRENT SEASON
-    // only, enforced in the query (cost audit 9/2). Step 2 below already
-    // discarded prior-season LeagueIds in memory, so this is behavior-identical
-    // while a veteran's hundreds of old-season token docs stop being billed on
-    // every call. Auto single-field index; unbound tokens (LeagueId '') are
-    // excluded by the range exactly as the `!leagueId` skip did.
-    const seasonLo = `${new Date().getFullYear()}-`;
-    const seasonHi = `${new Date().getFullYear() + 1}-`;
-    const usedSnap = await db.collection(`owners/${wallet}/usedDraftTokens`)
-      .where('LeagueId', '>=', seasonLo)
-      .where('LeagueId', '<', seasonHi)
-      .get();
+    // 1) Every seat the wallet currently holds a pass for. ⚠️ NOT season-
+    // scoped in the query (reverted 9/2 evening): wheel/queue drafts live
+    // under prior-season ids on purpose, so a LeagueId range filter dropped
+    // live special-draft seats (AceJohn report). The season gate lives in
+    // recent() below, which is queue-aware.
+    const usedSnap = await db.collection(`owners/${wallet}/usedDraftTokens`).get();
     if (usedSnap.empty) return json({ drafts: [] });
 
     const byLeague = new Map<string, UsedToken>();
@@ -196,13 +190,23 @@ export async function GET(req: Request) {
     // old cards) must never be candidates: their state docs are stale or missing,
     // so they classify as "filling"/"drafting" and resurface as phantom live
     // drafts (Billieve/NickW/esparks reports, 2026-09-01).
+    // ⚠️ Queue-aware (9/2): special wheel/queue rounds are DELIBERATELY under
+    // prior-season ids, so they must survive the season gate — only genuinely
+    // old, non-queue ids are dropped (those are the phantom drafts).
+    const { getQueueDraftIds } = await import('@/lib/queueDraftIds');
+    const queueIds = (await getQueueDraftIds()) ?? new Set<string>();
     const seasonPrefix = `${new Date().getFullYear()}-`;
     const recent = (speed: 'fast' | 'slow') => {
-      const ids = [...byLeague.keys()].filter(
-        (id) => id.startsWith(seasonPrefix) && (speed === 'slow') === id.includes('-slow-'),
+      const bySpeed = [...byLeague.keys()].filter(
+        (id) => (speed === 'slow') === id.includes('-slow-'),
       );
+      // Queue drafts bypass BOTH the season gate and the recent-slots cap —
+      // their slot numbers are low (old namespace), so the cap would slice
+      // them off for anyone also in several current-season drafts.
+      const queueMatches = bySpeed.filter((id) => queueIds.has(id));
+      const ids = bySpeed.filter((id) => id.startsWith(seasonPrefix));
       ids.sort((a, b) => slotOf(b) - slotOf(a));
-      return ids.slice(0, RECENT_SLOTS);
+      return [...new Set([...queueMatches, ...ids.slice(0, RECENT_SLOTS)])];
     };
     const candidateIds = [...recent('fast'), ...recent('slow')];
     if (candidateIds.length === 0) return json({ drafts: [] });

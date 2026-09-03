@@ -17,8 +17,8 @@ const TTL_MS = 60_000;
  * One 3-doc read per instance per minute; fails OPEN (treat as queue draft →
  * normal, non-short-circuited path) so an outage can never re-break rooms.
  */
-export async function isQueueDraftId(draftId: string): Promise<boolean> {
-  if (!isFirestoreConfigured()) return true;
+export async function getQueueDraftIds(): Promise<Set<string> | null> {
+  if (!isFirestoreConfigured()) return null;
   const now = Date.now();
   if (!cache || now - cache.at > TTL_MS) {
     try {
@@ -35,8 +35,14 @@ export async function isQueueDraftId(draftId: string): Promise<boolean> {
       }
       cache = { ids, at: now };
     } catch {
-      return true; // can't confirm → take the normal path, never the short-circuit
+      return null; // caller must fail OPEN (treat unknown ids as live)
     }
   }
-  return cache.ids.has(draftId);
+  return cache.ids;
+}
+
+export async function isQueueDraftId(draftId: string): Promise<boolean> {
+  const ids = await getQueueDraftIds();
+  if (!ids) return true; // can't confirm → take the normal path, never the short-circuit
+  return ids.has(draftId);
 }

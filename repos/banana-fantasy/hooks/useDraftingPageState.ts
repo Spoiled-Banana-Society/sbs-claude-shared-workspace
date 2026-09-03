@@ -520,11 +520,13 @@ export function useDraftingPageState() {
     const loadLiveDrafts = async () => {
       try {
         const { getOwnerDraftTokens } = await import('@/lib/api/owner');
-        // activeOnly: this 5s poll only needs current-season live seats —
-        // the full-history mode was the site's biggest Firestore burner
-        // (cost audit 9/2). Everything below already filtered to exactly
-        // this subset (leagueId non-empty + roster < 15).
-        const raw = await getOwnerDraftTokens(user!.walletAddress!, { activeOnly: true });
+        // ⚠️ NO activeOnly here (reverted 9/2 evening): wheel/queue drafts
+        // live under prior-season ids ON PURPOSE, and the season-scoped mode
+        // starved their rows (AceJohn: wheel drafts stuck "in progress", no
+        // turn/clock). Re-enable only after the Go endpoint's active mode is
+        // queue-aware. The hidden-tab gating below (the big parked-tab win)
+        // is unaffected.
+        const raw = await getOwnerDraftTokens(user!.walletAddress!);
         if (cancelled) return;
         const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
 
