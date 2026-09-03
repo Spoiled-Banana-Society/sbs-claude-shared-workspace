@@ -520,13 +520,16 @@ export function useDraftingPageState() {
     const loadLiveDrafts = async () => {
       try {
         const { getOwnerDraftTokens } = await import('@/lib/api/owner');
-        // ⚠️ NO activeOnly here (reverted 9/2 evening): wheel/queue drafts
-        // live under prior-season ids ON PURPOSE, and the season-scoped mode
-        // starved their rows (AceJohn: wheel drafts stuck "in progress", no
-        // turn/clock). Re-enable only after the Go endpoint's active mode is
-        // queue-aware. The hidden-tab gating below (the big parked-tab win)
-        // is unaffected.
-        const raw = await getOwnerDraftTokens(user!.walletAddress!);
+        // activeOnly (re-enabled 9/3): the Go active mode is now QUEUE-AWARE —
+        // it returns current-season seats PLUS the wallet's wheel/queue seats
+        // (resolved server-side from v2_queues membership), so the 9/2
+        // regression class (wheel rows starved — AceJohn) is covered by
+        // design. Verified 9/3 against sidehabitFF (jackhof + started wheel
+        // HOF) and two 70-token veterans: active set == full set filtered to
+        // current-season ∪ queue ids, exact match. This poll runs every 5s
+        // per user — full-history mode was the site's biggest Firestore
+        // burner.
+        const raw = await getOwnerDraftTokens(user!.walletAddress!, { activeOnly: true });
         if (cancelled) return;
         const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
 
