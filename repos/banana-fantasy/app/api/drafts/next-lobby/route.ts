@@ -126,13 +126,20 @@ export async function GET(req: Request) {
   const empty: NextLobbyResponse = { fast: [], slow: [] };
   if (!isFirestoreConfigured()) return json(empty);
 
+  // Edge-cache (cost audit 9/3): identical for every viewer, and the module
+  // cache below is only per-instance — under load dozens of instances each
+  // re-ran the drafts query (~181 docs/s measured in the 9/3 read audit).
+  // One shared edge answer per 5s serves everyone; worst-case staleness is
+  // comparable to the existing 8s module TTL.
+  const EDGE = { headers: { 'cache-control': 'public, max-age=5, s-maxage=5, stale-while-revalidate=15' } };
+
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_TTL_MS) return json(cache.body);
+  if (cache && now - cache.at < CACHE_TTL_MS) return json(cache.body, EDGE);
 
   try {
     const body = await readOpenLobbies();
     cache = { at: now, body };
-    return json(body);
+    return json(body, EDGE);
   } catch (err) {
     logger.error('[next-lobby] read failed', { err: err instanceof Error ? err.message : String(err) });
     // The bar simply doesn't render — never block the drafting page on this.
