@@ -58,24 +58,21 @@ export async function GET(req: Request) {
     const positionInBatch = filled % BATCH_SIZE;
     const nextBatchNumber = currentBatchNumber + 1;
 
-    // Forward-look at the upcoming special-draft slots in this batch so
-    // testers (and the admin UI) can see "JP rolls at fill #N". The Go API
-    // pre-allocates these into JackpotLeagueIds / HofLeagueIds (PascalCase
-    // — Go struct field names, no firestore tags so they're persisted as-is)
-    // and checks them on every fill.
-    const jackpotIds = Array.isArray(data?.JackpotLeagueIds) ? data!.JackpotLeagueIds! : [];
-    const hofIds = Array.isArray(data?.HofLeagueIds) ? data!.HofLeagueIds! : [];
-    const nextJackpotAt = jackpotIds.find((n) => n > filled) ?? null;
-    const nextHofAt = hofIds.find((n) => n > filled) ?? null;
-
+    // ⛔ SEALED (fairness fix 9/3): this endpoint used to expose
+    // nextJackpotAt / nextHofAt — the EXACT upcoming JP/HOF fill numbers —
+    // publicly with no auth ("for testers"). That is the precise information
+    // the sealed-VRF system exists to hide (anyone reading it could time an
+    // entry to land the Jackpot seat). No frontend consumer ever read the
+    // fields (verified 9/3). Never re-add them to an unauthenticated route.
     return json({
       filledLeaguesCount: filled,
       currentDraftNumber,
       currentBatchNumber,
       positionInBatch,
       nextBatchNumber,
-      nextJackpotAt,
-      nextHofAt,
+    }, {
+      // Public counters, identical for all viewers (cost audit 9/3).
+      headers: { 'cache-control': 'public, max-age=10, s-maxage=15, stale-while-revalidate=30' },
     });
   } catch (err) {
     logger.error('batches.current.failed', { err });

@@ -101,12 +101,16 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
       // the round-level proof so the user can see the on-chain commit
       // before their draft fills.
       const merkleSynth = await tryMerkleRoundFallback(db, batchNumber);
-      if (merkleSynth) return json(merkleSynth);
-      return json(prelaunch(batchNumber));
+      const early = { headers: { 'cache-control': 'public, max-age=15, s-maxage=30, stale-while-revalidate=60' } };
+      if (merkleSynth) return json(merkleSynth, early);
+      return json(prelaunch(batchNumber), early);
     }
 
     const data = snap.data() as BatchProofDoc | undefined;
-    if (!data) return json(prelaunch(batchNumber));
+    if (!data) {
+      return json(prelaunch(batchNumber),
+        { headers: { 'cache-control': 'public, max-age=15, s-maxage=30, stale-while-revalidate=60' } });
+    }
 
     // Positions are gated until the seed/randomness is publicly verifiable
     // on-chain. Before that, exposing them via the API would let users time
@@ -230,6 +234,16 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
       jackpotPositions: isPubliclyVerifiable ? data.jackpotPositions : undefined,
       hofPositions: isPubliclyVerifiable ? data.hofPositions : undefined,
       preLaunchNote: data.preLaunchNote,
+    }, {
+      // Cost audit 9/3: proof pages were re-fetched constantly by every
+      // viewer. A REVEALED batch's proof is immutable — cache it hard. An
+      // in-flight batch's proof still moves (requested→fulfilled→revealed),
+      // so it stays near-live. Public data either way (it's on-chain).
+      headers: {
+        'cache-control': isPubliclyVerifiable
+          ? 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
+          : 'public, max-age=10, s-maxage=30, stale-while-revalidate=60',
+      },
     });
   } catch (err) {
     logger.error('batches.proof.failed', { err });

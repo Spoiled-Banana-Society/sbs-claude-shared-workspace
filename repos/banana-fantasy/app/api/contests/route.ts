@@ -52,7 +52,11 @@ export async function GET(req: Request) {
       contests[0].hofPercent = 5;
     }
 
-    return json(contests, 200);
+    // Identical for every viewer; entry count already sits behind an
+    // in-memory cache — share one edge answer for 30s (cost audit 9/3).
+    return json(contests, {
+      headers: { 'cache-control': 'public, max-age=15, s-maxage=30, stale-while-revalidate=60' },
+    });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error(err);

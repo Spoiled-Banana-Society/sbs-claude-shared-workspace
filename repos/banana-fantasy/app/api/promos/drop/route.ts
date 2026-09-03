@@ -35,7 +35,12 @@ export async function GET(req: Request) {
       });
     }
 
-    return json(await getDropState(wallet || undefined, now));
+    // Cost audit 9/3: the PUBLIC (no-wallet) state is identical for every
+    // viewer — share one answer at the edge for 30s. Per-wallet responses
+    // stay uncached so pack counts are always fresh right after opening.
+    return json(await getDropState(wallet || undefined, now), wallet ? undefined : {
+      headers: { 'cache-control': 'public, max-age=10, s-maxage=30, stale-while-revalidate=60' },
+    });
   } catch (err) {
     logger.error('drop.state_failed', { err: (err as Error).message });
     return jsonError('Internal Server Error', 500);
