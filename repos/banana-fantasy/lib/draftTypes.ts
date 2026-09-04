@@ -4,12 +4,11 @@
 // 'jackhof' = Jackpot + HOF on the SAME draft (rolling-windows system) — both perks.
 export type DraftType = 'jackpot' | 'hof' | 'pro' | 'jackhof';
 
-// Drafting closes at NFL Season kickoff. Corrected 2026-09-04: the date was
-// wrong (Sept 4 — it fired mid-day and blocked all joins). Real kickoff is
-// Sept 9; pushed to a backstop PAST the 9th so it can't auto-close during the
-// day's action. ⚠️ CLOSE IS MANUAL — Boris flips this to the real close moment
-// when he says the word; the backstop only prevents a silent surprise.
-export const DRAFTING_CLOSES_AT = new Date('2026-09-11T03:20:00Z');
+// Drafting closes Wednesday Sept 9, 2026 at 7:00 PM EDT (= 4:00 PM PDT).
+// (Boris set this exact deadline 2026-09-04; earlier the date was wrong at
+// Sept 4 which force-closed drafting mid-day.) Scoring/ranks also unhide at
+// this same moment — kickoff.
+export const DRAFTING_CLOSES_AT = new Date('2026-09-09T23:00:00Z');
 
 export function isDraftingOpen(): boolean {
   return Date.now() < DRAFTING_CLOSES_AT.getTime();
