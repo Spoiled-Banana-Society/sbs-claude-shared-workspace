@@ -67,7 +67,7 @@ export function EntryFlowModal({
   balanceError = null,
   onAddFunds,
 }: EntryFlowModalProps) {
-  const { copy: slowClock } = useSlowClock();
+  const { copy: slowClock, config: slowClockConfig } = useSlowClock();
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | 'balance' | null>(null);
   // Private-league routing (ticket-2681): when the user has unlocked a private
@@ -85,9 +85,16 @@ export function EntryFlowModal({
   // is never baited. 'done' → firstPurchaseEntryLine returns null → no line.
   const { user } = useAuth();
   const fpOfferLine = firstPurchaseEntryLine(user?.firstPurchaseVariant ?? 'unknown');
-  // Only polls while the speed step is actually on screen — the pass-type step
-  // has nothing lane-specific to show, since paid and free share lobbies.
-  const nextLobby = useNextLobbyFill(isOpen && step === 'speed' && !privateMode);
+  // Polls while the modal is open (public flow) — the pass-type step needs it
+  // too now, to know whether there is any speed left to choose.
+  const nextLobby = useNextLobbyFill(isOpen && !privateMode);
+  // Regular slow drafts closed (Richard 2026-09-03): with no permitted slow
+  // lobby left there is nothing to choose — fast is the only public lane, so
+  // the speed step is skipped entirely (picking a pass IS the entry). The
+  // config flag (loaded on mount) covers the beat before the lobby poll lands.
+  // Private 'both'-lane leagues keep their picker.
+  const publicSlowClosed =
+    !privateMode && (nextLobby.regularSlowClosed || slowClockConfig.regularJoinClosed) && !nextLobby.slow;
 
   // BANANA ZONE (ships dark): one status read per open — what this seat earns
   // right now + whether the wallet's paid passes qualify. Deps are stable
@@ -137,7 +144,12 @@ export function EntryFlowModal({
       onComplete(type, privLeague.draftType, { forcePublic: false });
       return;
     }
-    // Public, or a 'both'-lane private league: the member picks fast/slow next.
+    if (publicSlowClosed) {
+      // No slow lane left — fast is the only public speed, so no picker.
+      onComplete(type, 'fast', { forcePublic: joinPublic });
+      return;
+    }
+    // A 'both'-lane private league (or slow still open): pick fast/slow next.
     setStep('speed');
   };
 
@@ -387,6 +399,7 @@ export function EntryFlowModal({
                 </div>
               </button>
 
+              {!publicSlowClosed && (
               <button
                 onClick={() => handleSpeedSelect('slow')}
                 disabled={isSubmitting}
@@ -403,6 +416,10 @@ export function EntryFlowModal({
                   </svg>
                 </div>
               </button>
+              )}
+              {publicSlowClosed && (
+                <p className="text-white/40 text-xs text-center">Slow drafts now run only in special leagues like Jackpot, JackHOF and HOF.</p>
+              )}
             </div>
 
             {/* Buying with balance keeps the modal open through the charge, so

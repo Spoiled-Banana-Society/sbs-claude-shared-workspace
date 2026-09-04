@@ -12,7 +12,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { PromoSpotlight, PromoLongCard } from '@/components/promos/PromoCards';
-import { HypeCard } from '@/components/promos/HypeCard';
+// HypeCard import removed — Banana Hype RETIRED 2026-09-03, permanent.
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo } from '@/types';
 
@@ -419,7 +419,8 @@ export default function PromosPage() {
             {longs.length > 0 && (
               <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3.5 ${showSpot ? 'mt-4' : ''}`}>
                 {longs.flatMap((promo, i) => [
-                  ...(i === 2 ? [<HypeCard key="hype" />] : []),
+                  // Banana Hype RETIRED 2026-09-03 (final week paid out; Boris:
+                  // permanent, never bring back).
                   (
                   <PromoLongCard
                     key={promo.id}
@@ -435,7 +436,7 @@ export default function PromosPage() {
                   />
                   ),
                 ])}
-                {longs.length <= 2 && <HypeCard />}
+                {/* Hype filler card removed — promo retired 2026-09-03. */}
               </div>
             )}
           </>

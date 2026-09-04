@@ -18,6 +18,8 @@ import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contract
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { joinPrivateDraft } from '@/lib/api/leagues';
 import { getActivePrivateLeague } from '@/lib/privateLeagueSession';
+import { useNextLobbyFill } from '@/hooks/useNextLobbyFill';
+import { REGULAR_SLOW_CLOSED_MESSAGE, regularSlowJoinAllowed } from '@/lib/slowJoinGate';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -68,7 +70,7 @@ export function BuyPassesModal({
   onClose,
   onPurchaseComplete,
 }: BuyPassesModalProps) {
-  const { copy: slowClock } = useSlowClock();
+  const { copy: slowClock, config: slowClockConfig } = useSlowClock();
   const _router = useRouter();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
   const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
@@ -763,6 +765,16 @@ export function BuyPassesModal({
     const laneSpeed: 'fast' | 'slow' =
       privateTarget && privateTarget.draftType !== 'both' ? privateTarget.draftType : speed;
 
+    // Regular slow drafts closed (Richard 2026-09-03): public slow joins are
+    // allowed only while the last permitted lobby still has a seat.
+    if (!privateTarget && laneSpeed === 'slow' && !(await regularSlowJoinAllowed())) {
+      joinInFlightRef.current = false;
+      setIsJoiningDraft(false);
+      setJoinError(REGULAR_SLOW_CLOSED_MESSAGE);
+      setPhase('error');
+      return;
+    }
+
     setPhase('joining');
     setJoinError(null);
     clientLog('payment', 'join_draft_start', { wallet: addr, speed: laneSpeed, privateLeagueId: privateTarget?.id ?? null });
@@ -859,6 +871,15 @@ export function BuyPassesModal({
   // Private-league target for the post-purchase join (ticket-2681). Sync
   // localStorage read, only while the pick-speed screen is actually up.
   const pickSpeedPrivateLeague = phase === 'pick-speed' ? getActivePrivateLeague() : null;
+  // Regular slow drafts closed (Richard 2026-09-03): the Slow button shows only
+  // while the last permitted public lobby still has a seat (private 'both'
+  // lanes keep it). Polls only while the pick-speed screen is up.
+  const pickSpeedLobby = useNextLobbyFill(phase === 'pick-speed' && !pickSpeedPrivateLeague);
+  // With no slow lobby left, fast is the only public lane: the screen collapses
+  // to one "Enter Draft" button (no speed to choose). Config flag covers the
+  // beat before the lobby poll lands.
+  const publicSlowClosed =
+    !pickSpeedPrivateLeague && (pickSpeedLobby.regularSlowClosed || slowClockConfig.regularJoinClosed) && !pickSpeedLobby.slow;
 
   // Clean, crypto-free progress model. Each visible row maps to one or more
   // real internal stages (funding / waiting-for-usdc / signing / processing).
@@ -913,7 +934,7 @@ export function BuyPassesModal({
 
   const modalTitle =
     phase === 'pick-speed'
-      ? 'Choose Draft Speed'
+      ? (publicSlowClosed ? 'Ready to Draft' : 'Choose Draft Speed')
       : phase === 'purchase'
         ? flowStep === 'success'
           ? 'Draft Pass ready'
@@ -1455,7 +1476,7 @@ export function BuyPassesModal({
               >
                 <div className="flex w-full items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-white">Fast Draft</h3>
+                    <h3 className="text-lg font-bold text-white">{publicSlowClosed ? 'Enter Draft' : 'Fast Draft'}</h3>
                     <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
                   </div>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
@@ -1464,6 +1485,7 @@ export function BuyPassesModal({
                 </div>
               </button>
 
+              {!publicSlowClosed && (
               <button
                 onClick={() => handlePickSpeed('slow')}
                 disabled={isJoiningDraft}
@@ -1479,6 +1501,7 @@ export function BuyPassesModal({
                   </svg>
                 </div>
               </button>
+              )}
             </div>
             )}
 

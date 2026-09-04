@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 // May mint on-chain passes (sequential txs) before joining — give it room.
 export const maxDuration = 300;
 
+import { getSlowClockConfig } from '@/lib/slowClockServer';
+import { isRegularSlowLobbyJoinable } from '@/lib/slowClock';
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
@@ -84,6 +86,15 @@ export async function POST(req: NextRequest) {
     const level = league.Level ?? league.level ?? '';
     if (level === 'Jackpot' || level === 'Hall of Fame') {
       return jsonError(`${leagueId} is a special ${level} draft — bots are not allowed in specials`, 403);
+    }
+    // Regular slow drafts closed (Richard 2026-09-03): a bot fill of any slow
+    // lobby past the last permitted one would fill it, make Go spawn the next
+    // slot, and start a bot-only slow lane nobody asked for.
+    if (/^\d{4}-slow-draft-\d+$/.test(leagueId)) {
+      const slowCfg = await getSlowClockConfig();
+      if (!isRegularSlowLobbyJoinable(slowCfg, leagueId)) {
+        return jsonError(`${leagueId}: regular slow drafts are closed to new entries (only ${slowCfg.regularJoinLastLobbyId || 'none'} may still fill)`, 403);
+      }
     }
     const seated = new Set(
       (league.CurrentUsers ?? league.currentUsers ?? [])

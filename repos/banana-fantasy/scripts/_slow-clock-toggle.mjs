@@ -9,6 +9,8 @@
 //   node scripts/_slow-clock-toggle.mjs --on --start 2026-08-27T12:00:00Z   # arm now, takes effect at that instant (5am PT = 12:00Z in PDT)
 //   node scripts/_slow-clock-toggle.mjs --start none                        # clear the gate
 //   node scripts/_slow-clock-toggle.mjs --pause-end 7                        # overnight pause ends 7am PT (legacy 5) while active
+//   node scripts/_slow-clock-toggle.mjs --close-regular 2026-slow-draft-168   # regular slow drafts closed to new entries; only that lobby may still fill
+//   node scripts/_slow-clock-toggle.mjs --open-regular                         # reopen regular slow joins
 //
 // Applies to EVERY slow draft incl. in-progress ones on their NEXT pick (Go reads
 // the doc with a 60s cache; the site's /api/config/slow-clock is CDN-cached 60s).
@@ -42,6 +44,9 @@ const start = after('--start');
 if (start) { if (start === 'none') patch.startsAtIso = ''; else { if (!Number.isFinite(Date.parse(start))) { console.error('bad --start'); process.exit(1); } patch.startsAtIso = new Date(start).toISOString(); } }
 const pe = after('--pause-end');
 if (pe) { const h = Number(pe); if (!Number.isInteger(h) || h < 1 || h > 21) { console.error('--pause-end must be 1..21 (PT hour)'); process.exit(1); } patch.pauseEndHour = h; }
+const closeReg = after('--close-regular');
+if (closeReg) { if (!/^\d{4}-slow-draft-\d+$/.test(closeReg)) { console.error('--close-regular needs a yyyy-slow-draft-N id'); process.exit(1); } patch.regularJoinClosed = true; patch.regularJoinLastLobbyId = closeReg; }
+if (has('--open-regular')) { patch.regularJoinClosed = false; patch.regularJoinLastLobbyId = ''; }
 const fresh = after('--fresh');
 if (fresh) patch.freshClockAfterPause = fresh === 'on';
 if (Object.keys(patch).length) {

@@ -70,7 +70,7 @@ export function buildFAQSections(clock: SlowClockCopy = LEGACY_SLOW_CLOCK_COPY):
       },
       {
         question: 'What\'s the difference between Fast and Slow drafts?',
-        answer: 'Fast drafts have a 30-second pick clock — the whole draft runs about 30-40 minutes. Slow drafts give you ' + clock.long + ' per pick (the clock pauses overnight, ' + clock.pauseWindowLabel.replace('–', '-') + '), so you can draft over a few days at your own pace.' + (clock.pauseNote ? ' ' + clock.pauseNote : '') + clock.shorteningNote,
+        answer: 'Fast drafts have a 30-second pick clock — the whole draft runs about 30-40 minutes. Slow drafts give you ' + clock.long + ' per pick (the clock pauses overnight, ' + clock.pauseWindowLabel.replace('–', '-') + ').' + (clock.pauseNote ? ' ' + clock.pauseNote : '') + ' Regular slow drafts are closed to new entries — slow drafts now run only in special leagues like Jackpot, JackHOF and HOF.' + clock.shorteningNote,
       },
     ],
   },

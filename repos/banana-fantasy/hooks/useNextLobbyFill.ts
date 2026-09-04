@@ -43,8 +43,17 @@ const MIN_SEATS_TO_SHOW = 1;
  * nothing derived from Privy. `enabled` is the only gate and it's a plain
  * boolean checked inside the tick, so nothing here can re-fire per render.
  */
-export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow: LobbyFill | null } {
-  const [open, setOpen] = useState<{ fast: OpenLobby[]; slow: OpenLobby[] }>({ fast: [], slow: [] });
+export function useNextLobbyFill(enabled = true): {
+  fast: LobbyFill | null;
+  slow: LobbyFill | null;
+  /**
+   * Regular slow drafts closed (Richard 2026-09-03). The route already trims
+   * `slow` to the one lobby still allowed to fill, so `regularSlowClosed &&
+   * !slow` means: no slow button, nothing slow to join.
+   */
+  regularSlowClosed: boolean;
+} {
+  const [open, setOpen] = useState<{ fast: OpenLobby[]; slow: OpenLobby[]; regularSlowClosed: boolean }>({ fast: [], slow: [], regularSlowClosed: false });
   // Slot ids this device is already sitting in — the matchmaker skips them.
 
   useEffect(() => {
@@ -55,9 +64,9 @@ export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow
       try {
         const res = await fetch('/api/drafts/next-lobby');
         if (!res.ok) return;
-        const body = (await res.json()) as { fast?: OpenLobby[]; slow?: OpenLobby[] };
+        const body = (await res.json()) as { fast?: OpenLobby[]; slow?: OpenLobby[]; regularSlowClosed?: boolean };
         if (cancelled) return;
-        setOpen({ fast: body.fast ?? [], slow: body.slow ?? [] });
+        setOpen({ fast: body.fast ?? [], slow: body.slow ?? [], regularSlowClosed: body.regularSlowClosed === true });
       } catch {
         // Offline / aborted — keep the last good value rather than blinking out.
       }
@@ -88,5 +97,5 @@ export function useNextLobbyFill(enabled = true): { fast: LobbyFill | null; slow
     return { seats: next.seats, maxSeats: next.maxSeats };
   };
 
-  return { fast: pick(open.fast), slow: pick(open.slow) };
+  return { fast: pick(open.fast), slow: pick(open.slow), regularSlowClosed: open.regularSlowClosed };
 }

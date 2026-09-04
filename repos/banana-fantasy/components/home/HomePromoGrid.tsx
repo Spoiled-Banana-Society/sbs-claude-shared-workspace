@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
-import { HypeCard } from '@/components/promos/HypeCard';
+// HypeCard import removed — Banana Hype RETIRED 2026-09-03, permanent.
 import { PromoCodeBox } from '@/components/promos/PromoCodeBox';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -153,8 +153,7 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         {sortedPromos.filter((p) => p.type !== 'new-user' && p.type !== 'first-purchase'
           && (p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase'))).flatMap((promo, i) => [
-          /* Banana Hype rides as the THIRD card (Boris 2026-08-24). */
-          ...(i === 2 ? [<HypeCard key="hype" />] : []),
+          /* Banana Hype card removed — promo RETIRED 2026-09-03 (permanent). */
           (
           <PromoLongCard
             key={promo.id}
@@ -171,7 +170,7 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
           ),
         ])}
         {sortedPromos.filter((p) => p.type !== 'new-user' && p.type !== 'first-purchase'
-          && (p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase'))).length <= 2 && <HypeCard />}
+          && (p.type !== 'bonus-zone' || sortedPromos.some((q) => q.type === 'new-user' || q.type === 'first-purchase'))).length <= 2 && null}
       </div>
 
       <PromoModal

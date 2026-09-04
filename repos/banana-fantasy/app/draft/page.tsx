@@ -45,7 +45,7 @@ const buildInfoTopics = (clock: SlowClockCopy): Record<string, { title: string; 
     title: 'Snake Draft',
     items: [
       { q: 'What is a snake draft?', a: 'Pick order reverses each round. If you pick 1st in round 1, you pick 10th in round 2, then 1st again in round 3. This keeps things fair for everyone.' },
-      { q: 'Fast or slow — what\'s the difference?', a: 'You choose your speed before each draft. Fast drafts give you 30 seconds per pick — the whole draft takes about 15-20 minutes. Slow drafts give you ' + clock.long + ' per pick, perfect if you want to draft over a few days.' + clock.shorteningNote },
+      { q: 'Fast or slow — what\'s the difference?', a: 'Fast drafts give you 30 seconds per pick — the whole draft takes about 15-20 minutes. Slow drafts give you ' + clock.long + ' per pick and now run only in special leagues like Jackpot, JackHOF and HOF — regular slow drafts are closed to new entries.' + clock.shorteningNote },
       { q: 'How many rounds?', a: '15 rounds. You draft a full roster: 1 QB, 2 RB, 3 WR, 1 TE, 2 FLEX, 1 K, 1 DEF, plus bench spots.' },
     ],
   },

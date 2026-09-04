@@ -2,6 +2,8 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { getSlowClockConfig } from '@/lib/slowClockServer';
+import { isRegularSlowLobbyJoinable } from '@/lib/slowClock';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,6 +54,13 @@ export interface OpenLobby {
 export interface NextLobbyResponse {
   fast: OpenLobby[];
   slow: OpenLobby[];
+  /**
+   * Regular slow drafts are closed to new entries (system_config/slowDraftClock
+   * .regularJoinClosed, Richard 2026-09-03). While true, `slow` lists ONLY the
+   * one lobby still allowed to fill — empty once it's full. Clients treat
+   * `regularSlowClosed && slow.length === 0` as "no slow button, no slow join".
+   */
+  regularSlowClosed: boolean;
 }
 
 let cache: { at: number; body: NextLobbyResponse } | null = null;
@@ -116,14 +125,16 @@ async function readOpenLobbies(): Promise<NextLobbyResponse> {
       .sort((a, b) => a.slot - b.slot)
       .map(({ id, slot, seats, maxSeats }) => ({ id, slot, seats, maxSeats }));
 
-  return { fast: forSpeed('fast'), slow: forSpeed('slow') };
+  const cfg = await getSlowClockConfig();
+  const slow = forSpeed('slow').filter((l) => isRegularSlowLobbyJoinable(cfg, l.id));
+  return { fast: forSpeed('fast'), slow, regularSlowClosed: cfg.regularJoinClosed };
 }
 
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
-  const empty: NextLobbyResponse = { fast: [], slow: [] };
+  const empty: NextLobbyResponse = { fast: [], slow: [], regularSlowClosed: false };
   if (!isFirestoreConfigured()) return json(empty);
 
   // Edge-cache (cost audit 9/3): identical for every viewer, and the module

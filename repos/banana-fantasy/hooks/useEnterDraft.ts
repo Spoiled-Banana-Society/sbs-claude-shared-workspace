@@ -1,5 +1,6 @@
 'use client';
 
+import { REGULAR_SLOW_CLOSED_MESSAGE, regularSlowJoinAllowed } from '@/lib/slowJoinGate';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -109,6 +110,15 @@ export function useEnterDraft() {
 
     inFlightRef.current = true;
     setJoinError(null);
+
+    // Regular slow drafts closed (Richard 2026-09-03): a public slow join is
+    // allowed only while the last permitted lobby still has a seat. Private
+    // leagues keep their slow lane. Checked BEFORE the overlay / pass decrement.
+    if (speed === 'slow' && !privateLeague && !(await regularSlowJoinAllowed())) {
+      inFlightRef.current = false;
+      setJoinError(REGULAR_SLOW_CLOSED_MESSAGE);
+      return;
+    }
     // Overlay up from the TAP, not after the pass-spend round-trip. The spend
     // call can stall (iOS PWA resume with dead sockets); before this change the
     // user got zero feedback until it returned — a dead button with a dipped
@@ -226,7 +236,9 @@ export function useEnterDraft() {
       /incorrect password/i.test(msg) ||
       /already in this league/i.test(msg) ||
       // Private-league per-wallet entry cap (Go errPrivateEntryCap — keep in sync).
-      /no entries left for this private league/i.test(msg);
+      /no entries left for this private league/i.test(msg) ||
+      // Regular slow drafts closed (Go errRegularSlowClosed — keep in sync).
+      /regular slow drafts are closed/i.test(msg);
     let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;

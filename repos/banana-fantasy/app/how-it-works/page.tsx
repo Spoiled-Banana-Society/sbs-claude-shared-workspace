@@ -39,7 +39,7 @@ const buildSteps = (clock: SlowClockCopy) => [
     num: '02',
     icon: '🏈',
     title: 'Draft Your Team',
-    desc: `10-player snake draft against 9 opponents. Pick QBs, RBs, WRs, and TEs. Fast drafts (30s) or slow drafts (${clock.short} picks) — your call.`,
+    desc: `10-player snake draft against 9 opponents. Pick QBs, RBs, WRs, and TEs. Fast drafts (30s per pick), with slow drafts (${clock.short} picks) in special leagues.`,
     color: 'from-green-500/20 to-green-600/5',
     border: 'border-green-500/30',
   },

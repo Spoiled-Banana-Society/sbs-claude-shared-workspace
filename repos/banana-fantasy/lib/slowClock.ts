@@ -22,6 +22,18 @@ export interface SlowClockConfig {
   freshClockAfterPause: boolean;
   /** PT hour the overnight pause ends (legacy 5; Richard 8/26: 7). */
   pauseEndHour: number;
+  /**
+   * Regular (BBB #N) slow drafts closed to new entries (Richard 2026-09-03):
+   * slow drafts live on only in special leagues (Jackpot / JackHOF / HOF) and
+   * password-gated private leagues. Independent of `enabled` / `startsAtIso`.
+   */
+  regularJoinClosed: boolean;
+  /**
+   * The one regular slow lobby still allowed to fill after the close
+   * (`2026-slow-draft-168`, 8/10 when closed). Once it's full nothing
+   * regular-slow is joinable. '' = none.
+   */
+  regularJoinLastLobbyId: string;
 }
 
 export const LEGACY_SLOW_PICK_SEC = 8 * 3600;
@@ -34,6 +46,8 @@ export const LEGACY_SLOW_CLOCK: SlowClockConfig = {
   pickLengthSec: LEGACY_SLOW_PICK_SEC,
   freshClockAfterPause: false,
   pauseEndHour: LEGACY_PAUSE_END_HOUR,
+  regularJoinClosed: false,
+  regularJoinLastLobbyId: '',
 };
 
 /** Every phrasing of the pick clock the UI uses, so copy lives in ONE place. */
@@ -90,7 +104,19 @@ export function normalizeSlowClockConfig(raw: unknown, nowMs: number = Date.now(
     pickLengthSec: enabled ? sec : LEGACY_SLOW_PICK_SEC,
     freshClockAfterPause: enabled && r.freshClockAfterPause === true,
     pauseEndHour: enabled ? peh : LEGACY_PAUSE_END_HOUR,
+    regularJoinClosed: r.regularJoinClosed === true,
+    regularJoinLastLobbyId: typeof r.regularJoinLastLobbyId === 'string' ? r.regularJoinLastLobbyId.trim() : '',
   };
+}
+
+/**
+ * May a REGULAR slow lobby (`yyyy-slow-draft-N`) still take a public join?
+ * Specials and private leagues never go through this — they have their own
+ * seating paths (lib/specialDraft.ts, joinPrivateDraft).
+ */
+export function isRegularSlowLobbyJoinable(cfg: SlowClockConfig, lobbyId: string): boolean {
+  if (!cfg.regularJoinClosed) return true;
+  return !!cfg.regularJoinLastLobbyId && lobbyId === cfg.regularJoinLastLobbyId;
 }
 
 function hourLabel(h: number): string {

@@ -83,10 +83,6 @@
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/crons/mindshare-scan",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/crons/discord-lobby-cleanup",
       "schedule": "* * * * *"
     },
@@ -97,10 +93,6 @@
     {
       "path": "/api/crons/dead-clock-kick",
       "schedule": "*/2 * * * *"
-    },
-    {
-      "path": "/api/crons/hype-payout-sweep",
-      "schedule": "7,37 * * * *"
     },
     {
       "path": "/api/crons/zone-window-bells",
