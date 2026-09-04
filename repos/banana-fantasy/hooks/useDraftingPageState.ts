@@ -834,11 +834,23 @@ export function useDraftingPageState() {
   // Replaces a 3s polling loop that left a race window where a user's
   // "8/10" card was already actually 10/10. Same Firebase project + bandwidth
   // we already pay for; per-connection cost is effectively zero.
+  // ⚠️ STABLE KEY + write-on-change guard (RTDB self-DDoS fix, 9/4):
+  // `fillingLiveDraftIds` is a fresh array identity on every render, and this
+  // subscription's own callback used to updateDraft unconditionally — store
+  // update → re-render → new array → effect re-fires → resubscribe → initial
+  // onValue → updateDraft → loop. One parked tab with a filling row generated
+  // ~2,200 RTDB subscribe/deliver ops per SECOND (profiled 9/4 — the whole
+  // day's bandwidth spike). Same fix pattern as the displayName/type
+  // subscriptions below, which were already keyed this way.
+  const fillingIdsKey = fillingLiveDraftIds.join(',');
   useEffect(() => {
-    if (fillingLiveDraftIds.length === 0) return;
-    const unsubs = fillingLiveDraftIds.map((draftId) =>
+    const ids = fillingIdsKey ? fillingIdsKey.split(',') : [];
+    if (ids.length === 0) return;
+    const unsubs = ids.map((draftId) =>
       subscribeDraftNumPlayers(draftId, (count) => {
-        if (count > 0) draftStore.updateDraft(draftId, { players: count });
+        if (count > 0 && draftStore.getDraft(draftId)?.players !== count) {
+          draftStore.updateDraft(draftId, { players: count });
+        }
       }),
     );
     return () => {
@@ -846,7 +858,7 @@ export function useDraftingPageState() {
         try { unsub(); } catch { /* ignore */ }
       }
     };
-  }, [fillingLiveDraftIds]);
+  }, [fillingIdsKey]);
 
   // Live league display name on /drafting cards — Go API writes
   // drafts/{draftId}/displayName to RTDB at the moment of fill, so the
