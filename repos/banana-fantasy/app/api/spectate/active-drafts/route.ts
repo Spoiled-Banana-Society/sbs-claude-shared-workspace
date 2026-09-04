@@ -112,10 +112,27 @@ export async function GET(req: Request) {
     // Highest slot first, per speed — anything in progress is at the top. Slow
     // and fast keep separate counters, so they're ranked separately rather than
     // against each other.
-    const candidates = SPEEDS.flatMap((speed) => parsed
+    const windowCandidates = SPEEDS.flatMap((speed) => parsed
       .filter((p) => p.speed === speed)
       .sort((a, b) => b.num - a.num)
       .slice(0, PROBE_DEPTH));
+
+    // ⚠️ ALSO query every FILLING draft directly (NumPlayers 1-9), regardless
+    // of slot number. The recent-slot window alone went blind 9/4 when one
+    // lucky wheel winner (43 passes in a day) solo-opened 41 consecutive fast
+    // lobbies — the genuinely-filling lobby with the most players fell below
+    // the window and Boris couldn't see it to bot-fill. ~50 extra doc reads
+    // per poll, admin-only surface.
+    const fillingSnap = await db.collection('drafts')
+      .where('NumPlayers', '>=', 1).where('NumPlayers', '<=', 9)
+      .get().catch(() => null);
+    const windowIds = new Set(windowCandidates.map((c) => c.id));
+    const fillingExtra = (fillingSnap?.docs ?? [])
+      .map((d) => /^(\d{4})-(fast|slow)-draft-(\d+)$/.exec(d.id))
+      .filter((mm): mm is RegExpExecArray => mm !== null)
+      .map((mm) => ({ id: mm[0], speed: mm[2] as 'fast' | 'slow', num: Number(mm[3]) }))
+      .filter((c) => !windowIds.has(c.id));
+    const candidates = [...windowCandidates, ...fillingExtra];
 
     // Step 1 — read every candidate doc (cheap, batched). The vast majority of
     // candidate IDs (wrong year / non-existent slot) simply don't exist; only
@@ -230,6 +247,16 @@ export async function GET(req: Request) {
       if (b.draftStartTime !== a.draftStartTime) return b.draftStartTime - a.draftStartTime;
       return slotNum(b.draftId) - slotNum(a.draftId);
     };
+    // FILLING drafts sort by seats DESC (closest to filling on top — that's
+    // what Boris bot-fills, 9/4), ties by newest slot; in-progress drafts keep
+    // newest-first and rank below the filling group.
+    const sortFillingFirst = (a: Categorized, b: Categorized) => {
+      const aFill = a.filling && a.pickNumber === 0 ? 1 : 0;
+      const bFill = b.filling && b.pickNumber === 0 ? 1 : 0;
+      if (aFill !== bFill) return bFill - aFill;
+      if (aFill && bFill && b.numPlayers !== a.numPlayers) return b.numPlayers - a.numPlayers;
+      return sortNewestFirst(a, b);
+    };
     const active = drafts
       // A `filling` draft only counts as active once at least one person has
       // joined — an empty 0/10 doc is a leftover lobby (e.g. someone joined
@@ -237,7 +264,7 @@ export async function GET(req: Request) {
       // that have started drafting (pickNumber>0) always have members, so they
       // show regardless. Admin-display only — no user/draft-logic impact.
       .filter(d => !d.completed && ((d.filling && d.numPlayers > 0) || (d.pickNumber > 0 && d.pickNumber <= 150)))
-      .sort(sortNewestFirst)
+      .sort(sortFillingFirst)
       .map(({ completed: _c, ...rest }) => rest);
     const completed = drafts
       .filter(d => d.completed)
