@@ -10,8 +10,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
 
@@ -130,6 +132,146 @@ func ReturnAllDraftTokensForOwner(ownerId string) (*UsersTokens, error) {
 			}
 		}
 		res.Active = append(res.Active, token)
+	}
+
+	return res, nil
+}
+
+// queueMembershipCache caches the parsed v2_queues rounds (jackpot/hof/
+// jackhof) so the active-token variant can resolve a wallet's special-draft
+// seats with zero extra Firestore reads on the hot path (3 doc reads per
+// instance per minute, total). Queue drafts live under PRIOR-SEASON ids on
+// purpose (lane-numbering isolation), which is exactly why a plain season
+// filter must never be the only source of "active" (2026-09-02 regression:
+// wheel-draft rows starved — AceJohn report).
+var queueMembershipCache struct {
+	mu      sync.Mutex
+	rounds  []queueRoundLite
+	fetched time.Time
+}
+
+type queueRoundLite struct {
+	draftId string
+	wallets map[string]bool
+}
+
+func queueDraftIdsForWallet(ownerId string) []string {
+	queueMembershipCache.mu.Lock()
+	defer queueMembershipCache.mu.Unlock()
+
+	if time.Since(queueMembershipCache.fetched) > 60*time.Second {
+		rounds := make([]queueRoundLite, 0)
+		for _, qt := range []string{"jackpot", "hof", "jackhof"} {
+			snap, err := utils.Db.Client.Collection("v2_queues").Doc(qt).Get(context.Background())
+			if err != nil {
+				// Fail SOFT: keep whatever we had; an empty cache just means the
+				// caller returns season tokens only for this cycle.
+				continue
+			}
+			raw, _ := snap.Data()["rounds"].([]interface{})
+			for _, r := range raw {
+				rm, ok := r.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				draftId, _ := rm["draftId"].(string)
+				if draftId == "" {
+					continue
+				}
+				lite := queueRoundLite{draftId: draftId, wallets: map[string]bool{}}
+				members, _ := rm["members"].([]interface{})
+				for _, m := range members {
+					mm, ok := m.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if w, _ := mm["wallet"].(string); w != "" {
+						lite.wallets[strings.ToLower(w)] = true
+					}
+				}
+				rounds = append(rounds, lite)
+			}
+		}
+		if len(rounds) > 0 {
+			queueMembershipCache.rounds = rounds
+			queueMembershipCache.fetched = time.Now()
+		}
+	}
+
+	w := strings.ToLower(ownerId)
+	ids := make([]string, 0, 2)
+	for _, r := range queueMembershipCache.rounds {
+		if r.wallets[w] {
+			ids = append(ids, r.draftId)
+		}
+	}
+	return ids
+}
+
+// ReturnActiveDraftTokensForOwner is the cost-scoped variant behind
+// /draftToken/all?active=1 (cost audit 2026-09-02, made queue-aware 09-03).
+// The My Drafts page polls the token list every 5s per user, and the full
+// endpoint reads the owner's ENTIRE validDraftTokens + usedDraftTokens
+// history on every call — hundreds of Firestore doc reads per poll for
+// veteran wallets (the largest single line item in the August Firestore
+// bill). That poll only needs (a) CURRENT-SEASON seats and (b) the wallet's
+// special queue/wheel seats, which live under prior-season ids by design.
+// (a) is one season-range query; (b) resolves via the cached v2_queues
+// membership (zero hot-path reads) plus one tiny equality query per queue
+// draft the wallet is actually in (typically 0-2). Available stays an empty
+// array. Callers without ?active=1 are completely untouched.
+func ReturnActiveDraftTokensForOwner(ownerId string) (*UsersTokens, error) {
+	res := &UsersTokens{
+		Available: make([]DraftToken, 0),
+		Active:    make([]DraftToken, 0),
+	}
+
+	appendToken := func(doc *firestore.DocumentSnapshot, seen map[string]bool) {
+		var token DraftToken
+		doc.DataTo(&token)
+		if seen[token.CardId] {
+			return
+		}
+		seen[token.CardId] = true
+		// Same display-name backfill as ReturnAllDraftTokensForOwner above —
+		// covers the race window between joining a lobby and the fill-flow
+		// loop writing leagueDisplayName onto each user's token.
+		if token.LeagueDisplayName == "" && token.LeagueId != "" {
+			var league DraftInfo
+			if err := utils.Db.ReadDocument("drafts", token.LeagueId, &league); err == nil && league.DisplayName != "" {
+				token.LeagueDisplayName = league.DisplayName
+			}
+		}
+		res.Active = append(res.Active, token)
+	}
+	seen := make(map[string]bool)
+
+	// (a) current-season seats.
+	seasonLo := fmt.Sprintf("%d-", time.Now().Year())
+	seasonHi := fmt.Sprintf("%d-", time.Now().Year()+1)
+	data, err := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/usedDraftTokens", ownerId)).
+		Where("LeagueId", ">=", seasonLo).
+		Where("LeagueId", "<", seasonHi).
+		Documents(context.Background()).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(data); i++ {
+		appendToken(data[i], seen)
+	}
+
+	// (b) special queue/wheel seats (prior-season ids). Best-effort: an error
+	// here must never take down the whole list — season tokens still return.
+	for _, qid := range queueDraftIdsForWallet(ownerId) {
+		qdata, qerr := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/usedDraftTokens", ownerId)).
+			Where("LeagueId", "==", qid).
+			Documents(context.Background()).GetAll()
+		if qerr != nil {
+			continue
+		}
+		for i := 0; i < len(qdata); i++ {
+			appendToken(qdata[i], seen)
+		}
 	}
 
 	return res, nil

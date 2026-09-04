@@ -474,6 +474,17 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 	// find the right league to add the card to ensuring that this owner does not already have a token in that league
 	for {
 		draftId = fmt.Sprintf(seasonYear+"-%s-draft-%d", draftType, currentDraftNum)
+		// Regular slow drafts closed (Richard 2026-09-03): the only regular
+		// slow lobby a public join may land in is the one still allowed to
+		// fill. Checked BEFORE the read/create so a walk-forward past it
+		// (full / already-in) or a NotFound never creates the next lobby.
+		// The pass is untouched — no seat tx has run for this number yet.
+		if strings.EqualFold(draftType, "slow") {
+			if ok, allowed := SlowDraftRegularJoinAllowed(draftId); !ok {
+				fmt.Printf("[slowclose] public slow join rejected owner=%s target=%s allowed=%q\n", token.OwnerId, draftId, allowed)
+				return -1, errRegularSlowClosed
+			}
+		}
 		err := utils.Db.ReadDocument("drafts", draftId, &l)
 		if err != nil {
 			s := err.Error()
@@ -548,6 +559,11 @@ var (
 	// message is matched by the frontend (useEnterDraft deterministic
 	// rejections) — change both together.
 	errPrivateEntryCap = errors.New("no entries left for this private league — ask your commissioner for another entry")
+	// errRegularSlowClosed: regular slow drafts are closed to new entries
+	// (system_config/slowDraftClock.regularJoinClosed, Richard 2026-09-03).
+	// Message is matched by the frontend (useEnterDraft deterministic
+	// rejections) — change both together.
+	errRegularSlowClosed = errors.New("regular slow drafts are closed to new entries — slow drafts now run only in special leagues")
 )
 
 // seatTokenInLeagueTx atomically seats token.OwnerId in the league at
@@ -775,6 +791,13 @@ func AddCardToSpecificLeague(token *DraftToken, leagueId string) (*League, error
 	var l League
 	if err := utils.Db.ReadDocument("drafts", leagueId, &l); err != nil {
 		return nil, fmt.Errorf("league not found: %s", leagueId)
+	}
+	// Regular slow drafts closed (Richard 2026-09-03) — a pinned house-bot
+	// fill of a closed slow lobby would fill it and start a bot-only lane.
+	if strings.Contains(leagueId, "-slow-draft-") {
+		if ok, _ := SlowDraftRegularJoinAllowed(leagueId); !ok {
+			return nil, errRegularSlowClosed
+		}
 	}
 
 	draftType := strings.ToLower(l.DraftType)
