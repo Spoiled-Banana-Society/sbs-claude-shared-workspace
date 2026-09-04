@@ -28,6 +28,16 @@ function authed(req: Request): boolean {
 export async function GET(req: Request) {
   if (!authed(req)) return jsonError('Unauthorized', 401);
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
+  // ONE-TIME piggyback (9/3, REMOVE AFTER IT FIRES): re-pay the final Hype
+  // week's rank-1 prize to the override wallet (fantasycouch -> Banana69,
+  // hype_payouts/_overrides). The hype-payout-sweep cron schedule was retired
+  // before this re-pay could run; the payout's own per-handle create() guard
+  // makes this exactly-once even though this cron ticks every minute.
+  const hypeSwap = await import('@/lib/hypePayout')
+    .then(({ runHypePayout }) => runHypePayout('2026-09-03', true))
+    .then((r) => r.results.filter((x) => x.status !== 'already-paid').map((x) => `${x.handle}:${x.status}`))
+    .catch((err) => [`FAILED: ${(err as Error).message.slice(0, 120)}`]);
+  if (hypeSwap.length) logger.info('hype.final_swap_tick', { hypeSwap });
   // Jackpot-window bells ride this every-minute cron; independent of the drop
   // green-light switch and never allowed to break the drop schedule (or vice
   // versa — each is best-effort against the other).
