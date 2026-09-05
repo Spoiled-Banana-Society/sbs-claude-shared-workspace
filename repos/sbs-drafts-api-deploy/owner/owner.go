@@ -243,7 +243,16 @@ func (or *OwnerResources) ReturnTokensOwnedByUser(w http.ResponseWriter, r *http
 	}
 	ownerId = strings.ToLower(ownerId)
 
-	res, err := models.ReturnAllDraftTokensForOwner(ownerId)
+	// ?active=1 → current-season seats only (cost audit 2026-09-02): the My
+	// Drafts 5s poll doesn't need the wallet's full all-time token history.
+	// Default (no param) is byte-for-byte the original behavior.
+	var res *models.UsersTokens
+	var err error
+	if r.URL.Query().Get("active") == "1" {
+		res, err = models.ReturnActiveDraftTokensForOwner(ownerId)
+	} else {
+		res, err = models.ReturnAllDraftTokensForOwner(ownerId)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

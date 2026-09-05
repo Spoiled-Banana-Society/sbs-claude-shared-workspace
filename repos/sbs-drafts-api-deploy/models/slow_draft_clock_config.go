@@ -48,6 +48,17 @@ type SlowDraftClockConfig struct {
 	// Hour (PT, 0–21) the overnight pause ends. 0/unset = legacy 05:00.
 	// Richard 2026-08-26: 7 (pause 22:00–07:00).
 	PauseEndHour int `firestore:"pauseEndHour"`
+	// Regular (BBB #N) slow drafts closed to new entries (Richard 2026-09-03):
+	// slow drafts live on only in special leagues (JP/HOF/JackHOF, their own
+	// seating path) and password-gated private leagues (JoinPrivateLeague).
+	// While true, a PUBLIC slow join may seat only into RegularJoinLastLobbyId
+	// (the one lobby still allowed to fill); any other target — walk-forward
+	// to the next number, or creating a new one — is rejected, so the
+	// matchmaker never spawns another regular slow lobby. NOT gated by
+	// Enabled / StartsAtIso. Flip: scripts/_slow-clock-toggle.mjs
+	// --close-regular <id> | --open-regular (frontend repo).
+	RegularJoinClosed      bool   `firestore:"regularJoinClosed"`
+	RegularJoinLastLobbyId string `firestore:"regularJoinLastLobbyId"`
 }
 
 // active reports whether the switch is in force right now (Enabled AND past
@@ -105,8 +116,8 @@ func LoadSlowDraftClockConfig() SlowDraftClockConfig {
 		return slowClockCfgCached
 	}
 	if slowClockCfgCached != cfg {
-		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v pauseEndHour=%d startsAt=%q active=%v\n",
-			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause, cfg.PauseEndHour, cfg.StartsAtIso, cfg.active(time.Now()))
+		fmt.Printf("[slowclock] config now enabled=%v pickLengthSec=%d freshClockAfterPause=%v pauseEndHour=%d startsAt=%q active=%v regularJoinClosed=%v regularJoinLastLobbyId=%q\n",
+			cfg.Enabled, cfg.PickLengthSec, cfg.FreshClockAfterPause, cfg.PauseEndHour, cfg.StartsAtIso, cfg.active(time.Now()), cfg.RegularJoinClosed, cfg.RegularJoinLastLobbyId)
 	}
 	slowClockCfgCached = cfg
 	slowClockCfgLoaded = true
@@ -144,4 +155,16 @@ func SlowDraftPauseEndHour() int {
 		return cfg.PauseEndHour
 	}
 	return slowDraftLegacyPauseEndHour
+}
+
+// SlowDraftRegularJoinAllowed reports whether a PUBLIC (non-private,
+// non-special) slow join may seat into draftId right now, and the one lobby
+// still allowed when the lane is closed (for logging). Deliberately not gated
+// by active()/StartsAtIso — the close is independent of the clock switch.
+func SlowDraftRegularJoinAllowed(draftId string) (bool, string) {
+	cfg := LoadSlowDraftClockConfig()
+	if !cfg.RegularJoinClosed {
+		return true, ""
+	}
+	return cfg.RegularJoinLastLobbyId != "" && draftId == cfg.RegularJoinLastLobbyId, cfg.RegularJoinLastLobbyId
 }
