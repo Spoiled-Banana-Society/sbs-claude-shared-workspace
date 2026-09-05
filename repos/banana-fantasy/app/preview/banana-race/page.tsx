@@ -7,7 +7,7 @@
 import React from 'react';
 import { BananaRaceBoard } from '@/components/race/BananaRaceBoard';
 import { BananaRaceCard } from '@/components/race/BananaRaceCard';
-import { mockRaceBoard } from '@/lib/bananaRace';
+import { mockRaceBoard } from '@/lib/bananaRaceShared';
 
 export default function BananaRacePreviewPage() {
   const board = mockRaceBoard();
