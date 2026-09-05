@@ -48,6 +48,7 @@ func (dr *DraftResources) Routes() chi.Router {
 	r.Post("/{draftId}/cards/updateImagesAndMetadata", dr.UpdateDraftTokenMetadataForCards)
 	r.Post("/verifyOwnership", dr.VerifyDraftTokenOwnership)
 	r.Post("/{draftId}/actions/createState", dr.CreateEmptyDraftStateForDraft)
+	r.Post("/{draftId}/actions/closeCompleted", dr.CloseCompletedDraft)
 	return r
 }
 
@@ -367,6 +368,28 @@ func (dr *DraftResources) VerifyDraftTokenOwnership(w http.ResponseWriter, r *ht
 	}
 
 	return
+}
+
+// CloseCompletedDraft manually re-runs the post-final-pick close for a draft
+// whose completion goroutine died before finishing (e.g. instance shutdown
+// mid-close — Jackpot #56 stall found 2026-09-03: final pick recorded,
+// isDraftComplete=true, but token rosters never stamped, so every row showed
+// "in progress" forever). Safe to expose: CloseDraftForAllUsers refuses any
+// draft whose RTDB isDraftComplete flag is not already true, validates every
+// roster is exactly 15 picks, and each write is an idempotent restamp of the
+// same final state — re-running it on an already-closed draft is a no-op
+// rewrite of identical data.
+func (dr *DraftResources) CloseCompletedDraft(w http.ResponseWriter, r *http.Request) {
+	draftId := chi.URLParam(r, "draftId")
+	if draftId == "" {
+		http.Error(w, "missing draftId", http.StatusBadRequest)
+		return
+	}
+	if err := models.CloseDraftForAllUsers(draftId); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte("closed"))
 }
 
 func (dr *DraftResources) CreateEmptyDraftStateForDraft(w http.ResponseWriter, r *http.Request) {
