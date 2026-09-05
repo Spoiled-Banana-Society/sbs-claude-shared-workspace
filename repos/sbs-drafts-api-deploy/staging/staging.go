@@ -112,6 +112,18 @@ func (sr *StagingResources) reserveSpecialDraftId(draftType string, roundId *int
 	return draftId, draftNum, err
 }
 
+// specialDraftType is the clock a special league drafts on. Specials are
+// created "slow"; the Banana Race seating (2026-09-08, lib/bananaRace.ts on
+// the frontend) stamps DraftType "fast" on the league doc before the 10th
+// seat so CreateLeagueDraftStateUponFilling picks the 30s clock. Anything
+// else — including a legacy doc with no DraftType — stays slow.
+func specialDraftType(league *models.League) string {
+	if league != nil && strings.EqualFold(league.DraftType, "fast") {
+		return "fast"
+	}
+	return "slow"
+}
+
 // CreateSpecialDraft creates a slow draft league with a specific level (Jackpot/HOF)
 // and enters all provided wallets. Called by Firestore trigger when a queue round fills.
 func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +175,10 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	source := "wheel"
 	if strings.EqualFold(req.Source, "promo") {
 		source = "promo"
+	} else if strings.EqualFold(req.Source, "race") {
+		// Banana Race overflow league (kickoff week 2026-09-08) — names as
+		// "(from Banana Race)" at fill, see models/draft-state.go.
+		source = "race"
 	}
 
 	// Resolve the draftId IDEMPOTENTLY from the dedicated SpecialDraftCount
@@ -241,9 +257,12 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 			}
 		}
 
-		// Update the token with league info
+		// Update the token with league info. Speed comes off the league doc:
+		// a special is slow by default, but the Banana Race (2026-09-08) flips
+		// DraftType to "fast" on the league before its last seats land so the
+		// Tuesday-night drafts run a 30s clock — the token label must agree.
 		token.LeagueId = league.LeagueId
-		token.DraftType = "slow"
+		token.DraftType = specialDraftType(league)
 		token.LeagueDisplayName = league.DisplayName
 		token.Level = level
 
@@ -278,7 +297,7 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 
 	// If we got all 10, create the draft state so picking can begin
 	if league.NumPlayers == 10 {
-		err = models.CreateLeagueDraftStateUponFilling(draftId, "slow")
+		err = models.CreateLeagueDraftStateUponFilling(draftId, specialDraftType(league))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error creating draft state: %s", err.Error()), http.StatusInternalServerError)
 			return
@@ -401,9 +420,10 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Update the token with league info
+	// Update the token with league info (speed off the league doc — see
+	// specialDraftType; the Banana Race runs special leagues on the fast clock).
 	token.LeagueId = league.LeagueId
-	token.DraftType = "slow"
+	token.DraftType = specialDraftType(&league)
 	token.LeagueDisplayName = league.DisplayName
 	token.Level = league.Level
 	if req.TokenId != "" {
@@ -437,7 +457,7 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 
 	// If we hit 10, create the draft state so picking can begin
 	if league.NumPlayers == 10 {
-		err = models.CreateLeagueDraftStateUponFilling(req.DraftId, "slow")
+		err = models.CreateLeagueDraftStateUponFilling(req.DraftId, specialDraftType(&league))
 		if err != nil {
 			fmt.Printf("[JoinSpecialDraft] Error creating draft state for %s: %s\n", req.DraftId, err.Error())
 		}

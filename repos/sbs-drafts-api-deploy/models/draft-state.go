@@ -751,6 +751,10 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		origin := "Wheel"
 		if strings.EqualFold(leagueInfo.Source, "promo") {
 			origin = "Promo"
+		} else if strings.EqualFold(leagueInfo.Source, "race") {
+			// Banana Race (kickoff week 2026-09-08): a league opened by the
+			// leaderboard draw, not the wheel.
+			origin = "Banana Race"
 		}
 		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from %s)", tierName, counts.SpecialDraftCount, origin)
 		leagueInfo.Level = specialLevel
