@@ -22,6 +22,8 @@ export interface SlowClockConfig {
   freshClockAfterPause: boolean;
   /** PT hour the overnight pause ends (legacy 5; Richard 8/26: 7). */
   pauseEndHour: number;
+  /** PT hour the overnight pause STARTS (legacy 22 = 10pm; Boris 9/4: 20 = 8pm). */
+  pauseStartHour: number;
   /**
    * Regular (BBB #N) slow drafts closed to new entries (Richard 2026-09-03):
    * slow drafts live on only in special leagues (Jackpot / JackHOF / HOF) and
@@ -38,7 +40,10 @@ export interface SlowClockConfig {
 
 export const LEGACY_SLOW_PICK_SEC = 8 * 3600;
 export const LEGACY_PAUSE_END_HOUR = 5;
-export const PAUSE_START_HOUR = 22;
+/** Legacy pause-start hour (10pm PT). Now config-overridable via pauseStartHour. */
+export const LEGACY_PAUSE_START_HOUR = 22;
+/** @deprecated use cfg.pauseStartHour — kept as the legacy fallback value. */
+export const PAUSE_START_HOUR = LEGACY_PAUSE_START_HOUR;
 
 /** Switch-off state: exactly what the site did before this shipped. */
 export const LEGACY_SLOW_CLOCK: SlowClockConfig = {
@@ -46,6 +51,7 @@ export const LEGACY_SLOW_CLOCK: SlowClockConfig = {
   pickLengthSec: LEGACY_SLOW_PICK_SEC,
   freshClockAfterPause: false,
   pauseEndHour: LEGACY_PAUSE_END_HOUR,
+  pauseStartHour: LEGACY_PAUSE_START_HOUR,
   regularJoinClosed: false,
   regularJoinLastLobbyId: '',
 };
@@ -96,14 +102,21 @@ export function normalizeSlowClockConfig(raw: unknown, nowMs: number = Date.now(
   const sec = typeof r.pickLengthSec === 'number' && Number.isFinite(r.pickLengthSec) && r.pickLengthSec > 0
     ? Math.floor(r.pickLengthSec)
     : LEGACY_SLOW_PICK_SEC;
-  const peh = typeof r.pauseEndHour === 'number' && Number.isInteger(r.pauseEndHour) && r.pauseEndHour > 0 && r.pauseEndHour < PAUSE_START_HOUR
+  const peh = typeof r.pauseEndHour === 'number' && Number.isInteger(r.pauseEndHour) && r.pauseEndHour > 0 && r.pauseEndHour < LEGACY_PAUSE_START_HOUR
     ? r.pauseEndHour
     : LEGACY_PAUSE_END_HOUR;
+  const effectiveEnd = enabled ? peh : LEGACY_PAUSE_END_HOUR;
+  // pauseStartHour: config-overridable (Boris 9/4). Must sit above the resume
+  // hour and no later than 23:00, else fall back to legacy 22 (10pm).
+  const psh = typeof r.pauseStartHour === 'number' && Number.isInteger(r.pauseStartHour) && r.pauseStartHour > effectiveEnd && r.pauseStartHour <= 23
+    ? r.pauseStartHour
+    : LEGACY_PAUSE_START_HOUR;
   return {
     enabled,
     pickLengthSec: enabled ? sec : LEGACY_SLOW_PICK_SEC,
     freshClockAfterPause: enabled && r.freshClockAfterPause === true,
-    pauseEndHour: enabled ? peh : LEGACY_PAUSE_END_HOUR,
+    pauseEndHour: effectiveEnd,
+    pauseStartHour: enabled ? psh : LEGACY_PAUSE_START_HOUR,
     regularJoinClosed: r.regularJoinClosed === true,
     regularJoinLastLobbyId: typeof r.regularJoinLastLobbyId === 'string' ? r.regularJoinLastLobbyId.trim() : '',
   };
@@ -127,6 +140,7 @@ function hourLabel(h: number): string {
 export function slowClockCopy(cfg: SlowClockConfig = LEGACY_SLOW_CLOCK): SlowClockCopy {
   const sec = cfg.enabled ? cfg.pickLengthSec : LEGACY_SLOW_PICK_SEC;
   const pauseEndHour = cfg.enabled ? cfg.pauseEndHour : LEGACY_PAUSE_END_HOUR;
+  const pauseStartHour = cfg.enabled ? cfg.pauseStartHour : LEGACY_PAUSE_START_HOUR;
   const pauseEndLabel = hourLabel(pauseEndHour);
   const wholeHours = sec % 3600 === 0 ? sec / 3600 : null;
   let long: string, short: string, compact: string, hrsPick: string, word: string, hyphen: string;
@@ -163,7 +177,7 @@ export function slowClockCopy(cfg: SlowClockConfig = LEGACY_SLOW_CLOCK): SlowClo
       ? `If you were on the clock when the overnight pause hit, you get a fresh full clock at ${pauseEndLabel} PT.`
       : '',
     pauseEndLabel,
-    pauseWindowLabel: `${hourLabel(PAUSE_START_HOUR)}–${pauseEndLabel} PT`,
+    pauseWindowLabel: `${hourLabel(pauseStartHour)}–${pauseEndLabel} PT`,
     pauseEndHour,
     enabled: cfg.enabled,
     freshClockAfterPause: cfg.enabled && cfg.freshClockAfterPause,

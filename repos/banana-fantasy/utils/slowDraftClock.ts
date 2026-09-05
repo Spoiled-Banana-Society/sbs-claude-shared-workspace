@@ -4,7 +4,20 @@
  */
 
 const PACIFIC = 'America/Los_Angeles';
-const PAUSE_START_HOUR = 22;
+
+/**
+ * PT hour the overnight pause STARTS. Legacy 22 (10pm). The SlowClockProvider
+ * sets it from system_config/slowDraftClock.pauseStartHour when the switch is
+ * active (Boris 9/4: 20 = 8pm). Module-level like defaultPauseEndHour so all
+ * helpers read the current value without threading it through.
+ */
+let PAUSE_START_HOUR = 22;
+export function setSlowDraftPauseStartHour(h: number): void {
+  if (Number.isInteger(h) && h > defaultPauseEndHour && h <= 23) PAUSE_START_HOUR = h;
+}
+export function getSlowDraftPauseStartHour(): number {
+  return PAUSE_START_HOUR;
+}
 
 /**
  * PT hour the overnight pause ends. Legacy 5. The SlowClockProvider sets it

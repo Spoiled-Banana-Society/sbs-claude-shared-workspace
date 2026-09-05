@@ -60,7 +60,7 @@ describe('slowClockCopy — switch ON', () => {
     const before = Date.parse('2026-08-27T11:59:00Z');
     const after = Date.parse('2026-08-27T12:00:00Z');
     expect(normalizeSlowClockConfig(raw, before)).toEqual(LEGACY_SLOW_CLOCK);
-    expect(normalizeSlowClockConfig(raw, after)).toEqual({ enabled: true, pickLengthSec: 14400, freshClockAfterPause: true, pauseEndHour: 5 });
+    expect(normalizeSlowClockConfig(raw, after)).toEqual({ enabled: true, pickLengthSec: 14400, freshClockAfterPause: true, pauseEndHour: 5, pauseStartHour: 22, regularJoinClosed: false, regularJoinLastLobbyId: '' });
     expect(normalizeSlowClockConfig({ ...raw, startsAtIso: 'garbage' }, before).enabled).toBe(true);
   });
   it('normalize: disabled ignores pickLengthSec; garbage → legacy', () => {

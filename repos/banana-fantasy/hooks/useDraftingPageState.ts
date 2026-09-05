@@ -606,7 +606,7 @@ export function useDraftingPageState() {
         // own missed-picks promotion — not just this device's draftStore.
         const walletQ = `&wallet=${encodeURIComponent(user!.walletAddress!.toLowerCase())}`;
         const stateResults = await Promise.all(
-          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number; autoDraft?: boolean }> => {
+          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number; autoDraft?: boolean; pickLength?: number }> => {
             try {
               const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}${walletQ}`);
               if (!res.ok) return { players: 1, isDrafting: false };
@@ -618,7 +618,8 @@ export function useDraftingPageState() {
               const dst = typeof data.draftStartTime === 'number' && data.draftStartTime > 0
                 ? data.draftStartTime * 1000 : undefined;
               const autoDraft = typeof data.autoDraft === 'boolean' ? data.autoDraft : undefined;
-              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst, autoDraft };
+              const pickLength = typeof data.pickLength === 'number' && data.pickLength > 0 ? data.pickLength : undefined;
+              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst, autoDraft, pickLength };
             } catch {
               return { players: 1, isDrafting: false };
             }
@@ -627,8 +628,17 @@ export function useDraftingPageState() {
         if (cancelled) return;
 
         const mapped: Draft[] = activeTokens.map((t, i) => {
-          const { players, isDrafting, draftStartTimeMs, autoDraft } = stateResults[i];
-          const draftSpeed: 'fast' | 'slow' = t.leagueId.includes('-slow-') ? 'slow' : 'fast';
+          const { players, isDrafting, draftStartTimeMs, autoDraft, pickLength } = stateResults[i];
+          // Speed: the live pick clock wins, then the token's own DraftType,
+          // then the id. A special league (2025-slow-draft-N id) can draft on
+          // the FAST clock (Banana Race Tuesday-night drafts, 2026-09-08) —
+          // the id alone would label it slow and show an 8h clock on a 30s pick.
+          const tokenType = String((t as { _draftType?: unknown })._draftType ?? '').toLowerCase();
+          const draftSpeed: 'fast' | 'slow' = pickLength !== undefined
+            ? (pickLength > 60 ? 'slow' : 'fast')
+            : tokenType === 'fast' || tokenType === 'slow'
+              ? tokenType
+              : t.leagueId.includes('-slow-') ? 'slow' : 'fast';
           // Type value is set once the draft is full; the DISPLAY gating ("show
           // the type vs 'Revealing…'") is owned by getLiveState's phase + DraftRow
           // (which keeps "Revealing…" until the reveal countdown drops below 37s).

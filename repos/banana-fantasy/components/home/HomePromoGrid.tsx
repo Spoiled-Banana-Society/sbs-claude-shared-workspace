@@ -7,6 +7,7 @@ import { PromoModal } from '../modals/PromoModal';
 import { PromoLongCard, PromoSpotlight } from '@/components/promos/PromoCards';
 // HypeCard import removed — Banana Hype RETIRED 2026-09-03, permanent.
 import { PromoCodeBox } from '@/components/promos/PromoCodeBox';
+import { BananaRaceCard } from '@/components/race/BananaRaceCard';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { API_CONFIG } from '@/lib/api/config';
@@ -111,6 +112,9 @@ export function HomePromoGrid({ promos, claimPromo, onVerifyTweet, onGenerateRef
       {/* Promo code entry (BANANA launch) — renders nothing until the
           system_config/promoCode switch is on; eligibility is server-judged. */}
       <div className="mb-3.5 empty:hidden"><PromoCodeBox /></div>
+      {/* Banana Race (kickoff-week leaderboard) — renders nothing until
+          system_config/bananaRace.enabled is on. */}
+      <div className="mb-3.5 empty:hidden"><BananaRaceCard /></div>
 
       {(() => {
         const ONBOARD = new Set(['new-user', 'first-purchase']);

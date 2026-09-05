@@ -29,6 +29,7 @@ export const getDraftHistory = db.getDraftHistory;
 export const getQueueStatus = db.getQueueStatus;
 export const joinQueue = db.joinQueue;
 export const joinQueueWithToken = db.joinQueueWithToken;
+export const joinQueueRoundWithToken = db.joinQueueRoundWithToken;
 export const getFillingWheelPassLevels = db.getFillingWheelPassLevels;
 export const isSpecialDraftStarted = db.isSpecialDraftStarted;
 export const getLiveSpecialDraftLock = db.getLiveSpecialDraftLock;

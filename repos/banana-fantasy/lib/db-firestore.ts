@@ -2550,9 +2550,53 @@ function findOpenRound(
     r =>
       r.status === 'filling' &&
       roundSource(r) === source &&
+      // Banana Race: between the 5 PM freeze and the 6 PM seating a round the
+      // draw already assigned is closed to walk-ins (a wheel win in that hour
+      // opens a fresh round instead) — otherwise a planned seat vanishes.
+      r.reservedForRace !== true &&
       r.members.length < QUEUE_MAX &&
       !r.members.some(m => excluded.has(String(m.wallet).toLowerCase())),
   );
+}
+
+/**
+ * Banana Race seating: queue a granted pass into ONE SPECIFIC round — the
+ * league the draw assigned — instead of the first open round of its source.
+ * Same guards as joinQueueWithToken (same-person, capacity, idempotent per
+ * token) plus: the round must exist and still be filling. Reserved rounds ARE
+ * joinable here (that is who they are reserved for).
+ */
+export async function joinQueueRoundWithToken(
+  userId: string,
+  type: 'jackpot' | 'hof' | 'jackhof',
+  roundId: number,
+  tokenId: string,
+): Promise<{ queue: DraftQueue; joinedRoundId: number | null }> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  const { samePersonWallets } = await import('@/lib/linkedWallets');
+  const samePerson = new Set((await samePersonWallets(userId)).map(w => w.toLowerCase()));
+
+  return db.runTransaction(async (tx) => {
+    const queueSnap = await tx.get(queueRef);
+    const queue: DraftQueue = queueSnap.exists ? (queueSnap.data() as DraftQueue) : emptyQueueDoc(type);
+    if (!queue.rounds) queue.rounds = [];
+
+    const existing = queue.rounds.find(r => r.members.some(m => m.tokenId === tokenId));
+    if (existing) return { queue, joinedRoundId: existing.roundId };
+
+    const round = queue.rounds.find(r => r.roundId === roundId);
+    if (!round) throw new ApiError(404, `Round ${roundId} not found`);
+    if (round.status !== 'filling') throw new ApiError(409, `Round ${roundId} is ${round.status}`);
+    if (round.members.length >= QUEUE_MAX) throw new ApiError(409, `Round ${roundId} is full`);
+    if (round.members.some(m => samePerson.has(String(m.wallet).toLowerCase()))) {
+      throw new ApiError(409, `Round ${roundId} already seats this person`);
+    }
+    round.members.push({ wallet: userId.toLowerCase(), joinedAt: Date.now(), tokenId });
+    tx.set(queueRef, queue);
+    return { queue, joinedRoundId: round.roundId };
+  });
 }
 
 export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {

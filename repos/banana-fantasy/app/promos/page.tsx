@@ -13,6 +13,7 @@ import { API_CONFIG } from '@/lib/api/config';
 import { EliminatorBanner } from '@/components/promos/EliminatorBanner';
 import { PromoSpotlight, PromoLongCard } from '@/components/promos/PromoCards';
 // HypeCard import removed — Banana Hype RETIRED 2026-09-03, permanent.
+import { BananaRaceCard } from '@/components/race/BananaRaceCard';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo } from '@/types';
 
@@ -385,6 +386,9 @@ export default function PromosPage() {
           conversion card for new players, otherwise the featured pin, or a
           claimable one) + LONG cards under it. Two columns on desktop, one on
           phones. Tap a card → inline "How it works"; "Full details" → modal. */}
+      {/* Banana Race (kickoff-week leaderboard) — renders nothing until
+          system_config/bananaRace.enabled is on. */}
+      {filter !== 'activity' && <div className="mb-3.5 empty:hidden"><BananaRaceCard /></div>}
       {filter !== 'activity' && filteredPromos.length > 0 && (() => {
         const showSpot = filter === 'all';
         // TWO stacked spotlights while the onboarding pair is live (Boris

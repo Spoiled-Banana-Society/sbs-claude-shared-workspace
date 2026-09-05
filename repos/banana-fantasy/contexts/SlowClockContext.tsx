@@ -14,7 +14,7 @@ import {
   type SlowClockConfig,
   type SlowClockCopy,
 } from '@/lib/slowClock';
-import { setSlowDraftPauseEndHour } from '@/utils/slowDraftClock';
+import { setSlowDraftPauseEndHour, setSlowDraftPauseStartHour } from '@/utils/slowDraftClock';
 
 interface SlowClockValue {
   config: SlowClockConfig;
@@ -37,6 +37,7 @@ export function SlowClockProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled && raw) {
           const cfg = normalizeSlowClockConfig(raw);
           setSlowDraftPauseEndHour(cfg.pauseEndHour);
+          setSlowDraftPauseStartHour(cfg.pauseStartHour);
           setConfig(cfg);
         }
       })

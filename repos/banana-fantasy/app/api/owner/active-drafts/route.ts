@@ -249,7 +249,12 @@ export async function GET(req: Request) {
 
     const drafts = [...rows.entries()].map(([id, r]) => {
       const token = byLeague.get(id);
-      const speed: 'fast' | 'slow' = id.includes('-slow-') ? 'slow' : 'fast';
+      // Token DraftType first (Go stamps it from the league; a Banana Race
+      // special league can be 'fast' under a 2025-slow-draft-N id), id second.
+      const tokenType = String((token as { _draftType?: unknown } | undefined)?._draftType ?? '').toLowerCase();
+      const speed: 'fast' | 'slow' = tokenType === 'fast' || tokenType === 'slow'
+        ? tokenType
+        : id.includes('-slow-') ? 'slow' : 'fast';
       return {
         id,
         contestName: r.name,

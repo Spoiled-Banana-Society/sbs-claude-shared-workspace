@@ -582,7 +582,7 @@ export interface QueueMember {
  *  SEPARATE rounds so a 0.1%-wedge winner never shares a draft with a Banana
  *  Draw grantee (Richard, 2026-07-30). Untagged legacy rounds read as 'wheel' —
  *  every pre-existing jackpot/hof round is wheel-origin. */
-export type QueueRoundSource = 'wheel' | 'promo' | 'atb' | 'vault';
+export type QueueRoundSource = 'wheel' | 'promo' | 'atb' | 'vault' | 'race';
 
 export interface QueueRound {
   roundId: number;
@@ -595,6 +595,9 @@ export interface QueueRound {
    *  league for this round — prevents two simultaneous wheel winners creating
    *  two leagues. Stale claims (>60s, create crashed) are taken over. */
   creatingAt?: number | null;
+  /** Banana Race: set by the 5 PM freeze on every round the draw assigned so
+   *  walk-ins (wheel wins) route elsewhere until the 6 PM seating lands. */
+  reservedForRace?: boolean;
 }
 
 export interface DraftQueue {
