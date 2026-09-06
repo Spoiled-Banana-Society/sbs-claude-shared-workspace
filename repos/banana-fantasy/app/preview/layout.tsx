@@ -16,6 +16,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 
 const PUBLIC_MOCK_PREVIEWS = new Set<string>([
   '/preview/zone-drop', // zone packs instant-mode review (mock data only)
+  '/preview/banana-race', // Banana Race board + tile review (mockRaceBoard only, no reads, nothing claimable)
 ]);
 
 export default function PreviewLayout({ children }: { children: React.ReactNode }) {

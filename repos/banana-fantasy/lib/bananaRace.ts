@@ -123,6 +123,20 @@ function shortWallet(w: string): string {
   return `${w.slice(0, 6)}…${w.slice(-4)}`;
 }
 
+// Bot wallets never change during a race, yet ~2k botWallets docs were re-read
+// on EVERY tally (half the tally's Firestore cost). Cached in-process 10 min.
+type AdminDb = ReturnType<typeof getAdminFirestore>;
+const BOTS_TTL_MS = 10 * 60_000;
+let botsCache: { at: number; set: Set<string> } | null = null;
+async function getBotSet(db: AdminDb): Promise<Set<string>> {
+  const now = Date.now();
+  if (botsCache && now - botsCache.at < BOTS_TTL_MS) return botsCache.set;
+  const snap = await db.collection('botWallets').select().get();
+  const set = new Set(snap.docs.map((d) => d.id.toLowerCase()));
+  botsCache = { at: now, set };
+  return set;
+}
+
 /**
  * Points = quantity of `pass_purchased` activity events (card + USDC paid
  * mints) inside [start, end), by person. Bots excluded, linked wallets merged.
@@ -133,15 +147,14 @@ function shortWallet(w: string): string {
  */
 export async function tallyBananaRace(cfg: Pick<BananaRaceConfig, 'startAtIso' | 'endAtIso'>): Promise<RaceTally> {
   const db = getAdminFirestore();
-  const [eventsSnap, botsSnap] = await Promise.all([
+  const [eventsSnap, bots] = await Promise.all([
     db.collection('v2_activity_events')
       .where('createdAtIso', '>=', cfg.startAtIso)
       .where('createdAtIso', '<', cfg.endAtIso)
       .select('type', 'userId', 'quantity', 'createdAtIso', 'username')
       .get(),
-    db.collection('botWallets').select().get(),
+    getBotSet(db),
   ]);
-  const bots = new Set(botsSnap.docs.map((d) => d.id.toLowerCase()));
   const { getLinkedWallets } = await import('@/lib/linkedWallets');
 
   type Acc = { wallets: Set<string>; points: number; reachedAtIso: string; names: Map<string, string> };
@@ -225,6 +238,8 @@ export async function readOpenSeats(): Promise<SeatSummary> {
 // ── Board (what the page renders) ───────────────────────────────────────────
 
 const BOARD_TTL_MS = 45_000;
+const LIVE_TTL_MS = 60_000;
+const RACE_LIVE_DOC = 'live';
 const BOARD_LIMIT = 100;
 let boardCache: { at: number; tally: RaceTally; seats: SeatSummary; results: RaceResults | null } | null = null;
 
@@ -248,16 +263,42 @@ export async function buildRaceBoard(viewerWallet: string | null, opts: { fresh?
   const now = Date.now();
   if (opts.fresh || !boardCache || now - boardCache.at > BOARD_TTL_MS) {
     let tally: RaceTally | null = null;
+    let seats: SeatSummary | null = null;
     let results: RaceResults | null = null;
     if (cfg.frozen) {
       const snap = await getAdminFirestore().collection(RACE_COLLECTION).doc(RACE_FINAL_DOC).get();
       const d = snap.data() as { tally?: RaceTally; results?: RaceResults } | undefined;
       if (d?.tally) tally = d.tally;
       if (d?.results) results = d.results;
+    } else if (!opts.fresh) {
+      // Shared live snapshot (banana_race/live). The per-instance cache above is
+      // per WARM LAMBDA, so N lambdas each re-tallied every 45s. Whoever
+      // re-tallies writes it here; everyone else reads ONE doc while it is
+      // under LIVE_TTL_MS old. Display only: the freeze/seat scripts run their
+      // own tally (scripts/_banana-race-lib.mjs) and the frozen branch above
+      // reads banana_race/final. Fail-open on any error.
+      try {
+        const snap = await getAdminFirestore().collection(RACE_COLLECTION).doc(RACE_LIVE_DOC).get();
+        const d = snap.data() as { at?: number; tally?: RaceTally; seats?: SeatSummary } | undefined;
+        if (d?.tally && d?.seats && typeof d.at === 'number' && now - d.at < LIVE_TTL_MS) {
+          tally = d.tally;
+          seats = d.seats;
+        }
+      } catch (e) {
+        logger.warn('banana_race.live_read_failed', { err: (e as Error).message });
+      }
     }
+    const computed = !tally || !seats;
     if (!tally) tally = await tallyBananaRace(cfg);
-    const seats = await readOpenSeats();
+    if (!seats) seats = await readOpenSeats();
     boardCache = { at: now, tally, seats, results };
+    if (computed && !cfg.frozen) {
+      try {
+        await getAdminFirestore().collection(RACE_COLLECTION).doc(RACE_LIVE_DOC).set({ at: now, tally, seats });
+      } catch (e) {
+        logger.warn('banana_race.live_write_failed', { err: (e as Error).message });
+      }
+    }
   }
   const { tally, seats, results } = boardCache;
 
