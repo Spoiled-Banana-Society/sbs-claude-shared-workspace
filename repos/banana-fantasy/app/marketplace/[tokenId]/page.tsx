@@ -1181,7 +1181,11 @@ export default function NftDetailPage() {
   const hasSeasonStats = hasSeasonStarted();
   const level = parseTrait(traits, 'LEVEL');
 
-  const draftType: DraftType = level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
+  // JackHOF (a draft sealed as BOTH Jackpot and HOF — first ever: BBB #1238, 2026-09-07)
+  // takes the Jackpot visual treatment here (OpenSea's DraftType has no jackhof bucket)
+  // but is labelled JACKHOF, never JACKPOT.
+  const isJackHof = level === 'JackHOF';
+  const draftType: DraftType = (isJackHof || level === 'Jackpot') ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
 
   // Price from listing
   const listing = nft.listing;
@@ -1264,7 +1268,7 @@ export default function NftDetailPage() {
               <div className="absolute top-4 left-4 flex items-center gap-2">
                 {draftType === 'jackpot' && (
                   <span className="px-4 py-1.5 bg-error text-white text-xs font-bold uppercase rounded-full shadow-lg">
-                    JACKPOT
+                    {isJackHof ? 'JACKHOF' : 'JACKPOT'}
                   </span>
                 )}
                 {draftType === 'hof' && (
@@ -1885,7 +1889,7 @@ export default function NftDetailPage() {
                       <h3 className="text-text-primary font-semibold font-mono">{teamName}</h3>
                       <div className="flex gap-2 mt-1">
                         {draftType === 'jackpot' && (
-                          <span className="px-2 py-0.5 bg-error/20 text-error text-[10px] font-bold rounded">JACKPOT</span>
+                          <span className="px-2 py-0.5 bg-error/20 text-error text-[10px] font-bold rounded">{isJackHof ? 'JACKHOF' : 'JACKPOT'}</span>
                         )}
                         {draftType === 'hof' && (
                           <span className="px-2 py-0.5 bg-hof/20 text-hof text-[10px] font-bold rounded">HOF</span>

@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     // Specials are engine-blocked (errLeagueSpecial) — reject here too so the
     // rejection is free instead of costing a minted pass first.
     const level = league.Level ?? league.level ?? '';
-    if (level === 'Jackpot' || level === 'Hall of Fame') {
+    if (level === 'Jackpot' || level === 'Hall of Fame' || level === 'JackHOF') {
       return jsonError(`${leagueId} is a special ${level} draft — bots are not allowed in specials`, 403);
     }
     // Regular slow drafts closed (Richard 2026-09-03): a bot fill of any slow

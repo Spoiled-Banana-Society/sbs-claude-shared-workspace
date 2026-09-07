@@ -2116,7 +2116,7 @@ function DraftRoomContent() {
     if (id && walletParam && !specialTypeParam) {
       getDraftTokenLevel(walletParam, id).then(level => {
         if (!level) return;
-        const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+        const typeMap: Record<string, DraftType> = { 'JackHOF': 'jackhof', 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
         const mapped = typeMap[level] || 'pro';
         setDraftType(mapped);
         if (draftId) draftStore.updateDraft(draftId, { type: mapped, draftType: mapped });
@@ -2160,7 +2160,7 @@ function DraftRoomContent() {
     const id = draftId || urlDraftId;
     if (!id || !walletParam) return;
     let cancelled = false;
-    const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+    const typeMap: Record<string, DraftType> = { 'JackHOF': 'jackhof', 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
     let attempt = 0;
     // Retry until the owner-token level resolves. Right after the spin reveals
     // the type, the backend may not have stamped the token's level for a beat,
@@ -2210,8 +2210,8 @@ function DraftRoomContent() {
     const rt = firebaseRtdb.data?.type;
     if (!rt || specialTypeParam) return;
     const norm: Record<string, DraftType> = {
-      pro: 'pro', hof: 'hof', jackpot: 'jackpot',
-      Pro: 'pro', 'Hall of Fame': 'hof', Jackpot: 'jackpot',
+      pro: 'pro', hof: 'hof', jackpot: 'jackpot', jackhof: 'jackhof',
+      Pro: 'pro', 'Hall of Fame': 'hof', Jackpot: 'jackpot', JackHOF: 'jackhof',
     };
     const mapped = norm[rt as string];
     if (!mapped) return;
