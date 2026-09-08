@@ -14,6 +14,7 @@
 // that feature flag.
 
 import type { FirstPurchaseVariant } from '@/lib/promoMath';
+import { specialSeatsRetired } from '@/lib/promoWindow';
 import { firstPurchaseSpins, classicFirstPurchaseSpins, FIRST_PURCHASE_MAX_SPINS } from '@/lib/promoMath';
 import { API_CONFIG, firstPurchaseSpinsPerPass, isNewUserFlashActive } from '@/lib/api/config';
 import { wheelSegments, jackhofWheelSegments } from '@/lib/wheelConfig';
@@ -269,7 +270,7 @@ export function firstPurchaseFlashOverlay(
     modalTitle: `$100 Day: Buy 1, Get ${free} Drafts Free`,
     explanation:
       `• 24 hours only: every Draft Pass on your first order = ${rate} Free Spins.`
-      + `\n• Every Spin wins at least 1 Free Draft → ${free} Free Drafts ($${usd}) guaranteed per pass, and the wheel can pay more (up to ${MAX_WEDGE_DRAFTS} a spin, plus Jackpot and HOF seats).`
+      + `\n• Every Spin wins at least 1 Free Draft → ${free} Free Drafts ($${usd}) guaranteed per pass, and the wheel can pay more (up to ${MAX_WEDGE_DRAFTS} a spin${specialSeatsRetired(now) ? '' : ', plus Jackpot and HOF seats'}).`
       + `\n• Stacks on every pass in your first order, up to ${maxPasses} passes (${FIRST_PURCHASE_MAX_SPINS} Free Spins max).`
       + '\n• One-time: your first order only. Ends Wednesday at midnight PT.',
     endsAtIso: new Date(API_CONFIG.promos.newUserFlash.endsAtMs).toISOString(),

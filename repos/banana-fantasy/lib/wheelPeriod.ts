@@ -17,7 +17,7 @@ import { keccak256, type Hex } from 'viem';
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { wheelSegments, jackhofWheelSegments, JACKHOF_WHEEL_FROM_FILLED, type WheelSegment } from '@/lib/wheelConfig';
+import { wheelSegments, jackhofWheelSegments, seasonWheelSegments, JACKHOF_WHEEL_FROM_FILLED, type WheelSegment } from '@/lib/wheelConfig';
 import { buildMerkleTree, deriveSpinOutcome, getMerkleProof, leafHash, type MerkleTree } from '@/lib/wheelMerkle';
 
 // One period is sized to cover the WHOLE contest (Boris 2026-06-12: the wheel
@@ -103,7 +103,14 @@ export async function getCurrentPeriodNumber(): Promise<number | null> {
  * stale generation.
  */
 export async function segmentsForNewPeriod(): Promise<WheelSegment[]> {
-  const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
+  const db = getAdminFirestore();
+  // Season switch (Richard 2026-09-08): specialWedges === false → no
+  // Jackpot / HOF / JackHOF wedge on any NEW period (and on the pre-period
+  // fallback the spin route + wheel page use while a rotation is in flight).
+  // Flip with scripts/_wheel-force-rotate.mjs --no-specials --set.
+  const state = await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).get();
+  if ((state.data() as { specialWedges?: boolean } | undefined)?.specialWedges === false) return seasonWheelSegments;
+  const snap = await db.collection('drafts').doc('draftTracker').get();
   const filled = Number((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
   return filled >= JACKHOF_WHEEL_FROM_FILLED ? jackhofWheelSegments : wheelSegments;
 }

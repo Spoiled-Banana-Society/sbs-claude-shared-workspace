@@ -40,6 +40,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { unlockBadge } from '@/lib/db';
 import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
+import { specialSeatsRetired } from '@/lib/promoWindow';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import type { Promo } from '@/types';
 
@@ -84,6 +85,7 @@ export interface AtbWinner {
 export function atbActive(now: number = Date.now()): boolean {
   return ATB_START_MS !== null
     && now >= ATB_START_MS
+    && !specialSeatsRetired(now) // retired at the season kickoff (Richard 2026-09-08)
     && VISIBLE_PROMO_TYPES.has('around-the-banana');
 }
 

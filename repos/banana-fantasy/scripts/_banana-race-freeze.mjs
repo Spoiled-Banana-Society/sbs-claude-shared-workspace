@@ -5,6 +5,7 @@
 //   node scripts/_banana-race-freeze.mjs            # dry run
 //   node scripts/_banana-race-freeze.mjs --commit   # freeze + plan + reserve rounds
 //   node scripts/_banana-race-freeze.mjs --commit --seed <hex>   # replay a seed (re-plan after a fix)
+//   node scripts/_banana-race-freeze.mjs --max-new 1             # cap on NEW JackHOF leagues (default 1; Richard 9/8 "ideally none, 1 is fine")
 //   node scripts/_banana-race-freeze.mjs --window 2026-08-28T07:00:00Z 2026-09-04T07:00:00Z   # DRY RUN over any window (rehearsal)
 //
 // What --commit writes:
@@ -19,7 +20,11 @@
 //   merges  — same tier, smaller league folds into a bigger one that has room
 //             and shares no person; only leagues that have not started
 //   top N   — each gets a JackHOF seat; fullest JackHOF league they are not in;
-//             nowhere to sit → a NEW JackHOF league is opened for them
+//             nowhere to sit → ONE new JackHOF league at most (--max-new, Richard 9/8:
+//             "opening leagues 1/10 to make 9 more seats — ideally not at all, 1 is fine");
+//             a winner already IN every JackHOF league keeps the seats they hold
+//             (no new league just for them); past the cap a leftover winner takes the
+//             fullest open Jackpot, then HOF seat instead (flagged in the plan)
 //   draw    — every remaining open seat (incl. the new league's 9), JackHOF
 //             first, then Jackpot, then HOF; each point = 1 ticket; one seat per
 //             person per league, several leagues allowed; top N included; no cap
@@ -97,16 +102,47 @@ const seatIn = (league, row, guaranteed) => {
   league.assigned.push(row.key); league.persons.add(row.key); league.open -= 1;
   assignments.push({ key: row.key, wallet: row.seatWallet, name: row.name, points: row.points, tier: league.tier, roundId: league.roundId ?? null, draftId: league.draftId ?? null, newKey: league.newKey ?? null, guaranteed });
 };
+const MAX_NEW = args.includes('--max-new') ? Math.max(0, Number(args[args.indexOf('--max-new') + 1])) : 1;
+const fullestOpen = (tier, row) => live().filter((l) => l.tier === tier && l.open > 0 && !l.persons.has(row.key))
+  .sort((a, b) => b.members.length + b.assigned.length - (a.members.length + a.assigned.length))[0];
+const skippedGuaranteed = [];   // already hold a JackHOF seat in EVERY JackHOF league
+const fallbackGuaranteed = [];  // over the new-league cap → seated in a lower tier
+// pass 1: existing capacity, rank order
+let leftovers = [];
 for (const row of rows.slice(0, topN)) {
-  const cands = live().filter((l) => l.tier === 'jackhof' && l.open > 0 && !l.persons.has(row.key)).sort((a, b) => b.members.length + b.assigned.length - (a.members.length + a.assigned.length));
-  let target = cands[0];
-  if (!target) {
-    newCount += 1;
-    target = { tier: 'jackhof', roundId: null, draftId: null, source: 'race', newKey: `new-jackhof-${newCount}`, members: [], persons: new Set(), assigned: [], open: 10, reserved: false, started: false };
-    leagues.push(target);
-    log(`  ↳ ${row.name} is already in every JackHOF league → opening ${target.newKey}`);
+  const target = fullestOpen('jackhof', row);
+  if (target) seatIn(target, row, true); else leftovers.push(row);
+}
+// pass 2: leftovers who are NOT in every JackHOF league need a seat somewhere →
+// open new leagues up to the cap (one league can hold every leftover at once)
+while (leftovers.length && newCount < MAX_NEW) {
+  const needs = leftovers.filter((row) => !live().filter((l) => l.tier === 'jackhof').every((l) => l.persons.has(row.key)));
+  if (!needs.length) break;
+  newCount += 1;
+  const nl = { tier: 'jackhof', roundId: null, draftId: null, source: 'race', newKey: `new-jackhof-${newCount}`, members: [], persons: new Set(), assigned: [], open: 10, reserved: false, started: false };
+  leagues.push(nl);
+  log(`  ↳ ${needs.map((r) => r.name).join(', ')}: no open JackHOF seat anywhere → opening ${nl.newKey} (cap ${MAX_NEW})`);
+  const rest = [];
+  for (const row of leftovers) { if (nl.open > 0 && !nl.persons.has(row.key)) seatIn(nl, row, true); else rest.push(row); }
+  leftovers = rest;
+}
+// pass 3: whoever is left — in every JackHOF league → keep what they hold; else lower tier
+for (const row of leftovers) {
+  const inAll = live().filter((l) => l.tier === 'jackhof').every((l) => l.persons.has(row.key));
+  if (inAll) {
+    skippedGuaranteed.push({ key: row.key, wallet: row.seatWallet, name: row.name, points: row.points });
+    log(`  ↳ ${row.name} already holds a seat in EVERY JackHOF league → no new league (keeps the JackHOF seats they hold)`);
+    continue;
   }
-  seatIn(target, row, true);
+  const alt = fullestOpen('jackpot', row) ?? fullestOpen('hof', row);
+  if (alt) {
+    seatIn(alt, row, true);
+    fallbackGuaranteed.push({ key: row.key, name: row.name, tier: alt.tier, draftId: alt.draftId });
+    log(`  ⚠️ ${row.name}: new-league cap ${MAX_NEW} reached → ${TIER_LABEL[alt.tier]} seat in ${alt.draftId} instead of JackHOF`);
+  } else {
+    skippedGuaranteed.push({ key: row.key, wallet: row.seatWallet, name: row.name, points: row.points, noSeat: true });
+    log(`  ⚠️ ${row.name}: new-league cap ${MAX_NEW} reached and NO open seat in any tier → unseated`);
+  }
 }
 
 // ── 5. the draw ─────────────────────────────────────────────────────────────
@@ -129,7 +165,7 @@ for (const tier of TIERS) {
 
 // ── 6. print ────────────────────────────────────────────────────────────────
 log(`\nseed ${seed}`);
-log(`assignments: ${assignments.length} (${assignments.filter((a) => a.guaranteed).length} guaranteed JackHOF, ${newCount} new league(s))`);
+log(`assignments: ${assignments.length} (${assignments.filter((a) => a.guaranteed).length} guaranteed, ${newCount} new league(s) of max ${MAX_NEW}, ${skippedGuaranteed.length} top-${topN} already everywhere, ${fallbackGuaranteed.length} lower-tier fallback)`);
 for (const l of live().sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier) || (a.roundId ?? 1e9) - (b.roundId ?? 1e9))) {
   const a = assignments.filter((x) => x.roundId === l.roundId && x.newKey === (l.newKey ?? null) && x.tier === l.tier);
   log(`  ${label(l).padEnd(34)} ${l.members.length}+${a.length} = ${l.members.length + a.length}/10${l.open > 0 ? `  ⚠️ ${l.open} UNFILLED` : ''}`);
@@ -146,10 +182,11 @@ const results = {
   topN: rows.slice(0, topN).map((r, i) => ({ rank: i + 1, name: r.name, points: r.points })),
   draw: assignments.map((a) => ({ name: a.name, tier: a.tier, draftId: a.draftId, roundId: a.roundId ?? -1, guaranteed: a.guaranteed })),
   seatsFilled: assignments.length,
+  skippedGuaranteed, fallbackGuaranteed, maxNewLeagues: MAX_NEW,
 };
 const plan = {
   createdAtIso: now, seed, topN, cfg: { startAtIso: cfg.startAtIso, endAtIso: cfg.endAtIso, draftAtIso: cfg.draftAtIso },
-  merges, assignments: assignments.map((a) => ({ ...a, done: false })), unfilled,
+  merges, assignments: assignments.map((a) => ({ ...a, done: false })), unfilled, skippedGuaranteed, fallbackGuaranteed, maxNewLeagues: MAX_NEW,
   leagues: live().map((l) => ({ tier: l.tier, roundId: l.roundId, draftId: l.draftId, newKey: l.newKey ?? null, existing: l.members.length, planned: l.assigned.length })),
 };
 const stamp = now.replace(/[:.]/g, '-');

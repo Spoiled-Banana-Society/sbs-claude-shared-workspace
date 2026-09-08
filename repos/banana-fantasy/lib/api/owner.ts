@@ -252,7 +252,9 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
 
   return {
     id: leagueId,
-    tokenId: token.cardId || undefined,
+    // On-chain id: special/wheel seats have a synthetic cardId (`special-...`) and the
+    // real BBB4 id in realTokenId — My Teams must dedupe on the CHAIN id (2026-09-08 dup rows).
+    tokenId: (token.realTokenId || token.cardId) || undefined,
     name,
     contestId: '',
     type: contestType,

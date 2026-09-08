@@ -204,7 +204,10 @@ export default function BananaWheelPage() {
   const nextSource = nextSpinSource(promoSpins, bonusSpins);
 
   // Active-period wedge set (falls back to the static classic config).
-  const { segments: activeSegments } = useWheelSegments();
+  const { segments: activeSegments, hasSpecials } = useWheelSegments();
+  // Season mode (Richard 2026-09-08): the wheel pays no Jackpot / HOF /
+  // JackHOF seat any more — hide the seat pitch + explainers, keep a user's
+  // own "won · left" rows only while they still hold something.
   // History rows can reference wedge ids from OLDER config generations —
   // resolve against every id that has ever existed, current set winning.
   const segmentMap = useMemo(() => {
@@ -490,7 +493,7 @@ export default function BananaWheelPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-4">
         <div className="text-center mb-6" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>
           <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
-          <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries</p>
+          <p className="text-white text-[14px]">{hasSpecials ? 'Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries' : 'Spin to win Free Drafts'}</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
           <div className="flex flex-col gap-4 order-3 lg:order-1">
@@ -526,7 +529,7 @@ export default function BananaWheelPage() {
             </svg>
           </button>
         </div>
-        <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries</p>
+        <p className="text-white text-[14px]">{hasSpecials ? 'Spin to win Free Drafts and Jackpot, HOF & JackHOF Entries' : 'Spin to win Free Drafts'}</p>
       </div>
 
       {/*
@@ -568,6 +571,7 @@ export default function BananaWheelPage() {
           >
             <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">What Are These?</h3>
             <div className="space-y-4 text-[13px]">
+              {hasSpecials && (<>
               <div>
                 <span className="text-[#ff6b6b] font-bold text-[15px]">Jackpot</span>
                 <p className="text-white mt-1.5 leading-relaxed">
@@ -595,10 +599,13 @@ export default function BananaWheelPage() {
                   Slow draft ({slowClock.compact} per pick) · Seat locked · Sellable on the Marketplace before the draft and after it wraps, not during
                 </p>
               </div>
+              </>)}
               <div>
                 <span className="text-[#32d74b] font-bold text-[15px]">Free Drafts</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot, HOF, and JackHOF drafts won on the Wheel.
+                  {hasSpecials
+                    ? 'Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot, HOF, and JackHOF drafts won on the Wheel.'
+                    : 'Free drafts can only be used to draft. They cannot be used for promos.'}
                 </p>
               </div>
             </div>
@@ -678,6 +685,7 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {user?.freeDrafts || 0} left</span>
                 </span>
               </div>
+              {(hasSpecials || wonTotals.jackpot + (user?.jackpotEntries || 0) + queuedJP > 0) && (
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">Jackpot</span>
                 <span className="flex items-baseline gap-2">
@@ -685,6 +693,8 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackpotEntries || 0) + queuedJP} left</span>
                 </span>
               </div>
+              )}
+              {(hasSpecials || wonTotals.hof + (user?.hofEntries || 0) + queuedHOF > 0) && (
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">HOF</span>
                 <span className="flex items-baseline gap-2">
@@ -692,6 +702,8 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.hofEntries || 0) + queuedHOF} left</span>
                 </span>
               </div>
+              )}
+              {(hasSpecials || wonTotals.jackhof + (user?.jackhofEntries || 0) + queuedJackHOF > 0) && (
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">JackHOF</span>
                 <span className="flex items-baseline gap-2">
@@ -699,6 +711,7 @@ export default function BananaWheelPage() {
                   <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackhofEntries || 0) + queuedJackHOF} left</span>
                 </span>
               </div>
+              )}
             </div>
 
             {/* Hairline section divider — 1px @ 6% white, Apple-style */}

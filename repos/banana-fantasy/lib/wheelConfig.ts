@@ -71,11 +71,38 @@ export const jackhofWheelSegments: WheelSegment[] = [
   { id: 'draft-1-a', label: '1 Draft', probability: DRAFT_ONE_JH / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
 ];
 
+// ── Season wedge set (no special seats) ──────────────────────────────────────
+// Richard 2026-09-08: from the Banana Race freeze (Tue 9/8 5pm PT) the wheel
+// pays NO Jackpot / HOF / JackHOF seats — the season starts Wed and a seat won
+// now would sit in a lobby that never fills. Their 3.1% folds into 1 Draft
+// ("just make the 1 percent the rest of the odds for all of them"). 9 wedges,
+// greys never adjacent; geometry is derived from segments.length everywhere.
+// The keeper stamps THIS set on new periods while
+// system_config/wheelPeriodState.specialWedges === false (see wheelPeriod).
+const DRAFT_ONE_SEASON = DRAFT_ONE_JH + JACKPOT + HOF + JACKHOF; // 0.9225 across 4 wedges
+
+export const seasonWheelSegments: WheelSegment[] = [
+  { id: 'draft-1-a', label: '1 Draft', probability: DRAFT_ONE_SEASON / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
+  { id: 'draft-5-a', label: '5 Drafts', probability: DRAFT_FIVE / 2, prizeType: 'draft_pass', prizeValue: 5, color: '#22c55e' },
+  { id: 'draft-1-b', label: '1 Draft', probability: DRAFT_ONE_SEASON / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
+  { id: 'draft-10', label: '10 Drafts', probability: DRAFT_TEN, prizeType: 'draft_pass', prizeValue: 10, color: '#a78bfa' },
+  { id: 'draft-1-c', label: '1 Draft', probability: DRAFT_ONE_SEASON / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
+  { id: 'draft-2', label: '2 Drafts', probability: DRAFT_TWO, prizeType: 'draft_pass', prizeValue: 2, color: '#14b8a6' },
+  { id: 'draft-1-d', label: '1 Draft', probability: DRAFT_ONE_SEASON / 4, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
+  { id: 'draft-20', label: '20 Drafts', probability: DRAFT_TWENTY, prizeType: 'draft_pass', prizeValue: 20, color: '#f59e0b' },
+  { id: 'draft-5-b', label: '5 Drafts', probability: DRAFT_FIVE / 2, prizeType: 'draft_pass', prizeValue: 5, color: '#22c55e' },
+];
+
+/** True when a wedge set can pay a Jackpot / HOF / JackHOF seat. */
+export function segmentsHaveSpecials(segments: WheelSegment[]): boolean {
+  return segments.some((s) => s.prizeType === 'custom');
+}
+
 /**
  * Display-only lookup across every wedge id that has ever existed in any
  * config generation — for feeds/proof pages rendering historical spins
  * regardless of which period (and wedge set) they came from.
  */
 export const allKnownSegmentsById: Map<string, WheelSegment> = new Map(
-  [...wheelSegments, ...jackhofWheelSegments].map((s) => [s.id, s]),
+  [...wheelSegments, ...jackhofWheelSegments, ...seasonWheelSegments].map((s) => [s.id, s]),
 );

@@ -108,3 +108,16 @@ export function eliminatorLive(now: number = Date.now()): boolean {
 export function eliminatorRetired(now: number = Date.now()): boolean {
   return now >= ELIMINATOR_END_MS;
 }
+
+// ── Season kickoff: no more special seats ───────────────────────────────────
+// Richard 2026-09-08: from the Banana Race freeze (Tue Sep 8, 5:00 PM PT) no
+// promo may pay a Jackpot / HOF / JackHOF seat — the NFL season starts Wed and
+// a seat won after the race would sit in a lobby that never fills. Around The
+// Banana retires here (card leaves every surface, crediting stops); copy that
+// advertised wheel seats drops the mention. The wheel itself switches via
+// system_config/wheelPeriodState.specialWedges (Merkle-committed per period).
+export const SPECIAL_SEATS_END_MS = Date.UTC(2026, 8, 9, 0, 0, 0); // Sep 8 2026, 5:00 PM PT
+
+export function specialSeatsRetired(now: number = Date.now()): boolean {
+  return now >= SPECIAL_SEATS_END_MS;
+}

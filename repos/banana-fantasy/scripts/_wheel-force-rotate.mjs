@@ -5,6 +5,8 @@
 // currently-deployed template. Usage:
 //   node scripts/_wheel-force-rotate.mjs         # inspect only
 //   node scripts/_wheel-force-rotate.mjs --set   # arm the rotation
+//   node scripts/_wheel-force-rotate.mjs --no-specials --set   # season mode: next period has NO Jackpot/HOF/JackHOF wedge (Richard 9/8)
+//   node scripts/_wheel-force-rotate.mjs --specials --set      # back to the JackHOF-era set
 import admin from 'firebase-admin';
 import { readFileSync } from 'fs';
 
@@ -25,6 +27,13 @@ if (cur) {
   console.log('wedge order:', (p?.segmentsSnapshot || []).map((s) => s.id).join(' · '));
 }
 
+if (process.argv.includes('--no-specials')) {
+  await stateRef.set({ specialWedges: false }, { merge: true });
+  console.log('specialWedges=false — the next period (and the rotation-gap fallback) pays no Jackpot / HOF / JackHOF.');
+} else if (process.argv.includes('--specials')) {
+  await stateRef.set({ specialWedges: admin.firestore.FieldValue.delete() }, { merge: true });
+  console.log('specialWedges cleared — new periods use the draft-count rule again.');
+}
 if (process.argv.includes('--set')) {
   await stateRef.set({ forceRotate: true }, { merge: true });
   console.log('forceRotate flag SET — keeper rolls on its next 5-min tick.');

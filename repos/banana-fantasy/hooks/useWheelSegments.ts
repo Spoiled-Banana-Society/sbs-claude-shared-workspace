@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchJson } from '@/lib/appApiClient';
-import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
+import { wheelSegments, segmentsHaveSpecials, type WheelSegment } from '@/lib/wheelConfig';
 
 interface PeriodResponse {
   active?: boolean;
@@ -11,6 +11,8 @@ interface PeriodResponse {
     segments?: WheelSegment[];
     hasJackhof?: boolean;
   } | null;
+  /** Server's template for the next period — what to render while no period is active. */
+  fallbackSegments?: WheelSegment[];
 }
 
 /**
@@ -25,6 +27,8 @@ export function useWheelSegments(): {
   segmentAngle: number;
   periodNumber: number | null;
   hasJackhof: boolean;
+  /** False once the wheel pays no Jackpot / HOF / JackHOF seat (season mode). */
+  hasSpecials: boolean;
 } {
   const { data } = useQuery<PeriodResponse>({
     queryKey: ['wheel', 'period-public'],
@@ -37,11 +41,13 @@ export function useWheelSegments(): {
   const periodSegments = data?.active && Array.isArray(data.period?.segments) && data.period.segments.length > 0
     ? data.period.segments
     : null;
-  const segments = periodSegments ?? wheelSegments;
+  const fallback = Array.isArray(data?.fallbackSegments) && data.fallbackSegments.length > 0 ? data.fallbackSegments : wheelSegments;
+  const segments = periodSegments ?? fallback;
   return {
     segments,
     segmentAngle: 360 / segments.length,
     periodNumber: data?.period?.periodNumber ?? null,
     hasJackhof: segments.some((s) => s.id === 'jackhof'),
+    hasSpecials: segmentsHaveSpecials(segments),
   };
 }

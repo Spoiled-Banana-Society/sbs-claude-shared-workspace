@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateNonce, generateSeed, pickWeighted } from '@/lib/rng';
-import { wheelSegments } from '@/lib/wheelConfig';
+import { segmentsForNewPeriod } from '@/lib/wheelPeriod';
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
@@ -269,7 +269,10 @@ export async function POST(req: Request) {
     // Merkle root was derived from), falling back to the static config only
     // outside a period. Never the deployed static config while a period is
     // live — a newer config generation must not diverge from the commitment.
-    const segments = usePeriod ? periodSegments(currentPeriod!) : wheelSegments;
+    // Outside an active period (rotation in flight) the fallback is the
+    // template the keeper would stamp on the NEXT period — so a season
+    // switch (no special wedges) never leaks the classic set for 5 minutes.
+    const segments = usePeriod ? periodSegments(currentPeriod!) : await segmentsForNewPeriod();
     const segmentAngle = 360 / segments.length;
     let segment: typeof segments[number];
     let index: number;

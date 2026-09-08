@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
-import { getCurrentPeriod, toPublicSummary } from '@/lib/wheelPeriod';
+import { getCurrentPeriod, segmentsForNewPeriod, toPublicSummary } from '@/lib/wheelPeriod';
 import { getWheelProofContractAddress } from '@/lib/wheelProofContract';
 
 /**
@@ -24,10 +24,13 @@ export async function GET(req: Request) {
   try {
     const period = await getCurrentPeriod();
     const contractAddress = await getWheelProofContractAddress();
+    // What the wheel should RENDER while no period is active (rotation in
+    // flight): the same template the spin route falls back to.
+    const fallbackSegments = await segmentsForNewPeriod();
     if (!period) {
-      return json({ active: false, period: null, contractAddress }, 200);
+      return json({ active: false, period: null, contractAddress, fallbackSegments }, 200);
     }
-    return json({ active: period.status === 'active', period: toPublicSummary(period), contractAddress }, 200);
+    return json({ active: period.status === 'active', period: toPublicSummary(period), contractAddress, fallbackSegments }, 200);
   } catch (err) {
     logger.error('wheel.period.public_read_failed', { err });
     if (err instanceof ApiError) return jsonError(err.message, err.status);

@@ -124,6 +124,10 @@ export default function StandingsPage() {
   const mergedLeagues = useMemo(() => {
     const draftedIds = new Set(leagues.map(l => l.id));
     const draftedTokenIds = new Set(leagues.map(l => String(l.tokenId ?? '')).filter(Boolean));
+    // Drafted rows whose token can't be matched on-chain (no tokenId, or a synthetic
+    // `special-...` engine id): fall back to the old league-level skip for their league,
+    // otherwise the same team shows twice (2026-09-08: 26 special-seat dups for vertig0).
+    const unmatchableLeagues = new Set(leagues.filter(l => !l.tokenId || !/^\d+$/.test(String(l.tokenId))).map(l => l.id));
     const extra: League[] = [];
     for (const n of myNfts) {
       // ONLY drafted teams belong on My Teams — NEVER undrafted draft passes.
@@ -135,7 +139,7 @@ export default function StandingsPage() {
       const tok = String(n.tokenId);
       if (draftedTokenIds.has(tok)) continue; // this exact team is already a drafted row
       const inDraftedLeague = !!n.leagueId && draftedIds.has(n.leagueId);
-      if (inDraftedLeague && draftedTokenIds.size === 0) continue; // legacy rows without tokenId: keep old league-level skip
+      if (inDraftedLeague && (draftedTokenIds.size === 0 || unmatchableLeagues.has(n.leagueId!))) continue; // can't tell it apart from the drafted team: old league-level skip
       // A 2nd team in a league the user also drafted gets its OWN row + unique id.
       const synthId = inDraftedLeague ? `${n.leagueId}::${tok}` : (n.leagueId || `nft-${tok}`);
       extra.push(nftToSyntheticLeague(n, synthId));

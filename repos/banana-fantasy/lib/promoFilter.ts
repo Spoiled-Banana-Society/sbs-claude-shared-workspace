@@ -14,7 +14,7 @@
 // Both arrays drive every consumer simultaneously.
 
 import type { Promo, PromoType } from '@/types';
-import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, PICK_PROMOS_END_MS, eliminatorLive, eliminatorRetired } from '@/lib/promoWindow';
+import { BANANA_DRAW_END_MS, MINT_PROMO_END_MS, PICK_PROMOS_END_MS, eliminatorLive, eliminatorRetired, specialSeatsRetired } from '@/lib/promoWindow';
 import { dropEarningRetired } from '@/lib/dropRates';
 import { isBuyBonusActive } from '@/lib/api/config';
 
@@ -134,6 +134,9 @@ export const FEATURED_PROMO_TYPE: PromoType | null = 'around-the-banana';
  */
 function activeFeaturedType(): PromoType | null {
   if (FEATURED_PROMO_TYPE === 'buy-bonus' && !isBuyBonusActive()) return 'drop';
+  // Around The Banana retires with the season kickoff (Richard 2026-09-08) —
+  // no pin after that; THE DROP is retired too, so nothing takes it over.
+  if (FEATURED_PROMO_TYPE === 'around-the-banana' && specialSeatsRetired()) return null;
   return FEATURED_PROMO_TYPE;
 }
 
@@ -241,6 +244,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     if (p.type === 'eliminator' && !eliminatorLive()) return false;
     // THE ELIMINATOR is retired (2026-08-01) — THE DROP replaces it.
     if (p.type === 'eliminator' && eliminatorRetired()) return false;
+    // 🍌 Around The Banana RETIRED at the season kickoff (Richard 2026-09-08,
+    // Tue Sep 8 5:00 PM PT): no promo pays a special seat once the Banana Race
+    // has drafted. lib/aroundTheBanana.atbActive gates crediting on the same clock.
+    if (p.type === 'around-the-banana' && specialSeatsRetired()) return false;
     // Logged-out visitors get ONLY the two conversion cards — everything
     // else requires an account to even have progress, so it's noise.
     if (opts.isLoggedIn === false && !LOGGED_OUT_PROMO_TYPES.has(p.type)) return false;
