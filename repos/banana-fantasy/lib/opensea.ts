@@ -172,6 +172,7 @@ export interface MarketplaceTeam {
   /** USD price the current owner paid for this team on the marketplace, if we
    *  have a purchase record. Shown as "You paid $X" on the owner's own teams. */
   pricePaid?: number | null;
+  leagueName?: string | null;
 }
 
 export interface CollectionStats {

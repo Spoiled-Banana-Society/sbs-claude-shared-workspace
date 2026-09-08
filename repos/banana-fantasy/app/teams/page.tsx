@@ -28,7 +28,9 @@ function nftToSyntheticLeague(n: MarketplaceTeam, id?: string): League {
   return {
     id: id ?? (n.leagueId || `nft-${n.tokenId}`),
     tokenId: n.tokenId,
-    name: n.name || `Team #${n.tokenId}`,
+    // Name bought rows by LEAGUE like drafted rows do ("BBB #1084"), so the
+    // league-number search finds both teams; the card shows the token # itself.
+    name: n.leagueName || (n.leagueNumber ? `BBB #${n.leagueNumber}` : (n.name || `Team #${n.tokenId}`)),
     contestId: '',
     // A wheel-won JP/HOF pass isn't stamped JP/HOF in its NFT metadata until the
     // draft reveals, so isHof/isJackpot are false while it's filling — fall back to
@@ -234,7 +236,11 @@ export default function StandingsPage() {
     // League # query — partial match on the league's display number.
     const lq = leagueQuery.trim().replace(/^#/, '');
     if (lq) {
-      result = result.filter((league) => (league.name.match(/#\s*(\d+)/)?.[1] ?? '').includes(lq));
+      result = result.filter((league) => {
+        const fromName = league.name.match(/#\s*(\d+)/)?.[1] ?? '';
+        const fromNft = String(nftByLeague.get(league.id)?.leagueNumber ?? '');
+        return fromName.includes(lq) || fromNft.includes(lq);
+      });
     }
 
     // Team # query — partial match on the team's on-chain token id (Team #).
