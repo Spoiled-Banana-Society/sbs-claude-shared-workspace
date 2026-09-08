@@ -264,6 +264,9 @@ export interface CompletedDraft {
 export interface League {
   id: string;
   name: string;
+  /** On-chain/card id of THIS team. Lets My Teams tell two teams in one league apart
+   *  (a drafted team + one bought on the marketplace). Optional — older rows may lack it. */
+  tokenId?: string;
   contestId: string;
   type: ContestType;
   leagueRank: number;

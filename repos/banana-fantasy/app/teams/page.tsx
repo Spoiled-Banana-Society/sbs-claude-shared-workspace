@@ -24,9 +24,10 @@ type ViewMode = 'myteams' | 'leaderboard';
  * the wallet owns the NFT. The card renders from this; clicking opens the real
  * league (when leagueId is known) via the same modal.
  */
-function nftToSyntheticLeague(n: MarketplaceTeam): League {
+function nftToSyntheticLeague(n: MarketplaceTeam, id?: string): League {
   return {
-    id: n.leagueId || `nft-${n.tokenId}`,
+    id: id ?? (n.leagueId || `nft-${n.tokenId}`),
+    tokenId: n.tokenId,
     name: n.name || `Team #${n.tokenId}`,
     contestId: '',
     // A wheel-won JP/HOF pass isn't stamped JP/HOF in its NFT metadata until the
@@ -59,14 +60,13 @@ export default function StandingsPage() {
   // Marketplace NFTs/listings for the logged-in user, mapped by leagueId so each
   // team card can offer inline List / Cancel with price + time-left.
   const { data: myNfts, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(user?.walletAddress ?? null);
-  const nftByLeague = useMemo(() => {
+  // Keyed by TOKEN, not league: a user can own two teams in one league (their
+  // drafted team + one bought on the marketplace — vertig0 in #1084, 2026-09-08).
+  // Keying by league collapsed both onto one row and painted the bought token
+  // onto the drafted row. nftByLeague (per ROW id) is rebuilt below, after merging.
+  const nftByToken = useMemo(() => {
     const m = new Map<string, MarketplaceTeam>();
-    for (const n of myNfts) {
-      if (n.leagueId) m.set(n.leagueId, n);
-      // Also key by the synthetic id so bought-not-drafted cards get their
-      // List/Cancel controls + "bought for" price too.
-      m.set(`nft-${n.tokenId}`, n);
-    }
+    for (const n of myNfts) m.set(String(n.tokenId), n);
     return m;
   }, [myNfts]);
   // Which of my teams came from a Founder Draft (one batched check).
@@ -121,6 +121,7 @@ export default function StandingsPage() {
   // (bought on the marketplace), minus any drafted team they've since sold.
   const mergedLeagues = useMemo(() => {
     const draftedIds = new Set(leagues.map(l => l.id));
+    const draftedTokenIds = new Set(leagues.map(l => String(l.tokenId ?? '')).filter(Boolean));
     const extra: League[] = [];
     for (const n of myNfts) {
       // ONLY drafted teams belong on My Teams — NEVER undrafted draft passes.
@@ -129,13 +130,31 @@ export default function StandingsPage() {
       // owned passes as "Draft Pass #N" cards. (Wheel-won JP/HOF passes that are
       // mid-fill are the one exception — they're effectively teams.)
       if (n.hasBackendRecord === false && n.fillingWheelLevel == null) continue;
-      const synthId = n.leagueId || `nft-${n.tokenId}`;
-      if (draftedIds.has(synthId)) continue; // already shown as a drafted team
-      extra.push(nftToSyntheticLeague(n));
+      const tok = String(n.tokenId);
+      if (draftedTokenIds.has(tok)) continue; // this exact team is already a drafted row
+      const inDraftedLeague = !!n.leagueId && draftedIds.has(n.leagueId);
+      if (inDraftedLeague && draftedTokenIds.size === 0) continue; // legacy rows without tokenId: keep old league-level skip
+      // A 2nd team in a league the user also drafted gets its OWN row + unique id.
+      const synthId = inDraftedLeague ? `${n.leagueId}::${tok}` : (n.leagueId || `nft-${tok}`);
+      extra.push(nftToSyntheticLeague(n, synthId));
     }
     const base = extra.length ? [...leagues, ...extra] : leagues;
     return notOwnedLeagueIds.size ? base.filter(l => !notOwnedLeagueIds.has(l.id)) : base;
   }, [leagues, myNfts, notOwnedLeagueIds]);
+
+  // Row id -> that row's OWN NFT (drafted rows by their tokenId, bought rows by
+  // theirs) — never "some NFT in this league".
+  const nftByLeague = useMemo(() => {
+    const m = new Map<string, MarketplaceTeam>();
+    const byLeagueFallback = new Map<string, MarketplaceTeam>();
+    for (const n of myNfts) if (n.leagueId && !byLeagueFallback.has(n.leagueId)) byLeagueFallback.set(n.leagueId, n);
+    for (const l of mergedLeagues) {
+      const own = l.tokenId ? nftByToken.get(String(l.tokenId)) : undefined;
+      const fb = byLeagueFallback.get(l.id);
+      if (own) m.set(l.id, own); else if (fb) m.set(l.id, fb);
+    }
+    return m;
+  }, [mergedLeagues, myNfts, nftByToken]);
 
   const { nicknames, setNickname } = useTeamNicknames();
 

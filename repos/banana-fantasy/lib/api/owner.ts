@@ -252,6 +252,7 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
 
   return {
     id: leagueId,
+    tokenId: token.cardId || undefined,
     name,
     contestId: '',
     type: contestType,
