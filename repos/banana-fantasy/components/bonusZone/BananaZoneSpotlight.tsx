@@ -32,6 +32,10 @@ import { promoHueStyle } from '@/lib/promoTheme';
 import { SealedPack } from '@/components/promos/PackVisuals';
 
 /** Units of a spin one paid fill banks at each tier (spin = 6 units). */
+// Boris 2026-09-09: drafting closes tonight — no more JackHOF seats or packs. The Zone is FREE SPINS only.
+// Flip back to true to restore the seats/packs copy + Your Packs blocks (data still gated by zoneDrop.enabled).
+const SHOW_PACKS = false;
+
 const UNITS = 6;
 const creditFor = (tier: 1 | 2 | 3) => (tier === 1 ? 6 : tier === 2 ? 3 : 2);
 
@@ -120,7 +124,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="promo-tx min-w-0">
             <h3 className="text-[25px] sm:text-[34px] font-extrabold leading-[1.05] tracking-[-.8px] text-banana">
-              JackHOF Seats <span className="text-white/55 font-bold">+</span> Free Spins
+              Free Spins
             </h3>
             <div className="mt-1.5 text-[15px] sm:text-[16px] font-extrabold tracking-[5px] text-white">BANANA ZONE</div>
           </div>
@@ -136,14 +140,15 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
         {/* intro + deal rows — ranges and seats from the live config */}
         <div className="promo-tx mt-3 max-w-[58ch]">
           <p className="text-[15.5px] leading-[1.5] text-[rgba(255,255,255,.92)] font-semibold [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
-            Jackpot just hit? The Banana Zone is open. Paid drafts earn <b className="text-banana">Free Spins</b> +
-            sealed <b className="text-banana">Packs</b> the moment they fill{totalSeats ? <> — with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside the Packs</> : null}.
+            Jackpot just hit? The Banana Zone is open. Paid drafts earn <b className="text-banana">Free Spins</b> the moment they fill{SHOW_PACKS && totalSeats ? <> — plus sealed <b className="text-banana">Packs</b> with <b className="text-banana whitespace-nowrap">{totalSeats} JackHOF seats</b> hidden inside</> : null}.
           </p>
           {/* the JackHOF payoff (Boris 2026-08-24): its own warm orange so it
               reads as the prize world, not this promo's mechanics */}
+          {SHOW_PACKS && (
           <p className="hidden min-[560px]:block mt-1.5 text-[13.5px] leading-[1.5] font-semibold whitespace-nowrap text-[#ffa94d] font-bold [text-shadow:0_1px_3px_rgba(0,0,0,.4)]">
             JackHOF — league winner goes to the Finals + competes for added prizes.
           </p>
+          )}
           <div className="mt-2.5 max-w-[470px] hidden min-[560px]:block">
             {rows.map((r) => (
               <div key={r.band} className="flex items-baseline justify-between gap-4 py-[7px] border-t border-white/20 first:border-t-0 text-[15.5px] leading-[1.35] [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
@@ -246,6 +251,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
             )}
           </div>
 
+          {SHOW_PACKS && (<>
           <div className="h-px bg-white/[.16] -mx-6 my-4" />
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[10px] font-extrabold tracking-[2px] uppercase text-[rgba(235,245,240,.75)]">Your Packs</span>
@@ -280,6 +286,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               </span>
             )}
           </div>
+          </>)}
         </div>
 
         {/* combined panel — three columns on a strict shared grid so headers,
@@ -355,6 +362,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               )}
             </div>
           </div>
+          {SHOW_PACKS && (<>
           <div className="hidden min-[560px]:block w-px self-stretch bg-banana/30" />
 
           {/* col 3 — packs (count badge on the pack; ripping lives in the modal) */}
@@ -388,6 +396,7 @@ export function BananaZoneSpotlight({ promo, wallet, hasVisibleClaim, onClaim, o
               )}
             </div>
           </div>
+          </>)}
         </div>
 
         {/* tier chips — deep emerald live so white + banana copy stays loud */}
