@@ -52,11 +52,20 @@ export async function GET(req: Request) {
         if (offersRes.ok) {
           const offersData = await offersRes.json();
           for (const order of (offersData.offers ?? []) as Array<Record<string, unknown>>) {
-            const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; endTime: string } })?.parameters;
+            const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; consideration?: Array<{ itemType?: number | string; startAmount?: string }>; endTime: string } })?.parameters;
             if (!p) continue;
             const hash = order.order_hash as string;
             if (!hash || seen.has(hash) || cachedState.consumedHashes.has(hash)) continue;
             const totalUsdcWei = (p.offer || []).reduce((s: bigint, it: { startAmount: string }) => s + BigInt(it.startAmount || '0'), 0n);
+            // A COLLECTION / criteria offer is ONE Seaport order that buys N teams: its USDC
+            // offer item is the TOTAL for all N, and the NFT consideration item's startAmount
+            // is N. Showing the total as the per-team price told sellers "$4.00" for a 20¢
+            // offer (2026-09-08: AkFF + 4 others accepted and were paid 1/10–1/20 of what we
+            // displayed). Per-team = total ÷ N. itemType 2/3 = ERC721/1155, 4/5 = with-criteria.
+            const nftConsideration = (p.consideration || []).find((c) => [2, 3, 4, 5].includes(Number(c.itemType)));
+            const qtyRaw = BigInt(nftConsideration?.startAmount || '1');
+            const perItemQty = qtyRaw > 0n ? qtyRaw : 1n;
+            const perItemUsdcWei = totalUsdcWei / perItemQty;
             const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
             if (new Date(expiresAt) <= new Date()) continue;
             seen.add(hash);
@@ -65,7 +74,7 @@ export async function GET(req: Request) {
               offererAddress: p.offerer,
               offererName: `${p.offerer.slice(0, 6)}...${p.offerer.slice(-4)}`,
               offererPfp: null,
-              amount: Number(totalUsdcWei) / 1e6,
+              amount: Number(perItemUsdcWei) / 1e6,
               expiresAt,
               protocolAddress: order.protocol_address as string,
             });

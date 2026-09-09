@@ -5,6 +5,6 @@ cd /Users/richardvagner/banana-fantasy
 LOG=$HOME/Downloads/banana-race-6pm.log
 {
   echo "=== 6PM RUN $(date) ==="
-  node scripts/_banana-race-seat.mjs --commit
+  node scripts/_banana-race-seat.mjs --commit --release-last
   echo "=== 6PM DONE $(date) ==="
 } >> "$LOG" 2>&1

@@ -38,7 +38,9 @@ const TIER_META = {
 
 export function BananaRaceBoard({ board, loggedIn, onLogin }: { board: RaceBoard; loggedIn: boolean; onLogin?: () => void }) {
   const clock = useCountdown(board.endAtIso);
+  const draftClock = useCountdown(board.draftAtIso);
   const closed = board.frozen || Date.parse(board.endAtIso) <= Date.now();
+  const drafted = Date.parse(board.draftAtIso) <= Date.now();
   const cutoff = board.board[board.topN - 1]?.points ?? 0;
 
   return (
@@ -149,7 +151,18 @@ export function BananaRaceBoard({ board, loggedIn, onLogin }: { board: RaceBoard
       {board.results && (
         <>
           <h2 className="mt-7 text-[24px] font-black uppercase tracking-wide">Results</h2>
-          <p className="text-[14px] text-white/65">Points closed {fmtPT(board.results.frozenAtIso)}. {board.results.seatsFilled} seats handed out. Winners drafted {fmtPT(board.draftAtIso)}.</p>
+          <p className="text-[14px] text-white/65">
+            Points closed {fmtPT(board.results.frozenAtIso)}. {board.results.seatsFilled} seats handed out.{' '}
+            {drafted
+              ? `Winners drafted ${fmtPT(board.draftAtIso)}.`
+              : `Winner leagues draft ${fmtPT(board.draftAtIso)} on the fast clock, 30 seconds a pick. Your seat is already in My Drafts. Be in the room at 6.`}
+          </p>
+          {!drafted && (
+            <div className="mt-3 rounded-lg border border-banana/40 bg-banana/10 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-[.12em] text-white/60">Drafts start in</div>
+              <div className="text-[34px] font-black tabular-nums leading-none text-banana">{draftClock}</div>
+            </div>
+          )}
           <div className="mt-2.5 overflow-x-auto rounded-lg border border-white/10">
             <table className="w-full min-w-[520px] border-collapse text-[15px]">
               <thead>

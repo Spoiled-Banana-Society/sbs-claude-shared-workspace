@@ -8,7 +8,7 @@
  * key dies with the plan. This route mints passes, so it is never open.
  *
  * Body: { wallet, tier: 'jackhof'|'jackpot'|'hof', roundId?: number, reason?: string,
- *         fast?: boolean, tokenId?: string }
+ *         fast?: boolean, tokenId?: string, goSeat?: boolean (false = queue-join only, no Go seat) }
  *   tokenId given   → MERGE mode: the wallet already holds this pass (its old
  *                     league was folded into this one); no mint, just queue +
  *                     Go seat. The script removed the old seat first.
@@ -72,18 +72,29 @@ export async function POST(req: Request) {
     const reason = typeof body.reason === 'string' && body.reason ? body.reason : 'banana-race';
     const fast = body.fast === true;
     const existingTokenId = typeof body.tokenId === 'string' && body.tokenId ? body.tokenId : null;
+    // goSeat:false (Richard 9/8 "everyone should see something in My Drafts at
+    // 5"): mint + queue-join now so the seat shows in My Drafts, but SKIP the
+    // Go seat — the league stays 9/10 on the Go side so it cannot fill and
+    // start before 6 PM. The 6 PM run re-posts the same wallet+tokenId with
+    // goSeat omitted to land the Go seat and start the draft.
+    const goSeat = body.goSeat !== false;
     if (!existingTokenId && !isAdminMintConfigured()) return jsonError('Admin mint not configured', 503);
 
     const db = getAdminFirestore();
     const { joinQueueRoundWithToken, joinQueueWithToken, getQueueStatus } = await import('@/lib/db');
 
-    // Pre-flight the target round so we never mint a pass we can't seat.
+    // Pre-flight the target round so we never mint a pass we can't seat. A
+    // pass that is ALREADY a member of the round (the 6 PM release of a held
+    // seat) skips the full/status checks — the join is a no-op for it.
     if (roundId !== null) {
       const queues = await getQueueStatus();
       const round = queues[tier]?.rounds?.find((r) => r.roundId === roundId);
       if (!round) return jsonError(`round ${roundId} not found`, 404);
-      if (round.status !== 'filling') return jsonError(`round ${roundId} is ${round.status}`, 409);
-      if ((round.members?.length ?? 0) >= 10) return jsonError(`round ${roundId} is full`, 409);
+      const alreadyMember = !!existingTokenId && (round.members ?? []).some((m) => String(m.tokenId ?? '') === existingTokenId);
+      if (!alreadyMember) {
+        if (round.status !== 'filling') return jsonError(`round ${roundId} is ${round.status}`, 409);
+        if ((round.members?.length ?? 0) >= 10) return jsonError(`round ${roundId} is full`, 409);
+      }
     }
 
     // 1. Mint the pass (or reuse the merged-in pass).
@@ -116,12 +127,14 @@ export async function POST(req: Request) {
     if (joinedRoundId === null) return jsonError('queue join failed', 500, { tokenId });
 
     // 3. Fast clock tonight: the Go fill reads DraftType off the league doc.
-    if (fast) {
-      const queues = await getQueueStatus();
-      const round = queues[tier]?.rounds?.find((r) => r.roundId === joinedRoundId);
-      if (round?.draftId) {
-        await db.collection('drafts').doc(round.draftId).set({ DraftType: 'fast' }, { merge: true });
-      }
+    const queuesAfter = await getQueueStatus();
+    const roundAfter = queuesAfter[tier]?.rounds?.find((r) => r.roundId === joinedRoundId);
+    if (fast && roundAfter?.draftId) {
+      await db.collection('drafts').doc(roundAfter.draftId).set({ DraftType: 'fast' }, { merge: true });
+    }
+    if (!goSeat) {
+      logger.info('banana_race.seat_held', { wallet, tier, roundId: joinedRoundId, draftId: roundAfter?.draftId ?? null, tokenId, members: roundAfter?.members?.length ?? null });
+      return json({ ok: true, held: true, wallet, tier, roundId: joinedRoundId, draftId: roundAfter?.draftId ?? null, numPlayers: null, tokenId, txHash, merged: !!existingTokenId });
     }
 
     // 4. Go seat (creates the league on a fresh round, joins otherwise).

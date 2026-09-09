@@ -12,6 +12,7 @@ import { KingLeaderboard } from '@/components/badges/KingLeaderboard';
 import { NotificationSettings } from '@/components/notifications/NotificationSettings';
 import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { useExportWallet, usePrivy } from '@privy-io/react-auth';
+import { reportClientEvent } from '@/lib/clientErrors';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -92,6 +93,35 @@ export default function ProfilePage() {
       (a): a is string => !!a && KEY_EXPORT_ALLOWLIST.has(a.toLowerCase()),
     ) ?? null;
   const canExportKey = !!exportTarget;
+  // Diagnostic (TBALLER 9/8: allowlisted, deploy verified, still "no button"):
+  // for any account touching an allowlisted wallet, snapshot exactly what the
+  // gate saw so the next report comes with proof instead of guesses.
+  useEffect(() => {
+    const accts = (privyUser?.linkedAccounts ?? []) as Array<{
+      type: string; address?: string; walletClientType?: string; walletClient?: string;
+    }>;
+    const wallets = accts.filter((a) => a.type === 'wallet');
+    const touches = [user?.walletAddress, ...wallets.map((w) => w.address)]
+      .some((a) => !!a && KEY_EXPORT_ALLOWLIST.has(a.toLowerCase()));
+    if (!touches) return;
+    try {
+      reportClientEvent({
+        source: 'profile.export_gate',
+        message: canExportKey ? 'export button shown' : 'export button hidden',
+        route: '/profile',
+        actor: user?.walletAddress ?? 'unknown',
+        context: {
+          did: privyUser?.id ?? null,
+          active: (user?.walletAddress ?? '').slice(0, 12),
+          embedded: (embeddedAddress ?? '').slice(0, 12),
+          target: (exportTarget ?? '').slice(0, 12),
+          wallets: wallets.map((w) => `${(w.address ?? '').slice(0, 12)}/${w.walletClientType ?? w.walletClient ?? 'none'}`),
+          build: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 8) ?? null,
+        },
+      }, { skipThrottle: true });
+    } catch { /* diagnostic only */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canExportKey, user?.walletAddress, embeddedAddress]);
 
   const handleExportKey = async () => {
     if (!exportArmed) {

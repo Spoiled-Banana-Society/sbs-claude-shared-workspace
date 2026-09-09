@@ -29,6 +29,22 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
+    // Banana Race hold (Richard 9/8): between the 5 PM freeze and the 6 PM
+    // start every winner is queue-joined (visible in My Drafts) but the last
+    // Go seat per league is deliberately withheld so nothing can fill and
+    // start early. A user pressing Enter must not land that Go seat.
+    {
+      const { getQueueStatus } = await import('@/lib/db');
+      const round = (await getQueueStatus())[queueType]?.rounds?.find((r) => r.roundId === roundId) as { reservedForRace?: boolean } | undefined;
+      if (round?.reservedForRace === true) {
+        const { readBananaRaceConfig } = await import('@/lib/bananaRace');
+        const cfg = await readBananaRaceConfig({ fresh: true });
+        if (cfg.enabled && cfg.frozen && Date.parse(cfg.draftAtIso) > Date.now()) {
+          return jsonError('Your seat is locked in. This league drafts at 6:00 PM PT.', 409);
+        }
+      }
+    }
+
     const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
     const seat = await ensureSpecialDraftSeat(queueType, roundId, userId);
     if (!seat.draftId) {

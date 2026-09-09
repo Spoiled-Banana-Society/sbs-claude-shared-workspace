@@ -8,6 +8,11 @@
 //   node scripts/_banana-race-seat.mjs --commit   # do it (reads the seat key from ~/Downloads/banana-race-seatkey.txt)
 //   node scripts/_banana-race-seat.mjs --commit --only-merges     # step 1 only
 //   node scripts/_banana-race-seat.mjs --commit --no-fast         # leave leagues on the slow clock (not tonight's plan)
+//   node scripts/_banana-race-seat.mjs --commit --hold-last       # 5 PM: everything, but the LAST seat of each league is
+//                                                                 #   queue-joined only (goSeat:false) → shows in My Drafts,
+//                                                                 #   Go league stays 9/10 so nothing starts before 6
+//   node scripts/_banana-race-seat.mjs --commit --release-last    # 6 PM: Go-seat the held seats → leagues fill → drafts start
+// (Richard 9/8: "workaround for all of them to see something on the my drafts page")
 //
 // Order (so every league starts within the same minute):
 //   1. merges — remove each moved seat from its old league (roarstone runbook,
@@ -23,6 +28,9 @@ const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
 const ONLY_MERGES = args.includes('--only-merges');
 const FAST = !args.includes('--no-fast');
+const HOLD_LAST = args.includes('--hold-last');
+const RELEASE_LAST = args.includes('--release-last');
+if (HOLD_LAST && RELEASE_LAST) { console.error('pick one: --hold-last | --release-last'); process.exit(1); }
 const log = (...a) => console.log(...a);
 
 const cfg = await readConfig();
@@ -35,7 +43,7 @@ let seatKey = '';
 if (COMMIT) {
   try { seatKey = readFileSync(`${process.env.HOME}/Downloads/banana-race-seatkey.txt`, 'utf8').trim(); } catch { console.error('ABORT: ~/Downloads/banana-race-seatkey.txt missing'); process.exit(1); }
 }
-log(`=== BANANA RACE SEATING ${COMMIT ? '(COMMIT)' : '(DRY RUN)'} · plan ${plan.createdAtIso} · drafts ${fmtPT(cfg.draftAtIso)} · fast=${FAST} ===`);
+log(`=== BANANA RACE SEATING ${COMMIT ? '(COMMIT)' : '(DRY RUN)'} · plan ${plan.createdAtIso} · drafts ${fmtPT(cfg.draftAtIso)} · fast=${FAST}${HOLD_LAST ? ' · HOLD LAST' : ''}${RELEASE_LAST ? ' · RELEASE LAST' : ''} ===`);
 log(`${plan.merges.length} merges · ${plan.assignments.length} assignments (${plan.assignments.filter((a) => a.done).length} already done)`);
 
 async function seatCall(body) {
@@ -48,6 +56,40 @@ async function seatCall(body) {
   if (!r.ok) throw new Error(`seat ${r.status}: ${text.slice(0, 300)}`);
   log(`   ✓ ${body.wallet.slice(0, 8)} → ${j.draftId ?? '?'} ${j.numPlayers ?? '?'}/10 token ${j.tokenId}${j.merged ? ' (merged)' : ''}`);
   return j;
+}
+
+// ── 0. RELEASE (6 PM): Go-seat every held seat, then release reservations ──
+if (RELEASE_LAST) {
+  const held = plan.assignments.map((a, i) => [a, i]).filter(([a]) => a.held && !a.done);
+  log(`\nRELEASE: ${held.length} held seat(s) → Go seat → leagues fill → drafts start`);
+  const failures = [];
+  for (const [a, idx] of held) {
+    const body = { wallet: a.wallet, tier: a.tier, roundId: a.result?.roundId, tokenId: a.result?.tokenId, fast: FAST, reason: `release-${a.guaranteed ? `top${plan.topN}` : 'draw'}` };
+    if (body.roundId == null || !body.tokenId) { failures.push({ a, err: 'held seat has no roundId/tokenId in plan.result' }); log(`   ✗ ${a.wallet.slice(0, 8)}: missing result`); continue; }
+    log(` ${a.tier}|${body.roundId} ${a.name}`);
+    try {
+      const res = await seatCall(body);
+      if (COMMIT) {
+        plan.assignments[idx].done = true;
+        plan.assignments[idx].result = { ...(a.result ?? {}), draftId: res.draftId ?? a.result?.draftId ?? null, numPlayers: res.numPlayers ?? null, releasedAtIso: new Date().toISOString() };
+        await planRef.update({ assignments: plan.assignments });
+      }
+    } catch (e) { failures.push({ a, err: String(e.message) }); log(`   ✗ ${a.wallet.slice(0, 8)}: ${e.message}`); }
+  }
+  if (COMMIT && failures.length === 0) {
+    for (const tier of TIERS) {
+      await db.runTransaction(async (tx) => {
+        const ref = db.collection('v2_queues').doc(tier);
+        const q = (await tx.get(ref)).data();
+        for (const r of q.rounds ?? []) if (r.reservedForRace) r.reservedForRace = false;
+        tx.set(ref, q);
+      });
+    }
+  }
+  log(`\nRELEASE DONE. failures: ${failures.length}`);
+  for (const f of failures) log(`  ${f.a.name} ${f.a.wallet} ${TIER_LABEL[f.a.tier]} r${f.a.result?.roundId}: ${f.err}`);
+  if (failures.length) log('Re-run the same command — released seats are skipped, failed ones retry.');
+  process.exit(failures.length ? 1 : 0);
 }
 
 // ── 1. merges ───────────────────────────────────────────────────────────────
@@ -129,16 +171,17 @@ for (const a of plan.assignments) {
   groups.get(k).push(a);
 }
 const newRounds = {}; // newKey → roundId once created
-async function doSeat(a, idx) {
-  if (a.done) return;
+async function doSeat(a, idx, { hold = false } = {}) {
+  if (a.done || a.held) return;
   const body = { wallet: a.wallet, tier: a.tier, fast: FAST, reason: a.guaranteed ? `top${plan.topN}` : 'draw' };
   if (a.roundId !== null) body.roundId = a.roundId;
   else if (newRounds[a.newKey] !== undefined) body.roundId = newRounds[a.newKey];
+  if (hold) body.goSeat = false; // queue-join only: visible in My Drafts, Go league stays 9/10
   const res = await seatCall(body);
   if (a.newKey && res.roundId !== undefined) newRounds[a.newKey] = res.roundId;
   if (COMMIT) {
-    plan.assignments[idx].done = true;
-    plan.assignments[idx].result = { draftId: res.draftId ?? null, roundId: res.roundId ?? null, tokenId: res.tokenId ?? null, numPlayers: res.numPlayers ?? null };
+    if (hold) plan.assignments[idx].held = true; else plan.assignments[idx].done = true;
+    plan.assignments[idx].result = { draftId: res.draftId ?? null, roundId: res.roundId ?? null, tokenId: res.tokenId ?? null, numPlayers: res.numPlayers ?? null, ...(hold ? { heldAtIso: new Date().toISOString() } : {}) };
     await planRef.update({ assignments: plan.assignments });
   }
 }
@@ -150,13 +193,13 @@ for (const [k, list] of groups) {
     try { await doSeat(a, plan.assignments.indexOf(a)); } catch (e) { failures.push({ a, err: String(e.message) }); log(`   ✗ ${a.wallet.slice(0, 8)}: ${e.message}`); }
   }
 }
-log('\nPASS B (the seat that fills each league → draft starts):');
+log(HOLD_LAST ? '\nPASS B (HELD: queue-join only — the Go seat lands at 6 PM via --release-last):' : '\nPASS B (the seat that fills each league → draft starts):');
 for (const [k, list] of groups) {
   const a = list[list.length - 1];
   log(` ${k}:`);
-  try { await doSeat(a, plan.assignments.indexOf(a)); } catch (e) { failures.push({ a, err: String(e.message) }); log(`   ✗ ${a.wallet.slice(0, 8)}: ${e.message}`); }
+  try { await doSeat(a, plan.assignments.indexOf(a), { hold: HOLD_LAST }); } catch (e) { failures.push({ a, err: String(e.message) }); log(`   ✗ ${a.wallet.slice(0, 8)}: ${e.message}`); }
 }
-if (COMMIT) {
+if (COMMIT && !HOLD_LAST) {
   // release reservations (everything is seated or logged)
   for (const tier of TIERS) {
     await db.runTransaction(async (tx) => {
