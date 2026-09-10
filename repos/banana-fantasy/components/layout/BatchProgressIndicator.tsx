@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { promosRetired } from '@/lib/draftTypes';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 import type { BatchProgress } from '@/lib/api/leagues';
 import { lanePosition, laneDraftsLeft, lanePct, HOF_PER_WINDOW, type LaneSnapshot } from '@/lib/rollingLanes';
@@ -104,6 +105,7 @@ export function BatchProgressIndicator() {
   const [mobileSlot, setMobileSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setMobileSlot(document.getElementById('bonus-zone-mobile-slot')); }, []);
 
+  if (promosRetired()) return null; // season closed — no more Jackpot/HOF odds or zone strip
   if (!isLoggedIn || !data || !gated) return null;
 
   // ── LIVE (updates the instant a draft fills): the league number X/100 + the

@@ -6,6 +6,7 @@ import { getOwnerDraftTokens } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
 import type { League, Ripeness } from '@/types';
 import { LeagueChat } from '@/components/standings/LeagueChat';
+import { seasonUiLive } from '@/lib/draftTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
@@ -492,8 +493,11 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     }, 'image/png');
   }, [roster, league.name]);
 
+  // Standings (league rank / weekly rank / weekly + season points) returns
+  // with the season — before kickoff there is nothing to rank.
   const tabs: { id: ModalTab; label: string }[] = [
     { id: 'roster', label: 'Roster' },
+    ...(seasonUiLive() ? [{ id: 'standings' as ModalTab, label: 'Standings' }] : []),
     { id: 'board', label: 'Board' },
     { id: 'chat', label: 'Chat' },
   ];

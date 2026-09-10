@@ -37,8 +37,9 @@ const KEY_EXPORT_ALLOWLIST = new Set<string>([
   '0x59e8ca8bbaf42037d8da75e8ca96732efd29092c',
   // LamarJ — brother sent 0.0101 ETH on Base instead of USDC (ticket-3349, 8/24). Right chain, wrong asset; has gas.
   '0xf4a0b6c01f4db328c31bf0e1bb8d3fcdf3c2d086',
-  // TBALLER — X-login embedded wallet; wants his 4 BBB4 passes visible in MetaMask (8/31).
-  '0xc01703f18087ea2f3875f18ce3de3bb348299f12',
+  // TBALLER (0xc017…9F12) was here 8/31–9/8 by mistake: Privy says that wallet is
+  // walletClientType "metamask" (his own MetaMask, linked to his X login), NOT an
+  // embedded wallet — there is no key for Privy to export. Don't re-add.
 ]);
 
 function truncateAddress(addr: string): string {
@@ -75,10 +76,11 @@ export default function ProfilePage() {
   const [exportArmed, setExportArmed] = useState(false);
   const [exportError, setExportError] = useState(false);
   // Export target = the Privy EMBEDDED wallet on this account, found directly in
-  // linkedAccounts. Do NOT gate on isEmbeddedWallet: it flips to false the moment
-  // a user links MetaMask (TBALLER 9/8 — same DID, embedded ...9F12 + MetaMask
-  // 0x6864…), which hid the button for an allowlisted wallet. The allowlist is
-  // the only gate; it lists embedded wallets only.
+  // linkedAccounts (walletClientType 'privy'). Do NOT gate on isEmbeddedWallet:
+  // it flips to false the moment a user links MetaMask, which hid the button for
+  // allowlisted users. And ONLY the embedded wallet is ever exportable — Privy
+  // holds no key for a linked MetaMask/WalletConnect wallet (TBALLER 9/8: his
+  // allowlisted wallet turned out to be MetaMask; the export would have failed).
   const embeddedAddress = useMemo(() => {
     const accts = (privyUser?.linkedAccounts ?? []) as Array<{
       type: string; address?: string; walletClientType?: string; walletClient?: string;
@@ -89,9 +91,9 @@ export default function ProfilePage() {
     return emb?.address ?? null;
   }, [privyUser]);
   const exportTarget =
-    [embeddedAddress, user?.walletAddress].find(
-      (a): a is string => !!a && KEY_EXPORT_ALLOWLIST.has(a.toLowerCase()),
-    ) ?? null;
+    embeddedAddress && KEY_EXPORT_ALLOWLIST.has(embeddedAddress.toLowerCase())
+      ? embeddedAddress
+      : null;
   const canExportKey = !!exportTarget;
   // Diagnostic (TBALLER 9/8: allowlisted, deploy verified, still "no button"):
   // for any account touching an allowlisted wallet, snapshot exactly what the

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { promosRetired } from '@/lib/draftTypes';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Logo } from './Logo';
@@ -153,7 +154,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
-              {navItems.map((item) => {
+              {navItems.filter((item) => !(promosRetired() && item.href === '/promos')).map((item) => {
                 const showAdminBadge = item.href === '/admin' && adminNotifTotal > 0;
                 return (
                   <Tooltip key={item.href} content={item.tooltip}>
@@ -223,7 +224,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     profile menu's "Your Passes" card. */}
                 {/* Hidden entirely at zero passes (Richard 2026-07-21) — a "0"
                     ticket only advertises that you have nothing. */}
-                {isLoggedIn && user && user.draftPasses + user.freeDrafts > 0 && (
+                {isLoggedIn && user && !promosRetired() && user.draftPasses + user.freeDrafts > 0 && (
                   <Link
                     href="/buy-drafts"
                     aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
@@ -252,7 +253,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                 {/* ── Desktop-only icons ── */}
                 <div className="hidden md:contents">
                   {/* Draft Passes — hidden entirely at zero (Richard 2026-07-21) */}
-                  {isLoggedIn && user && user.draftPasses + user.freeDrafts > 0 && (
+                  {isLoggedIn && user && !promosRetired() && user.draftPasses + user.freeDrafts > 0 && (
                     <Tooltip
                       content={
                         <div className="text-center">
@@ -296,8 +297,8 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     </Tooltip>
                   )}
 
-                  {/* Banana Wheel */}
-                  <Tooltip
+                  {/* Banana Wheel — retired with the season close (Richard 2026-09-09) */}
+                  {!promosRetired() && (<Tooltip
                     content={
                       <div className="text-center">
                         <p className="font-semibold">Banana Wheel</p>
@@ -323,7 +324,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                         </span>
                       )}
                     </Link>
-                  </Tooltip>
+                  </Tooltip>)}
 
                   {/* THE DROP — pack opening room, right of the wheel (Richard
                       2026-08-07). Badge = every unopened pack across nights,
@@ -332,7 +333,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       now exists ONLY while this user still holds sealed old
                       packs, and vanishes with the last rip. Packs live in
                       the Banana Zone promo now. */}
-                  {isLoggedIn && dropMe.totalSealed > 0 && (<Tooltip
+                  {isLoggedIn && !promosRetired() && dropMe.totalSealed > 0 && (<Tooltip
                     content={
                       <div className="text-center">
                         <p className="font-semibold">The Drop</p>

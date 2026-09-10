@@ -51,3 +51,4 @@ test-results/
 blob-report/
 yarn.lock
 .env.vercel-check
+.espn-scorer/

@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
+import { DRAFTING_CLOSED_MESSAGE, isDraftingOpen } from '@/lib/draftTypes';
 import { json, jsonError, parseBody, requireString, requireNumber } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -25,6 +26,9 @@ export async function POST(req: Request) {
     actorId = userId;
     queueCtx = { queueType, roundId };
 
+    // Season entry window closed (Richard 2026-09-09): a held/reserved seat
+    // that was never released can't be landed after kickoff.
+    if (!isDraftingOpen()) return jsonError(DRAFTING_CLOSED_MESSAGE, 410);
     if (queueType !== 'jackpot' && queueType !== 'hof' && queueType !== 'jackhof') {
       return jsonError('Invalid queue type', 400);
     }

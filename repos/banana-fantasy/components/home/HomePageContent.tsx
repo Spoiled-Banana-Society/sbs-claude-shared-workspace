@@ -18,6 +18,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useModalStack } from '@/hooks/useModalStack';
 import { useContests } from '@/hooks/useContests';
 import { usePromos } from '@/hooks/usePromos';
+import { promosRetired } from '@/lib/draftTypes';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useDepositEntry } from '@/hooks/useDepositEntry';
@@ -214,13 +215,16 @@ export function HomePageContent({ promoUi = 'carousel' }: { promoUi?: 'carousel'
 
       {/* Promos — carousel on the live homepage until the grid is approved
           (preview at /preview/home), then this switch flips to 'grid'. */}
-      <section className="mb-4">
+      {/* Hidden once the season entry window closes — same gate Richard used for
+          the header/nav/promo pages (Boris 2026-09-10: "i still see promos on
+          the front home page take that out"). */}
+      {!promosRetired() && (<section className="mb-4">
         {promoUi === 'grid' ? (
           <HomePromoGrid promos={allPromos} claimPromo={promosQuery.claimPromo} onVerifyTweet={promosQuery.verifyTweetEngagement} onGenerateReferralCode={promosQuery.generateReferralCode} />
         ) : (
           <PromoCarousel promos={allPromos} claimPromo={promosQuery.claimPromo} onVerifyTweet={promosQuery.verifyTweetEngagement} onGenerateReferralCode={promosQuery.generateReferralCode} />
         )}
-      </section>
+      </section>)}
 
       {/* Contest Details Modal */}
       {selectedContest && (

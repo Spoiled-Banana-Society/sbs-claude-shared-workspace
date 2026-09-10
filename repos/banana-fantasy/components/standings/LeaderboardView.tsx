@@ -22,7 +22,7 @@ interface LeaderboardViewProps {
   onOpenLeagueDetail?: (draftId: string, options?: { tab?: string; wallet?: string }) => void;
 }
 
-type LevelFilter = 'all' | 'Pro' | 'HOF' | 'Jackpot';
+type LevelFilter = 'all' | 'Pro' | 'HOF' | 'Jackpot' | 'JackHOF';
 type SortField = 'SeasonScore' | 'WeekScore';
 
 const filterPills: { id: LevelFilter; label: string; color: string }[] = [
@@ -30,6 +30,7 @@ const filterPills: { id: LevelFilter; label: string; color: string }[] = [
   { id: 'Pro', label: 'Pro', color: 'bg-pro/20 text-pro hover:bg-pro/30' },
   { id: 'HOF', label: 'HOF', color: 'bg-hof/20 text-hof hover:bg-hof/30' },
   { id: 'Jackpot', label: 'Jackpot', color: 'bg-jackpot/20 text-jackpot hover:bg-jackpot/30' },
+  { id: 'JackHOF', label: 'JackHOF', color: 'bg-jackpot/20 text-hof hover:bg-jackpot/30' },
 ];
 
 const PAGE_SIZE = 20;
@@ -40,6 +41,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
   const [page, setPage] = useState(0);
   const [leagueInput, setLeagueInput] = useState('');
   const [leagueLookup, setLeagueLookup] = useState<string | null>(null);
+  const [leagueLookupName, setLeagueLookupName] = useState<string | null>(null);
 
   const cacheKey = `leaderboard:${gameweek}:${level}:${sortField}`;
   const { data: entries, isValidating } = useSWRLike<LeaderboardEntry[]>(
@@ -107,17 +109,22 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
       setLeagueLookup(raw);
       return;
     }
-    // Extract just the number from input like "league 7", "#7", "League #7", or just "7"
+    // Extract just the number from input like "league 7", "#7", "League #7", or just "7".
+    // The league number is NOT the draft-id number — resolve it server-side.
     const numMatch = raw.match(/(\d+)/);
     if (!numMatch) {
       setLeagueLookup(null);
       return;
     }
-    setLeagueLookup(`2025-fast-draft-${numMatch[1]}`);
+    fetch(`/api/league-id?number=${numMatch[1]}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { draftId?: string; displayName?: string } | null) => { setLeagueLookup(body?.draftId || null); setLeagueLookupName(body?.displayName || null); })
+      .catch(() => { setLeagueLookup(null); setLeagueLookupName(null); });
   };
 
   const clearLeagueLookup = () => {
     setLeagueLookup(null);
+    setLeagueLookupName(null);
     setLeagueInput('');
   };
 
@@ -201,7 +208,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-white font-semibold text-sm">League #{leagueLookup?.match(/(\d+)$/)?.[1] || leagueInput.trim()}</h3>
+              <h3 className="text-white font-semibold text-sm">{leagueLookupName || `League #${leagueInput.trim()}`}</h3>
               {leagueEntries.length > 0 && leagueEntries[0].leagueLevel && (() => {
                 const lvl = String(leagueEntries[0].leagueLevel).toLowerCase();
                 // jackhof must be checked FIRST — 'jackhof' contains 'hof'.

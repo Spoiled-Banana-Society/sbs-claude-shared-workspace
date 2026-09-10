@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { promosRetired } from '@/lib/draftTypes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/components/NotificationCenter';
@@ -166,7 +167,9 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
 
   // THE DROP retired (Richard 8/23): the Packs tab exists only while this
   // user still holds sealed old packs — it disappears with the last rip.
-  const tabs = allTabs.filter((t) => t.href !== '/drop' || sealedPacks > 0);
+  // Season close (Richard 2026-09-09): Promos / Spins / Drop are gone once
+  // entries close — nothing they hand out can be used.
+  const tabs = allTabs.filter((t) => (t.href !== '/drop' || sealedPacks > 0) && !(promosRetired() && ['/promos', '/banana-wheel', '/drop'].includes(t.href)));
 
   return (
     <nav

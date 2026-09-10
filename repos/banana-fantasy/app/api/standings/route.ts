@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
+import { currentGameweek } from '@/lib/season';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,15 +52,10 @@ export async function GET(req: Request) {
     const action = getSearchParam(req, 'action');
 
     // Action: get current gameweek
+    // Season clock lives in lib/season (Go's /league/getGameweek still
+    // answers with a 2024 prefix — never ask it).
     if (action === 'gameweek') {
-      const url = `${API_BASE}/league/getGameweek`;
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) {
-        const msg = await readErrorMessage(res);
-        return jsonError(msg || 'Failed to fetch gameweek', res.status);
-      }
-      const data = await res.json().catch(() => null);
-      return json(data, 200);
+      return json({ gameweek: currentGameweek() }, 200);
     }
 
     const wallet = getSearchParam(req, 'wallet');
@@ -67,8 +63,11 @@ export async function GET(req: Request) {
       return jsonError('Missing wallet parameter', 400);
     }
 
-    const gameweek = getSearchParam(req, 'gameweek') || '2025REG-01';
-    const orderBy = getSearchParam(req, 'orderBy') || 'scoreSeason';
+    const gameweek = getSearchParam(req, 'gameweek') || currentGameweek();
+    // Go orders on the Firestore field name (struct-cased: ScoreSeason /
+    // ScoreWeek); a camelCase param silently returns an empty board.
+    const orderRaw = (getSearchParam(req, 'orderBy') || 'scoreSeason').toLowerCase();
+    const orderBy = orderRaw.includes('week') ? 'ScoreWeek' : 'ScoreSeason';
     const draftId = getSearchParam(req, 'draftId');
 
     // League-specific leaderboard

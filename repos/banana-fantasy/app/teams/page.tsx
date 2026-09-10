@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { TeamCard } from '@/components/standings/TeamCard';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import { LeaderboardView } from '@/components/standings/LeaderboardView';
+import { seasonUiLive } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
@@ -219,9 +220,7 @@ export default function StandingsPage() {
 
   // Update gameweek when API returns
   React.useEffect(() => {
-    if (currentGameweek && currentGameweek !== '2025REG-01') {
-      setGameweek(currentGameweek);
-    }
+    if (currentGameweek) setGameweek(currentGameweek); // same-value set is a no-op
   }, [currentGameweek]);
 
   // Filter by search query, type filter, and sort by league number
@@ -372,6 +371,16 @@ export default function StandingsPage() {
             of this same roster; Marketplace is where you buy/sell these teams. */}
         {viewMode === 'myteams' && (
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Season live (kickoff 9/9/2026): global board + league lookup. */}
+            {seasonUiLive() && (
+              <button
+                type="button"
+                onClick={() => setViewMode('leaderboard')}
+                className="px-3 py-2 text-sm font-medium text-banana/90 hover:text-banana border border-banana/30 hover:border-banana/50 rounded-lg transition-all"
+              >
+                Leaderboard
+              </button>
+            )}
             <Link
               href="/marketplace"
               className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"

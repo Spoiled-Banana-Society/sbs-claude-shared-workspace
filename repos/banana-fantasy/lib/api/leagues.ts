@@ -10,6 +10,7 @@ import { ApiError, createHttpClient, normalizeWalletAddress } from './client';
 import type { ApiDraftToken, ApiDraftTokenLevel } from './owner';
 import { getDraftsApiUrl } from '@/lib/staging';
 import { assertClientCanDraft } from '@/lib/draftBlock';
+import { assertDraftingOpen } from '@/lib/draftTypes';
 
 function draftsApi() {
   return createHttpClient({
@@ -40,6 +41,7 @@ export async function joinDraft(
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
   assertClientCanDraft(); // admin drafting block — never reaches Go
+  assertDraftingOpen(); // season entry window closed — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeoutMs = 20_000;
@@ -83,6 +85,7 @@ export async function joinPrivateDraft(
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
   assertClientCanDraft(); // admin drafting block — never reaches Go
+  assertDraftingOpen(); // season entry window closed — never reaches Go
   const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);

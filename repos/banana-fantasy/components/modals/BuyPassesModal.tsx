@@ -20,6 +20,7 @@ import { joinPrivateDraft } from '@/lib/api/leagues';
 import { getActivePrivateLeague } from '@/lib/privateLeagueSession';
 import { useNextLobbyFill } from '@/hooks/useNextLobbyFill';
 import { REGULAR_SLOW_CLOSED_MESSAGE, regularSlowJoinAllowed } from '@/lib/slowJoinGate';
+import { DRAFTING_CLOSED_MESSAGE, PASS_SALES_CLOSED_MESSAGE, isDraftingOpen } from '@/lib/draftTypes';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -765,6 +766,16 @@ export function BuyPassesModal({
     const laneSpeed: 'fast' | 'slow' =
       privateTarget && privateTarget.draftType !== 'both' ? privateTarget.draftType : speed;
 
+    // Season entry window closed (Richard 2026-09-09): no new draft joins of
+    // any kind after 4 PM PT kickoff day. The pass stays with the user.
+    if (!isDraftingOpen()) {
+      joinInFlightRef.current = false;
+      setIsJoiningDraft(false);
+      setJoinError(DRAFTING_CLOSED_MESSAGE);
+      setPhase('error');
+      return;
+    }
+
     // Regular slow drafts closed (Richard 2026-09-03): public slow joins are
     // allowed only while the last permitted lobby still has a seat.
     if (!privateTarget && laneSpeed === 'slow' && !(await regularSlowJoinAllowed())) {
@@ -942,6 +953,18 @@ export function BuyPassesModal({
             ? 'Draft Pass on the way'
             : 'Buy Draft Passes'
         : 'Joining Draft...';
+
+  // Season close (Richard 2026-09-09): no pass sales after 4 PM PT kickoff day.
+  if (!isDraftingOpen()) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Sales closed" size="md">
+        <div className="px-2 py-6 text-center space-y-4">
+          <p className="text-text-secondary text-sm leading-relaxed">{PASS_SALES_CLOSED_MESSAGE}</p>
+          <Link href="/marketplace" onClick={onClose} className="inline-block px-4 py-2 rounded-lg bg-banana text-black text-sm font-semibold">Go to Marketplace</Link>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">

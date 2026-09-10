@@ -3,6 +3,7 @@
 import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
+import { currentGameweek } from '@/lib/season';
 
 /**
  * Pull the owner wallet off a standings/leaderboard entry, whatever the Go
@@ -72,9 +73,9 @@ export function useGameweek() {
       if (data && typeof data === 'object' && 'gameweek' in (data as Record<string, unknown>)) {
         return String((data as Record<string, unknown>).gameweek);
       }
-      return '2025REG-01';
+      return currentGameweek();
     },
-    { fallbackData: '2025REG-01', persist: true },
+    { fallbackData: currentGameweek(), persist: true },
   );
 }
 

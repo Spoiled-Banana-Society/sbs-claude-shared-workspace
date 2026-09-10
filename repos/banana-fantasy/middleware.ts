@@ -167,12 +167,22 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return headers;
 }
 
+const SEASON_CLOSE_MS = Date.UTC(2026, 8, 9, 23, 0, 0); // Wed Sep 9 2026, 4:00 PM PT
+const RETIRED_PAGES = ['/promos', '/banana-wheel', '/drop', '/race', '/mindshare'];
+
 export function middleware(req: NextRequest) {
   // Pre-launch gate runs first, for every path.
   const gated = handlePrelaunch(req);
   if (gated) return gated;
 
   const { pathname } = req.nextUrl;
+
+  // Season close (Richard 2026-09-09): from 4 PM PT kickoff day the wheel,
+  // promos, Drop, Banana Race and Mindshare pages are gone — nothing they
+  // hand out can be used any more. Same instant as DRAFTING_CLOSES_AT.
+  if (Date.now() >= SEASON_CLOSE_MS && RETIRED_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return NextResponse.redirect(new URL('/teams', req.url));
+  }
 
   // Beyond the gate, the rest only applies to API routes.
   if (!pathname.startsWith('/api/')) {

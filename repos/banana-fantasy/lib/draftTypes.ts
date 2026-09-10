@@ -22,6 +22,37 @@ export function hasSeasonStarted(): boolean {
   return Date.now() >= DRAFTING_CLOSES_AT.getTime();
 }
 
+// Entries closed (Richard 2026-09-09): from 4:00 PM PT kickoff day nobody can
+// join a NEW draft anywhere on the site — public fast/slow, private leagues,
+// special queues. Drafts already in progress finish normally. Same clock as
+// DRAFTING_CLOSES_AT; self-resolves, no flag flip.
+export const PASS_SALES_CLOSED_MESSAGE =
+  'Draft pass sales are closed for the season. You can still buy and sell teams on the marketplace.';
+
+export const DRAFTING_CLOSED_MESSAGE =
+  'Drafting is closed for the season. Drafts already in progress will finish, and you can still buy and sell teams on the marketplace.';
+
+// Everything that only made sense while you could still enter — wheel,
+// promos, Drop, Banana Race, pass counts — is retired at the same 4 PM PT
+// close (Richard 2026-09-09: "remove wheel and promos at 4pm pst they cant be
+// used for anything. hide the pages"; "hide their pass count").
+export function promosRetired(): boolean {
+  return !isDraftingOpen();
+}
+
+// Standings / Leaderboard surfaces switch on at 5:00 PM PT kickoff day
+// (Richard 2026-09-09: "at 5pm pst show leaderboard"); scores tick from the
+// 5:20 PM kickoff.
+export const SEASON_UI_LIVE_AT = new Date('2026-09-10T00:00:00Z');
+export function seasonUiLive(): boolean {
+  return Date.now() >= SEASON_UI_LIVE_AT.getTime();
+}
+
+/** Throws (with the user-facing message) once the season entry window has closed. */
+export function assertDraftingOpen(): void {
+  if (!isDraftingOpen()) throw new Error(DRAFTING_CLOSED_MESSAGE);
+}
+
 export const DRAFT_TYPE_COLORS = {
   jackpot: {
     primary: '#ef4444',
