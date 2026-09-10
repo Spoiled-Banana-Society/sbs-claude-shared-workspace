@@ -168,8 +168,12 @@ export default function StandingsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('myteams');
 
   // Switch to My Teams when auth loads (isLoggedIn starts false, becomes true after auth)
+  // `?view=leaderboard` (home-page Leaderboard button, 2026-09-10) opens the
+  // leaderboard directly instead of My Teams — only once the season UI is live.
   React.useEffect(() => {
-    if (isLoggedIn) setViewMode('myteams');
+    if (!isLoggedIn) return;
+    const wantsLeaderboard = seasonUiLive() && new URLSearchParams(window.location.search).get('view') === 'leaderboard';
+    setViewMode(wantsLeaderboard ? 'leaderboard' : 'myteams');
   }, [isLoggedIn]);
 
   const [gameweek, setGameweek] = useState<string>(currentGameweek);

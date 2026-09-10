@@ -169,7 +169,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   // user still holds sealed old packs — it disappears with the last rip.
   // Season close (Richard 2026-09-09): Promos / Spins / Drop are gone once
   // entries close — nothing they hand out can be used.
-  const tabs = allTabs.filter((t) => (t.href !== '/drop' || sealedPacks > 0) && !(promosRetired() && ['/promos', '/banana-wheel', '/drop'].includes(t.href)));
+  const tabs = allTabs.filter((t) => (t.href !== '/drop' || sealedPacks > 0) && !(promosRetired() && ['/promos', '/banana-wheel', '/drop', '/draft'].includes(t.href)));
 
   return (
     <nav

@@ -14,6 +14,7 @@ interface ContestCardProps {
 }
 
 import { useAuth } from '@/hooks/useAuth';
+import { isDraftingOpen } from '@/lib/draftTypes';
 
 export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
   // Admin drafting block: no Enter/Buy CTA at all for this account.
@@ -88,7 +89,18 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             CTA (Richard 2026-07-21): it consumes a pass, one-taps $25 from
             balance, or prompts Add Funds at $0. The Buy button only exists in
             the pre-deposit world (flag off). */}
-        {draftBlocked ? (
+        {!isDraftingOpen() ? (
+          /* Drafting closed (Boris 2026-09-10): the card's CTA becomes
+             Leaderboard → Teams in leaderboard view (all leagues, live scoring). */
+          <div className="flex justify-center mt-6 sm:mt-10">
+            <Link
+              href="/teams?view=leaderboard"
+              className="min-w-[176px] px-10 py-3 text-lg sm:min-w-0 sm:w-[240px] sm:px-0 sm:py-4 sm:text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105 text-center"
+            >
+              Leaderboard
+            </Link>
+          </div>
+        ) : draftBlocked ? (
           <p className="mt-6 sm:mt-10 text-center text-sm text-white/45">Drafting is disabled on this account.</p>
         ) : (
         <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-6 sm:mt-10">

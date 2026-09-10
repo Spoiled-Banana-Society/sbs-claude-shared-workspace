@@ -168,7 +168,9 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 const SEASON_CLOSE_MS = Date.UTC(2026, 8, 9, 23, 0, 0); // Wed Sep 9 2026, 4:00 PM PT
-const RETIRED_PAGES = ['/promos', '/banana-wheel', '/drop', '/race', '/mindshare'];
+// '/draft' added 2026-09-10 (Boris: "no need for the draft page now drafting is done") — /drafting
+// already rewrites to /draft in next.config, so both land on Teams. /draft-room stays.
+const RETIRED_PAGES = ['/promos', '/banana-wheel', '/drop', '/race', '/mindshare', '/draft', '/drafting'];
 
 export function middleware(req: NextRequest) {
   // Pre-launch gate runs first, for every path.
