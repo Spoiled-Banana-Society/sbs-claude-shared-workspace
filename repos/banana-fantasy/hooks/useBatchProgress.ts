@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { type BatchProgress } from '@/lib/api/leagues';
+import { promosRetired } from '@/lib/draftTypes';
 
 interface UseBatchProgressReturn {
   data: BatchProgress | null;
@@ -41,6 +42,9 @@ export function useBatchProgress(): UseBatchProgressReturn {
   }, []);
 
   useEffect(() => {
+    // Season closed (2026-09-10): the odds strip is gone, so never open the
+    // stream — it was still being opened on every page for every visitor.
+    if (promosRetired()) { setIsLoading(false); return; }
     if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
       // SSR / unsupported browser — degrade to a single fetch.
       let cancelled = false;

@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { promosRetired } from '@/lib/draftTypes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -34,6 +35,7 @@ interface FeedPayload {
  * built — see /api/wheel/feed for the same fallback behavior.
  */
 export async function GET(req: Request) {
+  if (promosRetired()) return new Response('Season closed', { status: 410 }); // 2026-09-10 cost cut
   const url = new URL(req.url);
   const periodNumber = parseInt(url.searchParams.get('period') ?? '', 10);
   if (!Number.isInteger(periodNumber) || periodNumber < 1) {

@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { isRollingActive, replayJpLane, replayHofLane, type RollingLanes } from '@/lib/rollingLanes';
 import { bonusZoneViewForLane, readBonusZoneConfig, type BonusZoneConfig, type BonusZoneView } from '@/lib/bonusZone';
 import { readZoneDropConfig, packSeatsForTier, packSeatsLeftForTier, type ZoneDropConfig } from '@/lib/zoneDrop';
+import { promosRetired } from '@/lib/draftTypes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -217,6 +218,7 @@ function buildPayload(data: Record<string, unknown> | undefined, bzConfig?: Bonu
  * sealed by the proof API gating until end-of-batch reveal.
  */
 export async function GET(req: Request) {
+  if (promosRetired()) return new Response('Season closed', { status: 410 }); // 2026-09-10 cost cut
   if (!isFirestoreConfigured()) {
     const empty: BatchProgress = {
       current: 0, total: 100, jackpotRemaining: 1, hofRemaining: 5,
