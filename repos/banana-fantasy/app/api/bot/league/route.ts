@@ -15,6 +15,7 @@ import {
   formatLiveActivity,
 } from '@/lib/liveActivity';
 
+import { promosRetired } from '@/lib/draftTypes';
 /**
  * GET /api/bot/league?include_unfilled=true
  *
@@ -664,6 +665,8 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
 }
 
 export async function GET(req: Request) {
+  // Season closed (2026-09-10): nothing to announce; this route full-scanned `drafts` on every bot poll.
+  if (promosRetired()) return json([]);
   const limited = rateLimit(req, RATE_LIMITS.general);
   if (limited) return limited;
 

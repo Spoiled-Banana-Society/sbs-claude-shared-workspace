@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     const cacheKey = `${wantLevel ?? ''}|${hasLeague ? leagueParam : ''}|${hasTeam ? teamParam : ''}`;
     const cached = teamsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < TEAMS_TTL_MS) {
-      return json({ nfts: cached.nfts, next: null }, { headers: { 'cache-control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' } });
+      return json({ nfts: cached.nfts, next: null }, { headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } });
     }
 
     const db = getAdminFirestore();
@@ -160,7 +160,7 @@ export async function GET(req: Request) {
     );
 
     teamsCache.set(cacheKey, { ts: Date.now(), nfts: teams });
-    return json({ nfts: teams, next: null }, { headers: { 'cache-control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' } });
+    return json({ nfts: teams, next: null }, { headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } });
   } catch (err) {
     console.error('[marketplace/teams] GET failed:', err);
     return jsonError('Internal Server Error', 500);

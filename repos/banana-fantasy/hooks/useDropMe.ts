@@ -40,12 +40,14 @@ const EMPTY: DropMe = {
 };
 
 import { useStreamRefetch } from '@/hooks/useStreamRefetch';
+import { promosRetired } from '@/lib/draftTypes';
 
 export function useDropMe(wallet: string | null | undefined): DropMe {
   const [me, setMe] = useState<DropMe>(EMPTY);
   const loadRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
+    if (promosRetired()) return; // season closed 2026-09-10 — The Drop is retired, no poll
     let alive = true;
     const load = async () => {
       try {
