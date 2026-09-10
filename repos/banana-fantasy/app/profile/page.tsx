@@ -13,6 +13,7 @@ import { NotificationSettings } from '@/components/notifications/NotificationSet
 import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { useExportWallet, usePrivy } from '@privy-io/react-auth';
 import { reportClientEvent } from '@/lib/clientErrors';
+import { promosRetired } from '@/lib/draftTypes';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ export default function ProfilePage() {
       tab === 'activity' ||
       tab === 'overview' ||
       tab === 'badges' ||
-      tab === 'notifications'
+      (tab === 'notifications' && !promosRetired())
     ) {
       setActiveTab(tab);
     }
@@ -274,12 +275,13 @@ export default function ProfilePage() {
           <TabButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')}>
             Activity
           </TabButton>
-          <TabButton
+          {/* Draft Alerts tab — gone with the season close (Boris 2026-09-10) */}
+          {!promosRetired() && (<TabButton
             active={activeTab === 'notifications'}
             onClick={() => setActiveTab('notifications')}
           >
             Draft Alerts
-          </TabButton>
+          </TabButton>)}
         </div>
 
         {activeTab === 'activity' && (
@@ -288,7 +290,7 @@ export default function ProfilePage() {
           </motion.div>
         )}
 
-        {activeTab === 'notifications' && (
+        {activeTab === 'notifications' && !promosRetired() && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <NotificationSettings />
           </motion.div>

@@ -8,6 +8,7 @@ import { canSwitchWallet } from '@/lib/switchWalletAllowlist';
 import { InstallAppButton } from '@/components/home/AddToHomeScreenCard';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { promosRetired } from '@/lib/draftTypes';
 
 // Where the social icons under "Chat with us" point.
 const SBS_X_URL = 'https://x.com/SBSFantasy';
@@ -346,7 +347,8 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
               FAQ
             </Link>
 
-            <Link
+            {/* Draft Alerts — gone with the season close (Boris 2026-09-10) */}
+            {!promosRetired() && (<Link
               href="/profile?tab=notifications"
               onClick={() => setIsOpen(false)}
               className="w-full px-4 py-2 text-left text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors flex items-center gap-3 text-sm"
@@ -356,7 +358,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
               </svg>
               Draft Alerts
-            </Link>
+            </Link>)}
 
             {!isEmbeddedWallet && canSwitchWallet(user.walletAddress) && (
               <button
