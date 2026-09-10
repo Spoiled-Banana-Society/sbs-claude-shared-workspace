@@ -42,8 +42,8 @@ export interface BlockState {
   theirBlock: boolean;
 }
 
-const INBOX_POLL_MS = 15_000;
-const THREAD_POLL_MS = 4000; // 2s->4s (cost audit 9/1)
+const INBOX_POLL_MS = 60_000; // 15s -> 60s (season closed 9/10)
+const THREAD_POLL_MS = 30_000; // 2s->4s (cost audit 9/1) -> 30s (season closed 9/10)
 
 function useAuthHeaders() {
   const privy = usePrivy();

@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { subscribePresenceMap, PRESENCE_ONLINE_WINDOW_MS } from '@/lib/api/firebase';
 
-const HEARTBEAT_MS = 45_000;
+const HEARTBEAT_MS = 60_000; // 45s -> 60s (season closed 9/10); server counts lastSeen within 90s as online, so this is the ceiling
 
 export function usePresenceHeartbeat(walletAddress: string | null | undefined): void {
   const privy = usePrivy();

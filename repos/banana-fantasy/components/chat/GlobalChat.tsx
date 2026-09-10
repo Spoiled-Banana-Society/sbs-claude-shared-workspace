@@ -23,7 +23,7 @@ interface ActiveMute {
   reason?: string;
 }
 
-const POLL_MS = 15_000; // 2s->5s (cost audit 9/1) -> 15s (season closed 9/10): each poll re-downloads chat history from RTDB
+const POLL_MS = 60_000; // 2s->5s->15s->60s (season closed 9/10, chat barely used): each poll re-downloads chat history from RTDB
 const MUTE_POLL_MS = 60_000; // 15s -> 60s (season closed 9/10)
 
 function formatMuteRemaining(expiresAt: number): string {
