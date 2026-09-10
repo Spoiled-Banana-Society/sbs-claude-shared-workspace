@@ -150,7 +150,7 @@ export default function ProfilePage() {
     if (
       tab === 'activity' ||
       tab === 'overview' ||
-      tab === 'badges' ||
+      (tab === 'badges' && !promosRetired()) ||
       (tab === 'notifications' && !promosRetired())
     ) {
       setActiveTab(tab);
@@ -269,9 +269,9 @@ export default function ProfilePage() {
           <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
             Overview
           </TabButton>
-          <TabButton active={activeTab === 'badges'} onClick={() => setActiveTab('badges')}>
+          {!promosRetired() && (<TabButton active={activeTab === 'badges'} onClick={() => setActiveTab('badges')}>
             Badges
-          </TabButton>
+          </TabButton>)}
           <TabButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')}>
             Activity
           </TabButton>
@@ -296,7 +296,7 @@ export default function ProfilePage() {
           </motion.div>
         )}
 
-        {activeTab === 'badges' && (
+        {activeTab === 'badges' && !promosRetired() && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <KingLeaderboard />
             <BadgeCatalogGrid />

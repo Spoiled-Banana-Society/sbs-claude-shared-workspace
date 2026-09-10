@@ -154,7 +154,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
-              {navItems.filter((item) => !(promosRetired() && (item.href === '/promos' || item.href === '/draft'))).map((item) => {
+              {navItems.filter((item) => !(promosRetired() && (item.href === '/promos' || item.href === '/draft' || item.href === '/faq'))).map((item) => {
                 const showAdminBadge = item.href === '/admin' && adminNotifTotal > 0;
                 return (
                   <Tooltip key={item.href} content={item.tooltip}>

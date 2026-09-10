@@ -323,7 +323,8 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
               Messages
             </Link>
 
-            <Link
+            {/* Badges — hidden with the season close (Boris 2026-09-10) */}
+            {!promosRetired() && (<Link
               href="/profile?tab=badges"
               onClick={() => setIsOpen(false)}
               className="w-full px-4 py-2 text-left text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors flex items-center gap-3 text-sm"
@@ -333,7 +334,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
               </svg>
               Badges
-            </Link>
+            </Link>)}
 
             <Link
               href="/faq"
