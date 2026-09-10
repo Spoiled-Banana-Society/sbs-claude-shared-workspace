@@ -7,12 +7,19 @@ import type { ExposureRecomputeDiag } from '@/lib/db-firestore';
 import type { UserExposure } from '@/lib/exposureUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { bananaDefaultName } from '@/utils/helpers';
+import { isDraftingOpen } from '@/lib/draftTypes';
 
 // Concurrent-read dedupe window. Was 60s — Richard wants exposure to
 // reflect a just-completed draft on the next page load, so the throttle
 // is now just enough to prevent the same tab's parallel hooks from
 // firing two writes back-to-back. The recompute itself is idempotent.
-const RECOMPUTE_THROTTLE_MS = 2_000;
+// 2s while drafting is open (parallel hooks from one tab share a rebuild).
+// Once the season entry window closes no draft can complete, so exposure is
+// frozen — rebuild at most every 6h. A rebuild is one Go call PER LEAGUE the
+// wallet owns (Couch = 371) and the client polls every 20s, so one open
+// Exposure tab was ~20 Go req/s + ~1.7M Firestore reads/hr all night
+// (audit logs, 2026-09-10 — ~$25/day). ?recompute=1 still forces.
+const RECOMPUTE_THROTTLE_MS = isDraftingOpen() ? 2_000 : 6 * 60 * 60 * 1000;
 
 export async function GET(req: Request, ctx: { params: { userId: string } }) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);

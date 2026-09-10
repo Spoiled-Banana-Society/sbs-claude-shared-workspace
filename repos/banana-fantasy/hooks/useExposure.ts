@@ -5,6 +5,7 @@ import type { UserExposure } from '@/lib/exposureUtils';
 import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
+import { isDraftingOpen } from '@/lib/draftTypes';
 
 export function useExposure(opts?: { userId?: string }) {
   const { user } = useAuth();
@@ -28,7 +29,10 @@ export function useExposure(opts?: { userId?: string }) {
       // every 20s while open. Finishing a draft → the data is fresh here without
       // a manual reload (Boris 2026-06-13).
       revalidateOnFocus: true,
-      refreshInterval: fastPoll ? 3_000 : 20_000,
+      // No poll once drafting is closed — nothing can complete, so exposure is
+      // frozen (2026-09-10: the 20s poll × one Go call per league was the whole
+      // overnight read floor). Focus revalidation stays.
+      refreshInterval: fastPoll ? 3_000 : isDraftingOpen() ? 20_000 : 0,
     },
   );
 
