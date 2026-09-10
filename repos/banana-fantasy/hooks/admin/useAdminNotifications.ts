@@ -27,7 +27,7 @@ const VISIT_CLEARED: NotifCategory[] = ['logs', 'kyc', 'offramp', 'onramp', 'pur
 // .v2 — bumped when 'errors'+'sentry' merged into 'logs'. Old keys are
 // harmlessly ignored; the badge resets clean once.
 const STORAGE_KEY = 'admin.notifications.lastSeen.v2';
-const POLL_MS = 30_000;
+const POLL_MS = 300_000; // 30s -> 5 min (season closed 2026-09-10): each poll scans crisp/error logs; badge is not time-critical
 // Custom event name for cross-component sync within the same browser
 // tab. The native `storage` event only fires across tabs, so without
 // this the Header's hook instance would lag the Admin sidebar's by
