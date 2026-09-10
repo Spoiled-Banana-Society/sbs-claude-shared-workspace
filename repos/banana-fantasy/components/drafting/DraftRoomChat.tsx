@@ -119,7 +119,7 @@ export function DraftRoomChat({
     fetchOnce();
     // 2s->4s (cost audit 9/1); hidden tabs skip entirely (9/2) — the pick
     // engine is fully server-side, this poll only feeds the visible chat UI.
-    const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, 4000);
+    const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, 60_000); // 4s -> 60s (season closed 2026-09-10)
     return () => { cancelled = true; clearInterval(id); };
   }, [draftId, myWallet]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);

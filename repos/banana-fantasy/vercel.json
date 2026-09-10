@@ -28,7 +28,7 @@
     },
     {
       "path": "/api/crons/reconcile-pass-transfers",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/crons/deposit-credit-sweep",

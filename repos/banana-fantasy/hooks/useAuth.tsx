@@ -964,7 +964,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     readBalances();
 
     // Poll every 30s
-    const interval = setInterval(readBalances, 30_000);
+    const interval = setInterval(readBalances, 300_000); // 30s -> 5 min (season closed 2026-09-10): 2 Alchemy RPC calls per tick per tab
 
     // Re-read on network reconnect
     const onOnline = () => { setTimeout(readBalances, 1000); };
@@ -1099,7 +1099,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch { /* silent */ }
       };
       void refetch();
-      pollInterval = setInterval(refetch, 15_000);
+      pollInterval = setInterval(refetch, 120_000); // 15s -> 2 min (season closed 2026-09-10)
     };
 
     const connect = () => {

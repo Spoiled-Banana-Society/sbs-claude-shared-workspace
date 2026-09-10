@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { getOptimismUsdcBalance } from '@/lib/onchain/nyOptimismClient';
 import { runNyDeposit } from '@/lib/nyBuyFlow';
 import { clientLog } from '@/lib/clientLog';
+import { promosRetired } from '@/lib/draftTypes';
 
 // Shared with AddFundsModal's NY branch so the two can't sweep concurrently.
 // (Both check + set it; worst case without it is a harmless failed second
@@ -46,6 +47,7 @@ export function NyDepositAutoRecovery() {
   // no-Privy fallback tree) — and unlike the modals this component is ALWAYS
   // mounted, so gate on availability before touching them.
   const available = usePrivyAvailable();
+  if (promosRetired()) return null; // season closed 2026-09-10 — no deposits, nothing to recover
   return available ? <NyDepositAutoRecoveryInner /> : null;
 }
 
