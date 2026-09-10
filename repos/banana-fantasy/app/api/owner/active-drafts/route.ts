@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { jsonError, json } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { promosRetired } from '@/lib/draftTypes';
 
 /**
  * GET /api/owner/active-drafts?wallet=<address>
@@ -148,6 +149,8 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (t: T) =>
 }
 
 export async function GET(req: Request) {
+  // Season closed (2026-09-10): stale draft-page tabs keep polling every 5s; answer empty without touching Firestore.
+  if (promosRetired()) return json({ drafts: [] }, { headers: { 'cache-control': 'public, max-age=300, s-maxage=300' } });
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 

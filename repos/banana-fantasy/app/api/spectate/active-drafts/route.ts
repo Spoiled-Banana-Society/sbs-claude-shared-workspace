@@ -7,6 +7,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminDatabase, getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { promosRetired } from '@/lib/draftTypes';
 
 // GET /api/spectate/active-drafts
 //
@@ -76,6 +77,8 @@ async function fetchJson<T>(url: string): Promise<T | null | 'error'> {
 }
 
 export async function GET(req: Request) {
+  // Season closed (2026-09-10): stale draft-page tabs keep polling every 5s; answer empty without touching Firestore.
+  if (promosRetired()) return json({ drafts: [], active: [], completed: [] }, 200);
   const rateLimited = rateLimit(req, RATE_LIMITS.admin);
   if (rateLimited) return rateLimited;
 

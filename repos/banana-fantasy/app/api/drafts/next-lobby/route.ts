@@ -4,6 +4,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getSlowClockConfig } from '@/lib/slowClockServer';
 import { isRegularSlowLobbyJoinable } from '@/lib/slowClock';
+import { promosRetired } from '@/lib/draftTypes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -131,6 +132,8 @@ async function readOpenLobbies(): Promise<NextLobbyResponse> {
 }
 
 export async function GET(req: Request) {
+  // Season closed (2026-09-10): stale draft-page tabs keep polling every 5s; answer empty without touching Firestore.
+  if (promosRetired()) return json({ fast: [], slow: [], regularSlowClosed: true }, { headers: { 'cache-control': 'public, max-age=300, s-maxage=300' } });
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
