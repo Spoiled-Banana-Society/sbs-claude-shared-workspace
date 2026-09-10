@@ -22,7 +22,7 @@ interface LeagueChatProps {
   username?: string;
 }
 
-const POLL_MS = 5000; // 2s->5s (cost audit 9/1)
+const POLL_MS = 15_000; // 2s->5s (cost audit 9/1) -> 15s (season closed 9/10): each poll re-downloads league chat history from RTDB
 const HISTORY_LIMIT = 200;
 
 export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueChatProps) {
