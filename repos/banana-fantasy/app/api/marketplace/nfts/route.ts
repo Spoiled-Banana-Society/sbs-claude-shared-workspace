@@ -104,7 +104,7 @@ export async function GET(req: Request) {
     const respKey = owner.toLowerCase();
     const cachedResp = respCache.get(respKey);
     if (cachedResp && Date.now() - cachedResp.ts < RESP_TTL_MS) {
-      return json({ nfts: cachedResp.nfts });
+      return json({ nfts: cachedResp.nfts }, { status: 200, headers: { 'cache-control': 'public, max-age=30, s-maxage=180, stale-while-revalidate=300' } });
     }
 
     // Kick off the active-listings fetch in parallel (used to merge orderHash/
@@ -362,7 +362,7 @@ export async function GET(req: Request) {
       .map(({ n }) => n);
 
     respCache.set(respKey, { ts: Date.now(), nfts: finalNfts });
-    return json({ nfts: finalNfts });
+    return json({ nfts: finalNfts }, { status: 200, headers: { 'cache-control': 'public, max-age=30, s-maxage=180, stale-while-revalidate=300' } }); // CDN 3 min (2026-09-10)
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/nfts] GET failed:', err);

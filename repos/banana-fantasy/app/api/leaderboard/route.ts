@@ -87,7 +87,8 @@ export async function GET(req: Request) {
         level: String(d.Level ?? card.Level ?? ''),
       };
     });
-    return json(rows, 200);
+    // Season 2026-09-10: CDN-cached 5 min per URL (wallet is in the query string, so per-user rows stay per-user).
+    return json(rows, { status: 200, headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } });
   } catch (err) {
     console.error('Leaderboard fetch failed:', err);
     return jsonError('Failed to fetch leaderboard', 500);

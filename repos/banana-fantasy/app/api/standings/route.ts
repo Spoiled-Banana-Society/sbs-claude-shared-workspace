@@ -79,7 +79,7 @@ export async function GET(req: Request) {
         return jsonError(msg || 'Failed to fetch league standings', res.status);
       }
       const data = await res.json().catch(() => null);
-      return json(data, 200);
+      return json(data, { status: 200, headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } }); // CDN 5 min (2026-09-10)
     }
 
     // My teams / all leagues leaderboard
@@ -91,7 +91,7 @@ export async function GET(req: Request) {
       return jsonError(msg || 'Failed to fetch standings', res.status);
     }
     const data = await res.json().catch(() => null);
-    return json(data, 200);
+    return json(data, { status: 200, headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } }); // CDN 5 min (2026-09-10)
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('Standings fetch failed:', err);
