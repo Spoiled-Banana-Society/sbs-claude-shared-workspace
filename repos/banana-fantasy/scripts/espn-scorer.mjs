@@ -411,6 +411,14 @@ async function main() {
   const lastF = join(STATE_DIR, `last-${GW}.json`);
   const last = !SEED && existsSync(lastF) ? JSON.parse(readFileSync(lastF, 'utf8')) : {};
   const next = {}; let changed = 0;
+  // Deferred mirrors (Boris 2026-09-11): `draftTokens` (feeds only the OpenSea score trait) and `drafts/{league}/cards`
+  // (read only by admin/repair tools) are written every MIRROR_EVERY_MS, or immediately when no game is live (finals
+  // flush). The three stores people actually look at — leaderboard, league scores (pods) and the owner copy (Teams
+  // cards via Go) — stay on every pass. Pending patches persist on disk so a deferred card is never lost.
+  const MIRROR_EVERY_MS = 30 * 60 * 1000;
+  const mirrorF = join(STATE_DIR, `mirror-${GW}.json`);
+  const mirror = existsSync(mirrorF) ? JSON.parse(readFileSync(mirrorF, 'utf8')) : { at: 0, pending: {} };
+  const flushMirrors = SEED || live === 0 || Date.now() - mirror.at >= MIRROR_EVERY_MS;
   const writer = db.bulkWriter();
   let notFound = 0, failed = 0;
   const failedCards = new Set(); // cardIds with a write that gave up — retried next pass
@@ -430,17 +438,26 @@ async function main() {
     w(writer.set(db.doc(`draftTokenLeaderboard/${GW}/cards/${c.CardId}`), doc));
     w(writer.set(db.doc(`drafts/${c.Card.LeagueId}/scores/${GW}/cards/${c.CardId}`), doc));
     const tokenPatch = { Rank: String(_rank), LeagueRank: String(_leagueRank), WeekScore: String(c.ScoreWeek), SeasonScore: String(c.ScoreSeason) };
-    w(writer.update(db.doc(`draftTokens/${c.CardId}`), tokenPatch));
     if (c.OwnerId) w(writer.update(db.doc(`owners/${c.OwnerId}/usedDraftTokens/${c.CardId}`), tokenPatch));
-    w(writer.update(db.doc(`drafts/${c.Card.LeagueId}/cards/${c.CardId}`), tokenPatch));
+    mirror.pending[c.CardId] = { leagueId: c.Card.LeagueId, patch: tokenPatch }; // draftTokens + drafts/cards: deferred
+  }
+  let mirrored = 0;
+  if (APPLY && flushMirrors) {
+    for (const [cardId, m] of Object.entries(mirror.pending)) {
+      w(writer.update(db.doc(`draftTokens/${cardId}`), m.patch));
+      w(writer.update(db.doc(`drafts/${m.leagueId}/cards/${cardId}`), m.patch));
+      mirrored++;
+    }
   }
   if (APPLY) {
     await writer.close();
     for (const id of failedCards) delete next[id]; // no signature → rewritten on the next pass
     writeFileSync(lastF, JSON.stringify(next));
+    if (flushMirrors) { mirror.at = Date.now(); mirror.pending = {}; }
+    writeFileSync(mirrorF, JSON.stringify(mirror));
     await db.collection('cron_heartbeats').doc('espn-scorer').set({ at: new Date().toISOString(), gameweek: GW, games: wk.games.length, live, final: done, cards: cards.length, changed });
   }
-  log(`cards changed: ${changed}${APPLY ? ` (written; missing-doc skips ${notFound}, failed ${failed})` : ' (dry)'}`);
+  log(`cards changed: ${changed}${APPLY ? ` (written; missing-doc skips ${notFound}, failed ${failed})` : ' (dry)'}; mirrors ${flushMirrors ? `flushed ${mirrored}` : `deferred (${Object.keys(mirror.pending).length} pending)`}`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error('SCORER FAILED', e); process.exit(1); });
