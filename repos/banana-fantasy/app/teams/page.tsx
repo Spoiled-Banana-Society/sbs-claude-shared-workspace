@@ -181,7 +181,9 @@ export default function StandingsPage() {
   const [leagueQuery, setLeagueQuery] = useState('');
   const [teamQuery, setTeamQuery] = useState('');
   const [teamsPage, setTeamsPage] = useState(0);
-  const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
+  // Season live: best league rank first (advancing teams on top), then the
+  // pre-season league-number orders.
+  const [sortOrder, setSortOrder] = useState<'rank' | 'oldest' | 'newest'>(() => (seasonUiLive() ? 'rank' : 'newest'));
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
   // keeps you on the same tab instead of bouncing back to All.
   const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'jackhof' | 'pro' | 'founder'>(() => {
@@ -294,6 +296,14 @@ export default function StandingsPage() {
     result.sort((a, b) => {
       const leagueNumA = parseInt(a.name.match(/#(\d+)/)?.[1] || '0', 10);
       const leagueNumB = parseInt(b.name.match(/#(\d+)/)?.[1] || '0', 10);
+      if (sortOrder === 'rank') {
+        // 1st..10th, unscored teams last; ties by season points, then newest league.
+        const ra = a.leagueRank > 0 ? a.leagueRank : 99;
+        const rb = b.leagueRank > 0 ? b.leagueRank : 99;
+        if (ra !== rb) return ra - rb;
+        if (a.seasonScore !== b.seasonScore) return b.seasonScore - a.seasonScore;
+        return leagueNumB - leagueNumA;
+      }
       if (leagueNumA !== leagueNumB) {
         return sortOrder === 'oldest' ? leagueNumA - leagueNumB : leagueNumB - leagueNumA;
       }
@@ -319,13 +329,18 @@ export default function StandingsPage() {
     setModalTab(tab);
   };
 
-  const handleOpenLeagueFromLookup = (draftId: string, options?: { tab?: string; wallet?: string }) => {
+  const handleOpenLeagueFromLookup = (draftId: string, options?: { tab?: string; wallet?: string; name?: string; level?: string }) => {
+    // The BBB # ("BBB #1324") is the user-facing league number; the draftId's
+    // trailing digits are the per-type counter and diverge from it.
     const leagueNum = draftId.match(/(\d+)$/)?.[1] || draftId;
+    const name = options?.name?.trim() ? options.name.trim().replace(/^BBB\s*#/, 'League #') : `League #${leagueNum}`;
+    const lvl = (options?.level || '').toLowerCase();
+    const type: ContestType = lvl.includes('jackhof') ? 'jackhof' : lvl.includes('jackpot') ? 'jackpot' : (lvl.includes('hof') || lvl.includes('hall')) ? 'hof' : 'regular';
     setModalLeague({
       id: draftId,
-      name: `League #${leagueNum}`,
+      name,
       contestId: '',
-      type: 'regular',
+      type,
       leagueRank: 0,
       weeklyRank: 0,
       weeklyScore: 0,
@@ -505,10 +520,10 @@ export default function StandingsPage() {
                   {/* Sort toggle (the chip already shows the count) */}
                   <div className="flex items-center justify-end px-1 mb-2">
                     <button
-                      onClick={() => setSortOrder(prev => prev === 'oldest' ? 'newest' : 'oldest')}
+                      onClick={() => setSortOrder(prev => prev === 'rank' ? 'newest' : prev === 'newest' ? 'oldest' : (seasonUiLive() ? 'rank' : 'newest'))}
                       className="text-white/30 text-xs hover:text-white/60 transition-colors"
                     >
-                      {sortOrder === 'oldest' ? 'Oldest first ↑' : 'Newest first ↓'}
+                      {sortOrder === 'rank' ? 'Best league rank first' : sortOrder === 'oldest' ? 'Oldest first ↑' : 'Newest first ↓'}
                     </button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-5">

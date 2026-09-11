@@ -5,6 +5,7 @@ import { useSWRLike } from '@/hooks/useSWRLike';
 import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 import { useAuth } from '@/hooks/useAuth';
 import { getOwnerLeaguesFromDraftTokens } from '@/lib/api/owner';
+import { promosRetired } from '@/lib/draftTypes';
 
 /**
  * Fetch the current user's leagues from the real backend.
@@ -28,7 +29,7 @@ export function useLeagues(opts?: { userId?: string; status?: 'active' | 'comple
   // finishing fires promo/notification stream pings), so a freshly-generated
   // team appears here live instead of only on reload/focus. Additive — the
   // mount fetch + focus-revalidate stay as the baseline.
-  useStreamRefetch(wallet, () => { void query.mutate(); });
+  useStreamRefetch(promosRetired() ? null : wallet, () => { void query.mutate(); }); // season closed: no live nudges
 
   return query;
 }

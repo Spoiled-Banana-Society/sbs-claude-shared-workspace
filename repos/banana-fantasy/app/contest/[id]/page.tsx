@@ -125,11 +125,11 @@ export default function ContestDetailsPage() {
 
             <p className="text-text-secondary text-sm mb-6">
               <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
-              The prize pool grows as more players enter.
+              Entries are closed.
               {contest.examplePaidDrafts && (
-                <> This breakdown is an example based on{' '}
-                  <span className="text-text-primary">{contest.examplePaidDrafts.toLocaleString()} paid drafts</span>{' '}
-                  — final payouts scale with the total pool.</>
+                <> This is the final prize breakdown for the{' '}
+                  <span className="text-text-primary">{contest.examplePaidDrafts.toLocaleString()} leagues</span>{' '}
+                  in the contest.</>
               )}
             </p>
 

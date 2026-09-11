@@ -8,6 +8,7 @@ import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
 import { bananaPlaceholderName } from '@/utils/helpers';
+import { promosRetired } from '@/lib/draftTypes';
 
 function draftsApi() {
   return createHttpClient({
@@ -71,6 +72,8 @@ export interface ApiDraftToken {
   };
   level: ApiDraftTokenLevel;
   rank?: string;
+  /** Standing inside the 10-team league (Go `_leagueRank`); `rank` is the overall weekly rank. */
+  leagueRank?: string;
   seasonScore?: string;
   weekScore?: string;
   prizes?: { USDC?: number; [k: string]: unknown };
@@ -201,7 +204,12 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
     token.level === 'JackHOF' ? 'jackhof' :
     token.level === 'Jackpot' ? 'jackpot' : token.level === 'Hall of Fame' ? 'hof' : 'pro';
 
-  const leagueRank = token.rank ? Number.parseInt(token.rank, 10) : 0;
+  // Go `_leagueRank` = standing inside the 10-team league (what "League Rank"
+  // means everywhere); `_rank` = overall WEEKLY rank across every card. The
+  // scorer writes both each pass. Pre-season both hold placeholder values, so
+  // every display gates on seasonUiLive().
+  const leagueRank = token.leagueRank ? Number.parseInt(token.leagueRank, 10) : 0;
+  const weeklyRank = token.rank ? Number.parseInt(token.rank, 10) : 0;
   const seasonScore = token.seasonScore ? Number(token.seasonScore) : 0;
   const weeklyScore = token.weekScore ? Number(token.weekScore) : 0;
 
@@ -258,8 +266,8 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
     name,
     contestId: '',
     type: contestType,
-    leagueRank: Number.isFinite(leagueRank) ? leagueRank : 0,
-    weeklyRank: 0,
+    leagueRank: Number.isFinite(leagueRank) && leagueRank >= 1 && leagueRank <= 10 ? leagueRank : 0,
+    weeklyRank: Number.isFinite(weeklyRank) ? weeklyRank : 0,
     weeklyScore: Number.isFinite(weeklyScore) ? weeklyScore : 0,
     seasonScore: Number.isFinite(seasonScore) ? seasonScore : 0,
     prizeIndicator: token.prizes?.USDC,
@@ -403,6 +411,7 @@ export async function getOwnerDraftTokens(
     leagueDisplayName: String(t._leagueDisplayName ?? t.leagueDisplayName ?? ''),
     level: (t._level ?? t.level ?? 'Pro') as ApiDraftTokenLevel,
     rank: t._rank != null ? String(t._rank) : t.rank != null ? String(t.rank) : undefined,
+    leagueRank: t._leagueRank != null ? String(t._leagueRank) : t.leagueRank != null ? String(t.leagueRank) : undefined,
     seasonScore: t._seasonScore != null ? String(t._seasonScore) : t.seasonScore != null ? String(t.seasonScore) : undefined,
     weekScore: t._weekScore != null ? String(t._weekScore) : t.weekScore != null ? String(t.weekScore) : undefined,
     roster: (t.roster ?? undefined) as ApiDraftToken['roster'],
@@ -476,7 +485,21 @@ export async function fetchOwnerSeatedFillingCount(walletAddress: string): Promi
  *
  * This is useful for pages that show a user's active leagues/teams.
  */
+const LEAGUES_MEMO_TTL_MS = 5 * 60 * 1000;
+const leaguesMemo = new Map<string, { at: number; data: League[] }>();
+/** Season closed (2026-09-10): a wallet's team list only changes via a marketplace sale now, so repeated
+ *  mounts / stream nudges within 5 min reuse the last answer instead of re-hitting the Go engine
+ *  (each Go call re-reads the owner's whole usedDraftTokens collection). */
 export async function getOwnerLeaguesFromDraftTokens(walletAddress: string): Promise<League[]> {
+  if (!promosRetired()) return getOwnerLeaguesFromDraftTokensUncached(walletAddress);
+  const key = walletAddress.toLowerCase();
+  const hit = leaguesMemo.get(key);
+  if (hit && Date.now() - hit.at < LEAGUES_MEMO_TTL_MS) return hit.data;
+  const data = await getOwnerLeaguesFromDraftTokensUncached(walletAddress);
+  leaguesMemo.set(key, { at: Date.now(), data });
+  return data;
+}
+async function getOwnerLeaguesFromDraftTokensUncached(walletAddress: string): Promise<League[]> {
   const tokens = await getOwnerDraftTokens(walletAddress);
   // Only map tokens that are in a league — available/unused tokens are not leagues
   // Deduplicate by leagueId — multiple tokens can be linked to the same league

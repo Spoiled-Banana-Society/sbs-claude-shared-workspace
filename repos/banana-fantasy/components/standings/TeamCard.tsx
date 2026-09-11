@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { isDraftingOpen } from '@/lib/draftTypes';
+import { isDraftingOpen, seasonUiLive } from '@/lib/draftTypes';
 import type { League } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
@@ -76,7 +76,19 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
   const config = typeConfig[league.type] || typeConfig.regular;
   const isCompleted = league.status === 'completed';
 
+  const inSeason = seasonUiLive();
+  const hasScores = league.leagueRank > 0 || league.seasonScore > 0 || league.weeklyScore > 0;
+
   const actionButtons: { tab: ModalTab; label: string; icon: React.ReactNode }[] = [
+    // Season live: Standings first — the pod is what people check on a Sunday.
+    ...(inSeason ? [{
+      tab: 'standings' as ModalTab, label: 'Standings',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+        </svg>
+      ),
+    }] : []),
     {
       tab: 'roster', label: 'Roster',
       icon: (
@@ -202,6 +214,24 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         )}
       </div>
 
+      {/* In-season numbers under the card art — the four columns last year's
+          lobby table had: League Rank · Weekly Rank · Weekly Score · Season
+          Score. Values come from the Go token doc the ESPN scorer stamps; the
+          card art above is never touched. */}
+      {inSeason && (
+        <div className="mx-4 mt-2 grid grid-cols-4 gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2 py-2">
+          <SeasonStat
+            label="League"
+            value={league.leagueRank > 0 ? ordinal(league.leagueRank) : '—'}
+            sub={league.leagueRank > 0 ? 'of 10' : undefined}
+            tone={league.leagueRank === 1 ? 'first' : league.leagueRank === 2 ? 'second' : 'plain'}
+          />
+          <SeasonStat label="Wk Rank" value={league.weeklyRank > 0 ? `#${league.weeklyRank}` : '—'} />
+          <SeasonStat label="Wk Pts" value={hasScores ? league.weeklyScore.toFixed(1) : '—'} />
+          <SeasonStat label="Season" value={hasScores ? league.seasonScore.toFixed(1) : '—'} tone="strong" />
+        </div>
+      )}
+
       {/* Best offer — only for LISTED teams (fetching offers for every owned
           team floods the rate limiter), mirrors the marketplace Sell tab. */}
       {isListed && mt?.tokenId && <TeamOfferLine tokenId={mt.tokenId} />}
@@ -221,12 +251,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
       )}
 
       {/* Actions */}
-      <div className="px-4 pb-4 pt-2 flex items-center gap-2">
+      <div className={`px-4 pb-4 pt-2 grid gap-1.5 ${actionButtons.length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
         {actionButtons.map(({ tab, label, icon }) => (
           <button
             key={tab}
             onClick={() => onOpenModal(league, tab)}
-            className="relative flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.07] text-white/55 hover:text-white/85 text-xs font-medium transition-colors"
+            className="relative min-w-0 flex items-center justify-center gap-1 px-1 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.07] text-white/55 hover:text-white/85 text-xs font-medium transition-colors"
           >
             {icon}
             {label}
@@ -239,6 +269,27 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         ))}
       </div>
 
+    </div>
+  );
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+// One cell of the in-season strip. 1st = banana, 2nd = green (advancing),
+// matching the Standings tab; "strong" = the season total.
+function SeasonStat({ label, value, sub, tone = 'plain' }: { label: string; value: string; sub?: string; tone?: 'plain' | 'first' | 'second' | 'strong' }) {
+  const color = tone === 'first' ? 'text-banana' : tone === 'second' ? 'text-green-400' : tone === 'strong' ? 'text-white' : 'text-white/80';
+  return (
+    <div className="min-w-0 text-center">
+      <p className="text-[9px] uppercase tracking-wider text-white/30 font-semibold truncate">{label}</p>
+      <p className={`font-mono font-bold text-sm leading-tight tabular-nums ${color}`}>
+        {value}
+        {sub && <span className="ml-0.5 text-[9px] font-normal text-white/30">{sub}</span>}
+      </p>
     </div>
   );
 }

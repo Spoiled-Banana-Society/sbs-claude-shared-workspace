@@ -19,7 +19,16 @@ function rowWallet(entry: unknown): string | null {
 
 interface LeaderboardViewProps {
   gameweek: string;
-  onOpenLeagueDetail?: (draftId: string, options?: { tab?: string; wallet?: string }) => void;
+  onOpenLeagueDetail?: (draftId: string, options?: { tab?: string; wallet?: string; name?: string; level?: string }) => void;
+}
+
+/** League fields off a global-leaderboard row (the /api/leaderboard route adds them). */
+function rowLeague(entry: unknown): { id: string; name: string; level: string } | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const o = entry as Record<string, unknown>;
+  const id = typeof o.leagueId === 'string' ? o.leagueId : '';
+  if (!id) return null;
+  return { id, name: typeof o.leagueName === 'string' ? o.leagueName : '', level: typeof o.level === 'string' ? o.level : '' };
 }
 
 type LevelFilter = 'all' | 'Pro' | 'HOF' | 'Jackpot' | 'JackHOF';
@@ -339,12 +348,19 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
 
           {/* Rows */}
           <div className="divide-y divide-white/[0.04]">
-            {pageEntries.map((entry, idx) => (
+            {pageEntries.map((entry, idx) => {
+              // Row → that team's league pod (Standings tab, this team highlighted).
+              const lg = rowLeague(entry);
+              const clickable = !!lg && !!onOpenLeagueDetail;
+              return (
               <div
                 key={`${entry.rank}-${idx}`}
+                onClick={clickable ? () => onOpenLeagueDetail!(lg!.id, { tab: 'standings', wallet: rowWallet(entry) || undefined, name: lg!.name, level: lg!.level }) : undefined}
+                role={clickable ? 'button' : undefined}
                 className={`
                   grid grid-cols-[40px_1fr_80px_80px] sm:grid-cols-[50px_1fr_100px_100px] gap-2 px-4 py-3 items-center transition-colors
-                  ${entry.isCurrentUser ? 'bg-banana/[0.08]' : 'hover:bg-white/[0.03]'}
+                  ${clickable ? 'cursor-pointer' : ''}
+                  ${entry.isCurrentUser ? 'bg-banana/[0.08] hover:bg-banana/[0.12]' : 'hover:bg-white/[0.04]'}
                 `}
               >
                 {/* Rank */}
@@ -386,8 +402,12 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
                   {formatScore(entry.seasonScore)}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
+          {onOpenLeagueDetail && (
+            <p className="text-white/25 text-[10px] text-center py-2 border-t border-white/[0.04]">Click a team to open its league</p>
+          )}
         </div>
       )}
 

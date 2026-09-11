@@ -7,6 +7,7 @@ import { getDraftsApiUrl } from '@/lib/staging';
 import type { League, Ripeness } from '@/types';
 import { LeagueChat } from '@/components/standings/LeagueChat';
 import { seasonUiLive } from '@/lib/draftTypes';
+import { currentGameweek, currentWeekNumber } from '@/lib/season';
 import { useAuth } from '@/hooks/useAuth';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
@@ -64,6 +65,48 @@ interface PlayerRoster {
   pfpDisplayName: string;
 }
 
+/** One roster slot as the ESPN scorer scored it (Go CardScores.Roster). */
+interface ScoredSlot {
+  playerId: string;
+  scoreWeek: number;
+  scoreSeason: number;
+  isUsedInCardScore: boolean;
+}
+interface ScoredCard {
+  scoreWeek: number;
+  scoreSeason: number;
+  weeklyRank: number;
+  leagueRank: number;
+  roster: Record<string, ScoredSlot[]>;
+}
+
+/** Parse one /api/standings league row (Go league leaderboard entry) → ScoredCard. */
+function parseScoredCard(raw: Record<string, unknown>): ScoredCard {
+  const card = (raw.card || {}) as Record<string, unknown>;
+  const toNum = (v: unknown): number => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '')); return Number.isFinite(n) ? n : 0; };
+  const rosterRaw = (raw.roster || {}) as Record<string, unknown>;
+  const roster: Record<string, ScoredSlot[]> = {};
+  for (const pos of POSITION_ORDER) {
+    const arr = Array.isArray(rosterRaw[pos]) ? (rosterRaw[pos] as unknown[]) : [];
+    roster[pos] = arr.map((p) => {
+      const o = (p || {}) as Record<string, unknown>;
+      return {
+        playerId: String(o.playerId ?? ''),
+        scoreWeek: toNum(o.scoreWeek),
+        scoreSeason: toNum(o.scoreSeason),
+        isUsedInCardScore: !!o.isUsedInCardScore,
+      };
+    });
+  }
+  return {
+    scoreWeek: toNum(raw.scoreWeek),
+    scoreSeason: toNum(raw.scoreSeason),
+    weeklyRank: Math.trunc(toNum(card._rank)),
+    leagueRank: Math.trunc(toNum(card._leagueRank)),
+    roster,
+  };
+}
+
 function parseRoster(raw: Record<string, unknown>): PlayerRoster {
   const result: PlayerRoster = { QB: [], RB: [], WR: [], TE: [], DST: [], pfpDisplayName: '' };
   const pfp = (raw.PFP || {}) as Record<string, unknown>;
@@ -114,7 +157,10 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [isClosing, setIsClosing] = useState(false);
   const config = typeConfig[league.type] || typeConfig.regular;
   const draftId = league.id;
-  const isPlayerDetail = !!initialPlayer;
+  // A leaderboard row opens the league on the Standings tab with that team
+  // preselected (tabs stay visible so the pod is one tap away); the legacy
+  // single-team detail mode is only for callers that ask for the roster.
+  const isPlayerDetail = !!initialPlayer && initialTab !== 'standings';
   const cardFetchWallet = initialPlayer || walletAddress;
 
   // Roster state
@@ -143,6 +189,12 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     rank: number;
     leagueRank: number;
   }>>({});
+
+  // Per-owner SCORED rosters (week/season points per slot + which slots
+  // counted) — one call for the whole league via /api/standings → Go league
+  // leaderboard, written by the ESPN scorer. Powers the points breakdown on
+  // the Roster tab and backfills the Standings tab. Keyed by lowercase owner.
+  const [scoredByOwner, setScoredByOwner] = useState<Record<string, ScoredCard>>({});
 
   const handleClose = useCallback(() => {
     setIsClosing(true);
@@ -263,6 +315,35 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     })();
   }, [draftId, playerKeys]);
 
+  // Fetch the scored rosters once per league (season live only). Deps are
+  // scalars — no fetch-per-render (CLAUDE.md render-loop rule).
+  useEffect(() => {
+    if (!draftId || !seasonUiLive()) return;
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        const wallet = walletAddress || '0x0000000000000000000000000000000000000000';
+        const q = new URLSearchParams({ wallet, draftId, gameweek: currentGameweek(), orderBy: 'scoreSeason' });
+        const res = await fetch(`/api/standings?${q.toString()}`, { signal: ctrl.signal });
+        if (!res.ok) return;
+        const body = (await res.json()) as unknown;
+        const rows: unknown[] = Array.isArray(body) ? body
+          : body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>).leaderboard) ? ((body as Record<string, unknown>).leaderboard as unknown[])
+          : [];
+        const map: Record<string, ScoredCard> = {};
+        for (const r of rows) {
+          if (!r || typeof r !== 'object') continue;
+          const o = r as Record<string, unknown>;
+          const owner = String(o.ownerId ?? (o.card as Record<string, unknown> | undefined)?._ownerId ?? '').toLowerCase();
+          if (!owner) continue;
+          map[owner] = parseScoredCard(o);
+        }
+        if (!ctrl.signal.aborted) setScoredByOwner(map);
+      } catch { /* silent — roster tab falls back to BYE/ADP/Pick */ }
+    })();
+    return () => ctrl.abort();
+  }, [draftId, walletAddress]);
+
   // Fetch team card (for the target player — initialPlayer or current user)
   useEffect(() => {
     if (!cardFetchWallet || !draftId) { setTeamLoading(false); return; }
@@ -314,6 +395,75 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
 
   const roster = allRosters[selectedPlayer];
 
+  // Roster table: pre-season it's BYE / ADP / Pick; once the scorer has this
+  // card it becomes the points breakdown — BYE / Wk / Season per slot, with
+  // the slots that COUNTED this week in green (last year's convention).
+  const scoredCard = scoredByOwner[(selectedPlayer || '').toLowerCase()];
+  const renderRosterTable = () => {
+    if (!roster) return null;
+    const inSeason = seasonUiLive() && !!scoredCard;
+    const norm = (id: string) => id.toUpperCase().replace(/\s+/g, '');
+    const th = 'w-11 text-center text-white/30 text-[10px] font-bold uppercase';
+    return (
+      <>
+        {inSeason && (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2 mb-1 text-xs">
+            <span className="text-white/50">Week {currentWeekNumber()}</span>
+            <span className="text-white font-bold tabular-nums">{scoredCard.scoreWeek.toFixed(1)} <span className="text-white/40 font-normal">wk</span></span>
+            <span className="text-white font-bold tabular-nums">{scoredCard.scoreSeason.toFixed(1)} <span className="text-white/40 font-normal">season</span></span>
+            <span className="text-green-400/80 text-[10px] text-right leading-tight">green = counted<br /><span className="text-white/30">updates as games finish</span></span>
+          </div>
+        )}
+        {/* Header row */}
+        <div className="flex items-center py-2 border-b border-white/[0.08]">
+          <div className="flex-1" />
+          <div className={th}>BYE</div>
+          <div className={th}>{inSeason ? 'Wk' : 'ADP'}</div>
+          <div className={inSeason ? 'w-14 text-center text-white/30 text-[10px] font-bold uppercase' : th}>{inSeason ? 'Season' : 'Pick'}</div>
+        </div>
+        {POSITION_ORDER.map((pos) => {
+          const players = roster[pos] || [];
+          if (players.length === 0) return null;
+          const color = POS_COLORS[pos];
+          const scoredSlots = inSeason ? (scoredCard.roster[pos] || []) : [];
+          return (
+            <div key={pos} className="border-b border-white/[0.06] pb-3">
+              <p className="font-bold pt-4 pb-1 text-lg" style={{ color }}>{pos}</p>
+              {players.map((player) => {
+                const sc = inSeason ? scoredSlots.find((x) => norm(x.playerId) === norm(player.playerId)) : undefined;
+                const counted = !!sc?.isUsedInCardScore;
+                return (
+                  <div
+                    key={player.playerId + player.pickNum}
+                    className="flex items-center py-1.5 pl-2.5"
+                    style={{ borderLeft: `2px solid ${color}` }}
+                  >
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                      <p className={`font-bold uppercase text-xs truncate ${counted ? 'text-green-400' : 'text-white'}`}>{player.playerId}</p>
+                      {counted && <span className="text-green-400 text-[10px] leading-none" aria-label="Counted this week">✓</span>}
+                    </div>
+                    <div className="w-11 text-center text-white text-xs font-bold">{player.byeWeek}</div>
+                    {inSeason ? (
+                      <>
+                        <div className={`w-11 text-center text-xs font-bold tabular-nums ${counted ? 'text-green-400' : 'text-white/70'}`}>{sc ? sc.scoreWeek.toFixed(1) : '—'}</div>
+                        <div className="w-14 text-center text-white text-xs font-bold tabular-nums">{sc ? sc.scoreSeason.toFixed(1) : '—'}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-11 text-center text-white text-xs font-bold">{player.adp || '-'}</div>
+                        <div className="w-11 text-center text-white text-xs font-bold">{player.pickNum}</div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </>
+    );
+  };
+
   // Build standings entries from roster data + per-owner scores. Sorted
   // by leagueRank (season standing) once scores load; falls back to
   // playerKeys order while scores are pending.
@@ -325,7 +475,8 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
         ? POSITION_ORDER.reduce((sum, pos) => sum + (r[pos]?.length || 0), 0)
         : 0;
       const displayName = resolveUser(key).name;
-      const score = scoresByOwner[key];
+      const sc = scoredByOwner[key.toLowerCase()];
+      const score = scoresByOwner[key] ?? (sc ? { seasonScore: sc.scoreSeason, weekScore: sc.scoreWeek, rank: sc.weeklyRank, leagueRank: sc.leagueRank } : undefined);
       return {
         ownerKey: key,
         displayName,
@@ -344,7 +495,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       if (b.hasScores) return 1;
       return 0;
     });
-  }, [playerKeys, allRosters, walletAddress, scoresByOwner, resolveUser]);
+  }, [playerKeys, allRosters, walletAddress, scoresByOwner, scoredByOwner, resolveUser]);
 
   // Build board grid
   const { boardGrid, drafterOrder } = useMemo(() => {
@@ -630,38 +781,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                 </div>
               ) : roster ? (
                 <>
-                  {/* Header row */}
-                  <div className="flex items-center py-2 border-b border-white/[0.08]">
-                    <div className="flex-1" />
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">BYE</div>
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">ADP</div>
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">Pick</div>
-                  </div>
-
-                  {POSITION_ORDER.map((pos) => {
-                    const players = roster[pos] || [];
-                    if (players.length === 0) return null;
-                    const color = POS_COLORS[pos];
-                    return (
-                      <div key={pos} className="border-b border-white/[0.06] pb-3">
-                        <p className="font-bold pt-4 pb-1 text-lg" style={{ color }}>{pos}</p>
-                        {players.map((player) => (
-                          <div
-                            key={player.playerId + player.pickNum}
-                            className="flex items-center py-1.5 pl-2.5"
-                            style={{ borderLeft: `2px solid ${color}` }}
-                          >
-                            <div className="flex-1">
-                              <p className="text-white font-bold uppercase text-xs">{player.playerId}</p>
-                            </div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.byeWeek}</div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.adp || '-'}</div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.pickNum}</div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
+                  {renderRosterTable()}
                 </>
               ) : (
                 <p className="text-white/40 text-sm text-center py-8">No roster data available</p>
@@ -727,40 +847,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                     </div>
                   )}
 
-                  {/* Header row */}
-                  <div className="flex items-center py-2 border-b border-white/[0.08]">
-                    <div className="flex-1" />
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">BYE</div>
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">ADP</div>
-                    <div className="w-11 text-center text-white/30 text-[10px] font-bold uppercase">Pick</div>
-                  </div>
-
-                  {/* Roster by position */}
-                  {POSITION_ORDER.map((pos) => {
-                    const players = roster[pos] || [];
-                    if (players.length === 0) return null;
-                    const color = POS_COLORS[pos];
-
-                    return (
-                      <div key={pos} className="border-b border-white/[0.06] pb-3">
-                        <p className="font-bold pt-4 pb-1 text-lg" style={{ color }}>{pos}</p>
-                        {players.map((player) => (
-                          <div
-                            key={player.playerId + player.pickNum}
-                            className="flex items-center py-1.5 pl-2.5"
-                            style={{ borderLeft: `2px solid ${color}` }}
-                          >
-                            <div className="flex-1">
-                              <p className="text-white font-bold uppercase text-xs">{player.playerId}</p>
-                            </div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.byeWeek}</div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.adp || '-'}</div>
-                            <div className="w-11 text-center text-white text-xs font-bold">{player.pickNum}</div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
+                  {renderRosterTable()}
                 </>
               ) : (
                 <p className="text-white/40 text-sm text-center py-8">No roster data available</p>
@@ -955,7 +1042,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                               grid grid-cols-[36px_1fr_44px_56px_64px] gap-2 px-3 py-2.5 rounded-lg items-center cursor-pointer transition-colors
                               ${entry.isCurrentUser
                                 ? 'bg-banana/[0.08] ring-1 ring-banana/20 hover:bg-banana/[0.12]'
-                                : 'hover:bg-white/[0.04]'
+                                : initialPlayer && entry.ownerKey.toLowerCase() === initialPlayer.toLowerCase()
+                                  ? 'bg-white/[0.05] ring-1 ring-white/20 hover:bg-white/[0.08]'
+                                  : 'hover:bg-white/[0.04]'
                               }
                             `}
                           >

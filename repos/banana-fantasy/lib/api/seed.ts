@@ -86,31 +86,33 @@ const seedContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
-    examplePaidDrafts: 5000,
+    examplePaidDrafts: 1383,
     prizeBreakdown: [
-      // Championship finals — $48,630
+      // Final list (entries closed Wed 2026-09-09 4:00 PM PT, 1,383 leagues). Totals exactly $100,000.
+      // Finals — $55,510 (every finalist paid, ~155 in the final)
       { place: '1st', amount: 25000, section: 'Finals' },
-      { place: '2nd', amount: 6000, section: 'Finals' },
-      { place: '3rd', amount: 3500, section: 'Finals' },
-      { place: '4th', amount: 2100, section: 'Finals' },
-      { place: '5th', amount: 1600, section: 'Finals' },
-      { place: '6th', amount: 1330, section: 'Finals' },
-      { place: '7th', amount: 1130, section: 'Finals' },
-      { place: '8th', amount: 960, section: 'Finals' },
-      { place: '9th', amount: 810, section: 'Finals' },
-      { place: '10th', amount: 700, section: 'Finals' },
+      { place: '2nd', amount: 6500, section: 'Finals' },
+      { place: '3rd', amount: 3800, section: 'Finals' },
+      { place: '4th', amount: 2300, section: 'Finals' },
+      { place: '5th', amount: 1750, section: 'Finals' },
+      { place: '6th', amount: 1450, section: 'Finals' },
+      { place: '7th', amount: 1250, section: 'Finals' },
+      { place: '8th', amount: 1050, section: 'Finals' },
+      { place: '9th', amount: 900, section: 'Finals' },
+      { place: '10th', amount: 760, section: 'Finals' },
       { place: '11th–25th', amount: 200, note: 'each', section: 'Finals' },
       { place: '26th–50th', amount: 100, note: 'each', section: 'Finals' },
-      // Weekly prizes — top 5 each week, Weeks 1–14 (~$6,370 total, trimmed from 2nd–7th)
+      { place: '51st–155th', amount: 50, note: 'each', section: 'Finals' },
+      // Weekly — $6,370
       { place: '1st', amount: 250, note: 'each week', section: 'Weekly (Weeks 1–14)' },
       { place: '2nd', amount: 100, note: 'each week', section: 'Weekly (Weeks 1–14)' },
       { place: '3rd', amount: 50, note: 'each week', section: 'Weekly (Weeks 1–14)' },
       { place: '4th', amount: 35, note: 'each week', section: 'Weekly (Weeks 1–14)' },
       { place: '5th', amount: 20, note: 'each week', section: 'Weekly (Weeks 1–14)' },
-      // Per-league prizes — $40,000 (scale with number of leagues)
-      { place: 'Regular-Season League Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
-      { place: 'Playoff Round 1 Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
-      // Hall of Fame track — $5,000
+      // League prizes — $33,120 (1,383 league winners × $20 + ~273 week 15 pod winners × $20)
+      { place: 'Regular-Season League Winner', amount: 20, note: 'each · 1,383 leagues', section: 'League Prizes' },
+      { place: 'Playoff Round 1 Winner', amount: 20, note: 'each · 1st in every week 15 pod', section: 'League Prizes' },
+      // Hall of Fame — $5,000
       { place: 'HOF 1st', amount: 3000, section: 'Hall of Fame' },
       { place: 'HOF 2nd', amount: 1200, section: 'Hall of Fame' },
       { place: 'HOF 3rd', amount: 800, section: 'Hall of Fame' },

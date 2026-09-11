@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(_req: Request, { params }: { params: { tokenId: string } }) {
   const tokenId = String(params.tokenId || '').trim().replace(/\.json$/i, '');
-  const headers = { 'content-type': 'application/json', 'cache-control': 'public, max-age=30, s-maxage=60' };
+  const headers = { 'content-type': 'application/json', 'cache-control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400' };
   if (!/^\d+$/.test(tokenId)) {
     return new Response(JSON.stringify({ error: 'invalid token id' }), { status: 400, headers });
   }
