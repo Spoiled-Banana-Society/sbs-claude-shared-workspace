@@ -373,6 +373,17 @@ async function main() {
     for (const b of big.slice(0, 40)) log('   ', b);
     return;
   }
+  // Idle skip (Boris 2026-09-11): scores cannot move while no game is in progress. If the previous pass already
+  // applied the same set of finals for this gameweek, stop here — before the token/prev-season reads and the card
+  // scoring — and just refresh the heartbeat. Any game going live (or a new final) makes the next pass run fully.
+  if (APPLY && !SEED && live === 0) {
+    const hb = (await db.collection('cron_heartbeats').doc('espn-scorer').get()).data() || {};
+    if (hb.gameweek === GW && hb.games === wk.games.length && hb.final === done && (hb.live ?? 0) === 0) {
+      await db.collection('cron_heartbeats').doc('espn-scorer').set({ at: new Date().toISOString(), skipped: 'no live games, finals already applied' }, { merge: true });
+      log(`no live games and ${done}/${wk.games.length} finals already applied — skipping pass`);
+      return;
+    }
+  }
   const statsDoc = { source: 'espn', gameweek: GW, updatedAt: new Date().toISOString(), games: wk.games, offense: wk.players.map((p) => ({ ...p })), defense: wk.defenses };
   if (APPLY) {
     await db.collection('scores').doc(GW).set(scoresDoc);
