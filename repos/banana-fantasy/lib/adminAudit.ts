@@ -13,6 +13,7 @@ export type AdminAction =
   | 'deny-withdrawal'
   | 'mark-paid-withdrawal'
   | 'grant-prize'
+  | 'weekly-prizes-award'
   | 'set-entries'
   | 'create-promo'
   | 'reset-queue'

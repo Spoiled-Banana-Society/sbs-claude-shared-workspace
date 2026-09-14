@@ -13,6 +13,7 @@ import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
 import { useFounderTeams } from '@/hooks/useFounderTeams';
+import { useCardWinnings } from '@/hooks/useCardWinnings';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import { currentWeekNumber, gameweekString } from '@/lib/season';
@@ -85,6 +86,8 @@ export default function StandingsPage() {
     data: leaguesQueryRaw.data.filter(l => l.roster.length >= 15),
   }), [leaguesQueryRaw]);
   const { data: currentGameweek } = useGameweek();
+  // Weekly prize money on this wallet's cards (one small fetch; no polling).
+  const cardWinnings = useCardWinnings({ userId: user?.walletAddress });
 
   // Live updates: revalidate teams + NFTs when the tab regains focus, so a team
   // drafted elsewhere shows up here without a manual refresh. Ref pattern keeps
@@ -539,6 +542,13 @@ export default function StandingsPage() {
                         walletAddress={user?.walletAddress}
                         marketplaceTeam={nftByLeague.get(league.id) ?? null}
                         isFounder={founderTeamIds.has(nftByLeague.get(league.id)?.tokenId ?? '')}
+                        winningsOnCard={cardWinnings.byToken.get(nftByLeague.get(league.id)?.tokenId ?? league.tokenId ?? '')?.onCard ?? 0}
+                        onTransferWinnings={async (l) => {
+                          const tok = nftByLeague.get(l.id)?.tokenId ?? l.tokenId;
+                          if (!tok) return;
+                          if (!confirm('Move this team\'s winnings into your Winnings balance? You can withdraw from there.')) return;
+                          await cardWinnings.transfer([tok]);
+                        }}
                         onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); setTimeout(() => refetchMyNfts(), 12000); }}
                         onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); setTimeout(() => refetchMyNfts(), 12000); }}
                       />

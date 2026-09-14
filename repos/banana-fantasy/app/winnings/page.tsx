@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrizes, useEligibility } from '@/hooks/usePrizes';
+import { useCardWinnings } from '@/hooks/useCardWinnings';
 import { WithdrawModal } from '@/components/modals/WithdrawModal';
 import { SelfCashOutModal } from '@/components/modals/SelfCashOutModal';
 import { VerificationModal } from '@/components/modals/VerificationModal';
@@ -19,6 +20,26 @@ export default function PrizesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prizesQuery = usePrizes({ userId: user?.walletAddress ?? user?.id });
+  // Weekly prize money still sitting ON the cards (2026-09-14). Transfer = card → site balance
+  // (the Winnings pot below). No KYC on this hop; KYC is on withdraw only.
+  const cardWinnings = useCardWinnings({ userId: user?.walletAddress });
+  const [transferringCards, setTransferringCards] = useState(false);
+  const handleTransferCards = async (tokenIds?: string[]) => {
+    if (transferringCards) return;
+    setTransferringCards(true);
+    setWithdrawSuccess(null);
+    try {
+      const res = await cardWinnings.transfer(tokenIds);
+      await prizesQuery.refresh();
+      setWithdrawSuccess(res.total > 0
+        ? `Moved $${res.total.toFixed(2)} from ${res.transferred.length} ${res.transferred.length === 1 ? 'team' : 'teams'} into your Winnings. Withdraw below whenever you like.`
+        : `✗ Nothing moved${res.skipped[0]?.reason ? ` — ${res.skipped[0].reason}` : ''}.`);
+    } catch (err) {
+      setWithdrawSuccess(`✗ ${err instanceof Error ? err.message : 'Transfer failed'}`);
+    } finally {
+      setTransferringCards(false);
+    }
+  };
   const eligibilityQuery = useEligibility({ userId: user?.walletAddress ?? user?.id });
   const prizes = prizesQuery.prizes;
   const eligibility = eligibilityQuery.data;
@@ -134,7 +155,7 @@ export default function PrizesPage() {
   const handleTransferWinnings = async () => {
     if (!withdrawAll || withdrawing) return;
     const display = formatBalance(availableBalance);
-    if (!confirm(`Transfer ${display} of winnings to your balance? It can take up to 2–3 days to land.`)) return;
+    if (!confirm(`Withdraw ${display}? It's sent to your wallet — up to 2–3 days.`)) return;
     setWithdrawing(true);
     setWithdrawSuccess(null);
     try {
@@ -238,7 +259,7 @@ export default function PrizesPage() {
                   Winnings (prizes we're holding, on the cards). No longer
                   summed into one misleading "available" number. Winnings is
                   dormant ($0) until the season produces prizes. */}
-              <div className={`grid gap-3 ${showWinnings ? 'sm:grid-cols-2' : ''} mb-3`}>
+              <div className={`grid gap-3 ${showWinnings ? (cardWinnings.total > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2') : ''} mb-3`}>
 
                 {/* ---- Balance ---- */}
                 <div className="rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-8">
@@ -287,7 +308,40 @@ export default function PrizesPage() {
                   )}
                 </div>
 
-                {/* ---- Winnings (hidden until the season starts) ---- */}
+                {/* ---- On your cards: weekly prizes not yet moved into Winnings ---- */}
+                {showWinnings && cardWinnings.total > 0 && (
+                <div className="rounded-3xl border border-banana/25 bg-banana/[0.05] p-6 sm:p-8">
+                  <p className="text-[13px] font-medium text-text-muted">On your cards</p>
+                  <p className="mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-banana">{formatBalance(cardWinnings.total)}</p>
+                  <p className="mt-1 text-[12px] text-text-muted">Weekly prizes sitting on your teams · move them into Winnings to withdraw</p>
+                  <div className="mt-6 flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={() => { void handleTransferCards(); }}
+                      disabled={transferringCards}
+                      className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-60 text-black font-semibold text-sm transition"
+                    >
+                      {transferringCards ? 'Moving…' : `Transfer all (${cardWinnings.cards.length})`}
+                    </button>
+                    <p className="text-[11px] text-text-muted">No verification needed for this step</p>
+                  </div>
+                  <ul className="mt-5 divide-y divide-white/[0.06]">
+                    {cardWinnings.cards.map((c) => (
+                      <li key={c.tokenId} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-white truncate">{c.leagueName || `Team #${c.tokenId}`}</p>
+                          <p className="text-[11px] text-text-muted truncate">{c.awards.map((a) => `Week ${a.week} · ${a.place === 1 ? '1st' : a.place === 2 ? '2nd' : a.place === 3 ? '3rd' : `${a.place}th`} overall`).join(' · ')}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-bold text-banana tabular-nums">{formatBalance(c.onCard)}</span>
+                          <button onClick={() => { void handleTransferCards([c.tokenId]); }} disabled={transferringCards} className="text-xs font-bold px-3 py-1.5 rounded-full border border-banana/40 text-banana hover:bg-banana hover:text-black transition disabled:opacity-60">Transfer</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                )}
+
+                {/* ---- Winnings (site balance: transferred prizes, ready to withdraw) ---- */}
                 {showWinnings && (
                 <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-6 sm:p-8">
                   <p className="text-[13px] font-medium text-text-muted">Winnings</p>
@@ -295,7 +349,7 @@ export default function PrizesPage() {
                     {hasPrizeError ? '—' : formatBalance(winningsAvailable)}
                   </p>
                   <p className="mt-1 text-[12px] text-text-muted">
-                    {hasWinnings ? (isEmbeddedWallet ? 'Prizes on your cards · ready to transfer' : 'Prizes on your cards · ready to cash out') : 'Prizes you win land here'}
+                    {hasWinnings ? 'Ready to withdraw · sent to your wallet' : 'Prizes you win land here'}
                   </p>
 
                   <div className="mt-6">
@@ -307,10 +361,10 @@ export default function PrizesPage() {
                             disabled={withdrawing}
                             className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
                           >
-                            {withdrawing ? (isEmbeddedWallet ? 'Transferring…' : 'Cashing out…') : (isEmbeddedWallet ? 'Transfer to balance' : 'Cash out')}
+                            {withdrawing ? 'Withdrawing…' : 'Withdraw'}
                           </button>
                           <p className="text-[11px] text-text-muted ml-auto text-right">
-                            {isEmbeddedWallet ? 'Then cash out · up to 2–3 days' : 'Sent to your wallet · up to 2–3 days'}
+                            Sent to your wallet · up to 2–3 days
                           </p>
                         </div>
                       ) : (
@@ -319,7 +373,7 @@ export default function PrizesPage() {
                             onClick={() => setShowVerifyModal(true)}
                             className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
                           >
-                            {isEmbeddedWallet ? 'Verify to transfer' : 'Verify to cash out'}
+                            Verify to withdraw
                           </button>
                           <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
                         </div>

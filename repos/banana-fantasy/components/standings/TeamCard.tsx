@@ -29,6 +29,10 @@ interface TeamCardProps {
   onCancelled?: (tokenId: string) => void;
   /** True when this team was drafted in a Founder Draft → show the FOUNDER pill. */
   isFounder?: boolean;
+  /** Weekly prize money still sitting on this card (2026-09-14). */
+  winningsOnCard?: number;
+  /** Move this card's winnings into the owner's Winnings balance. */
+  onTransferWinnings?: (league: League) => void | Promise<void>;
 }
 
 const typeConfig = {
@@ -39,7 +43,7 @@ const typeConfig = {
   jackhof: { label: 'JackHOF', pill: 'bg-gradient-to-r from-jackpot to-hof', border: 'border-red-500/30', bg: 'bg-gradient-to-b from-red-500/[0.05] via-[#D4AF37]/[0.05] to-transparent', text: 'text-hof' },
 };
 
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, isFounder }: TeamCardProps) {
+export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, isFounder, winningsOnCard, onTransferWinnings }: TeamCardProps) {
   const unreadCount = useUnreadChatCount(league.id, walletAddress);
 
   const mt = marketplaceTeam;
@@ -229,6 +233,20 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           <SeasonStat label="Wk Rank" value={league.weeklyRank > 0 ? `#${league.weeklyRank}` : '—'} />
           <SeasonStat label="Wk Pts" value={hasScores ? league.weeklyScore.toFixed(1) : '—'} />
           <SeasonStat label="Season" value={hasScores ? league.seasonScore.toFixed(1) : '—'} tone="strong" />
+        </div>
+      )}
+
+      {/* Weekly prize on this card (Boris 2026-09-14: money lives on the card until transferred) */}
+      {winningsOnCard != null && winningsOnCard > 0 && (
+        <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg border border-banana/30 bg-banana/[0.08] px-3 py-2">
+          <span className="text-sm font-bold text-banana tabular-nums">
+            ${winningsOnCard.toFixed(2)} <span className="text-[10px] font-semibold text-banana/70 uppercase tracking-wide">won</span>
+          </span>
+          {onTransferWinnings && (
+            <button onClick={() => { void onTransferWinnings(league); }} className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-banana text-black hover:brightness-110 transition">
+              Transfer to Winnings
+            </button>
+          )}
         </div>
       )}
 
