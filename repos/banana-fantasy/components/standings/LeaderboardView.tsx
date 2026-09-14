@@ -19,6 +19,9 @@ function rowWallet(entry: unknown): string | null {
 
 interface LeaderboardViewProps {
   gameweek: string;
+  /** Gameweeks the user may view (oldest → newest). When given with onGameweekChange, a week picker renders. */
+  weekOptions?: string[];
+  onGameweekChange?: (gameweek: string) => void;
   onOpenLeagueDetail?: (draftId: string, options?: { tab?: string; wallet?: string; name?: string; level?: string }) => void;
 }
 
@@ -44,7 +47,7 @@ const filterPills: { id: LevelFilter; label: string; color: string }[] = [
 
 const PAGE_SIZE = 20;
 
-export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardViewProps) {
+export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpenLeagueDetail }: LeaderboardViewProps) {
   const [level, setLevel] = useState<LevelFilter>('all');
   const [sortField, setSortField] = useState<SortField>('SeasonScore');
   const [page, setPage] = useState(0);
@@ -180,6 +183,28 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
           </button>
         </div>
       </div>
+
+      {/* Week picker — only once more than one week exists (season 2026-09-14:
+          Week 1 stays viewable after the Tuesday 3am PT rollover). */}
+      {weekOptions && weekOptions.length > 1 && onGameweekChange && (
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <span className="text-[11px] uppercase tracking-wide text-white/30 font-semibold">Week</span>
+          {weekOptions.map((gw) => {
+            const n = gw.match(/(\d+)$/)?.[1] ?? gw;
+            return (
+              <button
+                key={gw}
+                onClick={() => { onGameweekChange(gw); setPage(0); }}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${
+                  gw === gameweek ? 'bg-white/20 text-white ring-1 ring-white/30' : 'bg-white/[0.04] text-white/40 hover:text-white/60'
+                }`}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* League lookup */}
       <div className="flex items-center gap-2 mb-5">

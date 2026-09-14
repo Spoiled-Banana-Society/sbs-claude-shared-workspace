@@ -23,6 +23,8 @@ interface LeagueDetailModalProps {
   /** The NEW obsidian team card image (from the marketplace index). Preferred
    *  over the legacy Go `_imageUrl` so the Team tab shows the current card. */
   imageUrl?: string | null;
+  /** Gameweek to show scores for (default: the current week). Lets the Teams page's week picker open a past week's pod. */
+  gameweek?: string;
   onClose: () => void;
 }
 
@@ -151,7 +153,9 @@ const NUM_TEAMS = 10;
 const BOARD_COLS = 'repeat(10, minmax(110px, 1fr))';
 const NUM_ROUNDS = 15;
 
-export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, onClose }: LeagueDetailModalProps) {
+export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, gameweek: gameweekProp, onClose }: LeagueDetailModalProps) {
+  const gameweek = gameweekProp || currentGameweek();
+  const weekNumber = Number(gameweek.match(/(\d+)$/)?.[1]) || currentWeekNumber();
   const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ModalTab>(initialTab);
   const [isClosing, setIsClosing] = useState(false);
@@ -234,7 +238,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       } catch { /* silent */ }
       finally { setRostersLoading(false); }
     })();
-  }, [draftId, walletAddress]);
+  }, [draftId, walletAddress, gameweek]);
 
   // Fetch board data — re-fetches if the summary comes back short of the
   // expected 150 picks. The Go API occasionally returns the last pick(s)
@@ -323,7 +327,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     (async () => {
       try {
         const wallet = walletAddress || '0x0000000000000000000000000000000000000000';
-        const q = new URLSearchParams({ wallet, draftId, gameweek: currentGameweek(), orderBy: 'scoreSeason' });
+        const q = new URLSearchParams({ wallet, draftId, gameweek, orderBy: 'scoreSeason' });
         const res = await fetch(`/api/standings?${q.toString()}`, { signal: ctrl.signal });
         if (!res.ok) return;
         const body = (await res.json()) as unknown;
@@ -342,7 +346,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       } catch { /* silent — roster tab falls back to BYE/ADP/Pick */ }
     })();
     return () => ctrl.abort();
-  }, [draftId, walletAddress]);
+  }, [draftId, walletAddress, gameweek]);
 
   // Fetch team card (for the target player — initialPlayer or current user)
   useEffect(() => {
@@ -408,7 +412,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       <>
         {inSeason && (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2 mb-1 text-xs">
-            <span className="text-white/50">Week {currentWeekNumber()}</span>
+            <span className="text-white/50">Week {weekNumber}</span>
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreWeek.toFixed(1)} <span className="text-white/40 font-normal">wk</span></span>
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreSeason.toFixed(1)} <span className="text-white/40 font-normal">season</span></span>
             <span className="text-green-400/80 text-[10px] text-right leading-tight">green = counted<br /><span className="text-white/30">updates as games finish</span></span>

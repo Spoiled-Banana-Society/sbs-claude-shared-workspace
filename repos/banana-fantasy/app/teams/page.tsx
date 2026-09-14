@@ -15,6 +15,7 @@ import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
 import { useFounderTeams } from '@/hooks/useFounderTeams';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { currentWeekNumber, gameweekString } from '@/lib/season';
 
 type ViewMode = 'myteams' | 'leaderboard';
 
@@ -602,7 +603,12 @@ export default function StandingsPage() {
       {/* LEADERBOARD VIEW — only once auth has RESOLVED, so a logged-in user
           refreshing never sees it flash before isLoggedIn settles. */}
       {!authLoading && (viewMode === 'leaderboard' || !isLoggedIn) && (
-        <LeaderboardView gameweek={gameweek} onOpenLeagueDetail={handleOpenLeagueFromLookup} />
+        <LeaderboardView
+          gameweek={gameweek}
+          weekOptions={Array.from({ length: currentWeekNumber() }, (_, i) => gameweekString(i + 1))}
+          onGameweekChange={setGameweek}
+          onOpenLeagueDetail={handleOpenLeagueFromLookup}
+        />
       )}
 
       {/* League Detail Modal */}
@@ -613,6 +619,7 @@ export default function StandingsPage() {
           initialPlayer={modalInitialPlayer}
           walletAddress={user?.walletAddress ?? ''}
           imageUrl={nftByLeague.get(modalLeague.id)?.imageUrl ?? null}
+          gameweek={gameweek}
           onClose={() => { setModalLeague(null); setModalInitialPlayer(undefined); }}
         />
       )}
