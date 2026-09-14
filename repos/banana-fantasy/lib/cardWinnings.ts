@@ -27,7 +27,10 @@ const FALLBACK_WEEKLY_PRIZES = [250, 100, 50, 35, 20];
 export interface CardAward { gameweek: string; week: number; place: number; amount: number; awardedAt: string; ownerAtAward: string; scoreWeek: number }
 export interface CardTransfer { id: string; amount: number; at: string; to: string }
 export interface CardWinnings {
+  /** Doc id = the on-chain token id when the card has one, else the engine card id (special/promo seats not yet linked). */
   tokenId: string;
+  cardId: string;
+  chainTokenId: string | null;
   draftId: string;
   leagueName: string;
   level: string;
@@ -38,7 +41,7 @@ export interface CardWinnings {
   transfers: CardTransfer[];
   ownerAtLastAward: string;
 }
-export interface WeeklyWinner { place: number; tokenId: string; ownerId: string; amount: number; scoreWeek: number; scoreSeason: number; draftId: string; leagueName: string; level: string }
+export interface WeeklyWinner { place: number; tokenId: string; cardId: string; chainTokenId: string | null; ownerId: string; amount: number; scoreWeek: number; scoreSeason: number; draftId: string; leagueName: string; level: string }
 export type AwardResult =
   | { status: 'awarded'; gameweek: string; winners: WeeklyWinner[] }
   | { status: 'already'; gameweek: string; winners: WeeklyWinner[] }
@@ -84,8 +87,11 @@ async function readWeekTop(gameweek: string, n = 40): Promise<WeeklyWinner[]> {
     const ownerId = String(x.OwnerId ?? card.OwnerId ?? '').toLowerCase();
     const scoreWeek = Number(x.ScoreWeek ?? 0);
     if (!ownerId || bots.has(ownerId) || !(scoreWeek > 0)) continue;
+    // Special/promo seats are keyed by a synthetic card id; their on-chain token (if linked) is Card.RealTokenId.
+    const real = String(card.RealTokenId ?? card.realTokenId ?? x.RealTokenId ?? '');
+    const chainTokenId = /^\d+$/.test(d.id) ? d.id : (/^\d+$/.test(real) ? real : null);
     rows.push({
-      place: 0, tokenId: d.id, ownerId, amount: 0, scoreWeek, scoreSeason: Number(x.ScoreSeason ?? 0),
+      place: 0, tokenId: chainTokenId ?? d.id, cardId: d.id, chainTokenId, ownerId, amount: 0, scoreWeek, scoreSeason: Number(x.ScoreSeason ?? 0),
       draftId: String(card.LeagueId ?? ''), leagueName: String(card.LeagueDisplayName ?? ''), level: String(x.Level ?? card.Level ?? 'Pro'),
     });
   }
@@ -148,7 +154,7 @@ export async function awardWeeklyPrizes(gameweek: string, opts: { dryRun?: boole
       const ref = db.collection(CARD_WINNINGS).doc(w.tokenId);
       const award: CardAward = { gameweek, week, place: w.place, amount: w.amount, awardedAt: now, ownerAtAward: w.ownerId, scoreWeek: w.scoreWeek };
       tx.set(ref, {
-        tokenId: w.tokenId, draftId: w.draftId, leagueName: w.leagueName, level: w.level, ownerAtLastAward: w.ownerId,
+        tokenId: w.tokenId, cardId: w.cardId, chainTokenId: w.chainTokenId, draftId: w.draftId, leagueName: w.leagueName, level: w.level, ownerAtLastAward: w.ownerId,
         onCard: FieldValue.increment(w.amount), totalAwarded: FieldValue.increment(w.amount), transferred: FieldValue.increment(0),
         awards: FieldValue.arrayUnion(award), updatedAt: now,
       }, { merge: true });
@@ -179,7 +185,7 @@ const ownerMemo = new Map<string, { at: number; owner: string }>();
 const OWNER_TTL_MS = 60_000;
 export async function resolveOnchainOwners(tokenIds: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  const need = tokenIds.filter((t) => { const m = ownerMemo.get(t); if (m && Date.now() - m.at < OWNER_TTL_MS) { out.set(t, m.owner); return false; } return true; });
+  const need = tokenIds.filter((t) => /^\d+$/.test(t)).filter((t) => { const m = ownerMemo.get(t); if (m && Date.now() - m.at < OWNER_TTL_MS) { out.set(t, m.owner); return false; } return true; });
   if (need.length) {
     const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
     await Promise.all(need.map(async (t) => {
@@ -194,7 +200,7 @@ export async function resolveOnchainOwners(tokenIds: string[]): Promise<Map<stri
 
 function toCard(id: string, x: Record<string, unknown>): CardWinnings {
   return {
-    tokenId: id, draftId: String(x.draftId ?? ''), leagueName: String(x.leagueName ?? ''), level: String(x.level ?? 'Pro'),
+    tokenId: id, cardId: String(x.cardId ?? id), chainTokenId: x.chainTokenId == null ? null : String(x.chainTokenId), draftId: String(x.draftId ?? ''), leagueName: String(x.leagueName ?? ''), level: String(x.level ?? 'Pro'),
     onCard: r2(Number(x.onCard ?? 0)), totalAwarded: r2(Number(x.totalAwarded ?? 0)), transferred: r2(Number(x.transferred ?? 0)),
     awards: (x.awards as CardAward[]) ?? [], transfers: (x.transfers as CardTransfer[]) ?? [], ownerAtLastAward: String(x.ownerAtLastAward ?? ''),
   };
@@ -216,7 +222,8 @@ export async function getCardWinningsForOwner(wallet: string): Promise<CardWinni
   const snap = await getAdminFirestore().collection(CARD_WINNINGS).where('onCard', '>', 0).limit(500).get();
   if (snap.empty) return [];
   const owners = await resolveOnchainOwners(snap.docs.map((d) => d.id));
-  return snap.docs.filter((d) => owners.get(d.id) === w).map((d) => toCard(d.id, d.data()));
+  // Linked cards: on-chain owner is the truth (winnings follow a sold card). Unlinked special seats: the engine owner at award.
+  return snap.docs.map((d) => toCard(d.id, d.data())).filter((c) => (c.chainTokenId ? owners.get(c.tokenId) === w : c.ownerAtLastAward === w));
 }
 
 /**
@@ -229,7 +236,8 @@ export async function transferCardWinnings(wallet: string, tokenIds?: string[]):
   const owners = tokenIds?.length ? await resolveOnchainOwners(cards.map((c) => c.tokenId)) : new Map(cards.map((c) => [c.tokenId, w]));
   const transferred: Array<{ tokenId: string; amount: number; leagueName: string }> = []; const skipped: Array<{ tokenId: string; reason: string }> = [];
   for (const c of cards) {
-    if (owners.get(c.tokenId) !== w) { skipped.push({ tokenId: c.tokenId, reason: 'not the current owner' }); continue; }
+    const isOwner = c.chainTokenId ? owners.get(c.tokenId) === w : c.ownerAtLastAward === w;
+    if (!isOwner) { skipped.push({ tokenId: c.tokenId, reason: 'not the current owner' }); continue; }
     if (!(c.onCard > 0)) { skipped.push({ tokenId: c.tokenId, reason: 'nothing on this card' }); continue; }
     const seq = (c.transfers?.length ?? 0) + 1;
     const prizeId = `syn_cw_${c.tokenId}_${seq}`;
