@@ -163,14 +163,7 @@ export async function awardWeeklyPrizes(gameweek: string, opts: { dryRun?: boole
   });
   logger.info('weekly_prizes.awarded', { gameweek, winners: winners.map((w) => `${w.place}:${w.tokenId}:$${w.amount}`) });
 
-  for (const w of winners) {
-    await createNotification(w.ownerId, {
-      type: 'prize', icon: 'trophy', link: '/winnings',
-      title: `You won $${w.amount} — Week ${week}`,
-      message: `${w.leagueName} finished ${ordinal(w.place)} overall this week (${w.scoreWeek.toFixed(1)} pts). The prize is on the team card — transfer it to your Winnings any time.`,
-      dedupeKey: `weekly-prize-${gameweek}-${w.tokenId}`,
-    });
-  }
+  // No winner bells (Boris 2026-09-14) — the prize shows on the card and on /winnings.
   await createNotification(ADMIN_BELL_WALLET, {
     type: 'promo', icon: 'trophy', link: '/admin', dedupeKey: `weekly-prize-done-${gameweek}`,
     title: `Week ${week} prizes awarded`,
