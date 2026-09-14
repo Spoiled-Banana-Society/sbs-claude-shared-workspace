@@ -3,6 +3,7 @@ import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
 import { firstPurchaseVariant, type FirstPurchaseVariant } from '@/lib/promoMath';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { logger } from '@/lib/logger';
+import { promosRetired } from '@/lib/draftTypes';
 
 export const dynamic = 'force-dynamic';
 // SSE must run on the Node runtime (edge lacks firebase-admin).
@@ -84,6 +85,7 @@ function buildPayload(data: Record<string, unknown> | undefined, userId: string)
  * the use endpoint's correct decrement.
  */
 export async function GET(req: Request) {
+  if (promosRetired()) return new Response('Season closed — poll /api/owner/balance', { status: 410 }); // 2026-09-14 cost cut
   const { searchParams } = new URL(req.url);
   const userId = (searchParams.get('userId') ?? '').trim().toLowerCase();
   if (!userId) {

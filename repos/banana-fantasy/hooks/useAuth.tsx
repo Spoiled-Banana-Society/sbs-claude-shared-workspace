@@ -15,6 +15,7 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { rememberSelfPfp, SELF_PFP_KEY } from '@/hooks/useSelfPfp';
+import { promosRetired } from '@/lib/draftTypes';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
@@ -1104,6 +1105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const connect = () => {
       if (cancelled || eventSource) return;
+      // Season closed (2026-09-14): a balance only moves on a marketplace sale now. The SSE kept a Vercel
+      // function alive per open tab (~$10/day); the 2-min poll below is the long-standing fallback path.
+      if (promosRetired()) { startPollingFallback(); return; }
       try {
         const es = new EventSource(`/api/owner/balance/stream?userId=${encodeURIComponent(userId)}`);
         eventSource = es;
