@@ -14,6 +14,7 @@ import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
 import { useFounderTeams } from '@/hooks/useFounderTeams';
 import { useCardWinnings } from '@/hooks/useCardWinnings';
+import { useTokenStats } from '@/hooks/useTokenStats';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import { currentWeekNumber, gameweekString } from '@/lib/season';
@@ -124,6 +125,14 @@ export default function StandingsPage() {
   );
   const notOwnedLeagueIds = useNotOwnedLeagues(user?.walletAddress ?? null, candidateLeagueIds);
 
+  // Bought teams come from the marketplace path, not the owner's Go token list, so they carry no
+  // rank/score and sometimes no league id (2026-09-15, vertig0). Pull those live from the token records.
+  const boughtTokenIds = useMemo(() => {
+    const drafted = new Set(leagues.map(l => String(l.tokenId ?? '')).filter(Boolean));
+    return myNfts.filter(n => n.hasBackendRecord !== false && !drafted.has(String(n.tokenId))).map(n => String(n.tokenId));
+  }, [leagues, myNfts]);
+  const boughtStats = useTokenStats(boughtTokenIds);
+
   // Teams to show = teams the user drafted + teams they own but didn't draft
   // (bought on the marketplace), minus any drafted team they've since sold.
   const mergedLeagues = useMemo(() => {
@@ -146,12 +155,22 @@ export default function StandingsPage() {
       const inDraftedLeague = !!n.leagueId && draftedIds.has(n.leagueId);
       if (inDraftedLeague && (draftedTokenIds.size === 0 || unmatchableLeagues.has(n.leagueId!))) continue; // can't tell it apart from the drafted team: old league-level skip
       // A 2nd team in a league the user also drafted gets its OWN row + unique id.
-      const synthId = inDraftedLeague ? `${n.leagueId}::${tok}` : (n.leagueId || `nft-${tok}`);
-      extra.push(nftToSyntheticLeague(n, synthId));
+      const st = boughtStats.get(tok);
+      const realLeagueId = n.leagueId || st?.leagueId || null;
+      const synthId = inDraftedLeague ? `${n.leagueId}::${tok}` : (realLeagueId || `nft-${tok}`);
+      const row = nftToSyntheticLeague({ ...n, leagueId: realLeagueId, leagueName: n.leagueName || st?.leagueName || undefined }, synthId);
+      if (st) {
+        // Live numbers from the scorer-stamped token record (same fields the drafted rows get from Go).
+        row.leagueRank = st.leagueRank >= 1 && st.leagueRank <= 10 ? st.leagueRank : 0;
+        row.weeklyRank = st.weeklyRank;
+        row.weeklyScore = st.weeklyScore;
+        row.seasonScore = st.seasonScore;
+      }
+      extra.push(row);
     }
     const base = extra.length ? [...leagues, ...extra] : leagues;
     return notOwnedLeagueIds.size ? base.filter(l => !notOwnedLeagueIds.has(l.id)) : base;
-  }, [leagues, myNfts, notOwnedLeagueIds]);
+  }, [leagues, myNfts, notOwnedLeagueIds, boughtStats]);
 
   // Row id -> that row's OWN NFT (drafted rows by their tokenId, bought rows by
   // theirs) — never "some NFT in this league".
