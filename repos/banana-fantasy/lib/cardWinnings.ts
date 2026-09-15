@@ -17,6 +17,7 @@ import { createPrizeRecordWithId } from '@/lib/prizeOverlay';
 import { createNotification } from '@/lib/queueNotifications';
 import { currentWeekNumber, gameweekString } from '@/lib/season';
 import { logger } from '@/lib/logger';
+import { refreshOpenSeaTokens } from '@/lib/opensea';
 
 export const WEEKLY_PRIZE_WEEKS = 14;
 export const ADMIN_BELL_WALLET = '0x438bbe98eed1dd2df244b007dab0583cc9be72e0';
@@ -164,6 +165,7 @@ export async function awardWeeklyPrizes(gameweek: string, opts: { dryRun?: boole
   logger.info('weekly_prizes.awarded', { gameweek, winners: winners.map((w) => `${w.place}:${w.tokenId}:$${w.amount}`) });
 
   // No winner bells (Boris 2026-09-14) — the prize shows on the card and on /winnings.
+  try { await refreshOpenSeaTokens(winners.map((w) => w.tokenId)); } catch { /* OpenSea picks the PRIZES trait up lazily anyway */ }
   await createNotification(ADMIN_BELL_WALLET, {
     type: 'promo', icon: 'trophy', link: '/admin', dedupeKey: `weekly-prize-done-${gameweek}`,
     title: `Week ${week} prizes awarded`,

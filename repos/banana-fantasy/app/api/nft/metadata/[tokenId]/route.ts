@@ -116,13 +116,33 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   // Drop the messy free-text league name AND the stale finalize-doc LEVEL — the
   // authoritative level is card.level (from the chain-anchored index), so an
   // old/collided finalize doc can't show e.g. "Pro" on a real Jackpot token.
-  const kept = rawAttributes.filter((a) => !/league-?name/i.test(a.trait_type) && a.trait_type.trim().toUpperCase() !== 'LEVEL');
+  // Drop the finalize-time score/prize traits (frozen at draft close: WEEK-SCORE=0, "SEASON-SC0RE", PRIZES in ETH)
+  // and append LIVE ones from the scorer-stamped token doc + the weekly-prize ledger (2026-09-15).
+  const STALE = /^(WEEK-?SCORE|SEASON-?SC[O0]RE|RANK|LEAGUE-?RANK|PRIZES)$/i;
+  const kept = rawAttributes.filter((a) => !/league-?name/i.test(a.trait_type) && a.trait_type.trim().toUpperCase() !== 'LEVEL' && !STALE.test(a.trait_type.trim()));
+  const live: Array<{ trait_type: string; value: string }> = [];
+  if (isFirestoreConfigured()) {
+    try {
+      const db = getAdminFirestore();
+      const [tok, win] = await Promise.all([db.collection('draftTokens').doc(tokenId).get(), db.collection('card_winnings').doc(tokenId).get()]);
+      const t = (tok.data() ?? {}) as Record<string, unknown>;
+      const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+      const season = num(t.SeasonScore), week = num(t.WeekScore), rank = num(t.Rank), leagueRank = num(t.LeagueRank);
+      if (season != null) live.push({ trait_type: 'SEASON-SCORE', value: season.toFixed(2) });
+      if (week != null) live.push({ trait_type: 'WEEK-SCORE', value: week.toFixed(2) });
+      if (rank != null && rank > 0) live.push({ trait_type: 'RANK', value: String(rank) });
+      if (leagueRank != null && leagueRank > 0) live.push({ trait_type: 'LEAGUE-RANK', value: String(leagueRank) });
+      const won = num((win.data() ?? {}).totalAwarded) ?? 0;
+      live.push({ trait_type: 'PRIZES', value: `$${won.toFixed(2)} USDC` });
+    } catch { /* traits stay as built */ }
+  }
   const attributes = [
     { trait_type: 'Status', value: 'Team' },
     { trait_type: 'Team #', value: tokenId },
     { trait_type: 'Level', value: card.level },
     ...(leagueNumber != null ? [{ trait_type: 'League #', value: String(leagueNumber) }] : []),
     ...kept,
+    ...live,
   ];
 
   // Self-healing stamp keyed by the on-chain id. Awaited (best-effort) so it
