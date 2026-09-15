@@ -543,11 +543,12 @@ export default function StandingsPage() {
                         {label}
                       </button>
                     );
+                    if (first + second + top5 === 0 && cardWinnings.total <= 0) return null; // nothing to brag about yet
                     return (
                       <div className="flex flex-wrap items-center gap-2 px-1 mb-3">
-                        {chip('first', `1st in league · ${first}`, 'text-[#D4AF37]')}
-                        {chip('second', `2nd in league · ${second}`, 'text-white')}
-                        {chip('top5', `Top 5 overall this week · ${top5}`, 'text-banana')}
+                        {first > 0 && chip('first', `1st in league · ${first}`, 'text-[#D4AF37]')}
+                        {second > 0 && chip('second', `2nd in league · ${second}`, 'text-white')}
+                        {top5 > 0 && chip('top5', `Top 5 overall this week · ${top5}`, 'text-banana')}
                         {cardWinnings.total > 0 && (
                           <span className="ml-auto text-[12px] font-semibold text-banana">${cardWinnings.total.toFixed(2)} on your cards</span>
                         )}
