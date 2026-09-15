@@ -125,7 +125,14 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     try {
       const db = getAdminFirestore();
       const [tok, win] = await Promise.all([db.collection('draftTokens').doc(tokenId).get(), db.collection('card_winnings').doc(tokenId).get()]);
-      const t = (tok.data() ?? {}) as Record<string, unknown>;
+      let t = (tok.data() ?? {}) as Record<string, unknown>;
+      // Wheel/promo seats: the scored record lives under the engine card id (special-…) with RealTokenId = this token.
+      if (t.SeasonScore == null) {
+        for (const v of [tokenId, Number(tokenId)]) {
+          const q = await db.collection('draftTokens').where('RealTokenId', '==', v).limit(1).get();
+          if (!q.empty) { t = q.docs[0].data() as Record<string, unknown>; break; }
+        }
+      }
       const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
       const season = num(t.SeasonScore), week = num(t.WeekScore), rank = num(t.Rank), leagueRank = num(t.LeagueRank);
       if (season != null) live.push({ trait_type: 'SEASON-SCORE', value: season.toFixed(2) });

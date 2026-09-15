@@ -355,6 +355,13 @@ async function main() {
   const positions = await loadPositions();
   const wk = await scoreWeek(positions);
   const live = wk.games.filter((g) => g.state === 'in').length, done = wk.games.filter((g) => g.state === 'post').length;
+  // Tell the runner how soon to come back (Boris 2026-09-15: only score around games). 10 min while a game is live or
+  // kicks off within 45 min; otherwise hourly. The runner reads .espn-scorer/next-ms; missing file = its default.
+  {
+    const soon = wk.games.some((g) => g.state === 'pre' && Date.parse(g.date) - Date.now() < 45 * 60 * 1000);
+    const nextMs = (live > 0 || soon) ? 10 * 60 * 1000 : 60 * 60 * 1000;
+    try { writeFileSync(join(STATE_DIR, 'next-ms'), String(nextMs)); } catch { /* best-effort */ }
+  }
   log(`games: ${wk.games.length} (live ${live}, final ${done}), scored players ${wk.players.length}`);
   for (const g of wk.games) if (g.state !== 'pre') log('  ', g.name, g.state, g.detail);
   const topTeams = Object.values(wk.teamScores).filter((t) => t.GameStatus !== 'pre' && t.GameStatus !== 'bye');
@@ -378,8 +385,13 @@ async function main() {
   // scoring — and just refresh the heartbeat. Any game going live (or a new final) makes the next pass run fully.
   if (APPLY && !SEED && live === 0) {
     const hb = (await db.collection('cron_heartbeats').doc('espn-scorer').get()).data() || {};
-    if (hb.gameweek === GW && hb.games === wk.games.length && hb.final === done && (hb.live ?? 0) === 0) {
-      await db.collection('cron_heartbeats').doc('espn-scorer').set({ at: new Date().toISOString(), skipped: 'no live games, finals already applied' }, { merge: true });
+    // Re-score at least hourly even when idle (Boris 2026-09-15): ESPN stat corrections land after finals, and the
+    // last full pass before the Tuesday 3am rollover is what the 4am weekly award uses.
+    const lastFullAt = Date.parse(hb.at || 0) || 0;
+    const recentFull = Date.now() - lastFullAt < 55 * 60 * 1000 && !hb.skipped;
+    // done === 0 → nothing has been played this week yet (Tue–Thu): nothing to re-score, skip outright.
+    if (hb.gameweek === GW && hb.games === wk.games.length && hb.final === done && (hb.live ?? 0) === 0 && (done === 0 || recentFull)) {
+      await db.collection('cron_heartbeats').doc('espn-scorer').set({ skippedAt: new Date().toISOString(), skipped: 'no live games, finals already applied' }, { merge: true });
       log(`no live games and ${done}/${wk.games.length} finals already applied — skipping pass`);
       return;
     }
@@ -455,7 +467,7 @@ async function main() {
     writeFileSync(lastF, JSON.stringify(next));
     if (flushMirrors) { mirror.at = Date.now(); mirror.pending = {}; }
     writeFileSync(mirrorF, JSON.stringify(mirror));
-    await db.collection('cron_heartbeats').doc('espn-scorer').set({ at: new Date().toISOString(), gameweek: GW, games: wk.games.length, live, final: done, cards: cards.length, changed });
+    await db.collection('cron_heartbeats').doc('espn-scorer').set({ at: new Date().toISOString(), gameweek: GW, games: wk.games.length, live, final: done, cards: cards.length, changed, skipped: null, skippedAt: null });
   }
   log(`cards changed: ${changed}${APPLY ? ` (written; missing-doc skips ${notFound}, failed ${failed})` : ' (dry)'}; mirrors ${flushMirrors ? `flushed ${mirrored}` : `deferred (${Object.keys(mirror.pending).length} pending)`}`);
 }
