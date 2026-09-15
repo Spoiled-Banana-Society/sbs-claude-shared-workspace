@@ -188,6 +188,9 @@ export default function StandingsPage() {
   // Season live: best league rank first (advancing teams on top), then the
   // pre-season league-number orders.
   const [sortOrder, setSortOrder] = useState<'rank' | 'oldest' | 'newest'>(() => (seasonUiLive() ? 'rank' : 'newest'));
+  // Standing filter (2026-09-15, user ask: "how many of my teams are in 1st / 2nd"). Pure client-side — the
+  // numbers are already on every league row, so this costs nothing.
+  const [rankFilter, setRankFilter] = useState<'all' | 'first' | 'second' | 'top5'>('all');
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
   // keeps you on the same tab instead of bouncing back to All.
   const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'jackhof' | 'pro' | 'founder'>(() => {
@@ -245,6 +248,9 @@ export default function StandingsPage() {
     } else if (typeFilter !== 'all') {
       result = result.filter((league) => league.type === typeFilter);
     }
+    if (rankFilter === 'first') result = result.filter((l) => l.leagueRank === 1);
+    else if (rankFilter === 'second') result = result.filter((l) => l.leagueRank === 2);
+    else if (rankFilter === 'top5') result = result.filter((l) => l.weeklyRank > 0 && l.weeklyRank <= 5);
 
     // League # query — partial match on the league's display number.
     const lq = leagueQuery.trim().replace(/^#/, '');
@@ -316,7 +322,7 @@ export default function StandingsPage() {
       return sortOrder === 'oldest' ? idNumA - idNumB : idNumB - idNumA;
     });
     return result;
-  }, [mergedLeagues, teamSearch, sortOrder, typeFilter, leagueQuery, teamQuery, nftByLeague, founderTeamIds]);
+  }, [mergedLeagues, teamSearch, sortOrder, typeFilter, rankFilter, leagueQuery, teamQuery, nftByLeague, founderTeamIds]);
 
   // Paginate
   const totalTeamPages = Math.ceil(filteredLeagues.length / TEAMS_PER_PAGE);
@@ -326,7 +332,7 @@ export default function StandingsPage() {
   }, [filteredLeagues, teamsPage]);
 
   // Reset page when search or filter changes
-  React.useEffect(() => { setTeamsPage(0); }, [teamSearch, typeFilter, leagueQuery, teamQuery]);
+  React.useEffect(() => { setTeamsPage(0); }, [teamSearch, typeFilter, rankFilter, leagueQuery, teamQuery]);
 
   const handleOpenModal = (league: League, tab: ModalTab) => {
     setModalLeague(league);
@@ -521,6 +527,33 @@ export default function StandingsPage() {
             <div className="space-y-3 mb-6">
               {filteredLeagues.length > 0 ? (
                 <>
+                  {/* Standing summary — 1st / 2nd in league, top-5 overall this week, money on cards. Chips filter. */}
+                  {seasonUiLive() && (() => {
+                    const first = mergedLeagues.filter((l) => l.leagueRank === 1).length;
+                    const second = mergedLeagues.filter((l) => l.leagueRank === 2).length;
+                    const top5 = mergedLeagues.filter((l) => l.weeklyRank > 0 && l.weeklyRank <= 5).length;
+                    const chip = (key: typeof rankFilter, label: string, tone: string) => (
+                      <button
+                        key={key}
+                        onClick={() => setRankFilter((cur) => (cur === key ? 'all' : key))}
+                        className={`px-3 py-1.5 rounded-[10px] text-[12px] font-semibold border transition-all ${
+                          rankFilter === key ? `bg-white/10 border-white/20 ${tone}` : 'bg-white/[0.03] border-white/[0.06] text-white/45 hover:text-white/70'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 px-1 mb-3">
+                        {chip('first', `1st in league · ${first}`, 'text-[#D4AF37]')}
+                        {chip('second', `2nd in league · ${second}`, 'text-white')}
+                        {chip('top5', `Top 5 overall this week · ${top5}`, 'text-banana')}
+                        {cardWinnings.total > 0 && (
+                          <span className="ml-auto text-[12px] font-semibold text-banana">${cardWinnings.total.toFixed(2)} on your cards</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* Sort toggle (the chip already shows the count) */}
                   <div className="flex items-center justify-end px-1 mb-2">
                     <button

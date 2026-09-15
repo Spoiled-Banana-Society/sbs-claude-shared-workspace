@@ -230,7 +230,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             sub={league.leagueRank > 0 ? 'of 10' : undefined}
             tone={league.leagueRank === 1 ? 'first' : league.leagueRank === 2 ? 'second' : 'plain'}
           />
-          <SeasonStat label="Wk Rank" value={league.weeklyRank > 0 ? `#${league.weeklyRank}` : '—'} />
+          <SeasonStat
+            label="Wk Rank"
+            value={league.weeklyRank > 0 ? `#${league.weeklyRank}` : '—'}
+            sub={league.weeklyRank > 0 && league.weeklyRank <= 5 ? 'top 5 · prize' : undefined}
+            tone={league.weeklyRank > 0 && league.weeklyRank <= 5 ? 'first' : 'plain'}
+          />
           <SeasonStat label="Wk Pts" value={hasScores ? league.weeklyScore.toFixed(1) : '—'} />
           <SeasonStat label="Season" value={hasScores ? league.seasonScore.toFixed(1) : '—'} tone="strong" />
         </div>
