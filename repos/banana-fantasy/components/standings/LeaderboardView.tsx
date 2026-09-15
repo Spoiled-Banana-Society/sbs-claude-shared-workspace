@@ -397,7 +397,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
               >
                 {/* Rank */}
                 <div>
-                  {(weeklyPrizeView ? entry.rank <= 5 : (sortField === 'SeasonScore' && entry.rank <= 3)) ? (
+                  {weeklyPrizeView && entry.rank <= 5 ? (
                     <span
                       className={`
                         w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold

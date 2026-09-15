@@ -61,6 +61,13 @@ export async function GET(req: Request) {
       docs = wide.docs.filter((d) => d.get('Level') === level).slice(0, limit);
     }
 
+    // No weekly scores yet (before the week's first game everyone is 0 → arbitrary order): serve season order
+    // instead so the board reads highest season total first until the week starts (Boris 2026-09-15).
+    if (orderField === 'ScoreWeek' && (docs.length === 0 || Number(docs[0].get('ScoreWeek') ?? 0) <= 0)) {
+      let q2 = col.orderBy('ScoreSeason', 'desc');
+      if (level) q2 = q2.where('Level', '==', level);
+      docs = (await q2.limit(limit).get()).docs;
+    }
     // competition ranking: equal scores share a rank (pre-kickoff everyone is #1)
     let rank = 0;
     let prevKey = '';
