@@ -127,7 +127,8 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
       const [tok, win] = await Promise.all([db.collection('draftTokens').doc(tokenId).get(), db.collection('card_winnings').doc(tokenId).get()]);
       let t = (tok.data() ?? {}) as Record<string, unknown>;
       // Wheel/promo seats: the scored record lives under the engine card id (special-…) with RealTokenId = this token.
-      if (t.SeasonScore == null) {
+      // A wheel seat's own token doc is the un-drafted PASS record (LeagueId '', SeasonScore '0'); the scored record is the special card.
+      if (t.SeasonScore == null || !t.LeagueId) {
         for (const v of [tokenId, Number(tokenId)]) {
           const q = await db.collection('draftTokens').where('RealTokenId', '==', v).limit(1).get();
           if (!q.empty) { t = q.docs[0].data() as Record<string, unknown>; break; }
