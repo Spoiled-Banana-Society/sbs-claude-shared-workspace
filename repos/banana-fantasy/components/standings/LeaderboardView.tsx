@@ -52,7 +52,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
   const [level, setLevel] = useState<LevelFilter>('all');
   const [sortField, setSortField] = useState<SortField>('SeasonScore');
   // Weekly overall top-5 are the prize spots (Boris 2026-09-15): $250/$100/$50/$35/$20, weeks 1–14 (mirrors v2_contests/1).
-  const weeklyPrizeView = sortField === 'WeekScore' && level === 'all';
+
   const [page, setPage] = useState(0);
   const [leagueInput, setLeagueInput] = useState('');
   const [leagueLookup, setLeagueLookup] = useState<string | null>(null);
@@ -68,6 +68,10 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
       }),
     { fallbackData: [], persist: true },
   );
+
+  // Only once real weekly scores exist (Boris 2026-09-15: before the week's first game everyone is 0 and the
+  // "top 5" is meaningless). Uses the loaded rows, so it flips on by itself once games start.
+  const weeklyPrizeView = sortField === 'WeekScore' && level === 'all' && (entries ?? []).slice(0, 5).some((e) => Number((e as { weeklyScore?: number }).weeklyScore ?? 0) > 0);
 
   // Client-side pagination
   const totalPages = Math.ceil((entries?.length ?? 0) / PAGE_SIZE);
