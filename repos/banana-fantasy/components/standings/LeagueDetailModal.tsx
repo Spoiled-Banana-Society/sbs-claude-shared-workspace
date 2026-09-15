@@ -154,8 +154,12 @@ const BOARD_COLS = 'repeat(10, minmax(110px, 1fr))';
 const NUM_ROUNDS = 15;
 
 export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, gameweek: gameweekProp, onClose }: LeagueDetailModalProps) {
-  const gameweek = gameweekProp || currentGameweek();
+  // Week being viewed — starts at the picked/current week, switchable inside the pod (Boris 2026-09-15:
+  // "no way to look back at week 1 results"). Past weeks keep their own scores.
+  const [gameweek, setGameweek] = useState<string>(gameweekProp || currentGameweek());
   const weekNumber = Number(gameweek.match(/(\d+)$/)?.[1]) || currentWeekNumber();
+  const maxWeek = currentWeekNumber();
+  const gotoWeek = (n: number) => { if (n >= 1 && n <= maxWeek) setGameweek(`2026REG-${String(n).padStart(2, '0')}`); };
   const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ModalTab>(initialTab);
   const [isClosing, setIsClosing] = useState(false);
@@ -412,7 +416,11 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       <>
         {inSeason && (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2 mb-1 text-xs">
-            <span className="text-white/50">Week {weekNumber}</span>
+            <span className="flex items-center gap-1 text-white/50">
+              <button onClick={() => gotoWeek(weekNumber - 1)} disabled={weekNumber <= 1} aria-label="Previous week" className="px-1.5 rounded text-white/60 hover:text-white disabled:opacity-25">‹</button>
+              Week {weekNumber}
+              <button onClick={() => gotoWeek(weekNumber + 1)} disabled={weekNumber >= maxWeek} aria-label="Next week" className="px-1.5 rounded text-white/60 hover:text-white disabled:opacity-25">›</button>
+            </span>
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreWeek.toFixed(1)} <span className="text-white/40 font-normal">wk</span></span>
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreSeason.toFixed(1)} <span className="text-white/40 font-normal">season</span></span>
             <span className="text-green-400/80 text-[10px] text-right leading-tight">green = counted<br /><span className="text-white/30">updates as games finish</span></span>
@@ -1011,6 +1019,12 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
               season-rank 1, green text on rank 2 (the playoff cutoff). */}
           {activeTab === 'standings' && (
             <div>
+              {/* Week switcher — past weeks keep their own standings (Boris 2026-09-15) */}
+              <div className="flex items-center justify-between mb-2 px-1">
+                <button onClick={() => gotoWeek(weekNumber - 1)} disabled={weekNumber <= 1} className="text-xs px-2 py-1 rounded-md bg-white/[0.04] text-white/60 hover:text-white disabled:opacity-25">‹ Week {Math.max(1, weekNumber - 1)}</button>
+                <span className="text-sm font-semibold text-white">Week {weekNumber}{weekNumber === maxWeek ? <span className="text-white/40 font-normal"> · live</span> : <span className="text-white/40 font-normal"> · final</span>}</span>
+                <button onClick={() => gotoWeek(weekNumber + 1)} disabled={weekNumber >= maxWeek} className="text-xs px-2 py-1 rounded-md bg-white/[0.04] text-white/60 hover:text-white disabled:opacity-25">Week {Math.min(maxWeek, weekNumber + 1)} ›</button>
+              </div>
               {rostersLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 10 }).map((_, i) => (
