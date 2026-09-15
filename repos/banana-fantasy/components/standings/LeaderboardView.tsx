@@ -36,6 +36,7 @@ function rowLeague(entry: unknown): { id: string; name: string; level: string } 
 
 type LevelFilter = 'all' | 'Pro' | 'HOF' | 'Jackpot' | 'JackHOF';
 type SortField = 'SeasonScore' | 'WeekScore';
+const WEEKLY_PRIZES = [250, 100, 50, 35, 20];
 
 const filterPills: { id: LevelFilter; label: string; color: string }[] = [
   { id: 'all', label: 'All', color: 'bg-white/10 text-white/70 hover:bg-white/20' },
@@ -50,6 +51,8 @@ const PAGE_SIZE = 20;
 export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpenLeagueDetail }: LeaderboardViewProps) {
   const [level, setLevel] = useState<LevelFilter>('all');
   const [sortField, setSortField] = useState<SortField>('SeasonScore');
+  // Weekly overall top-5 are the prize spots (Boris 2026-09-15): $250/$100/$50/$35/$20, weeks 1–14 (mirrors v2_contests/1).
+  const weeklyPrizeView = sortField === 'WeekScore' && level === 'all';
   const [page, setPage] = useState(0);
   const [leagueInput, setLeagueInput] = useState('');
   const [leagueLookup, setLeagueLookup] = useState<string | null>(null);
@@ -390,13 +393,14 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
               >
                 {/* Rank */}
                 <div>
-                  {entry.rank <= 3 ? (
+                  {(weeklyPrizeView ? entry.rank <= 5 : entry.rank <= 3) ? (
                     <span
                       className={`
                         w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                        ${entry.rank === 1 ? 'bg-yellow-500 text-black' : ''}
-                        ${entry.rank === 2 ? 'bg-gray-400 text-black' : ''}
-                        ${entry.rank === 3 ? 'bg-orange-600 text-white' : ''}
+                        ${entry.rank === 1 ? 'bg-banana text-black' : ''}
+                        ${entry.rank === 2 ? (weeklyPrizeView ? 'bg-green-500 text-black' : 'bg-gray-400 text-black') : ''}
+                        ${entry.rank === 3 ? (weeklyPrizeView ? 'bg-white/80 text-black' : 'bg-orange-600 text-white') : ''}
+                        ${entry.rank >= 4 ? 'bg-white/80 text-black' : ''}
                       `}
                     >
                       {entry.rank}
@@ -411,6 +415,9 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                   <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
                     {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
                     {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
+                    {weeklyPrizeView && entry.rank <= 5 && (
+                      <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-banana/15 text-banana">${WEEKLY_PRIZES[entry.rank - 1]}</span>
+                    )}
                   </p>
                   {entry.teamName && (
                     <p className="text-white/30 text-xs truncate">{entry.teamName}</p>
