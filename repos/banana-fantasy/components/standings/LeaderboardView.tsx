@@ -39,6 +39,16 @@ type LevelFilter = 'all' | 'Pro' | 'HOF' | 'Jackpot' | 'JackHOF';
 type SortField = 'SeasonScore' | 'WeekScore';
 const WEEKLY_PRIZES = [250, 100, 50, 35, 20];
 
+// Row tag for the league type, same colors as the filter pills and the Teams page cards.
+function levelTag(level: string): { label: string; cls: string } | null {
+  const l = level.toLowerCase().replace(/\s+/g, '');
+  if (l === 'jackhof') return { label: 'JackHOF', cls: 'bg-jackpot/15 text-hof' };
+  if (l === 'jackpot') return { label: 'Jackpot', cls: 'bg-jackpot/15 text-jackpot' };
+  if (l === 'hof' || l === 'halloffame') return { label: 'HOF', cls: 'bg-hof/15 text-hof' };
+  if (l === 'pro' || l === 'regular') return { label: 'Pro', cls: 'bg-pro/15 text-pro' };
+  return null;
+}
+
 const filterPills: { id: LevelFilter; label: string; color: string }[] = [
   { id: 'all', label: 'All', color: 'bg-white/10 text-white/70 hover:bg-white/20' },
   { id: 'Pro', label: 'Pro', color: 'bg-pro/20 text-pro hover:bg-pro/30' },
@@ -452,7 +462,10 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     <p className="text-[11px] text-white/45 break-words">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
                   )}
                   {entry.teamName && (
-                    <p className="text-white/30 text-xs truncate">{entry.teamName}</p>
+                    <p className="text-white/30 text-xs break-words flex flex-wrap items-center gap-x-1.5">
+                      <span>{entry.teamName}</span>
+                      {(() => { const t = levelTag(String((entry as { level?: string }).level ?? '')); return t ? <span className={`text-[10px] font-semibold px-1.5 py-px rounded-full ${t.cls}`}>{t.label}</span> : null; })()}
+                    </p>
                   )}
                   </div>
                 </div>

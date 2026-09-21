@@ -100,7 +100,8 @@ export async function GET(req: Request) {
         rank,
         // Never a raw wallet (brand rule): unset names come through as the wallet from the legacy PFP block.
         username: (() => { const n = String(pfp.DisplayName || '').trim(); return n && n.toLowerCase() !== owner && !/^0x[0-9a-f]{40}$/i.test(n) ? n : bananaPlaceholderName(owner); })(),
-        teamName: `${String(card.LeagueDisplayName || card.LeagueId || '')} · #${String(card.RealTokenId || cardId)}`,
+        // "Team #4566 · League #392" (Boris 2026-09-21): label both numbers; the type (Pro/HOF/…) is a colored tag from `level`.
+        teamName: (() => { const ln = String(card.LeagueDisplayName || card.LeagueId || ''); const m = ln.match(/#\s*(\d+)/); return `Team #${String(card.RealTokenId || cardId)} · League ${m ? `#${m[1]}` : ln}`; })(),
         seasonScore: Number(d.ScoreSeason ?? 0),
         weeklyScore: Number(d.ScoreWeek ?? 0),
         isCurrentUser: !!me && owner === me,
