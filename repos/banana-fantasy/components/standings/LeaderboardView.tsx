@@ -424,9 +424,9 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     <AvatarWithBadge imageUrl={u?.imageUrl ?? null} alt={u?.displayName || 'player'} size={26} equippedBadge={u?.equippedBadge ?? null} ripeness={u?.ripeness ?? null} showBadge={false} useNextImage={false} />
                   ); })()}
                   <div className="min-w-0">
-                  {/* Name truncates; the badges after it never do (mobile was ellipsing the "N left" pill, Boris 2026-09-21). */}
-                  <div className={`flex items-center gap-1.5 min-w-0 text-sm font-medium ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
-                    <span className="truncate min-w-0">
+                  {/* Full name, never truncated (Boris 2026-09-21): pills sit beside it when there is room, else wrap under it. */}
+                  <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 text-sm font-medium ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
+                    <span className="break-words">
                       {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
                     </span>
                     {entry.isCurrentUser && <span className="shrink-0 text-[10px] text-banana/60">(You)</span>}
@@ -441,7 +441,6 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setLeftOpen((cur) => (cur === rowKey ? null : rowKey)); }}
-                          title={left.join(' · ')}
                           className={`shrink-0 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
                         >
                           {left.length} left
@@ -450,7 +449,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     })()}
                   </div>
                   {sortField === 'WeekScore' && leftOpen === `${entry.rank}-${idx}` && ((entry as { playersLeft?: string[] }).playersLeft ?? []).length > 0 && (
-                    <p className="text-[11px] text-white/45 truncate">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
+                    <p className="text-[11px] text-white/45 break-words">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
                   )}
                   {entry.teamName && (
                     <p className="text-white/30 text-xs truncate">{entry.teamName}</p>
