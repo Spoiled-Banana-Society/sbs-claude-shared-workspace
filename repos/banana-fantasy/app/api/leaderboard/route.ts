@@ -4,6 +4,7 @@ import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { currentGameweek } from '@/lib/season';
 import type { LeaderboardEntry } from '@/types';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 /**
  * Global leaderboard — reads the scorer's output directly from Firestore
@@ -82,7 +83,8 @@ export async function GET(req: Request) {
       const cardId = String(d.CardId ?? doc.id);
       return {
         rank,
-        username: String(pfp.DisplayName || ''),
+        // Never a raw wallet (brand rule): unset names come through as the wallet from the legacy PFP block.
+        username: (() => { const n = String(pfp.DisplayName || '').trim(); return n && n.toLowerCase() !== owner && !/^0x[0-9a-f]{40}$/i.test(n) ? n : bananaPlaceholderName(owner); })(),
         teamName: `${String(card.LeagueDisplayName || card.LeagueId || '')} · #${String(card.RealTokenId || cardId)}`,
         seasonScore: Number(d.ScoreSeason ?? 0),
         weeklyScore: Number(d.ScoreWeek ?? 0),
