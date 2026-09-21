@@ -8,6 +8,7 @@ import { useLeagueDetail } from '@/hooks/useStandings';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { getTruncatedAccountName, bananaPlaceholderName } from '@/utils/helpers';
 import type { LeaderboardEntry } from '@/types';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 
 /** Owner wallet off a global-leaderboard row, whatever the Go API named it. */
 function rowWallet(entry: unknown): string | null {
@@ -415,8 +416,12 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                   )}
                 </div>
 
-                {/* Player */}
-                <div className="min-w-0">
+                {/* Player — avatar from the same profile batch that supplies the name (default banana when unset) */}
+                <div className="min-w-0 flex items-center gap-2">
+                  {(() => { const w = rowWallet(entry); const u = w ? pageUsers[w.toLowerCase()] : undefined; return (
+                    <AvatarWithBadge imageUrl={u?.imageUrl ?? null} alt={u?.displayName || 'player'} size={26} equippedBadge={u?.equippedBadge ?? null} ripeness={u?.ripeness ?? null} showBadge={false} useNextImage={false} />
+                  ); })()}
+                  <div className="min-w-0">
                   <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
                     {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
                     {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
@@ -427,6 +432,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                   {entry.teamName && (
                     <p className="text-white/30 text-xs truncate">{entry.teamName}</p>
                   )}
+                  </div>
                 </div>
 
                 {/* Weekly */}
