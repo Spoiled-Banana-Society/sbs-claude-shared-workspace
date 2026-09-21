@@ -451,7 +451,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setLeftOpen((cur) => (cur === rowKey ? null : rowKey)); }}
-                          className={`shrink-0 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
+                          className={`shrink-0 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/20 text-gray-200' : 'bg-white/10 text-gray-300 hover:text-gray-200'}`}
                         >
                           {left.length} left
                         </button>
@@ -459,7 +459,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     })()}
                   </div>
                   {sortField === 'WeekScore' && leftOpen === `${entry.rank}-${idx}` && ((entry as { playersLeft?: string[] }).playersLeft ?? []).length > 0 && (
-                    <p className="text-[11px] text-white/45 break-words">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
+                    <p className="text-[11px] text-gray-300 break-words">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
                   )}
                   {entry.teamName && (
                     <p className="text-white/55 text-xs break-words flex flex-wrap items-center gap-x-1.5">
