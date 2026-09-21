@@ -432,7 +432,6 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     )}
                     {sortField === 'WeekScore' && (() => {
                       const left = (entry as { playersLeft?: string[] }).playersLeft ?? [];
-                      const size = Number((entry as { rosterSize?: number }).rosterSize ?? 0);
                       if (!left.length) return null;
                       const rowKey = `${entry.rank}-${idx}`;
                       return (
@@ -442,7 +441,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                           title={left.join(' · ')}
                           className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
                         >
-                          {size > 0 ? `${left.length}/${size}` : left.length} left
+                          {left.length} left
                         </button>
                       );
                     })()}
