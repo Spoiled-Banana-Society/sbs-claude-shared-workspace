@@ -81,7 +81,11 @@ export async function GET(req: Request) {
       const out: string[] = [];
       let size = 0;
       const R = (d.Roster ?? {}) as Record<string, Array<{ Team?: string; Position?: string }>>;
-      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) { size++; if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Position ?? pos)} ${String(p?.Team)}`); }
+      // "LAR WR1 · NYG DST" (Boris 2026-09-21): team, then the roster slot (numbered when the position has more than one).
+      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) {
+        const group = R[pos] ?? [];
+        group.forEach((p, i) => { size++; if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Team)} ${pos}${group.length > 1 ? i + 1 : ''}`); });
+      }
       return { left: out, size };
     };
     // competition ranking: equal scores share a rank (pre-kickoff everyone is #1)
