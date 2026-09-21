@@ -308,8 +308,8 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
               <div className="grid grid-cols-[28px_1fr] sm:grid-cols-[36px_1fr_80px_80px] gap-2 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06]">
                 <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium">#</div>
                 <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium">Player</div>
-                <div className="hidden sm:block text-[10px] uppercase tracking-wider text-white/30 font-medium text-right">Weekly</div>
-                <div className="hidden sm:block text-[10px] uppercase tracking-wider text-white/30 font-medium text-right">Season</div>
+                <div className={`hidden sm:block text-[10px] uppercase tracking-wider font-medium text-right ${sortField === 'WeekScore' ? 'text-white/70' : 'text-white/30'}`}>Weekly</div>
+                <div className={`hidden sm:block text-[10px] uppercase tracking-wider font-medium text-right ${sortField === 'SeasonScore' ? 'text-white/70' : 'text-white/30'}`}>Season</div>
               </div>
               <div>
                 {leagueEntries.map((entry, idx) => {
@@ -387,8 +387,8 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
           <div className="grid grid-cols-[40px_1fr_80px_80px] sm:grid-cols-[50px_1fr_100px_100px] gap-2 px-4 py-3 bg-white/[0.03] border-b border-white/[0.06]">
             <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium">#</div>
             <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium">Player</div>
-            <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium text-right">Weekly</div>
-            <div className="text-[10px] uppercase tracking-wider text-white/30 font-medium text-right">Season</div>
+            <div className={`text-[10px] uppercase tracking-wider font-medium text-right ${sortField === 'WeekScore' ? 'text-white/70' : 'text-white/30'}`}>Weekly</div>
+            <div className={`text-[10px] uppercase tracking-wider font-medium text-right ${sortField === 'SeasonScore' ? 'text-white/70' : 'text-white/30'}`}>Season</div>
           </div>
 
           {/* Rows */}
@@ -470,13 +470,11 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                   </div>
                 </div>
 
-                {/* Weekly */}
-                <div className="text-right text-white/60 text-sm">
+                {/* The column we're sorted by is the bold one (Boris 2026-09-21: in Weekly view the weekly score is what matters). */}
+                <div className={`text-right text-sm ${sortField === 'WeekScore' ? `font-semibold ${entry.isCurrentUser ? 'text-banana' : 'text-white'}` : 'text-white/60'}`}>
                   {formatScore(entry.weeklyScore)}
                 </div>
-
-                {/* Season */}
-                <div className={`text-right font-semibold text-sm ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
+                <div className={`text-right text-sm ${sortField === 'SeasonScore' ? `font-semibold ${entry.isCurrentUser ? 'text-banana' : 'text-white'}` : 'text-white/60'}`}>
                   {formatScore(entry.seasonScore)}
                 </div>
               </div>
