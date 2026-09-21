@@ -209,7 +209,8 @@ export default function StandingsPage() {
   const [sortOrder, setSortOrder] = useState<'rank' | 'oldest' | 'newest'>(() => (seasonUiLive() ? 'rank' : 'newest'));
   // Standing filter (2026-09-15, user ask: "how many of my teams are in 1st / 2nd"). Pure client-side — the
   // numbers are already on every league row, so this costs nothing.
-  const [rankFilter, setRankFilter] = useState<'all' | 'first' | 'second' | 'top5'>('all');
+  // 'all' | league place 1–10 | 'top5' (overall weekly top 5). Boris 2026-09-21: show every place they hold, not just 1st/2nd.
+  const [rankFilter, setRankFilter] = useState<'all' | 'top5' | number>('all');
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
   // keeps you on the same tab instead of bouncing back to All.
   const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'jackhof' | 'pro' | 'founder'>(() => {
@@ -267,8 +268,7 @@ export default function StandingsPage() {
     } else if (typeFilter !== 'all') {
       result = result.filter((league) => league.type === typeFilter);
     }
-    if (rankFilter === 'first') result = result.filter((l) => l.leagueRank === 1);
-    else if (rankFilter === 'second') result = result.filter((l) => l.leagueRank === 2);
+    if (typeof rankFilter === 'number') result = result.filter((l) => l.leagueRank === rankFilter);
     else if (rankFilter === 'top5') result = result.filter((l) => l.weeklyRank > 0 && l.weeklyRank <= 5);
 
     // League # query — partial match on the league's display number.
@@ -546,10 +546,13 @@ export default function StandingsPage() {
             <div className="space-y-3 mb-6">
               {filteredLeagues.length > 0 ? (
                 <>
-                  {/* Standing summary — 1st / 2nd in league, top-5 overall this week, money on cards. Chips filter. */}
+                  {/* Standing summary — how many teams sit 1st…10th in their league, top-5 overall this week, money on cards. Chips filter. */}
                   {seasonUiLive() && (() => {
-                    const first = mergedLeagues.filter((l) => l.leagueRank === 1).length;
-                    const second = mergedLeagues.filter((l) => l.leagueRank === 2).length;
+                    const byPlace = new Map<number, number>();
+                    for (const l of mergedLeagues) if (l.leagueRank >= 1 && l.leagueRank <= 10) byPlace.set(l.leagueRank, (byPlace.get(l.leagueRank) ?? 0) + 1);
+                    const placed = Array.from(byPlace.values()).reduce((a, b) => a + b, 0);
+                    const ordinal = (n: number) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+                    const placeTone = (n: number) => (n === 1 ? 'text-banana' : n === 2 ? 'text-green-400' : 'text-white/80');
                     const top5 = mergedLeagues.filter((l) => l.weeklyRank > 0 && l.weeklyRank <= 5).length;
                     const chip = (key: typeof rankFilter, label: string, tone: string) => (
                       <button
@@ -562,11 +565,10 @@ export default function StandingsPage() {
                         {label}
                       </button>
                     );
-                    if (first + second + top5 === 0 && cardWinnings.total <= 0) return null; // nothing to brag about yet
+                    if (placed + top5 === 0 && cardWinnings.total <= 0) return null; // nothing to show yet
                     return (
                       <div className="flex flex-wrap items-center gap-2 px-1 mb-3">
-                        {first > 0 && chip('first', `1st in league · ${first}`, 'text-banana')}
-                        {second > 0 && chip('second', `2nd in league · ${second}`, 'text-green-400')}
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (byPlace.get(n) ?? 0) > 0 && chip(n, `${ordinal(n)} in league · ${byPlace.get(n)}`, placeTone(n)))}
                         {top5 > 0 && chip('top5', `Top 5 overall this week · ${top5}`, 'text-banana')}
                         {cardWinnings.total > 0 && (
                           <span className="ml-auto text-[12px] font-semibold text-banana">${cardWinnings.total.toFixed(2)} on your cards</span>

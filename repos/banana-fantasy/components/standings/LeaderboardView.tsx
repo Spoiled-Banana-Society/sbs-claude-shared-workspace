@@ -51,7 +51,8 @@ const PAGE_SIZE = 20;
 
 export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpenLeagueDetail }: LeaderboardViewProps) {
   const [level, setLevel] = useState<LevelFilter>('all');
-  const [sortField, setSortField] = useState<SortField>('SeasonScore');
+  // Weekly is the default view (Boris 2026-09-21): the week's race is what people check in-season; Season is the right tab.
+  const [sortField, setSortField] = useState<SortField>('WeekScore');
   // Weekly overall top-5 are the prize spots (Boris 2026-09-15): $250/$100/$50/$35/$20, weeks 1–14 (mirrors v2_contests/1).
 
   const [page, setPage] = useState(0);
@@ -174,20 +175,20 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
 
         <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
           <button
-            onClick={() => { setSortField('SeasonScore'); setPage(0); }}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${
-              sortField === 'SeasonScore' ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
-            }`}
-          >
-            Season
-          </button>
-          <button
             onClick={() => { setSortField('WeekScore'); setPage(0); }}
             className={`text-xs px-3 py-1.5 rounded-md transition-colors ${
               sortField === 'WeekScore' ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
             }`}
           >
             Weekly
+          </button>
+          <button
+            onClick={() => { setSortField('SeasonScore'); setPage(0); }}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${
+              sortField === 'SeasonScore' ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
+            }`}
+          >
+            Season
           </button>
         </div>
       </div>
@@ -428,6 +429,15 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     {weeklyPrizeView && entry.rank <= 5 && (
                       <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-banana/15 text-banana">${WEEKLY_PRIZES[entry.rank - 1]}</span>
                     )}
+                    {sortField === 'WeekScore' && (() => {
+                      const left = (entry as { playersLeft?: string[] }).playersLeft ?? [];
+                      if (!left.length) return null;
+                      return (
+                        <span title={left.join(' · ')} className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/[0.06] text-white/50 tabular-nums cursor-default">
+                          {left.length} left
+                        </span>
+                      );
+                    })()}
                   </p>
                   {entry.teamName && (
                     <p className="text-white/30 text-xs truncate">{entry.teamName}</p>

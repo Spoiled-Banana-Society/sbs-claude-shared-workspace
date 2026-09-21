@@ -69,6 +69,20 @@ export async function GET(req: Request) {
       if (level) q2 = q2.where('Level', '==', level);
       docs = (await q2.limit(limit).get()).docs;
     }
+    // Players still to play this week (Boris 2026-09-21: "2/15 players left"). The scorer writes the week's
+    // games + states to stats/{gw}; NFL teams with a game not yet final = "left". One extra doc read per request
+    // (this response is CDN-cached 5 min), zero extra reads per row.
+    const teamsLeft = new Set<string>();
+    try {
+      const st = (await db.collection('stats').doc(gameweek).get()).data() as { games?: Array<{ name?: string; state?: string }> } | undefined;
+      for (const g of st?.games ?? []) if (g.state !== 'post') for (const t of String(g.name ?? '').split(/\s*(?:@|vs\.?)\s*/)) if (t.trim()) teamsLeft.add(t.trim().toUpperCase());
+    } catch { /* no game list → no pills */ }
+    const playersLeftOf = (d: Record<string, unknown>) => {
+      const out: string[] = [];
+      const R = (d.Roster ?? {}) as Record<string, Array<{ Team?: string; Position?: string }>>;
+      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Team)} ${String(p?.Position ?? pos)}`);
+      return out;
+    };
     // competition ranking: equal scores share a rank (pre-kickoff everyone is #1)
     let rank = 0;
     let prevKey = '';
@@ -94,6 +108,7 @@ export async function GET(req: Request) {
         leagueName: String(card.LeagueDisplayName ?? ''),
         cardId,
         level: String(d.Level ?? card.Level ?? ''),
+        playersLeft: teamsLeft.size ? playersLeftOf(d) : [],
       };
     });
     // Season 2026-09-10: CDN-cached 5 min per URL (wallet is in the query string, so per-user rows stay per-user).
