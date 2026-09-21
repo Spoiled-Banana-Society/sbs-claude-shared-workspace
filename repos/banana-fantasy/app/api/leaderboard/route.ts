@@ -79,9 +79,10 @@ export async function GET(req: Request) {
     } catch { /* no game list → no pills */ }
     const playersLeftOf = (d: Record<string, unknown>) => {
       const out: string[] = [];
+      let size = 0;
       const R = (d.Roster ?? {}) as Record<string, Array<{ Team?: string; Position?: string }>>;
-      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Team)} ${String(p?.Position ?? pos)}`);
-      return out;
+      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) { size++; if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Position ?? pos)} ${String(p?.Team)}`); }
+      return { left: out, size };
     };
     // competition ranking: equal scores share a rank (pre-kickoff everyone is #1)
     let rank = 0;
@@ -108,7 +109,7 @@ export async function GET(req: Request) {
         leagueName: String(card.LeagueDisplayName ?? ''),
         cardId,
         level: String(d.Level ?? card.Level ?? ''),
-        playersLeft: teamsLeft.size ? playersLeftOf(d) : [],
+        ...(() => { if (!teamsLeft.size) return { playersLeft: [] as string[], rosterSize: 0 }; const r = playersLeftOf(d); return { playersLeft: r.left, rosterSize: r.size }; })(),
       };
     });
     // Season 2026-09-10: CDN-cached 5 min per URL (wallet is in the query string, so per-user rows stay per-user).

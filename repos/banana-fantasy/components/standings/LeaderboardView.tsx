@@ -56,6 +56,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
   // Weekly overall top-5 are the prize spots (Boris 2026-09-15): $250/$100/$50/$35/$20, weeks 1–14 (mirrors v2_contests/1).
 
   const [page, setPage] = useState(0);
+  const [leftOpen, setLeftOpen] = useState<string | null>(null); // row whose "N/15 left" list is expanded
   const [leagueInput, setLeagueInput] = useState('');
   const [leagueLookup, setLeagueLookup] = useState<string | null>(null);
   const [leagueLookupName, setLeagueLookupName] = useState<string | null>(null);
@@ -431,14 +432,24 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     )}
                     {sortField === 'WeekScore' && (() => {
                       const left = (entry as { playersLeft?: string[] }).playersLeft ?? [];
+                      const size = Number((entry as { rosterSize?: number }).rosterSize ?? 0);
                       if (!left.length) return null;
+                      const rowKey = `${entry.rank}-${idx}`;
                       return (
-                        <span title={left.join(' · ')} className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/[0.06] text-white/50 tabular-nums cursor-default">
-                          {left.length} left
-                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setLeftOpen((cur) => (cur === rowKey ? null : rowKey)); }}
+                          title={left.join(' · ')}
+                          className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
+                        >
+                          {size > 0 ? `${left.length}/${size}` : left.length} left
+                        </button>
                       );
                     })()}
                   </p>
+                  {sortField === 'WeekScore' && leftOpen === `${entry.rank}-${idx}` && ((entry as { playersLeft?: string[] }).playersLeft ?? []).length > 0 && (
+                    <p className="text-[11px] text-white/45 truncate">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
+                  )}
                   {entry.teamName && (
                     <p className="text-white/30 text-xs truncate">{entry.teamName}</p>
                   )}
