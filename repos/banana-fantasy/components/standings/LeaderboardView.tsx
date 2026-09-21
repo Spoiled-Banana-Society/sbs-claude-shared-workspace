@@ -462,7 +462,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     <p className="text-[11px] text-white/45 break-words">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
                   )}
                   {entry.teamName && (
-                    <p className="text-white/30 text-xs break-words flex flex-wrap items-center gap-x-1.5">
+                    <p className="text-white/55 text-xs break-words flex flex-wrap items-center gap-x-1.5">
                       <span>{entry.teamName}</span>
                       {(() => { const t = levelTag(String((entry as { level?: string }).level ?? '')); return t ? <span className={`text-[10px] font-semibold px-1.5 py-px rounded-full ${t.cls}`}>{t.label}</span> : null; })()}
                     </p>
