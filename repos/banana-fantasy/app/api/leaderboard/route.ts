@@ -80,11 +80,14 @@ export async function GET(req: Request) {
     const playersLeftOf = (d: Record<string, unknown>) => {
       const out: string[] = [];
       let size = 0;
-      const R = (d.Roster ?? {}) as Record<string, Array<{ Team?: string; Position?: string }>>;
-      // "LAR WR1 · NYG DST" (Boris 2026-09-21): team, then the roster slot (numbered when the position has more than one).
-      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) {
-        const group = R[pos] ?? [];
-        group.forEach((p, i) => { size++; if (teamsLeft.has(String(p?.Team ?? '').toUpperCase())) out.push(`${String(p?.Team)} ${pos}${group.length > 1 ? i + 1 : ''}`); });
+      const R = (d.Roster ?? {}) as Record<string, Array<{ Team?: string; Position?: string; PlayerId?: string }>>;
+      // Picks are team-position slots (PlayerId "LAR-WR1", "BUF-QB", "NE-DST"); show exactly that slot: "LAR WR1" (Boris 2026-09-21).
+      for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) {
+        size++;
+        const team = String(p?.Team ?? '').toUpperCase();
+        if (!teamsLeft.has(team)) continue;
+        const pid = String(p?.PlayerId ?? '');
+        out.push(pid.includes('-') ? pid.replace('-', ' ') : `${team} ${String(p?.Position ?? pos)}`);
       }
       return { left: out, size };
     };
