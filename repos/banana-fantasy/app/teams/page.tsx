@@ -554,12 +554,13 @@ export default function StandingsPage() {
                     const ordinal = (n: number) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
                     const placeTone = (n: number) => (n === 1 ? 'text-banana' : n === 2 ? 'text-green-400' : 'text-white/80');
                     const top5 = mergedLeagues.filter((l) => l.weeklyRank > 0 && l.weeklyRank <= 5).length;
-                    const chip = (key: typeof rankFilter, label: string, tone: string) => (
+                    // 1st/2nd keep their colors (banana/green) even when not selected so they stand out from 3rd–10th (Boris 2026-09-21).
+                    const chip = (key: typeof rankFilter, label: string, tone: string, always = false) => (
                       <button
                         key={key}
                         onClick={() => setRankFilter((cur) => (cur === key ? 'all' : key))}
                         className={`px-3 py-1.5 rounded-[10px] text-[12px] font-semibold border transition-all ${
-                          rankFilter === key ? `bg-white/10 border-white/20 ${tone}` : 'bg-white/[0.03] border-white/[0.06] text-white/45 hover:text-white/70'
+                          rankFilter === key ? `bg-white/10 border-white/20 ${tone}` : always ? `bg-white/[0.03] border-white/[0.06] ${tone} hover:bg-white/[0.06]` : 'bg-white/[0.03] border-white/[0.06] text-white/45 hover:text-white/70'
                         }`}
                       >
                         {label}
@@ -568,7 +569,7 @@ export default function StandingsPage() {
                     if (placed + top5 === 0 && cardWinnings.total <= 0) return null; // nothing to show yet
                     return (
                       <div className="flex flex-wrap items-center gap-2 px-1 mb-3">
-                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (byPlace.get(n) ?? 0) > 0 && chip(n, `${ordinal(n)} in league · ${byPlace.get(n)}`, placeTone(n)))}
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (byPlace.get(n) ?? 0) > 0 && chip(n, `${ordinal(n)} in league · ${byPlace.get(n)}`, placeTone(n), n <= 2))}
                         {top5 > 0 && chip('top5', `Top 5 overall this week · ${top5}`, 'text-banana')}
                         {cardWinnings.total > 0 && (
                           <span className="ml-auto text-[12px] font-semibold text-banana">${cardWinnings.total.toFixed(2)} on your cards</span>
