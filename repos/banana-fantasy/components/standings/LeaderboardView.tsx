@@ -424,11 +424,14 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                     <AvatarWithBadge imageUrl={u?.imageUrl ?? null} alt={u?.displayName || 'player'} size={26} equippedBadge={u?.equippedBadge ?? null} ripeness={u?.ripeness ?? null} showBadge={false} useNextImage={false} />
                   ); })()}
                   <div className="min-w-0">
-                  <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
-                    {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
-                    {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
+                  {/* Name truncates; the badges after it never do (mobile was ellipsing the "N left" pill, Boris 2026-09-21). */}
+                  <div className={`flex items-center gap-1.5 min-w-0 text-sm font-medium ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
+                    <span className="truncate min-w-0">
+                      {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaPlaceholderName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
+                    </span>
+                    {entry.isCurrentUser && <span className="shrink-0 text-[10px] text-banana/60">(You)</span>}
                     {weeklyPrizeView && entry.rank <= 5 && (
-                      <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-banana/15 text-banana">${WEEKLY_PRIZES[entry.rank - 1]}</span>
+                      <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-banana/15 text-banana">${WEEKLY_PRIZES[entry.rank - 1]}</span>
                     )}
                     {sortField === 'WeekScore' && (() => {
                       const left = (entry as { playersLeft?: string[] }).playersLeft ?? [];
@@ -439,13 +442,13 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setLeftOpen((cur) => (cur === rowKey ? null : rowKey)); }}
                           title={left.join(' · ')}
-                          className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
+                          className={`shrink-0 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums transition-colors ${leftOpen === rowKey ? 'bg-white/15 text-white/80' : 'bg-white/[0.06] text-white/50 hover:text-white/70'}`}
                         >
                           {left.length} left
                         </button>
                       );
                     })()}
-                  </p>
+                  </div>
                   {sortField === 'WeekScore' && leftOpen === `${entry.rank}-${idx}` && ((entry as { playersLeft?: string[] }).playersLeft ?? []).length > 0 && (
                     <p className="text-[11px] text-white/45 truncate">{((entry as { playersLeft?: string[] }).playersLeft ?? []).join(' · ')}</p>
                   )}
