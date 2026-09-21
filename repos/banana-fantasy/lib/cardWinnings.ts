@@ -71,15 +71,11 @@ export async function getWeeklyPrizeTable(): Promise<number[]> {
   return FALLBACK_WEEKLY_PRIZES;
 }
 
-async function loadBotSet(): Promise<Set<string>> {
-  const snap = await getAdminFirestore().collection('botWallets').select().get();
-  return new Set(snap.docs.map((d) => d.id.toLowerCase()));
-}
-
 /** Top real-user cards of a week from the leaderboard the scorer already writes. */
 async function readWeekTop(gameweek: string, n = 40): Promise<WeeklyWinner[]> {
   const db = getAdminFirestore();
-  const bots = await loadBotSet();
+  // Bots compete for weekly prizes like everyone else (Boris 2026-09-21: "if a bot is in the top 5 give it the money").
+  const bots = new Set<string>();
   const snap = await db.collection(`draftTokenLeaderboard/${gameweek}/cards`).orderBy('ScoreWeek', 'desc').limit(n).get();
   const rows: WeeklyWinner[] = [];
   for (const d of snap.docs) {
