@@ -416,7 +416,7 @@ export function LeaderboardView({ gameweek, weekOptions, onGameweekChange, onOpe
                         w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
                         ${entry.rank === 1 ? 'bg-banana text-black' : ''}
                         ${entry.rank === 2 ? (weeklyPrizeView ? 'bg-green-500 text-black' : 'bg-gray-400 text-black') : ''}
-                        ${entry.rank === 3 ? (weeklyPrizeView ? 'bg-pro text-white' : 'bg-orange-600 text-white') : ''}
+                        ${entry.rank === 3 ? (weeklyPrizeView ? 'bg-pink-400 text-black' : 'bg-orange-600 text-white') : ''}
                         ${entry.rank === 4 ? 'bg-sky-500 text-black' : ''}
                         ${entry.rank === 5 ? 'bg-orange-500 text-black' : ''}
                       `}
