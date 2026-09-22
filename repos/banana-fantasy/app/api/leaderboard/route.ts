@@ -75,7 +75,7 @@ export async function GET(req: Request) {
     const teamsLeft = new Set<string>();
     try {
       const st = (await db.collection('stats').doc(gameweek).get()).data() as { games?: Array<{ name?: string; state?: string }> } | undefined;
-      for (const g of st?.games ?? []) if (g.state !== 'post') for (const t of String(g.name ?? '').split(/\s*(?:@|vs\.?)\s*/)) if (t.trim()) teamsLeft.add(t.trim().toUpperCase());
+      for (const g of st?.games ?? []) if (g.state !== 'post') for (const t of String(g.name ?? '').split(/\s*(?:@|vs\.?)\s*/i)) if (t.trim()) teamsLeft.add(t.trim().toUpperCase());
     } catch { /* no game list → no pills */ }
     const playersLeftOf = (d: Record<string, unknown>) => {
       const out: string[] = [];
