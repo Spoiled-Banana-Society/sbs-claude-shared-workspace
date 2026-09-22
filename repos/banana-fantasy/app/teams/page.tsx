@@ -206,7 +206,8 @@ export default function StandingsPage() {
   const [teamsPage, setTeamsPage] = useState(0);
   // Season live: best league rank first (advancing teams on top), then the
   // pre-season league-number orders.
-  const [sortOrder, setSortOrder] = useState<'rank' | 'oldest' | 'newest'>(() => (seasonUiLive() ? 'rank' : 'newest'));
+  // 'weekly' = best overall weekly rank first (Nick W, 2026-09-22). Same rows, same data — pure client-side sort.
+  const [sortOrder, setSortOrder] = useState<'rank' | 'weekly' | 'oldest' | 'newest'>(() => (seasonUiLive() ? 'rank' : 'newest'));
   // Standing filter (2026-09-15, user ask: "how many of my teams are in 1st / 2nd"). Pure client-side — the
   // numbers are already on every league row, so this costs nothing.
   // 'all' | league place 1–10 | 'top5' (overall weekly top 5). Boris 2026-09-21: show every place they hold, not just 1st/2nd.
@@ -325,6 +326,15 @@ export default function StandingsPage() {
     result.sort((a, b) => {
       const leagueNumA = parseInt(a.name.match(/#(\d+)/)?.[1] || '0', 10);
       const leagueNumB = parseInt(b.name.match(/#(\d+)/)?.[1] || '0', 10);
+      if (sortOrder === 'weekly') {
+        // Best weekly rank first (unranked last); ties by this week's points, then newest league.
+        const wa = a.weeklyRank > 0 ? a.weeklyRank : Number.MAX_SAFE_INTEGER;
+        const wb = b.weeklyRank > 0 ? b.weeklyRank : Number.MAX_SAFE_INTEGER;
+        if (wa !== wb) return wa - wb;
+        const sa = Number((a as { weeklyScore?: number }).weeklyScore ?? 0), sb = Number((b as { weeklyScore?: number }).weeklyScore ?? 0);
+        if (sa !== sb) return sb - sa;
+        return leagueNumB - leagueNumA;
+      }
       if (sortOrder === 'rank') {
         // 1st..10th, unscored teams last; ties by season points, then newest league.
         const ra = a.leagueRank > 0 ? a.leagueRank : 99;
@@ -580,10 +590,10 @@ export default function StandingsPage() {
                   {/* Sort toggle (the chip already shows the count) */}
                   <div className="flex items-center justify-end px-1 mb-2">
                     <button
-                      onClick={() => setSortOrder(prev => prev === 'rank' ? 'newest' : prev === 'newest' ? 'oldest' : (seasonUiLive() ? 'rank' : 'newest'))}
+                      onClick={() => setSortOrder(prev => prev === 'rank' ? 'weekly' : prev === 'weekly' ? 'newest' : prev === 'newest' ? 'oldest' : (seasonUiLive() ? 'rank' : 'newest'))}
                       className="text-white/30 text-xs hover:text-white/60 transition-colors"
                     >
-                      {sortOrder === 'rank' ? 'Best league rank first' : sortOrder === 'oldest' ? 'Oldest first ↑' : 'Newest first ↓'}
+                      {sortOrder === 'rank' ? 'Best league rank first' : sortOrder === 'weekly' ? 'Best weekly rank first' : sortOrder === 'oldest' ? 'Oldest first ↑' : 'Newest first ↓'}
                     </button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-5">
