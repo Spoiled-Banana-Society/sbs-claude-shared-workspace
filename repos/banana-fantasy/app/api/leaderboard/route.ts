@@ -72,10 +72,13 @@ export async function GET(req: Request) {
     // Players still to play this week (Boris 2026-09-21: "2/15 players left"). The scorer writes the week's
     // games + states to stats/{gw}; NFL teams with a game not yet final = "left". One extra doc read per request
     // (this response is CDN-cached 5 min), zero extra reads per row.
+    // Rosters say WAS, the scorer's game list says WSH (2026-09-22: 105 Washington picks were never counted as "left").
+    const TEAM_ALIAS: Record<string, string> = { WAS: 'WSH', JAC: 'JAX', LA: 'LAR', STL: 'LAR', SD: 'LAC', OAK: 'LV' };
+    const normTeam = (t: string) => { const u = t.trim().toUpperCase(); return TEAM_ALIAS[u] ?? u; };
     const teamsLeft = new Set<string>();
     try {
       const st = (await db.collection('stats').doc(gameweek).get()).data() as { games?: Array<{ name?: string; state?: string }> } | undefined;
-      for (const g of st?.games ?? []) if (g.state !== 'post') for (const t of String(g.name ?? '').split(/\s*(?:@|vs\.?)\s*/i)) if (t.trim()) teamsLeft.add(t.trim().toUpperCase());
+      for (const g of st?.games ?? []) if (g.state !== 'post') for (const t of String(g.name ?? '').split(/\s*(?:@|vs\.?)\s*/i)) if (t.trim()) teamsLeft.add(normTeam(t));
     } catch { /* no game list → no pills */ }
     const playersLeftOf = (d: Record<string, unknown>) => {
       const out: string[] = [];
@@ -84,7 +87,7 @@ export async function GET(req: Request) {
       // Picks are team-position slots (PlayerId "LAR-WR1", "BUF-QB", "NE-DST"); show exactly that slot: "LAR WR1" (Boris 2026-09-21).
       for (const pos of ['QB', 'RB', 'WR', 'TE', 'DST']) for (const p of R[pos] ?? []) {
         size++;
-        const team = String(p?.Team ?? '').toUpperCase();
+        const team = normTeam(String(p?.Team ?? ''));
         if (!teamsLeft.has(team)) continue;
         const pid = String(p?.PlayerId ?? '');
         out.push(pid.includes('-') ? pid.replace('-', ' ') : `${team} ${String(p?.Position ?? pos)}`);
