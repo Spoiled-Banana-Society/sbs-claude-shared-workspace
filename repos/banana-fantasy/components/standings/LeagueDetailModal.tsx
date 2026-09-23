@@ -203,6 +203,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   // leaderboard, written by the ESPN scorer. Powers the points breakdown on
   // the Roster tab and backfills the Standings tab. Keyed by lowercase owner.
   const [scoredByOwner, setScoredByOwner] = useState<Record<string, ScoredCard>>({});
+  // Drafter wallet → current holder for teams bought on the marketplace (GatorMAB 2026-09-22). Display only:
+  // rosters/scores stay keyed by the drafter (that's how the engine stores them); we just show the buyer.
+  const [holderByKey, setHolderByKey] = useState<Record<string, string>>({});
 
   const handleClose = useCallback(() => {
     setIsClosing(true);
@@ -339,14 +342,30 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
           : body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>).leaderboard) ? ((body as Record<string, unknown>).leaderboard as unknown[])
           : [];
         const map: Record<string, ScoredCard> = {};
+        const cardByOwner: Record<string, string> = {};
         for (const r of rows) {
           if (!r || typeof r !== 'object') continue;
           const o = r as Record<string, unknown>;
           const owner = String(o.ownerId ?? (o.card as Record<string, unknown> | undefined)?._ownerId ?? '').toLowerCase();
           if (!owner) continue;
           map[owner] = parseScoredCard(o);
+          const cid = String(o._cardId ?? (o.card as Record<string, unknown> | undefined)?._cardId ?? '');
+          if (/^\d+$/.test(cid)) cardByOwner[owner] = cid;
         }
         if (!ctrl.signal.aborted) setScoredByOwner(map);
+        // Bought teams → buyer. One small cached call; tokens never traded come back empty.
+        const cardIds = Object.values(cardByOwner);
+        if (cardIds.length) {
+          try {
+            const hr = await fetch(`/api/marketplace/holders?tokens=${cardIds.join(',')}`, { signal: ctrl.signal });
+            if (hr.ok) {
+              const { holders } = (await hr.json()) as { holders?: Record<string, string> };
+              const next: Record<string, string> = {};
+              for (const [owner, cid] of Object.entries(cardByOwner)) { const h = holders?.[cid]; if (h && h.toLowerCase() !== owner) next[owner] = h.toLowerCase(); }
+              if (!ctrl.signal.aborted) setHolderByKey(next);
+            }
+          } catch { /* keep drafter names */ }
+        }
       } catch { /* silent — roster tab falls back to BYE/ADP/Pick */ }
     })();
     return () => ctrl.abort();
@@ -386,18 +405,21 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   // Resolve EVERY player wallet → real display name + pfp. Defaults are a
   // banana name ("Banana" + 5 digits) and the plain banana avatar; a custom
   // name/pfp wins if set. We never surface a raw 0x wallet anywhere in the UI.
-  const usersMap = useDraftRoomUsers(playerKeys);
+  const displayKeys = useMemo(() => Array.from(new Set([...playerKeys, ...Object.values(holderByKey)])), [playerKeys, holderByKey]);
+  const usersMap = useDraftRoomUsers(displayKeys);
+  const effectiveKey = useCallback((key: string) => holderByKey[key.toLowerCase()] ?? key, [holderByKey]);
 
   interface ResolvedUser { name: string; imageUrl: string | null; equippedBadge: string | null; ripeness: Ripeness | null; }
   const resolveUser = useCallback((key: string): ResolvedUser => {
     if (key.startsWith('bot-')) {
       return { name: key.replace(/^bot-fast-\d+-/, 'Bot '), imageUrl: null, equippedBadge: null, ripeness: null };
     }
-    const u = usersMap[key.toLowerCase()];
-    const pfpName = allRosters[key]?.pfpDisplayName;
-    const name = u?.displayName || pfpName || (key.startsWith('0x') ? truncateAddress(key) : key);
+    const eff = effectiveKey(key);
+    const u = usersMap[eff.toLowerCase()];
+    const pfpName = eff === key ? allRosters[key]?.pfpDisplayName : undefined; // the drafter's legacy name never applies to a buyer
+    const name = u?.displayName || pfpName || (eff.startsWith('0x') ? truncateAddress(eff) : eff);
     return { name, imageUrl: u?.imageUrl ?? null, equippedBadge: u?.equippedBadge ?? null, ripeness: u?.ripeness ?? null };
-  }, [usersMap, allRosters]);
+  }, [usersMap, allRosters, effectiveKey]);
 
   const getPlayerLabel = (key: string): string => resolveUser(key).name;
 
@@ -493,7 +515,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
         ownerKey: key,
         displayName,
         playerCount: totalPlayers,
-        isCurrentUser: key.toLowerCase() === walletAddress?.toLowerCase(),
+        isCurrentUser: effectiveKey(key).toLowerCase() === walletAddress?.toLowerCase(),
         rank: score?.leagueRank && score.leagueRank > 0 ? score.leagueRank : idx + 1,
         seasonScore: score?.seasonScore ?? 0,
         weekScore: score?.weekScore ?? 0,
@@ -507,7 +529,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       if (b.hasScores) return 1;
       return 0;
     });
-  }, [playerKeys, allRosters, walletAddress, scoresByOwner, scoredByOwner, resolveUser]);
+  }, [playerKeys, allRosters, walletAddress, scoresByOwner, scoredByOwner, resolveUser, effectiveKey]);
 
   // Build board grid
   const { boardGrid, drafterOrder } = useMemo(() => {

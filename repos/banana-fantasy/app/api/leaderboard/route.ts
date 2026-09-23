@@ -1,7 +1,7 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
-import { getOnchainOwner } from '@/lib/onchain/ownerOf';
+import { resolveHolders } from '@/lib/marketplace/holders';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { currentGameweek } from '@/lib/season';
 import type { LeaderboardEntry } from '@/types';
@@ -32,39 +32,6 @@ type Row = LeaderboardEntry & {
   cardId: string;
   level: string;
 };
-
-/**
- * Marketplace overlay (GatorMAB 2026-09-22): the scorer credits a team to its DRAFTER forever, so a bought team
- * kept showing the seller's name on the leaderboard. The marketplace buy log is tiny (~140 rows), so we read it
- * once per 5 min and, for just those tokens, confirm the current holder on-chain (one ownerOf per bought token,
- * memoized 10 min). Everything else stays zero-cost.
- */
-let buyersMemo: { at: number; byToken: Map<string, string> } | null = null;
-async function marketplaceBuyers(db: FirebaseFirestore.Firestore): Promise<Map<string, string>> {
-  if (buyersMemo && Date.now() - buyersMemo.at < 5 * 60_000) return buyersMemo.byToken;
-  const byToken = new Map<string, string>();
-  const at = new Map<string, number>();
-  try {
-    const snap = await db.collection('marketplace_activity').where('type', '==', 'buy').select('tokenId', 'walletAddress', 'timestamp').get();
-    for (const d of snap.docs) {
-      const x = d.data() as { tokenId?: unknown; walletAddress?: unknown; timestamp?: { toDate?: () => Date } };
-      const t = String(x.tokenId ?? ''); const w = String(x.walletAddress ?? '').toLowerCase();
-      const ts = x.timestamp?.toDate?.()?.getTime?.() ?? 0;
-      if (!/^\d+$/.test(t) || !/^0x[0-9a-f]{40}$/.test(w)) continue;
-      if (ts >= (at.get(t) ?? -1)) { byToken.set(t, w); at.set(t, ts); }
-    }
-  } catch { /* overlay is best-effort */ }
-  buyersMemo = { at: Date.now(), byToken };
-  return byToken;
-}
-const onchainMemo = new Map<string, { at: number; owner: string | null }>();
-async function confirmedHolder(tokenId: string, fallback: string): Promise<string> {
-  const hit = onchainMemo.get(tokenId);
-  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.owner ?? fallback;
-  const owner = await getOnchainOwner(tokenId);
-  onchainMemo.set(tokenId, { at: Date.now(), owner });
-  return owner ?? fallback;
-}
 
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -158,17 +125,14 @@ export async function GET(req: Request) {
       };
     });
     // Bought teams show the current holder, not the drafter (GatorMAB, Team #13147).
-    const buyers = await marketplaceBuyers(db);
-    if (buyers.size) {
-      await Promise.all(rows.map(async (r) => {
-        const tok = /^\d+$/.test(r.cardId) ? r.cardId : String(r.teamName.match(/^Team #(\d+)/)?.[1] ?? '');
-        if (!tok || !buyers.has(tok)) return;
-        const holder = await confirmedHolder(tok, buyers.get(tok)!);
-        if (!holder || holder === r.ownerWallet) return;
-        r.ownerWallet = holder;
-        r.username = bananaPlaceholderName(holder); // client resolves the real display name + pfp by wallet
-        r.isCurrentUser = !!me && holder === me;
-      }));
+    const tokOf = (r: Row) => (/^\d+$/.test(r.cardId) ? r.cardId : String(r.teamName.match(/^Team #(\d+)/)?.[1] ?? ''));
+    const holders = await resolveHolders(db, rows.map(tokOf).filter(Boolean));
+    for (const r of rows) {
+      const holder = holders.get(tokOf(r));
+      if (!holder || holder === r.ownerWallet) continue;
+      r.ownerWallet = holder;
+      r.username = bananaPlaceholderName(holder); // client resolves the real display name + pfp by wallet
+      r.isCurrentUser = !!me && holder === me;
     }
     // Season 2026-09-10: CDN-cached 5 min per URL (wallet is in the query string, so per-user rows stay per-user).
     return json(rows, { status: 200, headers: { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } });
