@@ -41,12 +41,32 @@ export async function confirmedHolder(tokenId: string, fallback: string): Promis
   return owner ?? fallback;
 }
 
-/** tokenId → current holder, only for tokens that were ever bought on the marketplace. */
+/**
+ * Nightly on-chain sweep overlay (app/api/crons/holders-sweep): tokenId → holder for every card whose on-chain owner
+ * ≠ the drafter, whatever the venue (OpenSea, gifts, our marketplace). Small collection (~150 docs), read once per 5 min.
+ */
+let sweepMemo: { at: number; byToken: Map<string, string> } | null = null;
+export async function sweptHolders(db: Firestore): Promise<Map<string, string>> {
+  if (sweepMemo && Date.now() - sweepMemo.at < 5 * 60_000) return sweepMemo.byToken;
+  const byToken = new Map<string, string>();
+  try {
+    const snap = await db.collection('token_holders').select('holder').get();
+    for (const d of snap.docs) { const h = String((d.data() as { holder?: unknown }).holder ?? '').toLowerCase(); if (/^0x[0-9a-f]{40}$/.test(h)) byToken.set(d.id, h); }
+  } catch { /* best-effort */ }
+  sweepMemo = { at: Date.now(), byToken };
+  return byToken;
+}
+
+/**
+ * tokenId → current holder for tokens known to have changed hands: marketplace buys (confirmed on-chain, so a
+ * same-day resale shows the newest owner) plus last night's sweep. Never-traded tokens are omitted (zero cost).
+ */
 export async function resolveHolders(db: Firestore, tokenIds: Iterable<string>): Promise<Map<string, string>> {
-  const buyers = await marketplaceBuyers(db);
+  const [buyers, swept] = await Promise.all([marketplaceBuyers(db), sweptHolders(db)]);
   const out = new Map<string, string>();
-  if (!buyers.size) return out;
-  const wanted = Array.from(new Set(Array.from(tokenIds).filter((t) => buyers.has(t))));
-  await Promise.all(wanted.map(async (t) => { out.set(t, await confirmedHolder(t, buyers.get(t)!)); }));
+  const ids = Array.from(new Set(Array.from(tokenIds)));
+  for (const t of ids) { const h = swept.get(t); if (h) out.set(t, h); }
+  const fresh = ids.filter((t) => buyers.has(t));
+  await Promise.all(fresh.map(async (t) => { out.set(t, await confirmedHolder(t, buyers.get(t)!)); }));
   return out;
 }
