@@ -84,7 +84,9 @@ export async function GET(
     // Overlay each sender's live profile (name + picture) so chat never shows
     // a stale wallet fragment or a missing avatar — see lib/chatProfiles.
     const messages = await enrichChatIdentities(out);
-    return NextResponse.json({ messages });
+    // Same payload for every viewer (no auth on GET) → CDN serves repeat polls for 60s per draft. Senders
+    // refetch with a cache-busting ?v= right after POST, so their own message shows instantly (cost cut 10/6).
+    return NextResponse.json({ messages }, { headers: { 'cache-control': 'public, max-age=0, s-maxage=60, stale-while-revalidate=300' } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'read failed';
     return NextResponse.json({ error: msg }, { status: 500 });

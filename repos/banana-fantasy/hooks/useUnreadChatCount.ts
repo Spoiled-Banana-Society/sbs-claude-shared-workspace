@@ -8,7 +8,9 @@ interface RawMessage {
   timestamp?: number;
 }
 
-const POLL_MS = 30_000;
+// 30s → 5 min (cost cut 10/6): one poll per visible team card; 20 cards × 30s was ~40 chat reads/min per viewer
+// of My Teams for a chat nobody uses in-season. Repeat polls are CDN hits now anyway (chat GET s-maxage=60).
+const POLL_MS = 5 * 60_000;
 
 /**
  * Mark a league/draft chat as read. The "last seen" timestamp is now stored
@@ -47,7 +49,7 @@ export function useUnreadChatCount(draftId: string | undefined, walletAddress: s
       }
     };
     void tick();
-    const interval = setInterval(tick, POLL_MS);
+    const interval = setInterval(() => { if (!document.hidden) void tick(); }, POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);

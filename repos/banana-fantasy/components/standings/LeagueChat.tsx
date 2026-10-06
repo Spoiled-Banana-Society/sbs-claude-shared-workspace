@@ -42,12 +42,13 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
     markChatRead(walletAddress, draftId);
   }, [walletAddress, draftId, messages.length]);
 
-  // Poll for new messages every 2s. Matches DraftRoomChat behavior.
+  // Poll for new messages (60s; CDN-cached server side). refetchRef lets send() pull fresh right after a POST.
+  const refetchRef = useRef<() => void>(() => {});
   useEffect(() => {
     let cancelled = false;
-    const fetchOnce = async () => {
+    const fetchOnce = async (bust = false) => {
       try {
-        const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}`, { cache: 'no-store' });
+        const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}${bust ? `?v=${Date.now()}` : ''}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = (await res.json()) as {
           messages?: Array<{
@@ -77,9 +78,10 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
     };
 
     void fetchOnce();
+    refetchRef.current = () => { void fetchOnce(true); };
     // Hidden tabs skip the poll (cost audit 9/2) — RTDB history re-download.
     const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => { cancelled = true; clearInterval(id); refetchRef.current = () => {}; };
   }, [draftId, myWallet]);
 
   // Scroll to bottom on new messages.
@@ -103,6 +105,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         body: JSON.stringify({ username, text }),
       });
       if (!res.ok) throw new Error(`send failed (${res.status})`);
+      refetchRef.current();
     } catch (err) {
       console.warn('[LeagueChat] send failed:', err);
       setInputValue(text); // restore for retry

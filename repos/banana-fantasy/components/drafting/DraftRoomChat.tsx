@@ -79,13 +79,14 @@ export function DraftRoomChat({
   // Firebase, and staging rules deny anonymous reads on /drafts/*/chat. The
   // server route reads via Admin SDK and proxies the result.
   const lastSeenIdRef = useRef<string | null>(null);
+  const refetchRef = useRef<() => void>(() => {}); // send() pulls fresh (cache-busted) right after a POST
   useEffect(() => {
     if (!draftId) return;
     let cancelled = false;
 
-    const fetchOnce = async () => {
+    const fetchOnce = async (bust = false) => {
       try {
-        const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}`, {
+        const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}${bust ? `?v=${Date.now()}` : ''}`, {
           cache: 'no-store',
         });
         if (!res.ok) return;
@@ -117,10 +118,11 @@ export function DraftRoomChat({
     };
 
     fetchOnce();
+    refetchRef.current = () => { void fetchOnce(true); };
     // 2s->4s (cost audit 9/1); hidden tabs skip entirely (9/2) — the pick
     // engine is fully server-side, this poll only feeds the visible chat UI.
     const id = setInterval(() => { if (!document.hidden) void fetchOnce(); }, 60_000); // 4s -> 60s (season closed 2026-09-10)
-    return () => { cancelled = true; clearInterval(id); };
+    return () => { cancelled = true; clearInterval(id); refetchRef.current = () => {}; };
   }, [draftId, myWallet]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -188,6 +190,7 @@ export function DraftRoomChat({
         body: JSON.stringify({ username, text }),
       });
       if (!res.ok) throw new Error(`send failed (${res.status})`);
+      refetchRef.current();
     } catch (err) {
       console.warn('[DraftRoomChat] send failed:', err);
       setInputValue(text); // restore so user can retry
