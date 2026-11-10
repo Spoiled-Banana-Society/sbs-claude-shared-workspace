@@ -80,6 +80,8 @@ interface ScoredCard {
   weeklyRank: number;
   leagueRank: number;
   roster: Record<string, ScoredSlot[]>;
+  /** Team card art (350x490 thumbnail) — already on the league row, so showing it costs no extra read. */
+  imageUrl: string;
 }
 
 /** Parse one /api/standings league row (Go league leaderboard entry) → ScoredCard. */
@@ -106,6 +108,7 @@ function parseScoredCard(raw: Record<string, unknown>): ScoredCard {
     weeklyRank: Math.trunc(toNum(card._rank)),
     leagueRank: Math.trunc(toNum(card._leagueRank)),
     roster,
+    imageUrl: typeof card._imageUrl === 'string' && /^https:\/\//.test(card._imageUrl) ? card._imageUrl : '',
   };
 }
 
@@ -175,6 +178,8 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [allRosters, setAllRosters] = useState<Record<string, PlayerRoster>>({});
   const [playerKeys, setPlayerKeys] = useState<string[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
+  // Team card image on the Roster tab (Boris 2026-11-10). Stays open while you flip between teams.
+  const [cardOpen, setCardOpen] = useState(false);
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const [rostersLoading, setRostersLoading] = useState(true);
 
@@ -446,6 +451,33 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreWeek.toFixed(1)} <span className="text-white/40 font-normal">wk</span></span>
             <span className="text-white font-bold tabular-nums">{scoredCard.scoreSeason.toFixed(1)} <span className="text-white/40 font-normal">season</span></span>
             <span className="text-green-400/80 text-[10px] text-right leading-tight">green = counted<br /><span className="text-white/30">updates as games finish</span></span>
+          </div>
+        )}
+        {scoredCard?.imageUrl && (
+          <div className="mb-2">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCardOpen((v) => !v)}
+                aria-expanded={cardOpen}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                {cardOpen ? 'Hide card' : 'View card'}
+              </button>
+            </div>
+            {cardOpen && (
+              // Plain <img>: the bucket thumbnail is already sized (350x490), so no Vercel image-optimization charge.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={scoredCard.imageUrl}
+                src={scoredCard.imageUrl}
+                alt="Team card"
+                width={350}
+                height={490}
+                loading="lazy"
+                className="mx-auto mt-2 w-full max-w-[260px] h-auto rounded-xl border border-white/10 shadow-lg shadow-black/40"
+              />
+            )}
           </div>
         )}
         {/* Header row */}
