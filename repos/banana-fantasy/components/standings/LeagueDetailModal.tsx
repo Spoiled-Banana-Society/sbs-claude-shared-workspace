@@ -80,8 +80,6 @@ interface ScoredCard {
   weeklyRank: number;
   leagueRank: number;
   roster: Record<string, ScoredSlot[]>;
-  /** Team card art (350x490 thumbnail) — already on the league row, so showing it costs no extra read. */
-  imageUrl: string;
 }
 
 /** Parse one /api/standings league row (Go league leaderboard entry) → ScoredCard. */
@@ -108,7 +106,6 @@ function parseScoredCard(raw: Record<string, unknown>): ScoredCard {
     weeklyRank: Math.trunc(toNum(card._rank)),
     leagueRank: Math.trunc(toNum(card._leagueRank)),
     roster,
-    imageUrl: typeof card._imageUrl === 'string' && /^https:\/\//.test(card._imageUrl) ? card._imageUrl : '',
   };
 }
 
@@ -180,6 +177,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [selectedPlayer, setSelectedPlayer] = useState('');
   // Team card image on the Roster tab (Boris 2026-11-10). Stays open while you flip between teams.
   const [cardOpen, setCardOpen] = useState(false);
+  // Drafter wallet → { on-chain token id, current card art path }. NOT the league row's _imageUrl — that is the
+  // retired yellow card; the real art is the obsidian card recorded in marketplace_index.
+  const [cardArtByKey, setCardArtByKey] = useState<Record<string, { tokenId: string; path: string }>>({});
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const [rostersLoading, setRostersLoading] = useState(true);
 
@@ -354,7 +354,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
           const owner = String(o.ownerId ?? (o.card as Record<string, unknown> | undefined)?._ownerId ?? '').toLowerCase();
           if (!owner) continue;
           map[owner] = parseScoredCard(o);
-          const cid = String(o._cardId ?? (o.card as Record<string, unknown> | undefined)?._cardId ?? '');
+          const cardObj = o.card as Record<string, unknown> | undefined;
+          const rawId = String(o._cardId ?? cardObj?._cardId ?? '');
+          const cid = /^\d+$/.test(rawId) ? rawId : String(cardObj?.realTokenId ?? ''); // promo seats carry the real token id
           if (/^\d+$/.test(cid)) cardByOwner[owner] = cid;
         }
         if (!ctrl.signal.aborted) setScoredByOwner(map);
@@ -364,7 +366,10 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
           try {
             const hr = await fetch(`/api/marketplace/holders?tokens=${cardIds.join(',')}`, { signal: ctrl.signal });
             if (hr.ok) {
-              const { holders } = (await hr.json()) as { holders?: Record<string, string> };
+              const { holders, images } = (await hr.json()) as { holders?: Record<string, string>; images?: Record<string, string> };
+              const art: Record<string, { tokenId: string; path: string }> = {};
+              for (const [owner, cid] of Object.entries(cardByOwner)) { const pth = images?.[cid]; if (pth && pth.startsWith('/api/og/team-card?')) art[owner] = { tokenId: cid, path: pth }; }
+              if (!ctrl.signal.aborted) setCardArtByKey(art);
               const next: Record<string, string> = {};
               for (const [owner, cid] of Object.entries(cardByOwner)) { const h = holders?.[cid]; if (h && h.toLowerCase() !== owner) next[owner] = h.toLowerCase(); }
               if (!ctrl.signal.aborted) setHolderByKey(next);
@@ -434,6 +439,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   // card it becomes the points breakdown — BYE / Wk / Season per slot, with
   // the slots that COUNTED this week in green (last year's convention).
   const scoredCard = scoredByOwner[(selectedPlayer || '').toLowerCase()];
+  const cardArt = cardArtByKey[(selectedPlayer || '').toLowerCase()];
   const renderRosterTable = () => {
     if (!roster) return null;
     const inSeason = seasonUiLive() && !!scoredCard;
@@ -453,9 +459,18 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
             <span className="text-green-400/80 text-[10px] text-right leading-tight">green = counted<br /><span className="text-white/30">updates as games finish</span></span>
           </div>
         )}
-        {scoredCard?.imageUrl && (
+        {cardArt && (
           <div className="mb-2">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {cardOpen && (
+                <button
+                  type="button"
+                  onClick={() => { void saveImageToDevice(cardArt.path, `SBS Team #${cardArt.tokenId}`); }}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  Save card
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setCardOpen((v) => !v)}
@@ -466,16 +481,16 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
               </button>
             </div>
             {cardOpen && (
-              // Plain <img>: the bucket thumbnail is already sized (350x490), so no Vercel image-optimization charge.
+              // Plain <img> of the already-rendered, CDN-cached card (same URL the marketplace uses) — no image-optimization charge.
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                key={scoredCard.imageUrl}
-                src={scoredCard.imageUrl}
-                alt="Team card"
-                width={350}
-                height={490}
+                key={cardArt.path}
+                src={cardArt.path}
+                alt={`Team #${cardArt.tokenId} card`}
+                width={1080}
+                height={1350}
                 loading="lazy"
-                className="mx-auto mt-2 w-full max-w-[260px] h-auto rounded-xl border border-white/10 shadow-lg shadow-black/40"
+                className="mx-auto mt-2 w-full max-w-[280px] h-auto rounded-xl"
               />
             )}
           </div>

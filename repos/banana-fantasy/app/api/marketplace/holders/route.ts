@@ -16,7 +16,20 @@ export async function GET(req: Request) {
   const headers = { 'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' };
   if (!isFirestoreConfigured()) return json({ holders: {} }, { status: 200, headers });
   const ids = Array.from(new Set((getSearchParam(req, 'tokens') || '').split(',').map((s) => s.trim()).filter((s) => /^\d+$/.test(s)))).slice(0, 200);
-  if (!ids.length) return json({ holders: {} }, { status: 200, headers });
-  const map = await resolveHolders(getAdminFirestore(), ids);
-  return json({ holders: Object.fromEntries(map) }, { status: 200, headers });
+  if (!ids.length) return json({ holders: {}, images: {} }, { status: 200, headers });
+  const db = getAdminFirestore();
+  const map = await resolveHolders(db, ids);
+  // Current card art per token (the obsidian card the marketplace/OpenSea show), for "View card" in the league
+  // popup (Boris 2026-11-10). Returned as a same-origin PATH so the page can both show and save it without CORS.
+  // One doc read per token (≤10 per league), CDN-cached with the rest of this response.
+  const images: Record<string, string> = {};
+  try {
+    const snaps = await db.getAll(...ids.map((id) => db.collection('marketplace_index').doc(id)), { fieldMask: ['image'] });
+    for (const s of snaps) {
+      const img = String((s.data() as { image?: unknown } | undefined)?.image ?? '');
+      const i = img.indexOf('/api/og/team-card?');
+      if (i >= 0) images[s.id] = img.slice(i);
+    }
+  } catch { /* no images → no button */ }
+  return json({ holders: Object.fromEntries(map), images }, { status: 200, headers });
 }
