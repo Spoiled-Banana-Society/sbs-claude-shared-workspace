@@ -487,7 +487,7 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                     style={{ width: '141.18%', left: '-20.65%', top: '-6.43%' }}
                   />
                 </div>
-                <div className="flex justify-end mt-1.5">
+                <div className="flex justify-center mt-2">
                   <button
                     type="button"
                     onClick={() => { void saveImageToDevice(cardArt.path, `SBS Team #${cardArt.tokenId}`); }}
