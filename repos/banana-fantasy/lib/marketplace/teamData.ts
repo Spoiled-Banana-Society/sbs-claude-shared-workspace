@@ -65,6 +65,38 @@ async function findPriorOwnersForToken(tokenId: string): Promise<string[]> {
 }
 
 /**
+ * tokenId → wallet the drafts engine credits the team to (the drafter), for tokens that are real drafted teams.
+ * Numeric token docs carry it directly; wheel/promo seats live on a `special-…` doc that points back via
+ * RealTokenId. Undrafted passes have no league and are skipped, so they cost one batched read and nothing more.
+ */
+async function findDraftersForTokens(tokenIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = Array.from(new Set(tokenIds.filter(t => /^\d+$/.test(t))));
+  if (!isFirestoreConfigured() || ids.length === 0) return out;
+  try {
+    const db = getAdminFirestore();
+    const noLeague: string[] = [];
+    for (let i = 0; i < ids.length; i += 300) {
+      const chunk = ids.slice(i, i + 300);
+      const snaps = await db.getAll(...chunk.map(id => db.collection('draftTokens').doc(id)), { fieldMask: ['OwnerId', 'LeagueId'] });
+      for (const sdoc of snaps) {
+        const d = sdoc.data() as { OwnerId?: unknown; LeagueId?: unknown } | undefined;
+        const owner = String(d?.OwnerId ?? '').toLowerCase();
+        if (d?.LeagueId && /^0x[0-9a-f]{40}$/.test(owner)) out.set(sdoc.id, owner);
+        else noLeague.push(sdoc.id);
+      }
+    }
+    // Promo/wheel seats: bounded so a wallet full of unused passes can't fan out into hundreds of queries.
+    await Promise.all(noLeague.slice(0, 25).map(async (id) => {
+      const q = await db.collection('draftTokens').where('RealTokenId', '==', id).limit(1).get();
+      const owner = String((q.docs[0]?.data() as { OwnerId?: unknown } | undefined)?.OwnerId ?? '').toLowerCase();
+      if (/^0x[0-9a-f]{40}$/.test(owner)) out.set(id, owner);
+    }));
+  } catch { /* best-effort: fall back to the sale log */ }
+  return out;
+}
+
+/**
  * Read a user's per-league nickname (if any) from Firestore. The owner
  * sets this via /api/owner/team-nicknames; once set, it's the team's
  * canonical name everywhere on our site.
@@ -323,7 +355,10 @@ export async function getTeamForToken(tokenId: string, owner: string | null): Pr
   // 3. Traded NFT — its draft record still sits under a PRIOR owner (the Go
   //    backend doesn't move it on sale). Try the past sellers from our sale
   //    history; the original drafter is the only one with a matching record.
-  const priorOwners = await findPriorOwnersForToken(tokenId);
+  // Drafter from the engine's own token record first (covers offers / OpenSea / transfers the sale log misses).
+  const [fromLog, drafters] = await Promise.all([findPriorOwnersForToken(tokenId), findDraftersForTokens([tokenId])]);
+  const drafter = drafters.get(tokenId);
+  const priorOwners = drafter ? [drafter, ...fromLog.filter(o => o !== drafter)] : fromLog;
   for (const prior of priorOwners) {
     if (owner && prior === owner.toLowerCase()) continue;
     const token = await findTokenByCardIdMatch(prior, tokenId);
@@ -455,8 +490,17 @@ export async function getTeamsForTokens(
   const tradedMissing = pairs.filter(p => !result.has(p.tokenId));
   if (tradedMissing.length > 0) {
     const priorByToken = new Map<string, string[]>();
+    // The engine's own record of who DRAFTED each token is the ground truth and exists for every drafted team,
+    // whatever the venue it later changed hands on. Our sale log misses accepted offers, OpenSea buys and plain
+    // transfers — those cards resolved to nothing and showed as "Draft Pass", so My Teams hid them
+    // (tomalom69 2026-11-23: #3147, #6130, #13028). One batched read; the drafter is tried first.
+    const drafterByToken = await findDraftersForTokens(tradedMissing.map(p => p.tokenId));
     await Promise.all(tradedMissing.map(async (p) => {
-      priorByToken.set(p.tokenId, await findPriorOwnersForToken(p.tokenId));
+      const fromLog = await findPriorOwnersForToken(p.tokenId);
+      const drafter = drafterByToken.get(p.tokenId);
+      const cur = (p.owner ?? '').toLowerCase();
+      const list = drafter && drafter !== cur ? [drafter, ...fromLog.filter(o => o !== drafter)] : fromLog;
+      priorByToken.set(p.tokenId, list);
     }));
 
     // Fetch each distinct prior owner's draft list once.
